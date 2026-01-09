@@ -1,22 +1,16 @@
 --[[
-    Custom Roblox UI Framework
-    Style: RedzHub / WindUI inspired
-    Version: 1.0.1
+    Custom Roblox UI Framework with Shortcut Support
+    Version: 1.1.0
 ]]
 
---// SERVICES
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
 local LocalPlayer = Players.LocalPlayer
 
---// LIB
 local UILib = {}
 UILib.__index = UILib
 
---// =========================
---// CREATE WINDOW
---// =========================
 function UILib:CreateWindow(settings)
     settings = settings or {}
 
@@ -39,13 +33,11 @@ function UILib:CreateWindow(settings)
     Instance.new("UICorner", Main).CornerRadius = UDim.new(0,12)
     Instance.new("UIStroke", Main).Color = settings.ThemeColor or Color3.fromRGB(0,255,255)
 
-    --// TOP BAR
     local TopBar = Instance.new("Frame")
     TopBar.Size = UDim2.new(1,0,0,44)
     TopBar.BackgroundColor3 = Color3.fromRGB(30,30,30)
     TopBar.Parent = Main
 
-    -- Icon
     local Icon = Instance.new("ImageLabel")
     Icon.Size = UDim2.fromOffset(28,28)
     Icon.Position = UDim2.fromOffset(8,8)
@@ -54,7 +46,6 @@ function UILib:CreateWindow(settings)
     Icon.Parent = TopBar
     Instance.new("UICorner", Icon).CornerRadius = UDim.new(1,0)
 
-    -- Title
     local Title = Instance.new("TextLabel")
     Title.Size = UDim2.new(1,-200,1,0)
     Title.Position = UDim2.fromOffset(44,0)
@@ -66,7 +57,6 @@ function UILib:CreateWindow(settings)
     Title.TextSize = 14
     Title.Parent = TopBar
 
-    -- Author / Version
     local Info = Instance.new("TextLabel")
     Info.Size = UDim2.fromOffset(160,44)
     Info.Position = UDim2.new(1,-160,0,0)
@@ -77,7 +67,6 @@ function UILib:CreateWindow(settings)
     Info.TextSize = 12
     Info.Parent = TopBar
 
-    -- Minimize
     local Minimize = Instance.new("TextButton")
     Minimize.Size = UDim2.fromOffset(40,44)
     Minimize.Text = "–"
@@ -87,7 +76,6 @@ function UILib:CreateWindow(settings)
     Minimize.BackgroundColor3 = Color3.fromRGB(35,35,35)
     Minimize.Parent = TopBar
 
-    -- Close
     local Close = Instance.new("TextButton")
     Close.Size = UDim2.fromOffset(40,44)
     Close.Position = UDim2.fromOffset(40,0)
@@ -110,7 +98,6 @@ function UILib:CreateWindow(settings)
         }):Play()
     end)
 
-    --// TAB BAR
     local TabsFrame = Instance.new("Frame")
     TabsFrame.Size = UDim2.new(0,120,1,-44)
     TabsFrame.Position = UDim2.fromOffset(0,44)
@@ -120,14 +107,15 @@ function UILib:CreateWindow(settings)
     local TabsLayout = Instance.new("UIListLayout", TabsFrame)
     TabsLayout.Padding = UDim.new(0,6)
 
-    --// CONTENT
     local Content = Instance.new("Frame")
     Content.Size = UDim2.new(1,-120,1,-44)
     Content.Position = UDim2.fromOffset(120,44)
     Content.BackgroundTransparency = 1
     Content.Parent = Main
 
-    --// CREATE TAB
+    -- Shortcut related
+    local toggleShortcuts = {} -- keycode -> { toggleButton, callback, currentState }
+
     function Window:CreateTab(tabSettings)
         tabSettings = tabSettings or {}
         local Tab = {}
@@ -197,8 +185,8 @@ function UILib:CreateWindow(settings)
             end)
         end
 
-        -- Toggle
-        function Tab:CreateToggle(text, default, callback)
+        -- Toggle (with optional shortcut)
+        function Tab:CreateToggle(text, default, callback, shortcutKey)
             local state = default or false
             local Toggle = Instance.new("TextButton")
             Toggle.Size = UDim2.new(1,-12,0,32)
@@ -210,10 +198,46 @@ function UILib:CreateWindow(settings)
             Toggle.Parent = Page
             Instance.new("UICorner", Toggle).CornerRadius = UDim.new(0,8)
 
-            Toggle.MouseButton1Click:Connect(function()
-                state = not state
+            local function updateState(newState)
+                state = newState
                 Toggle.Text = text .. (state and ": ON" or ": OFF")
                 if callback then callback(state) end
+            end
+
+            Toggle.MouseButton1Click:Connect(function()
+                updateState(not state)
+            end)
+
+            -- Register shortcut if provided (expects Enum.KeyCode)
+            if shortcutKey and typeof(shortcutKey) == "EnumItem" and shortcutKey.EnumType == Enum.KeyCode then
+                toggleShortcuts[shortcutKey] = {
+                    toggle = Toggle,
+                    callback = callback,
+                    getState = function() return state end,
+                    setState = updateState,
+                }
+            end
+
+            return Toggle
+        end
+
+        -- Slider
+        function Tab:CreateSlider(text, min, max, callback)
+            local Slider = Instance.new("TextButton")
+            Slider.Size = UDim2.new(1,-12,0,32)
+            Slider.Text = text .. ": " .. min
+            Slider.Font = Enum.Font.Gotham
+            Slider.TextSize = 13
+            Slider.TextColor3 = Color3.new(1,1,1)
+            Slider.BackgroundColor3 = Color3.fromRGB(45,45,45)
+            Slider.Parent = Page
+            Instance.new("UICorner", Slider).CornerRadius = UDim.new(0,8)
+
+            local value = min
+            Slider.MouseButton1Click:Connect(function()
+                value = math.clamp(value + 1, min, max)
+                Slider.Text = text .. ": " .. value
+                if callback then callback(value) end
             end)
         end
 
@@ -237,6 +261,23 @@ function UILib:CreateWindow(settings)
 
         return Tab
     end
+
+    -- Global shortcut to toggle window visibility (RightShift default)
+    UserInputService.InputBegan:Connect(function(input, gameProcessed)
+        if gameProcessed then return end
+        if input.UserInputType == Enum.UserInputType.Keyboard then
+            if input.KeyCode == Enum.KeyCode.RightShift then
+                Main.Visible = not Main.Visible
+            end
+
+            -- Check toggle shortcuts
+            local shortcutData = toggleShortcuts[input.KeyCode]
+            if shortcutData then
+                local currentState = shortcutData.getState()
+                shortcutData.setState(not currentState)
+            end
+        end
+    end)
 
     return Window
 end
