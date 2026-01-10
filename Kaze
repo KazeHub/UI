@@ -40,6 +40,350 @@ function KazeUI:CreateWindow(config)
 	local IconId  = config.Icon or nil
 	local Callback = config.Callback
 
+	-- Constants for min/max size
+	local MIN_SIZE = Vector2.new(350, 150)
+	local MAX_SIZE = Vector2.new(900, 700)
+
+	--// Main Window
+	local Window = Instance.new("Frame")
+	Window.Size = UDim2.fromOffset(650, 420)
+	Window.Position = UDim2.fromScale(0.5, 0.5)
+	Window.AnchorPoint = Vector2.new(0.5, 0.5)
+	Window.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
+	Window.BackgroundTransparency = 0.05
+	Window.BorderSizePixel = 0
+	Window.ZIndex = 5
+	Window.Parent = ScreenGui
+	Instance.new("UICorner", Window).CornerRadius = UDim.new(0, 14)
+
+	local Stroke = Instance.new("UIStroke")
+	Stroke.Color = Color3.fromRGB(0, 200, 255)
+	Stroke.Thickness = 1.5
+	Stroke.Parent = Window
+
+	--// =========================
+	--// TOP BAR
+	--// =========================
+	local TopBar = Instance.new("Frame")
+	TopBar.Size = UDim2.new(1, 0, 0, 56)
+	TopBar.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
+	TopBar.BorderSizePixel = 0
+	TopBar.ZIndex = 6
+	TopBar.Parent = Window
+	Instance.new("UICorner", TopBar).CornerRadius = UDim.new(0, 14)
+
+	--// Icon
+	local Icon = Instance.new("ImageLabel")
+	Icon.Size = UDim2.fromOffset(32, 32)
+	Icon.Position = UDim2.fromOffset(14, 12)
+	Icon.BackgroundTransparency = 1
+	Icon.Image = IconId and ("rbxassetid://" .. IconId) or ""
+	Icon.Visible = IconId ~= nil
+	Icon.ZIndex = 7
+	Icon.Parent = TopBar
+
+	-- Make icon circular
+	local iconCorner = Instance.new("UICorner")
+	iconCorner.CornerRadius = UDim.new(1, 0)
+	iconCorner.Parent = Icon
+
+	--// Title
+	local TitleLabel = Instance.new("TextLabel")
+	TitleLabel.Size = UDim2.new(1, -160, 0, 22)
+	TitleLabel.Position = UDim2.fromOffset(IconId and 56 or 16, 8)
+	TitleLabel.BackgroundTransparency = 1
+	TitleLabel.Text = Title
+	TitleLabel.TextColor3 = Color3.fromRGB(235, 235, 235)
+	TitleLabel.Font = Enum.Font.GothamBold
+	TitleLabel.TextSize = 16
+	TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
+	TitleLabel.ZIndex = 7
+	TitleLabel.Parent = TopBar
+
+	--// Author + Version
+	local SubLabel = Instance.new("TextLabel")
+	SubLabel.Size = UDim2.new(1, -160, 0, 18)
+	SubLabel.Position = UDim2.fromOffset(IconId and 56 or 16, 30)
+	SubLabel.BackgroundTransparency = 1
+	SubLabel.Text = Author .. "  |  v" .. Version
+	SubLabel.TextColor3 = Color3.fromRGB(160, 160, 160)
+	SubLabel.Font = Enum.Font.Gotham
+	SubLabel.TextSize = 13
+	SubLabel.TextXAlignment = Enum.TextXAlignment.Left
+	SubLabel.ZIndex = 7
+	SubLabel.Parent = TopBar
+
+	--// Minimize Button
+	local Minimize = Instance.new("TextButton")
+	Minimize.Size = UDim2.fromOffset(36, 36)
+	Minimize.Position = UDim2.new(1, -88, 0.5, -18)
+	Minimize.Text = "—"
+	Minimize.Font = Enum.Font.GothamBold
+	Minimize.TextSize = 20
+	Minimize.TextColor3 = Color3.fromRGB(220, 220, 220)
+	Minimize.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
+	Minimize.ZIndex = 7
+	Minimize.Parent = TopBar
+	Instance.new("UICorner", Minimize).CornerRadius = UDim.new(1, 0)
+	Minimize.Active = true
+
+	--// Close Button
+	local Close = Instance.new("TextButton")
+	Close.Size = UDim2.fromOffset(36, 36)
+	Close.Position = UDim2.new(1, -44, 0.5, -18)
+	Close.Text = "✕"
+	Close.Font = Enum.Font.GothamBold
+	Close.TextSize = 18
+	Close.TextColor3 = Color3.fromRGB(255, 90, 90)
+	Close.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
+	Close.ZIndex = 7
+	Close.Parent = TopBar
+	Instance.new("UICorner", Close).CornerRadius = UDim.new(1, 0)
+	Close.Active = true
+
+	--// Content Area
+	local Content = Instance.new("Frame")
+	Content.Position = UDim2.fromOffset(0, 56)
+	Content.Size = UDim2.new(1, 0, 1, -56)
+	Content.BackgroundTransparency = 1
+	Content.ZIndex = 5
+	Content.Parent = Window
+
+	-- Save original content transparency so we restore it exactly
+	local originalContentTransparency = Content.BackgroundTransparency
+
+	--// Minimize Logic (with Tween)
+	local minimized = false
+	local tweenInfo = TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+	Minimize.MouseButton1Click:Connect(function()
+		minimized = not minimized
+		if minimized then
+			TweenService:Create(Window, tweenInfo, {Size = UDim2.fromOffset(650, 56)}):Play()
+			TweenService:Create(Content, tweenInfo, {BackgroundTransparency = 1}):Play()
+			task.delay(0.3, function()
+				Content.Visible = false
+			end)
+		else
+			Content.Visible = true
+			TweenService:Create(Window, tweenInfo, {Size = UDim2.fromOffset(650, 420)}):Play()
+			TweenService:Create(Content, tweenInfo, {BackgroundTransparency = originalContentTransparency}):Play()
+		end
+	end)
+
+	--// Close Confirmation UI
+	local function ShowCloseConfirm()
+		-- Disable buttons during confirmation
+		Minimize.Active = false
+		Close.Active = false
+
+		-- Overlay (fills the whole screen with semi-transparent dark)
+		local Overlay = Instance.new("Frame")
+		Overlay.Size = UDim2.new(1, 0, 1, 0)
+		Overlay.Position = UDim2.new(0, 0, 0, 0)
+		Overlay.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+		Overlay.BackgroundTransparency = 0.6
+		Overlay.ZIndex = 50
+		Overlay.Parent = ScreenGui -- make overlay a direct child of ScreenGui so it sits above the window and is not clipped
+
+		-- Confirmation Window (center of screen)
+		local ConfirmWindow = Instance.new("Frame")
+		ConfirmWindow.Size = UDim2.fromOffset(350, 150)
+		ConfirmWindow.AnchorPoint = Vector2.new(0.5, 0.5)
+		ConfirmWindow.Position = UDim2.fromScale(0.5, 0.5)
+		ConfirmWindow.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
+		ConfirmWindow.BorderSizePixel = 0
+		ConfirmWindow.ZIndex = 51
+		ConfirmWindow.Parent = Overlay
+		Instance.new("UICorner", ConfirmWindow).CornerRadius = UDim.new(0, 12)
+
+		-- Confirmation Text
+		local ConfirmText = Instance.new("TextLabel")
+		ConfirmText.Size = UDim2.new(1, -32, 0, 48)
+		ConfirmText.Position = UDim2.fromOffset(16, 20)
+		ConfirmText.BackgroundTransparency = 1
+		ConfirmText.Text = "Are you sure you want to close the UI?"
+		ConfirmText.TextColor3 = Color3.fromRGB(230, 230, 230)
+		ConfirmText.Font = Enum.Font.GothamBold
+		ConfirmText.TextSize = 18
+		ConfirmText.TextWrapped = true
+		ConfirmText.TextXAlignment = Enum.TextXAlignment.Center
+		ConfirmText.ZIndex = 52
+		ConfirmText.Parent = ConfirmWindow
+
+		-- Buttons Container (horizontal center, spaced)
+		local ButtonsFrame = Instance.new("Frame")
+		ButtonsFrame.Size = UDim2.new(1, -32, 0, 40)
+		ButtonsFrame.Position = UDim2.new(0.5, 0, 1, -16)
+		ButtonsFrame.AnchorPoint = Vector2.new(0.5, 1)
+		ButtonsFrame.BackgroundTransparency = 1
+		ButtonsFrame.ZIndex = 52
+		ButtonsFrame.Parent = ConfirmWindow
+
+		local layout = Instance.new("UIListLayout")
+		layout.Parent = ButtonsFrame
+		layout.FillDirection = Enum.FillDirection.Horizontal
+		layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+		layout.VerticalAlignment = Enum.VerticalAlignment.Center
+		layout.Padding = UDim.new(0, 16)
+
+		-- Confirm Button
+		local ConfirmBtn = Instance.new("TextButton")
+		ConfirmBtn.Size = UDim2.new(0, 140, 1, 0)
+		ConfirmBtn.BackgroundColor3 = Color3.fromRGB(0, 170, 255)
+		ConfirmBtn.Text = "Confirm"
+		ConfirmBtn.Font = Enum.Font.GothamBold
+		ConfirmBtn.TextColor3 = Color3.fromRGB(245, 245, 245) -- brighter to ensure visibility
+		ConfirmBtn.TextSize = 18
+		ConfirmBtn.ZIndex = 53
+		ConfirmBtn.Parent = ButtonsFrame
+		Instance.new("UICorner", ConfirmBtn).CornerRadius = UDim.new(0, 8)
+
+		-- Cancel Button
+		local CancelBtn = Instance.new("TextButton")
+		CancelBtn.Size = UDim2.new(0, 140, 1, 0)
+		CancelBtn.BackgroundColor3 = Color3.fromRGB(45, 45, 45) -- slightly lighter so it stands out from overlay
+		CancelBtn.Text = "Cancel"
+		CancelBtn.Font = Enum.Font.GothamBold
+		CancelBtn.TextColor3 = Color3.fromRGB(230, 230, 230)
+		CancelBtn.TextSize = 18
+		CancelBtn.ZIndex = 53
+		CancelBtn.Parent = ButtonsFrame
+		Instance.new("UICorner", CancelBtn).CornerRadius = UDim.new(0, 8)
+
+		-- Confirm button callback: destroy UI
+		ConfirmBtn.MouseButton1Click:Connect(function()
+			ScreenGui:Destroy()
+		end)
+
+		-- Cancel button callback: remove overlay and re-enable buttons
+		CancelBtn.MouseButton1Click:Connect(function()
+			Overlay:Destroy()
+			Minimize.Active = true
+			Close.Active = true
+		end)
+	end
+
+	Close.MouseButton1Click:Connect(ShowCloseConfirm)
+
+	--// Dragging logic (TopBar drag) - works for PC (mouse) and mobile (touch)
+	do
+		local dragging = false
+		local dragStartPos = nil
+		local windowStartPos = nil
+
+		TopBar.InputBegan:Connect(function(input)
+			if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+				dragging = true
+				-- use absolute position so Start works regardless of UDim2 scale
+				dragStartPos = input.Position
+				windowStartPos = Vector2.new(Window.AbsolutePosition.X, Window.AbsolutePosition.Y)
+				input.Changed:Connect(function()
+					if input.UserInputState == Enum.UserInputState.End then
+						dragging = false
+					end
+				end)
+			end
+		end)
+
+		TopBar.InputChanged:Connect(function(input)
+			-- no-op: InputChanged can be used to capture MouseMovement/Touch for finer control if needed
+		end)
+
+		UIS.InputChanged:Connect(function(input)
+			if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+				local delta = input.Position - dragStartPos
+				local viewport = workspace.CurrentCamera.ViewportSize
+				local newPos = windowStartPos + delta
+				-- clamp to screen
+				newPos = Vector2.new(
+					math.clamp(newPos.X, 0, viewport.X - Window.AbsoluteSize.X),
+					math.clamp(newPos.Y, 0, viewport.Y - Window.AbsoluteSize.Y)
+				)
+				Window.Position = UDim2.fromOffset(newPos.X, newPos.Y)
+			end
+		end)
+	end
+
+	--// Resize handle (bottom-right corner)
+	local ResizeGripSize = 20
+	local ResizeGrip = Instance.new("Frame")
+	ResizeGrip.Name = "ResizeGrip"
+	ResizeGrip.AnchorPoint = Vector2.new(1, 1)
+	ResizeGrip.Size = UDim2.fromOffset(ResizeGripSize, ResizeGripSize)
+	ResizeGrip.Position = UDim2.new(1, 0, 1, 0)
+	ResizeGrip.BackgroundColor3 = Color3.fromRGB(0, 170, 255)
+	ResizeGrip.ZIndex = 7
+	ResizeGrip.Parent = Window
+	Instance.new("UICorner", ResizeGrip).CornerRadius = UDim.new(0, 6)
+
+	-- Cursor change on hover for PC
+	ResizeGrip.MouseEnter:Connect(function()
+		if UIS.TouchEnabled then return end
+		UIS.MouseIconEnabled = true
+		UIS.MouseIcon = Enum.MouseCursor.SizeNWSE
+	end)
+	ResizeGrip.MouseLeave:Connect(function()
+		if UIS.TouchEnabled then return end
+		UIS.MouseIconEnabled = false
+	end)
+
+	-- Resize dragging logic
+	do
+		local resizing = false
+		local dragStartPos = nil
+		local dragStartSize = nil
+
+		local function clampSize(size)
+			return Vector2.new(
+				math.clamp(size.X, MIN_SIZE.X, MAX_SIZE.X),
+				math.clamp(size.Y, MIN_SIZE.Y, MAX_SIZE.Y)
+			)
+		end
+
+		local function updateResize(input)
+			local delta = input.Position - dragStartPos
+			local newSize = clampSize(dragStartSize + Vector2.new(delta.X, delta.Y))
+			Window.Size = UDim2.fromOffset(newSize.X, newSize.Y)
+		end
+
+		ResizeGrip.InputBegan:Connect(function(input)
+			if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+				resizing = true
+				dragStartPos = input.Position
+				dragStartSize = Vector2.new(Window.AbsoluteSize.X, Window.AbsoluteSize.Y)
+				input.Changed:Connect(function()
+					if input.UserInputState == Enum.UserInputState.End then
+						resizing = false
+					end
+				end)
+			end
+		end)
+
+		UIS.InputChanged:Connect(function(input)
+			if resizing and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+				updateResize(input)
+			end
+		end)
+	end
+
+	--// Callback
+	if typeof(Callback) == "function" then
+		pcall(Callback)
+	end
+
+	return {
+		Window = Window,
+		Content = Content,
+		Icon = Icon
+	}
+end
+
+return KazeUI	local Title   = config.Title or "Kaze UI"
+	local Author  = config.Author or "Unknown"
+	local Version = config.Version or "1.0"
+	local IconId  = config.Icon or nil
+	local Callback = config.Callback
+
 	--// Main Window
 	local Window = Instance.new("Frame")
 	Window.Size = UDim2.fromOffset(650, 420)
