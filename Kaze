@@ -1,6 +1,6 @@
 --// Kaze UI Base
 --// Window System (PC + Mobile)
---// Added: Mini-Icon Mode on Minimize
+--// Added: Customizable Mini-Button (Size 60x60 Default)
 
 local KazeUI = {}
 KazeUI.__index = KazeUI
@@ -18,25 +18,32 @@ ScreenGui.ResetOnSpawn = false
 ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 ScreenGui.Parent = LP:WaitForChild("PlayerGui")
 
---// Auto Scale (PC + Mobile)
+--// Helper: Format Image ID
+local function FormatImage(id)
+	if not id then return "" end
+	id = tostring(id)
+	if not string.find(id, "rbxassetid://") then
+		return "rbxassetid://" .. id
+	end
+	return id
+end
+
+--// Auto Scale
 local UIScale = Instance.new("UIScale")
 UIScale.Parent = ScreenGui
 
 local function UpdateScale()
 	local size = workspace.CurrentCamera.ViewportSize
 	if size.X < 600 then
-		UIScale.Scale = math.clamp(size.X / 800, 0.5, 1) -- Mobile scaling
+		UIScale.Scale = math.clamp(size.X / 800, 0.5, 1)
 	else
-		UIScale.Scale = math.clamp(size.X / 1920, 0.6, 1) -- PC scaling
+		UIScale.Scale = math.clamp(size.X / 1920, 0.6, 1)
 	end
 end
-
 UpdateScale()
 workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(UpdateScale)
 
---// =========================
---// DRAG FUNCTION
---// =========================
+--// Drag Function
 local function MakeDraggable(dragPart, targetPart)
 	local dragging = false
 	local dragInput, dragStart, startPos
@@ -44,10 +51,8 @@ local function MakeDraggable(dragPart, targetPart)
 	local function update(input)
 		local delta = input.Position - dragStart
 		targetPart.Position = UDim2.new(
-			startPos.X.Scale, 
-			startPos.X.Offset + delta.X, 
-			startPos.Y.Scale, 
-			startPos.Y.Offset + delta.Y
+			startPos.X.Scale, startPos.X.Offset + delta.X, 
+			startPos.Y.Scale, startPos.Y.Offset + delta.Y
 		)
 	end
 
@@ -56,11 +61,8 @@ local function MakeDraggable(dragPart, targetPart)
 			dragging = true
 			dragStart = input.Position
 			startPos = targetPart.Position
-
 			input.Changed:Connect(function()
-				if input.UserInputState == Enum.UserInputState.End then
-					dragging = false
-				end
+				if input.UserInputState == Enum.UserInputState.End then dragging = false end
 			end)
 		end
 	end)
@@ -72,22 +74,25 @@ local function MakeDraggable(dragPart, targetPart)
 	end)
 
 	UIS.InputChanged:Connect(function(input)
-		if input == dragInput and dragging then
-			update(input)
-		end
+		if input == dragInput and dragging then update(input) end
 	end)
 end
 
---// =========================
 --// CREATE WINDOW
---// =========================
 function KazeUI:CreateWindow(config)
 	config = config or {}
 
+	-- Main Config
 	local Title = config.Title or "Kaze UI"
 	local Author = config.Author or "Unknown"
 	local Version = config.Version or "1.0"
-	local IconId = config.Icon or "rbxassetid://6031763447" -- Default icon if nil
+	local MainIcon = FormatImage(config.Icon or "6031763447")
+	
+	-- Open Button Config (New)
+	local OpenConfig = config.OpenButton or {}
+	local OpenSize = OpenConfig.Size or UDim2.fromOffset(60, 60) -- Default 60x60
+	local OpenIcon = FormatImage(OpenConfig.Icon or config.Icon or "6031763447") -- Use separate icon or main icon
+	
 	local Callback = config.Callback
 
 	--// Main Window
@@ -102,25 +107,20 @@ function KazeUI:CreateWindow(config)
 	Window.ClipsDescendants = true 
 	Instance.new("UICorner", Window).CornerRadius = UDim.new(0, 14)
 
-	-- Window Glow
 	local WindowStroke = Instance.new("UIStroke")
 	WindowStroke.Color = Color3.fromRGB(0, 160, 255)
 	WindowStroke.Thickness = 2
 	WindowStroke.Parent = Window
 
-	-- Glow Animation for Window
 	spawn(function()
 		while Window.Parent do
-			local t = TweenService:Create(WindowStroke, TweenInfo.new(1.5, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), {
-				Color = Color3.fromRGB(0, 255, 255),
-				Thickness = 2.5
-			})
+			local t = TweenService:Create(WindowStroke, TweenInfo.new(1.5, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), {Color = Color3.fromRGB(0, 255, 255), Thickness = 2.5})
 			t:Play()
 			break
 		end
 	end)
 
-	--// TOP BAR
+	--// Top Bar
 	local TopBar = Instance.new("Frame")
 	TopBar.Name = "TopBar"
 	TopBar.Size = UDim2.new(1, 0, 0, 56)
@@ -128,24 +128,16 @@ function KazeUI:CreateWindow(config)
 	TopBar.BorderSizePixel = 0
 	TopBar.Parent = Window
 	Instance.new("UICorner", TopBar).CornerRadius = UDim.new(0, 14)
-
-	-- Make Window Draggable
 	MakeDraggable(TopBar, Window)
 
-	--// Icon
 	local Icon = Instance.new("ImageLabel")
 	Icon.Size = UDim2.fromOffset(32, 32)
 	Icon.Position = UDim2.fromOffset(14, 12)
 	Icon.BackgroundTransparency = 1
-	Icon.Image = IconId
+	Icon.Image = MainIcon
 	Icon.Parent = TopBar
+	Instance.new("UICorner", Icon).CornerRadius = UDim.new(1, 0)
 
-	-- Make icon circular
-	local iconCorner = Instance.new("UICorner")
-	iconCorner.CornerRadius = UDim.new(1, 0)
-	iconCorner.Parent = Icon
-
-	--// Title Labels
 	local TitleLabel = Instance.new("TextLabel")
 	TitleLabel.Size = UDim2.new(1, -160, 0, 22)
 	TitleLabel.Position = UDim2.fromOffset(56, 8)
@@ -168,7 +160,6 @@ function KazeUI:CreateWindow(config)
 	SubLabel.TextXAlignment = Enum.TextXAlignment.Left
 	SubLabel.Parent = TopBar
 
-	--// Buttons
 	local Minimize = Instance.new("TextButton")
 	Minimize.Size = UDim2.fromOffset(36, 36)
 	Minimize.Position = UDim2.new(1, -88, 0.5, -18)
@@ -191,104 +182,78 @@ function KazeUI:CreateWindow(config)
 	Close.Parent = TopBar
 	Instance.new("UICorner", Close).CornerRadius = UDim.new(1, 0)
 
-	--// Content Area
 	local Content = Instance.new("Frame")
 	Content.Position = UDim2.fromOffset(0, 56)
 	Content.Size = UDim2.new(1, 0, 1, -56)
 	Content.BackgroundTransparency = 1
 	Content.Parent = Window
 
-	--// =========================
-	--// MINI BUTTON (THE SQUARE)
-	--// =========================
+	--// MINI BUTTON (OPEN BUTTON)
 	local MiniButton = Instance.new("ImageButton")
 	MiniButton.Name = "MiniButton"
-	MiniButton.Size = UDim2.fromOffset(50, 50)
-	MiniButton.Position = UDim2.new(0.1, 0, 0.1, 0) -- Default spawn position
+	MiniButton.Size = OpenSize -- Uses your config size (60x60 default)
+	MiniButton.Position = UDim2.new(0.1, 0, 0.1, 0)
 	MiniButton.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
 	MiniButton.BorderSizePixel = 0
-	MiniButton.Visible = false -- Hidden by default
+	MiniButton.Visible = false
 	MiniButton.Parent = ScreenGui
 	MiniButton.ZIndex = 100
 	
-	-- Rounded Corners for Mini Button
-	Instance.new("UICorner", MiniButton).CornerRadius = UDim.new(0, 12)
+	Instance.new("UICorner", MiniButton).CornerRadius = UDim.new(0, 14)
 	
-	-- Image (Icon) inside Mini Button
 	local MiniIcon = Instance.new("ImageLabel")
 	MiniIcon.Size = UDim2.fromScale(0.6, 0.6)
 	MiniIcon.Position = UDim2.fromScale(0.2, 0.2)
 	MiniIcon.BackgroundTransparency = 1
-	MiniIcon.Image = IconId
+	MiniIcon.Image = OpenIcon
 	MiniIcon.Parent = MiniButton
 	
-	-- Glowing Blue Outline for Mini Button
 	local MiniStroke = Instance.new("UIStroke")
 	MiniStroke.Color = Color3.fromRGB(0, 160, 255)
 	MiniStroke.Thickness = 2
 	MiniStroke.Parent = MiniButton
 	
-	-- Pulse Animation for Mini Button
 	spawn(function()
 		while MiniButton.Parent do
-			local t = TweenService:Create(MiniStroke, TweenInfo.new(1.5, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), {
-				Color = Color3.fromRGB(0, 255, 255),
-				Thickness = 2.5
-			})
+			local t = TweenService:Create(MiniStroke, TweenInfo.new(1.5, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), {Color = Color3.fromRGB(0, 255, 255), Thickness = 2.5})
 			t:Play()
 			break
 		end
 	end)
-
-	-- Make Mini Button Draggable
 	MakeDraggable(MiniButton, MiniButton)
 
-	--// Logic: Minimize -> Hide Window, Show Mini Button
 	Minimize.MouseButton1Click:Connect(function()
 		Window.Visible = false
 		MiniButton.Visible = true
-		
-		-- Optional: Tween the mini button opening effect
 		MiniButton.Size = UDim2.fromOffset(0, 0)
-		TweenService:Create(MiniButton, TweenInfo.new(0.3, Enum.EasingStyle.BackOut), {Size = UDim2.fromOffset(50, 50)}):Play()
+		TweenService:Create(MiniButton, TweenInfo.new(0.3, Enum.EasingStyle.BackOut), {Size = OpenSize}):Play()
 	end)
 
-	--// Logic: Click Mini Button -> Show Window, Hide Mini Button
 	MiniButton.MouseButton1Click:Connect(function()
 		MiniButton.Visible = false
 		Window.Visible = true
-		
-		-- Optional: Tween window opening effect
 		Window.Size = UDim2.fromOffset(0, 0)
 		TweenService:Create(Window, TweenInfo.new(0.3, Enum.EasingStyle.BackOut), {Size = UDim2.fromOffset(650, 420)}):Play()
 	end)
 
-	--// Close Confirmation Logic
+	-- Close Logic
 	local function ShowCloseConfirm()
 		Minimize.Active = false
 		Close.Active = false
-
 		local Overlay = Instance.new("Frame")
 		Overlay.Size = UDim2.new(1, 0, 1, 0)
 		Overlay.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 		Overlay.BackgroundTransparency = 0.6
-		Overlay.ZIndex = 20 
+		Overlay.ZIndex = 20
 		Overlay.Parent = Window 
-
 		local ConfirmWindow = Instance.new("Frame")
 		ConfirmWindow.Size = UDim2.fromOffset(350, 150)
 		ConfirmWindow.AnchorPoint = Vector2.new(0.5, 0.5)
 		ConfirmWindow.Position = UDim2.fromScale(0.5, 0.5)
 		ConfirmWindow.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
-		ConfirmWindow.ZIndex = 21 
+		ConfirmWindow.ZIndex = 21
 		ConfirmWindow.Parent = Overlay
-		
-		local ConfirmStroke = Instance.new("UIStroke")
-		ConfirmStroke.Color = Color3.fromRGB(0, 200, 255)
-		ConfirmStroke.Thickness = 1
-		ConfirmStroke.Parent = ConfirmWindow
 		Instance.new("UICorner", ConfirmWindow).CornerRadius = UDim.new(0, 12)
-
 		local ConfirmText = Instance.new("TextLabel")
 		ConfirmText.Size = UDim2.new(1, -32, 0, 48)
 		ConfirmText.Position = UDim2.fromOffset(16, 20)
@@ -300,7 +265,6 @@ function KazeUI:CreateWindow(config)
 		ConfirmText.TextWrapped = true
 		ConfirmText.ZIndex = 22
 		ConfirmText.Parent = ConfirmWindow
-
 		local ButtonsFrame = Instance.new("Frame")
 		ButtonsFrame.Size = UDim2.new(1, 0, 0, 40)
 		ButtonsFrame.Position = UDim2.new(0, 0, 1, -20)
@@ -308,11 +272,39 @@ function KazeUI:CreateWindow(config)
 		ButtonsFrame.BackgroundTransparency = 1
 		ButtonsFrame.ZIndex = 22
 		ButtonsFrame.Parent = ConfirmWindow
-
 		local layout = Instance.new("UIListLayout")
 		layout.Parent = ButtonsFrame
 		layout.FillDirection = Enum.FillDirection.Horizontal
 		layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+		layout.Padding = UDim.new(0, 16)
+		local ConfirmBtn = Instance.new("TextButton")
+		ConfirmBtn.Size = UDim2.new(0, 120, 0, 36)
+		ConfirmBtn.BackgroundColor3 = Color3.fromRGB(0, 170, 255)
+		ConfirmBtn.Text = "Confirm"
+		ConfirmBtn.TextColor3 = Color3.fromRGB(230, 230, 230)
+		ConfirmBtn.Font = Enum.Font.GothamBold
+		ConfirmBtn.TextSize = 16
+		ConfirmBtn.ZIndex = 23
+		ConfirmBtn.Parent = ButtonsFrame
+		Instance.new("UICorner", ConfirmBtn).CornerRadius = UDim.new(0, 8)
+		local CancelBtn = Instance.new("TextButton")
+		CancelBtn.Size = UDim2.new(0, 120, 0, 36)
+		CancelBtn.BackgroundColor3 = Color3.fromRGB(45, 45, 50)
+		CancelBtn.Text = "Cancel"
+		CancelBtn.TextColor3 = Color3.fromRGB(220, 220, 220)
+		CancelBtn.Font = Enum.Font.GothamBold
+		CancelBtn.TextSize = 16
+		CancelBtn.ZIndex = 23
+		CancelBtn.Parent = ButtonsFrame
+		Instance.new("UICorner", CancelBtn).CornerRadius = UDim.new(0, 8)
+		ConfirmBtn.MouseButton1Click:Connect(function() ScreenGui:Destroy() end)
+		CancelBtn.MouseButton1Click:Connect(function() Overlay:Destroy() Minimize.Active = true Close.Active = true end)
+	end
+	Close.MouseButton1Click:Connect(ShowCloseConfirm)
+	if typeof(Callback) == "function" then pcall(Callback) end
+	return {Window = Window, Content = Content}
+end
+return KazeUI
 		layout.Padding = UDim.new(0, 16)
 
 		local ConfirmBtn = Instance.new("TextButton")
