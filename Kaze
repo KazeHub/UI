@@ -1,6 +1,6 @@
---// Kaze UI Base (Refactored)
+--// Kaze UI Base
 --// Window System (PC + Mobile)
---// Added: OOP Syntax, Sidebar Divider, Solid Sidebar, Strict Visibility Handling
+--// Updated: Smart Icon Loader (HTTP), OOP Syntax, Sidebar Divider
 
 local KazeUI = {}
 KazeUI.__index = KazeUI
@@ -33,25 +33,44 @@ end
 UpdateScale()
 workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(UpdateScale)
 
---// Texture ID Sanitizer
-local function FormatImage(id)
-	if not id then return "" end
-	id = tostring(id)
-	local clean = string.gsub(id, "%D", "") -- keep only digits
-	if clean == "" then return "" end
-	return "rbxassetid://" .. clean
-end
-
---// Lucide Map
-local LucideMap = {
+--// 1. SMART ICON LOADER
+-- Fetches the icon map from GitHub. Falls back to a small local list if HTTP fails.
+local IconMap = {
 	home = "6031763447",
 	settings = "6031763494",
-	sword = "6031763550",
-	search = "6031763600",
-	user = "6031763660",
 	list = "6031763523",
-	info = "6031763678"
+	user = "6031763660",
+	search = "6031763600"
 }
+
+pcall(function()
+	local httpData = game:HttpGet("https://raw.githubusercontent.com/KazeHub/UI/refs/heads/main/Icons.lua.txt")
+	local loadedTable = loadstring(httpData)()
+	if typeof(loadedTable) == "table" then
+		for k, v in pairs(loadedTable) do
+			IconMap[k] = v -- Merge/Overwrite
+		end
+	end
+end)
+
+local function ResolveIcon(input)
+	if not input then return "" end
+	local strInput = tostring(input)
+
+	-- Check if it's a named key in our map
+	if IconMap[strInput] then
+		return "rbxassetid://" .. string.gsub(tostring(IconMap[strInput]), "%D", "")
+	end
+
+	-- If it looks like a raw ID (digits), just format it
+	local cleanId = string.gsub(strInput, "%D", "")
+	if #cleanId > 0 then
+		return "rbxassetid://" .. cleanId
+	end
+	
+	-- Fallback if unknown
+	return "rbxassetid://" .. (IconMap["list"] or "6031763523")
+end
 
 --// Drag Function
 local function MakeDraggable(dragPart, targetPart)
@@ -102,12 +121,11 @@ function KazeUI:CreateWindow(config)
 	local Title = config.Title or "Kaze UI"
 	local Author = config.Author or "Unknown"
 	local Version = config.Version or "1.0"
-	local MainIcon = FormatImage(config.Icon or "6031763447")
-	local OpenIcon = FormatImage((config.OpenButton and config.OpenButton.Icon) or config.Icon or "6031763447")
-	local MiniButtonSize = UDim2.fromOffset(60, 60)
+	local MainIcon = ResolveIcon(config.Icon or "home")
+	local OpenIcon = ResolveIcon((config.OpenButton and config.OpenButton.Icon) or config.Icon or "home")
 	local Callback = config.Callback
 
-	--// 1. Main Window Frame
+	--// Main Window
 	local Window = Instance.new("Frame")
 	Window.Name = "MainWindow"
 	Window.Size = UDim2.fromOffset(650, 420)
@@ -119,7 +137,6 @@ function KazeUI:CreateWindow(config)
 	Window.ClipsDescendants = true
 	Instance.new("UICorner", Window).CornerRadius = UDim.new(0, 14)
 
-	-- Neon Stroke
 	local WindowStroke = Instance.new("UIStroke")
 	WindowStroke.Color = Color3.fromRGB(0, 160, 255)
 	WindowStroke.Thickness = 2.5 
@@ -133,18 +150,18 @@ function KazeUI:CreateWindow(config)
 		end
 	end)
 
-	--// 2. Top Bar
+	--// Top Bar
 	local TopBar = Instance.new("Frame")
 	TopBar.Name = "TopBar"
 	TopBar.Size = UDim2.new(1, 0, 0, 56)
 	TopBar.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
 	TopBar.BorderSizePixel = 0
 	TopBar.Parent = Window
-	TopBar.ZIndex = 12 -- Keep TopBar above Sidebar
+	TopBar.ZIndex = 12
 	Instance.new("UICorner", TopBar).CornerRadius = UDim.new(0, 14)
 	MakeDraggable(TopBar, Window)
 	
-	-- Fix bottom corners of TopBar to be square (so they merge with sidebar)
+	-- Square off bottom corners
 	local TopBarCover = Instance.new("Frame")
 	TopBarCover.Size = UDim2.new(1, 0, 0, 10)
 	TopBarCover.Position = UDim2.new(0, 0, 1, -10)
@@ -216,21 +233,19 @@ function KazeUI:CreateWindow(config)
 	Content.BackgroundTransparency = 1
 	Content.Parent = Window
 
-	--// 3. Sidebar (The 'Hati' - Updated Visuals)
+	--// 3. Sidebar (Solid + Divider)
 	local Sidebar = Instance.new("Frame")
 	Sidebar.Name = "Sidebar"
 	Sidebar.Size = UDim2.new(0, 70, 1, 0)
 	Sidebar.Position = UDim2.fromOffset(0, 0)
-	-- Solid Background as requested
-	Sidebar.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
+	Sidebar.BackgroundColor3 = Color3.fromRGB(15, 15, 20) -- Solid Dark
 	Sidebar.BackgroundTransparency = 0 
 	Sidebar.BorderSizePixel = 0
 	Sidebar.Parent = Content
-	-- Requested ZIndex increase
 	Sidebar.ZIndex = 10 
 	Sidebar.ClipsDescendants = false
 
-	-- Sidebar Divider (Thin Line)
+	-- Sidebar Divider (Vertical Line)
 	local SidebarDiv = Instance.new("Frame")
 	SidebarDiv.Name = "Divider"
 	SidebarDiv.Size = UDim2.new(0, 1, 1, 0)
@@ -252,10 +267,9 @@ function KazeUI:CreateWindow(config)
 	sidebarPadding.Parent = Sidebar
 	sidebarPadding.PaddingTop = UDim.new(0, 15)
 
-	--// 4. Page Container
+	--// Page Container
 	local PageContainer = Instance.new("Frame")
 	PageContainer.Name = "PageContainer"
-	-- Start at 70px (width of sidebar) + 5px margin = 75px
 	PageContainer.Size = UDim2.new(1, -75, 1, 0)
 	PageContainer.Position = UDim2.fromOffset(75, 0)
 	PageContainer.BackgroundTransparency = 1
@@ -263,27 +277,22 @@ function KazeUI:CreateWindow(config)
 	PageContainer.Parent = Content
 	PageContainer.ZIndex = 5
 
-	-- Internal Tracking
+	-- Logic Trackers
 	local WindowFunctions = {}
 	local pages = {}
 	local tabs = {}
-	local activePage = nil
-	local activeTab = nil
 
-	-- Icon Resolver
-	local function ResolveIcon(nameOrId)
-		if not nameOrId then return "" end
-		local t = tostring(nameOrId)
-		local lower = string.lower(t)
-		if LucideMap[lower] then return FormatImage(LucideMap[lower]) end
-		return FormatImage(t)
-	end
-
-	--// 5. CREATE TAB FUNCTION (OOP Syntax)
-	function WindowFunctions:CreateTab(tabConfig)
-		tabConfig = tabConfig or {}
-		local tabTitle = tabConfig.Title or "Tab"
-		local tabIcon = ResolveIcon(tabConfig.Icon or "list")
+	--// 2. OOP TAB SYNTAX & LOGIC
+	function WindowFunctions:CreateTab(arg)
+		-- Support: CreateTab("Home") OR CreateTab({Title="Home", Icon="home"})
+		local tabTitle, tabIcon
+		if type(arg) == "table" then
+			tabTitle = arg.Title or "Tab"
+			tabIcon = ResolveIcon(arg.Icon or "list")
+		else
+			tabTitle = tostring(arg or "Tab")
+			tabIcon = ResolveIcon("list")
+		end
 
 		-- Tab Button
 		local TabBtn = Instance.new("ImageButton")
@@ -291,14 +300,16 @@ function KazeUI:CreateWindow(config)
 		TabBtn.Size = UDim2.fromOffset(45, 45)
 		TabBtn.BackgroundTransparency = 1
 		TabBtn.Image = tabIcon
-		TabBtn.ImageColor3 = Color3.fromRGB(120, 120, 120) -- Inactive Color
+		TabBtn.ImageColor3 = Color3.fromRGB(120, 120, 120) -- Default Gray
 		TabBtn.ScaleType = Enum.ScaleType.Fit
 		TabBtn.Parent = Sidebar
 		TabBtn.AutoButtonColor = false
 		TabBtn.ZIndex = Sidebar.ZIndex + 1
 
+		-- Neon Indicator (Left side)
 		local Indicator = Instance.new("Frame")
-		Indicator.Size = UDim2.fromOffset(3, 30)
+		Indicator.Name = "Indicator"
+		Indicator.Size = UDim2.fromOffset(3, 30) -- 3px wide
 		Indicator.AnchorPoint = Vector2.new(0, 0.5)
 		Indicator.Position = UDim2.new(0, 0, 0.5, 0)
 		Indicator.BackgroundColor3 = Color3.fromRGB(0, 255, 255)
@@ -307,7 +318,7 @@ function KazeUI:CreateWindow(config)
 		Indicator.Parent = TabBtn
 		Instance.new("UICorner", Indicator).CornerRadius = UDim.new(0, 2)
 
-		-- Page ScrollFrame
+		-- Page Frame
 		local Page = Instance.new("ScrollingFrame")
 		Page.Name = "Page_" .. tabTitle
 		Page.Size = UDim2.new(1, 0, 1, 0)
@@ -316,10 +327,10 @@ function KazeUI:CreateWindow(config)
 		Page.BorderSizePixel = 0
 		Page.ScrollBarThickness = 4
 		Page.ScrollBarImageColor3 = Color3.fromRGB(50, 50, 55)
-		Page.CanvasSize = UDim2.new(0, 0, 0, 0) -- Auto-scale
+		Page.CanvasSize = UDim2.new(0, 0, 0, 0)
 		Page.AutomaticCanvasSize = Enum.AutomaticSize.Y
 		Page.Parent = PageContainer
-		Page.Visible = false -- Hidden by default
+		Page.Visible = false
 		Page.ZIndex = 5
 
 		local pageLayout = Instance.new("UIListLayout")
@@ -334,40 +345,38 @@ function KazeUI:CreateWindow(config)
 		pagePad.PaddingBottom = UDim.new(0, 10)
 		pagePad.Parent = Page
 
-		-- Store refs
+		-- Tracking
 		table.insert(pages, Page)
 		table.insert(tabs, TabBtn)
 
-		-- Tab Click Logic
+		-- Activation Logic
 		TabBtn.MouseButton1Click:Connect(function()
-			-- Deactivate all
+			-- Deactivate all tabs
 			for _, t in ipairs(tabs) do
 				TweenService:Create(t, TweenInfo.new(0.2), {ImageColor3 = Color3.fromRGB(120, 120, 120)}):Play()
 				if t:FindFirstChild("Indicator") then t.Indicator.Visible = false end
 			end
+			-- Hide all pages
 			for _, p in ipairs(pages) do
 				p.Visible = false
 			end
 
-			-- Activate Current
+			-- Activate THIS tab
 			TweenService:Create(TabBtn, TweenInfo.new(0.2), {ImageColor3 = Color3.fromRGB(0, 255, 255)}):Play()
 			Indicator.Visible = true
-			
 			Page.Visible = true
-			-- No :Activate() call used here
 		end)
 
-		-- Auto-select if first tab
+		-- Auto-select the first tab
 		if #tabs == 1 then
 			TabBtn.ImageColor3 = Color3.fromRGB(0, 255, 255)
 			Indicator.Visible = true
 			Page.Visible = true
 		end
 
-		--// TAB OBJECT (For adding elements)
+		-- Return Tab Object for chaining
 		local TabObject = {}
 
-		-- [ELEMENT] Label
 		function TabObject:AddLabel(text)
 			local LabelObj = Instance.new("TextLabel")
 			LabelObj.Size = UDim2.new(1, 0, 0, 26)
@@ -381,42 +390,6 @@ function KazeUI:CreateWindow(config)
 			return LabelObj
 		end
 
-		-- [ELEMENT] Paragraph
-		function TabObject:AddParagraph(cfg)
-			local title = cfg.Title or "Header"
-			local content = cfg.Content or "Content"
-
-			local ParaFrame = Instance.new("Frame")
-			ParaFrame.Size = UDim2.new(1, 0, 0, 0) -- Auto size
-			ParaFrame.AutomaticSize = Enum.AutomaticSize.Y
-			ParaFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
-			ParaFrame.Parent = Page
-			Instance.new("UICorner", ParaFrame).CornerRadius = UDim.new(0, 6)
-
-			local PPad = Instance.new("UIPadding")
-			PPad.PaddingTop = UDim.new(0, 10)
-			PPad.PaddingBottom = UDim.new(0, 10)
-			PPad.PaddingLeft = UDim.new(0, 10)
-			PPad.PaddingRight = UDim.new(0, 10)
-			PPad.Parent = ParaFrame
-
-			local Txt = Instance.new("TextLabel")
-			Txt.Size = UDim2.new(1, 0, 0, 0)
-			Txt.AutomaticSize = Enum.AutomaticSize.Y
-			Txt.BackgroundTransparency = 1
-			Txt.Text = "<b>" .. title .. "</b>\n" .. content
-			Txt.TextColor3 = Color3.fromRGB(200, 200, 200)
-			Txt.Font = Enum.Font.Gotham
-			Txt.RichText = true
-			Txt.TextSize = 13
-			Txt.TextXAlignment = Enum.TextXAlignment.Left
-			Txt.TextWrapped = true
-			Txt.Parent = ParaFrame
-			
-			return ParaFrame
-		end
-
-		-- [ELEMENT] Button
 		function TabObject:AddButton(btnConfig)
 			local bTitle = btnConfig.Title or "Button"
 			local bCallback = btnConfig.Callback or function() end
@@ -446,11 +419,10 @@ function KazeUI:CreateWindow(config)
 			Ico.Position = UDim2.new(1, -30, 0.5, 0)
 			Ico.AnchorPoint = Vector2.new(0, 0.5)
 			Ico.BackgroundTransparency = 1
-			Ico.Image = "rbxassetid://6031763447" -- generic pointer
+			Ico.Image = "rbxassetid://6031763447"
 			Ico.ImageColor3 = Color3.fromRGB(150, 150, 150)
 			Ico.Parent = BtnFrame
 
-			-- Hover/Click Effects
 			BtnFrame.MouseEnter:Connect(function()
 				TweenService:Create(BtnFrame, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(35, 35, 40)}):Play()
 			end)
@@ -465,78 +437,13 @@ function KazeUI:CreateWindow(config)
 			end)
 		end
 
-		-- [ELEMENT] Toggle
-		function TabObject:AddToggle(togConfig)
-			local tTitle = togConfig.Title or "Toggle"
-			local tDefault = togConfig.Default or false
-			local tCallback = togConfig.Callback or function() end
-			local toggled = tDefault
-
-			local TogFrame = Instance.new("TextButton")
-			TogFrame.Name = "Toggle"
-			TogFrame.Size = UDim2.new(1, 0, 0, 42)
-			TogFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
-			TogFrame.Text = ""
-			TogFrame.AutoButtonColor = false
-			TogFrame.Parent = Page
-			Instance.new("UICorner", TogFrame).CornerRadius = UDim.new(0, 6)
-
-			local Title = Instance.new("TextLabel")
-			Title.Size = UDim2.new(1, -60, 1, 0)
-			Title.Position = UDim2.new(0, 12, 0, 0)
-			Title.BackgroundTransparency = 1
-			Title.Text = tTitle
-			Title.TextColor3 = Color3.fromRGB(230, 230, 230)
-			Title.Font = Enum.Font.GothamSemibold
-			Title.TextSize = 14
-			Title.TextXAlignment = Enum.TextXAlignment.Left
-			Title.Parent = TogFrame
-
-			-- Toggle Switch Visuals
-			local SwitchBg = Instance.new("Frame")
-			SwitchBg.Size = UDim2.fromOffset(40, 22)
-			SwitchBg.Position = UDim2.new(1, -50, 0.5, 0)
-			SwitchBg.AnchorPoint = Vector2.new(0, 0.5)
-			SwitchBg.BackgroundColor3 = toggled and Color3.fromRGB(0, 160, 255) or Color3.fromRGB(50, 50, 55)
-			SwitchBg.Parent = TogFrame
-			Instance.new("UICorner", SwitchBg).CornerRadius = UDim.new(1, 0)
-
-			local Dot = Instance.new("Frame")
-			Dot.Size = UDim2.fromOffset(18, 18)
-			Dot.Position = toggled and UDim2.new(1, -20, 0.5, 0) or UDim2.new(0, 2, 0.5, 0)
-			Dot.AnchorPoint = Vector2.new(0, 0.5)
-			Dot.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-			Dot.Parent = SwitchBg
-			Instance.new("UICorner", Dot).CornerRadius = UDim.new(1, 0)
-
-			local function UpdateToggle()
-				toggled = not toggled
-				local targetColor = toggled and Color3.fromRGB(0, 160, 255) or Color3.fromRGB(50, 50, 55)
-				local targetPos = toggled and UDim2.new(1, -20, 0.5, 0) or UDim2.new(0, 2, 0.5, 0)
-				
-				TweenService:Create(SwitchBg, TweenInfo.new(0.2), {BackgroundColor3 = targetColor}):Play()
-				TweenService:Create(Dot, TweenInfo.new(0.2), {Position = targetPos}):Play()
-				pcall(tCallback, toggled)
-			end
-
-			TogFrame.MouseButton1Click:Connect(UpdateToggle)
-			
-			-- Handle default state without callback initially (or with, depending on pref)
-			if tDefault then
-				SwitchBg.BackgroundColor3 = Color3.fromRGB(0, 160, 255)
-				Dot.Position = UDim2.new(1, -20, 0.5, 0)
-				-- Note: We usually don't fire callback on init, but we set internal state
-				toggled = true
-			end
-		end
-
 		return TabObject
 	end
 
-	--// MINI BUTTON LOGIC
+	--// Mini Button Logic
 	local MiniButton = Instance.new("ImageButton")
 	MiniButton.Name = "MiniButton"
-	MiniButton.Size = MiniButtonSize
+	MiniButton.Size = UDim2.fromOffset(60, 60)
 	MiniButton.Position = UDim2.fromScale(0.1, 0.1)
 	MiniButton.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
 	MiniButton.Visible = false
@@ -564,7 +471,7 @@ function KazeUI:CreateWindow(config)
 		Window.Visible = false
 		MiniButton.Visible = true
 		MiniButton.Size = UDim2.fromOffset(0, 0)
-		TweenService:Create(MiniButton, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Size = MiniButtonSize}):Play()
+		TweenService:Create(MiniButton, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Size = UDim2.fromOffset(60, 60)}):Play()
 	end)
 
 	MiniButton.MouseButton1Click:Connect(function()
@@ -578,9 +485,7 @@ function KazeUI:CreateWindow(config)
 		ScreenGui:Destroy()
 	end)
 
-	if typeof(Callback) == "function" then
-		pcall(Callback)
-	end
+	if typeof(Callback) == "function" then pcall(Callback) end
 
 	return WindowFunctions
 end
