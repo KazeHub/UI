@@ -1,6 +1,7 @@
 --// Kaze UI Base
 --// Window System (PC + Mobile)
 --// Added: Strict Texture ID Sanitizer + 60x60 Minimize ImageButton (draggable, ZIndex 999)
+--// Added: Left-side scrollable tabs with shortcut/register API
 
 local KazeUI = {}
 KazeUI.__index = KazeUI
@@ -350,12 +351,240 @@ function KazeUI:CreateWindow(config)
 	end
 	Close.MouseButton1Click:Connect(ShowCloseConfirm)
 
-	if typeof(Callback) == "function" then
-		pcall(Callback)
+	--// TABS (Left Side)
+	-- left panel width
+	local TAB_WIDTH = 140
+	local TabsContainer = Instance.new("Frame")
+	TabsContainer.Name = "TabsContainer"
+	TabsContainer.Size = UDim2.new(0, TAB_WIDTH, 1, 0)
+	TabsContainer.Position = UDim2.new(0, 0, 0, 0)
+	TabsContainer.BackgroundColor3 = Color3.fromRGB(16, 16, 20)
+	TabsContainer.BorderSizePixel = 0
+	TabsContainer.Parent = Content
+	Instance.new("UICorner", TabsContainer).CornerRadius = UDim.new(0, 12)
+
+	-- Scrollable list for tabs
+	local TabsScroll = Instance.new("ScrollingFrame")
+	TabsScroll.Size = UDim2.new(1, 0, 1, 0)
+	TabsScroll.BackgroundTransparency = 1
+	TabsScroll.ScrollBarThickness = 6
+	TabsScroll.VerticalScrollBarInset = Enum.ScrollBarInset.ScrollBar
+	TabsScroll.Parent = TabsContainer
+	TabsScroll.BorderSizePixel = 0
+	TabsScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+	TabsScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y -- fallback but we'll set canvas manually
+
+	local tabsLayout = Instance.new("UIListLayout")
+	tabsLayout.Parent = TabsScroll
+	tabsLayout.SortOrder = Enum.SortOrder.LayoutOrder
+	tabsLayout.Padding = UDim.new(0, 8)
+
+	-- adjust CanvasSize when content changes
+	local function updateTabsCanvas()
+		local totalY = tabsLayout.AbsoluteContentSize.Y
+		TabsScroll.CanvasSize = UDim2.new(0, 0, 0, totalY + 12)
+	end
+	tabsLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(updateTabsCanvas)
+
+	-- Divider line (neon) between tabs and pages
+	local Divider = Instance.new("Frame")
+	Divider.Name = "Divider"
+	Divider.Size = UDim2.new(0, 2, 1, 0)
+	Divider.Position = UDim2.new(0, TAB_WIDTH, 0, 0)
+	Divider.BackgroundColor3 = Color3.fromRGB(0, 160, 255)
+	Divider.BorderSizePixel = 0
+	Divider.ZIndex = 5
+	Divider.Parent = Content
+
+	-- Right side pages container
+	local Pages = Instance.new("Frame")
+	Pages.Name = "Pages"
+	Pages.Size = UDim2.new(1, -TAB_WIDTH, 1, 0)
+	Pages.Position = UDim2.new(0, TAB_WIDTH, 0, 0)
+	Pages.BackgroundTransparency = 1
+	Pages.Parent = Content
+
+	-- Keep track of tabs and pages
+	local tabs = {}
+	local pages = {}
+	local activeIndex = nil
+
+	-- Style helper for tab button
+	local function makeTabButton(name, iconImage, order)
+		local btn = Instance.new("TextButton")
+		btn.Size = UDim2.new(1, -16, 0, 56)
+		btn.Position = UDim2.new(0, 8, 0, 0)
+		btn.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
+		btn.BorderSizePixel = 0
+		btn.AutoButtonColor = false
+		btn.Text = ""
+		btn.LayoutOrder = order or 1
+		btn.Parent = TabsScroll
+		btn.ZIndex = 6
+
+		local corner = Instance.new("UICorner")
+		corner.CornerRadius = UDim.new(0, 8)
+		corner.Parent = btn
+
+		local icon = Instance.new("ImageLabel")
+		icon.Size = UDim2.fromOffset(36, 36)
+		icon.Position = UDim2.new(0, 8, 0.5, -18)
+		icon.BackgroundTransparency = 1
+		icon.Image = FormatImage(iconImage or "")
+		icon.Parent = btn
+		icon.ZIndex = 7
+		local iconCorner = Instance.new("UICorner")
+		iconCorner.CornerRadius = UDim.new(1, 0)
+		iconCorner.Parent = icon
+
+		local label = Instance.new("TextLabel")
+		label.Size = UDim2.new(1, -56, 1, 0)
+		label.Position = UDim2.new(0, 52, 0, 0)
+		label.BackgroundTransparency = 1
+		label.Text = name or "Tab"
+		label.Font = Enum.Font.Gotham
+		label.TextSize = 14
+		label.TextColor3 = Color3.fromRGB(220, 220, 220)
+		label.TextXAlignment = Enum.TextXAlignment.Left
+		label.Parent = btn
+		label.ZIndex = 7
+
+		-- active indicator
+		local activeIndicator = Instance.new("Frame")
+		activeIndicator.Size = UDim2.new(0, 4, 1, 0)
+		activeIndicator.Position = UDim2.new(0, 0, 0, 0)
+		activeIndicator.BackgroundColor3 = Color3.fromRGB(0, 160, 255)
+		activeIndicator.BorderSizePixel = 0
+		activeIndicator.Visible = false
+		activeIndicator.Parent = btn
+		activeIndicator.ZIndex = 8
+
+		return btn, icon, label, activeIndicator
 	end
 
-	-- Return main UI handles (including the standalone MiniButton)
-	return {Window = Window, Content = Content, Icon = Icon, MiniButton = MiniButton}
+	-- Set active tab by index
+	local function SetActiveTab(index)
+		if not index or index < 1 or index > #tabs then return end
+		if activeIndex == index then return end
+		-- update buttons
+		for i, t in ipairs(tabs) do
+			local btn = t.btn
+			local indicator = t.indicator
+			if i == index then
+				btn.BackgroundColor3 = Color3.fromRGB(24, 24, 30)
+				indicator.Visible = true
+			else
+				btn.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
+				indicator.Visible = false
+			end
+		end
+		-- show page
+		for i, p in ipairs(pages) do
+			p.Visible = (i == index)
+		end
+		activeIndex = index
+	end
+
+	-- Add a tab. buildPageFunc(pageFrame) can be provided to populate the page
+	local function AddTab(name, iconImage, buildPageFunc)
+		local idx = #tabs + 1
+		local btn, icon, label, indicator = makeTabButton(name, iconImage, idx)
+		table.insert(tabs, {btn = btn, icon = icon, label = label, indicator = indicator})
+
+		-- Create page for this tab
+		local page = Instance.new("Frame")
+		page.Size = UDim2.new(1, 0, 1, 0)
+		page.Position = UDim2.new(0, 0, 0, 0)
+		page.BackgroundColor3 = Color3.fromRGB(18, 18, 22)
+		page.BorderSizePixel = 0
+		page.Visible = false
+		page.Parent = Pages
+		Instance.new("UICorner", page).CornerRadius = UDim.new(0, 10)
+		table.insert(pages, page)
+
+		-- call builder if provided
+		if typeof(buildPageFunc) == "function" then
+			pcall(buildPageFunc, page)
+		end
+
+		-- click to activate
+		btn.MouseButton1Click:Connect(function()
+			SetActiveTab(idx)
+		end)
+
+		-- refresh canvas
+		updateTabsCanvas()
+
+		-- if first tab, activate it
+		if #tabs == 1 then
+			SetActiveTab(1)
+		end
+
+		return idx, btn, page
+	end
+
+	-- Shortcuts management
+	local shortcuts = {}
+
+	-- Prepare mapping for number keys 1..9
+	local numKeyMap = {
+		[Enum.KeyCode.One] = 1,
+		[Enum.KeyCode.Two] = 2,
+		[Enum.KeyCode.Three] = 3,
+		[Enum.KeyCode.Four] = 4,
+		[Enum.KeyCode.Five] = 5,
+		[Enum.KeyCode.Six] = 6,
+		[Enum.KeyCode.Seven] = 7,
+		[Enum.KeyCode.Eight] = 8,
+		[Enum.KeyCode.Nine] = 9,
+	}
+
+	-- Register custom shortcut: key can be Enum.KeyCode or string like "Q" or "Space"
+	local function RegisterShortcut(key, index)
+		if not index or index < 1 or index > #tabs then return false end
+		local keyEnum = nil
+		if typeof(key) == "EnumItem" then
+			keyEnum = key
+		elseif type(key) == "string" and Enum.KeyCode[key] then
+			keyEnum = Enum.KeyCode[key]
+		end
+		if keyEnum then
+			shortcuts[keyEnum] = index
+			return true
+		end
+		return false
+	end
+
+	-- Input handler for shortcuts
+	UIS.InputBegan:Connect(function(input, gameProcessedEvent)
+		if gameProcessedEvent then return end
+		if input.UserInputType == Enum.UserInputType.Keyboard then
+			local idx = shortcuts[input.KeyCode] or numKeyMap[input.KeyCode]
+			if idx then
+				SetActiveTab(idx)
+			end
+		end
+	end)
+
+	-- Expose the tab API in the returned handle
+	local handle = {
+		Window = Window,
+		Content = Content,
+		Icon = Icon,
+		MiniButton = MiniButton,
+		AddTab = AddTab,
+		SetActiveTab = SetActiveTab,
+		RegisterShortcut = RegisterShortcut,
+		_TabsInternal = tabs, -- internal reference if needed
+		_PagesInternal = pages,
+	}
+
+	if typeof(Callback) == "function" then
+		pcall(Callback, handle)
+	end
+
+	-- Return main UI handles (including the standalone MiniButton and tab API)
+	return handle
 end
 
 return KazeUI
