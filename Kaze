@@ -1,6 +1,5 @@
---// Kaze UI Base (Remastered for Glow & Shortcuts)
---// Window System (PC + Mobile)
---// Visuals: Neon Blue Grid Style
+--// Kaze UI Library (Fixed & Remastered)
+--// Built-in Toggle: RightControl
 
 local KazeUI = {}
 KazeUI.__index = KazeUI
@@ -10,16 +9,19 @@ local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local UIS = game:GetService("UserInputService")
 local LP = Players.LocalPlayer
-local Mouse = LP:GetMouse()
 
---// Configuration
-local GLOW_COLOR = Color3.fromRGB(0, 230, 255) -- The bright neon blue from the image
-local ACCENT_COLOR = Color3.fromRGB(20, 20, 25) -- Dark background
-local TOGGLE_KEY = Enum.KeyCode.RightControl -- Default shortcut to hide/show UI
+--// Theme Configuration
+local THEME = {
+	Glow = Color3.fromRGB(0, 230, 255), -- Glowing Blue
+	Background = Color3.fromRGB(20, 20, 25),
+	Header = Color3.fromRGB(15, 15, 20),
+	Text = Color3.fromRGB(255, 255, 255),
+	TextDim = Color3.fromRGB(160, 160, 160)
+}
 
 --// Create ScreenGui
 local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "KazeUI_Remastered"
+ScreenGui.Name = "KazeUI"
 ScreenGui.ResetOnSpawn = false
 ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 ScreenGui.Parent = LP:WaitForChild("PlayerGui")
@@ -30,380 +32,183 @@ UIScale.Parent = ScreenGui
 
 local function UpdateScale()
 	local size = workspace.CurrentCamera.ViewportSize
-	if size.X < 600 then
-		UIScale.Scale = math.clamp(size.X / 800, 0.5, 1)
-	else
-		UIScale.Scale = math.clamp(size.X / 1920, 0.6, 1)
-	end
+	UIScale.Scale = (size.X < 600) and math.clamp(size.X / 800, 0.5, 1) or math.clamp(size.X / 1920, 0.6, 1)
 end
 UpdateScale()
 workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(UpdateScale)
 
--[span_2](start_span)-// Texture ID Sanitizer[span_2](end_span)
+--// Image Formatter
 local function FormatImage(id)
-	if not id then return "" end
-	id = tostring(id)
-	local clean = string.gsub(id, "%D", "")
-	if clean == "" then return "" end
-	return "rbxassetid://" .. clean
+	local clean = string.gsub(tostring(id or ""), "%D", "")
+	return clean ~= "" and "rbxassetid://" .. clean or ""
 end
 
---// Drag Function
+--// Dragging logic
 local function MakeDraggable(dragPart, targetPart)
-	local dragging = false
-	local dragInput, dragStart, startPos
-
-	local function update(input)
-		if not dragStart or not startPos then return end
-		local delta = input.Position - dragStart
-		targetPart.Position = UDim2.new(
-			startPos.X.Scale, startPos.X.Offset + delta.X,
-			startPos.Y.Scale, startPos.Y.Offset + delta.Y
-		)
-	end
-
+	local dragging, dragInput, dragStart, startPos
 	dragPart.InputBegan:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 			dragging = true
 			dragStart = input.Position
 			startPos = targetPart.Position
 			input.Changed:Connect(function()
-				if input.UserInputState == Enum.UserInputState.End then
-					dragging = false
-					dragInput = nil
-				end
+				if input.UserInputState == Enum.UserInputState.End then dragging = false end
 			end)
 		end
 	end)
-
-	dragPart.InputChanged:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
-			dragInput = input
-		end
-	end)
-
 	UIS.InputChanged:Connect(function(input)
-		if input == dragInput and dragging then
-			update(input)
+		if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+			local delta = input.Position - dragStart
+			targetPart.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
 		end
 	end)
 end
 
 --// CREATE WINDOW
 function KazeUI:CreateWindow(config)
-	config = config or {}
-
-	local Title = config.Title or "Kaze Hub"
-	local Author = config.Author or "Kaze"
-	local Version = config.Version or "v1.0"
-	local MainIcon = FormatImage(config.Icon or "6031763447")
-	
-	-- Callback setup
-	local Callback = config.Callback
-
-	--// Main Window Frame
 	local Window = Instance.new("Frame")
 	Window.Name = "MainWindow"
 	Window.Size = UDim2.fromOffset(650, 420)
 	Window.Position = UDim2.fromScale(0.5, 0.5)
 	Window.AnchorPoint = Vector2.new(0.5, 0.5)
-	Window.BackgroundColor3 = ACCENT_COLOR
+	Window.BackgroundColor3 = THEME.Background
 	Window.BorderSizePixel = 0
 	Window.Parent = ScreenGui
-	Window.ClipsDescendants = false -- Set to false so glow can be seen outside if needed
-	
-	-- Rounded Corners
-	local WinCorner = Instance.new("UICorner", Window)
-	WinCorner.CornerRadius = UDim.new(0, 10)
+	Instance.new("UICorner", Window).CornerRadius = UDim.new(0, 10)
 
-	-[span_3](start_span)-// NEON GLOW STROKE (The Blue Border)[span_3](end_span)
+	-- Glowing Blue Border
 	local WindowStroke = Instance.new("UIStroke")
-	WindowStroke.Color = GLOW_COLOR
-	WindowStroke.Thickness = 2 
-	WindowStroke.Transparency = 0
+	WindowStroke.Color = THEME.Glow
+	WindowStroke.Thickness = 2
 	WindowStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 	WindowStroke.Parent = Window
 
-	--// Top Bar Area
+	-- Top Bar
 	local TopBar = Instance.new("Frame")
-	TopBar.Name = "TopBar"
 	TopBar.Size = UDim2.new(1, 0, 0, 50)
-	TopBar.BackgroundColor3 = ACCENT_COLOR
+	TopBar.BackgroundColor3 = THEME.Header
 	TopBar.BorderSizePixel = 0
 	TopBar.Parent = Window
+	Instance.new("UICorner", TopBar).CornerRadius = UDim.new(0, 10)
 	
-	local TopCorner = Instance.new("UICorner", TopBar)
-	TopCorner.CornerRadius = UDim.new(0, 10)
-	
-	-- Fix corners at bottom of topbar to be square (for the line to look good)
-	local TopBarSquareFix = Instance.new("Frame")
-	TopBarSquareFix.Name = "SquareFix"
-	TopBarSquareFix.Size = UDim2.new(1, 0, 0, 10)
-	TopBarSquareFix.Position = UDim2.new(0, 0, 1, -10)
-	TopBarSquareFix.BackgroundColor3 = ACCENT_COLOR
-	TopBarSquareFix.BorderSizePixel = 0
-	TopBarSquareFix.Parent = TopBar
+	local TopFix = Instance.new("Frame")
+	TopFix.Size = UDim2.new(1, 0, 0, 10)
+	TopFix.Position = UDim2.new(0, 0, 1, -10)
+	TopFix.BackgroundColor3 = THEME.Header
+	TopFix.BorderSizePixel = 0
+	TopFix.Parent = TopBar
 
 	MakeDraggable(TopBar, Window)
 
-	-- Header Line (The horizontal glow under the title)
+	-- Header Line (Horizontal)
 	local HeaderLine = Instance.new("Frame")
-	HeaderLine.Name = "HeaderLine"
 	HeaderLine.Size = UDim2.new(1, 0, 0, 2)
 	HeaderLine.Position = UDim2.new(0, 0, 0, 50)
-	HeaderLine.BackgroundColor3 = GLOW_COLOR
+	HeaderLine.BackgroundColor3 = THEME.Glow
 	HeaderLine.BorderSizePixel = 0
 	HeaderLine.ZIndex = 5
 	HeaderLine.Parent = Window
 
-	-- Profile/Icon
-	local Icon = Instance.new("ImageLabel")
-	Icon.Size = UDim2.fromOffset(34, 34)
-	Icon.Position = UDim2.fromOffset(12, 8)
-	Icon.BackgroundTransparency = 1
-	Icon.Image = MainIcon
-	Icon.Parent = TopBar
-	
-	local IconCorner = Instance.new("UICorner", Icon)
-	IconCorner.CornerRadius = UDim.new(1, 0) -- Circle
-	
-	-- Icon Glow
-	local IconStroke = Instance.new("UIStroke")
-	IconStroke.Color = GLOW_COLOR
-	IconStroke.Thickness = 1.5
-	IconStroke.Parent = Icon
-
-	-- Titles
 	local TitleLabel = Instance.new("TextLabel")
-	TitleLabel.Size = UDim2.new(1, -160, 0, 20)
-	TitleLabel.Position = UDim2.fromOffset(56, 8)
+	TitleLabel.Size = UDim2.new(1, -50, 1, 0)
+	TitleLabel.Position = UDim2.fromOffset(15, 0)
 	TitleLabel.BackgroundTransparency = 1
-	TitleLabel.Text = Title
-	TitleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+	TitleLabel.Text = config.Title or "Kaze Hub"
+	TitleLabel.TextColor3 = THEME.Text
 	TitleLabel.Font = Enum.Font.GothamBold
 	TitleLabel.TextSize = 16
 	TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
 	TitleLabel.Parent = TopBar
 
-	local SubLabel = Instance.new("TextLabel")
-	SubLabel.Size = UDim2.new(1, -160, 0, 16)
-	SubLabel.Position = UDim2.fromOffset(56, 28)
-	SubLabel.BackgroundTransparency = 1
-	SubLabel.Text = Author .. " | " .. Version
-	SubLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
-	SubLabel.Font = Enum.Font.Gotham
-	SubLabel.TextSize = 12
-	SubLabel.TextXAlignment = Enum.TextXAlignment.Left
-	SubLabel.Parent = TopBar
-
-	-- Window Controls
-	local Minimize = Instance.new("TextButton")
-	Minimize.Size = UDim2.fromOffset(30, 30)
-	Minimize.Position = UDim2.new(1, -74, 0.5, -15)
-	Minimize.Text = "—"
-	Minimize.Font = Enum.Font.GothamBold
-	Minimize.TextSize = 18
-	Minimize.TextColor3 = Color3.fromRGB(200, 200, 200)
-	Minimize.BackgroundColor3 = Color3.fromRGB(35, 35, 40)
-	Minimize.Parent = TopBar
-	Instance.new("UICorner", Minimize).CornerRadius = UDim.new(1, 0)
-
-	local Close = Instance.new("TextButton")
-	Close.Size = UDim2.fromOffset(30, 30)
-	Close.Position = UDim2.new(1, -38, 0.5, -15)
-	Close.Text = "✕"
-	Close.Font = Enum.Font.GothamBold
-	Close.TextSize = 16
-	Close.TextColor3 = Color3.fromRGB(255, 80, 80)
-	Close.BackgroundColor3 = Color3.fromRGB(35, 35, 40)
-	Close.Parent = TopBar
-	Instance.new("UICorner", Close).CornerRadius = UDim.new(1, 0)
-
-	--// Content & Tabs Area
+	-- Content Area
 	local Content = Instance.new("Frame")
-	Content.Position = UDim2.fromOffset(0, 52) -- Below header line
+	Content.Position = UDim2.fromOffset(0, 52) 
 	Content.Size = UDim2.new(1, 0, 1, -52)
 	Content.BackgroundTransparency = 1
 	Content.Parent = Window
 
-	local TAB_WIDTH = 130
-
-	-- Left Sidebar (Tabs)
-	local TabsContainer = Instance.new("Frame")
-	TabsContainer.Name = "TabsContainer"
-	TabsContainer.Size = UDim2.new(0, TAB_WIDTH, 1, 0)
-	TabsContainer.Position = UDim2.new(0, 0, 0, 0)
-	TabsContainer.BackgroundColor3 = ACCENT_COLOR
-	TabsContainer.BorderSizePixel = 0
-	TabsContainer.Parent = Content
-	
-	local TabCorner = Instance.new("UICorner", TabsContainer)
-	TabCorner.CornerRadius = UDim.new(0, 10)
-	
-	-- Square fix for top right of tabs container so line connects
-	local TabSquareFix = Instance.new("Frame")
-	TabSquareFix.Size = UDim2.new(0, 10, 0, 10)
-	TabSquareFix.Position = UDim2.new(1, -10, 0, 0)
-	TabSquareFix.BackgroundColor3 = ACCENT_COLOR
-	TabSquareFix.BorderSizePixel = 0
-	TabSquareFix.Parent = TabsContainer
-
-	-- Vertical Divider Line (Neon Blue)
+	local TAB_WIDTH = 140
 	local VerticalLine = Instance.new("Frame")
-	VerticalLine.Name = "VerticalLine"
 	VerticalLine.Size = UDim2.new(0, 2, 1, 0)
 	VerticalLine.Position = UDim2.new(0, TAB_WIDTH, 0, 0)
-	VerticalLine.BackgroundColor3 = GLOW_COLOR
-	VerticalLine.BorderSizePixel = 0
+	VerticalLine.BackgroundColor3 = THEME.Glow
 	VerticalLine.ZIndex = 5
 	VerticalLine.Parent = Content
 
-	-- Tabs Scrolling
 	local TabsScroll = Instance.new("ScrollingFrame")
-	TabsScroll.Size = UDim2.new(1, 0, 1, -10)
-	TabsScroll.Position = UDim2.new(0,0,0,5)
+	TabsScroll.Size = UDim2.new(0, TAB_WIDTH, 1, -10)
+	TabsScroll.Position = UDim2.fromOffset(0, 5)
 	TabsScroll.BackgroundTransparency = 1
-	TabsScroll.ScrollBarThickness = 2
-	TabsScroll.Parent = TabsContainer
+	TabsScroll.ScrollBarThickness = 0
 	TabsScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
-	TabsScroll.CanvasSize = UDim2.new(0,0,0,0)
+	TabsScroll.Parent = Content
 
-	local tabsLayout = Instance.new("UIListLayout")
-	tabsLayout.Parent = TabsScroll
-	tabsLayout.SortOrder = Enum.SortOrder.LayoutOrder
-	tabsLayout.Padding = UDim.new(0, 6)
-	tabsLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+	local UIList = Instance.new("UIListLayout", TabsScroll)
+	UIList.HorizontalAlignment = Enum.HorizontalAlignment.Center
+	UIList.Padding = UDim.new(0, 5)
 
-	-- Pages Container
 	local Pages = Instance.new("Frame")
-	Pages.Name = "Pages"
-	Pages.Size = UDim2.new(1, -TAB_WIDTH - 2, 1, 0)
-	Pages.Position = UDim2.new(0, TAB_WIDTH + 2, 0, 0)
+	Pages.Size = UDim2.new(1, -TAB_WIDTH - 5, 1, 0)
+	Pages.Position = UDim2.fromOffset(TAB_WIDTH + 5, 0)
 	Pages.BackgroundTransparency = 1
 	Pages.Parent = Content
-	
-	-- Tab System
-	local tabs = {}
-	local pages = {}
-	local activeIndex = nil
+
+	local tabs, pages, activeIndex = {}, {}, nil
 
 	local function SetActiveTab(index)
 		if activeIndex == index then return end
 		activeIndex = index
-		
 		for i, t in ipairs(tabs) do
-			if i == index then
-				-- Active State: Glow Enabled
-				TweenService:Create(t.btn, TweenInfo.new(0.3), {BackgroundColor3 = Color3.fromRGB(30, 30, 40)}):Play()
-				[span_4](start_span)t.stroke.Enabled = true -- Enable Blue Glow[span_4](end_span)
-				t.label.TextColor3 = GLOW_COLOR
-			else
-				-- Inactive State
-				TweenService:Create(t.btn, TweenInfo.new(0.3), {BackgroundColor3 = ACCENT_COLOR}):Play()
-				t.stroke.Enabled = false
-				t.label.TextColor3 = Color3.fromRGB(180, 180, 180)
-			end
-		end
-		
-		for i, p in ipairs(pages) do
-			p.Visible = (i == index)
+			local isActive = (i == index)
+			t.btn.BackgroundColor3 = isActive and Color3.fromRGB(30, 30, 40) or THEME.Background
+			t.label.TextColor3 = isActive and THEME.Glow or THEME.TextDim
+			t.stroke.Enabled = isActive
+			pages[i].Visible = isActive
 		end
 	end
 
-	local function AddTab(name, iconImage, buildPageFunc)
+	--// AddTab function (NO configuration required)
+	function handle:AddTab(name)
 		local idx = #tabs + 1
-		
-		-- Tab Button
 		local btn = Instance.new("TextButton")
-		btn.Size = UDim2.new(0, 115, 0, 40)
-		btn.BackgroundColor3 = ACCENT_COLOR
-		btn.AutoButtonColor = false
+		btn.Size = UDim2.new(0, 125, 0, 35)
+		btn.BackgroundColor3 = THEME.Background
 		btn.Text = ""
-		btn.LayoutOrder = idx
 		btn.Parent = TabsScroll
-		
-		local btnCorner = Instance.new("UICorner", btn)
-		btnCorner.CornerRadius = UDim.new(0, 6)
-		
-		-- The "Glow" for the tab itself
-		local btnStroke = Instance.new("UIStroke")
-		btnStroke.Color = GLOW_COLOR
-		btnStroke.Thickness = 1.5
-		btnStroke.Enabled = false -- Disabled by default
-		btnStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-		btnStroke.Parent = btn
+		Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
 
-		-- Tab Icon
-		local icon = Instance.new("ImageLabel")
-		icon.Size = UDim2.fromOffset(20, 20)
-		icon.Position = UDim2.fromOffset(10, 10)
-		icon.BackgroundTransparency = 1
-		icon.Image = FormatImage(iconImage)
-		icon.ImageColor3 = Color3.fromRGB(255,255,255)
-		icon.Parent = btn
+		local stroke = Instance.new("UIStroke")
+		stroke.Color, stroke.Thickness, stroke.Enabled = THEME.Glow, 1, false
+		stroke.Parent = btn
 
-		-- Tab Label
 		local label = Instance.new("TextLabel")
-		label.Size = UDim2.new(1, -40, 1, 0)
-		label.Position = UDim2.fromOffset(36, 0)
+		label.Size = UDim2.new(1, 0, 1, 0)
 		label.BackgroundTransparency = 1
-		label.Text = name
-		label.Font = Enum.Font.GothamMedium
-		label.TextSize = 13
-		label.TextColor3 = Color3.fromRGB(180, 180, 180)
-		label.TextXAlignment = Enum.TextXAlignment.Left
+		label.Text, label.Font, label.TextSize = name, Enum.Font.GothamMedium, 13
+		label.TextColor3 = THEME.TextDim
 		label.Parent = btn
 
-		-- Tab Page
 		local page = Instance.new("Frame")
 		page.Size = UDim2.new(1, -20, 1, -20)
 		page.Position = UDim2.fromOffset(10, 10)
-		page.BackgroundTransparency = 1
-		page.Visible = false
+		page.BackgroundTransparency, page.Visible = 1, false
 		page.Parent = Pages
-		
-		table.insert(tabs, {btn = btn, stroke = btnStroke, label = label})
+
+		table.insert(tabs, {btn = btn, label = label, stroke = stroke})
 		table.insert(pages, page)
-		
-		btn.MouseButton1Click:Connect(function()
-			SetActiveTab(idx)
-		end)
-		
-		if typeof(buildPageFunc) == "function" then
-			task.spawn(function() buildPageFunc(page) end)
-		end
-		
+
+		btn.MouseButton1Click:Connect(function() SetActiveTab(idx) end)
 		if idx == 1 then SetActiveTab(1) end
 		return page
 	end
 
-	--// SHORTCUT SYSTEM (Toggle UI)
-	-- Press RightControl to toggle
+	-- Built-in Shortcut: Right Control
 	UIS.InputBegan:Connect(function(input, gpe)
-		if gpe then return end
-		if input.KeyCode == TOGGLE_KEY then
+		if not gpe and input.KeyCode == Enum.KeyCode.RightControl then
 			Window.Visible = not Window.Visible
 		end
 	end)
 
-	--// Handle Return
-	local handle = {
-		Window = Window,
-		AddTab = AddTab,
-		Notify = function(msg) print("Notification:", msg) end -- Placeholder
-	}
-	
-	-- Close Logic
-	Close.MouseButton1Click:Connect(function()
-		ScreenGui:Destroy()
-	end)
-	
-	Minimize.MouseButton1Click:Connect(function()
-		Window.Visible = false
-		-- Add restore logic here if needed, or rely on shortcut
-	end)
-
-	if Callback then Callback(handle) end
 	return handle
 end
 
