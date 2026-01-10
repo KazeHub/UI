@@ -1,5 +1,5 @@
---// Kaze UI Base (Fixed & Glowing)
---// Texture ID Sanitizer + Mobile Support + Full Neon Glow System
+--// Kaze UI Base (FULL FIXED)
+--// Tabs Visible + Shortcut System + Mobile Safe
 
 local KazeUI = {}
 KazeUI.__index = KazeUI
@@ -10,364 +10,212 @@ local TweenService = game:GetService("TweenService")
 local UIS = game:GetService("UserInputService")
 local LP = Players.LocalPlayer
 
---// Configuration
-local NEON_COLOR_1 = Color3.fromRGB(0, 180, 255) -- Base Cyan
-local NEON_COLOR_2 = Color3.fromRGB(0, 255, 255) -- Bright Neon Cyan
-local BG_COLOR = Color3.fromRGB(12, 12, 15)      -- Deep Dark Background
+--// Config
+local NEON_COLOR_1 = Color3.fromRGB(0, 180, 255)
+local NEON_COLOR_2 = Color3.fromRGB(0, 255, 255)
+local BG_COLOR = Color3.fromRGB(12, 12, 15)
 
---// Create ScreenGui
+--// ScreenGui
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "KazeUI"
 ScreenGui.ResetOnSpawn = false
-ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 ScreenGui.Parent = LP:WaitForChild("PlayerGui")
 
 --// UIScale
-local UIScale = Instance.new("UIScale")
-UIScale.Parent = ScreenGui
-
+local UIScale = Instance.new("UIScale", ScreenGui)
 local function UpdateScale()
 	local size = workspace.CurrentCamera.ViewportSize
-	if size.X < 600 then
-		UIScale.Scale = math.clamp(size.X / 800, 0.5, 1)
-	else
-		UIScale.Scale = math.clamp(size.X / 1920, 0.6, 1)
-	end
+	UIScale.Scale = math.clamp(size.X / 1920, 0.6, 1)
 end
 UpdateScale()
 workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(UpdateScale)
 
---// Helper: Format Image
+--// Helpers
 local function FormatImage(id)
-	if not id then return "" end
-	id = tostring(id)
-	local clean = string.gsub(id, "%D", "")
-	if clean == "" then return "" end
-	return "rbxassetid://" .. clean
+	id = tostring(id or "")
+	local clean = id:gsub("%D", "")
+	return clean ~= "" and ("rbxassetid://" .. clean) or ""
 end
 
---// Helper: Apply Pulse Glow
--- Applies an infinite breathing tween to a property (Color or BackgroundColor3)
-local function ApplyPulse(instance, propertyName)
-	local tweenInfo = TweenInfo.new(1.5, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true)
-	local goal = {}
-	goal[propertyName] = NEON_COLOR_2
-	
-	-- Set initial color
-	instance[propertyName] = NEON_COLOR_1
-	
-	local tween = TweenService:Create(instance, tweenInfo, goal)
-	tween:Play()
-	return tween
+local function Pulse(inst, prop)
+	inst[prop] = NEON_COLOR_1
+	TweenService:Create(
+		inst,
+		TweenInfo.new(1.5, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true),
+		{[prop] = NEON_COLOR_2}
+	):Play()
 end
 
---// Helper: Dragging
-local function MakeDraggable(dragPart, targetPart)
-	local dragging = false
-	local dragInput, dragStart, startPos
-
-	local function update(input)
-		local delta = input.Position - dragStart
-		targetPart.Position = UDim2.new(
-			startPos.X.Scale, startPos.X.Offset + delta.X,
-			startPos.Y.Scale, startPos.Y.Offset + delta.Y
-		)
-	end
-
-	dragPart.InputBegan:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+local function MakeDraggable(drag, target)
+	local dragging, startPos, startInput
+	drag.InputBegan:Connect(function(i)
+		if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
 			dragging = true
-			dragStart = input.Position
-			startPos = targetPart.Position
-			input.Changed:Connect(function()
-				if input.UserInputState == Enum.UserInputState.End then dragging = false end
+			startPos = target.Position
+			startInput = i.Position
+			i.Changed:Connect(function()
+				if i.UserInputState == Enum.UserInputState.End then
+					dragging = false
+				end
 			end)
 		end
 	end)
-
-	dragPart.InputChanged:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
-			dragInput = input
+	UIS.InputChanged:Connect(function(i)
+		if dragging and (i.UserInputType == Enum.UserInputType.MouseMovement or i.UserInputType == Enum.UserInputType.Touch) then
+			local delta = i.Position - startInput
+			target.Position = UDim2.new(
+				startPos.X.Scale, startPos.X.Offset + delta.X,
+				startPos.Y.Scale, startPos.Y.Offset + delta.Y
+			)
 		end
-	end)
-
-	UIS.InputChanged:Connect(function(input)
-		if input == dragInput and dragging then update(input) end
 	end)
 end
 
---// MAIN FUNCTION
+--// MAIN
 function KazeUI:CreateWindow(config)
 	config = config or {}
-	local Title = config.Title or "Kaze Hub"
-	local Author = config.Author or "Kaze | v1.0"
-	local MainIcon = FormatImage(config.Icon or "6031763447")
-	local MiniButtonSize = UDim2.fromOffset(60, 60)
 
-	-- 1. Main Window
 	local Window = Instance.new("Frame")
-	Window.Name = "MainWindow"
 	Window.Size = UDim2.fromOffset(650, 420)
 	Window.Position = UDim2.fromScale(0.5, 0.5)
 	Window.AnchorPoint = Vector2.new(0.5, 0.5)
 	Window.BackgroundColor3 = BG_COLOR
-	Window.BorderSizePixel = 0
 	Window.Parent = ScreenGui
-	
-	-- Rounded Corners for Window
-	local WinCorner = Instance.new("UICorner", Window)
-	WinCorner.CornerRadius = UDim.new(0, 10)
+	Instance.new("UICorner", Window).CornerRadius = UDim.new(0, 10)
 
-	-- Outer Glowing Stroke
-	local WindowStroke = Instance.new("UIStroke")
-	WindowStroke.Thickness = 2
-	WindowStroke.Parent = Window
-	ApplyPulse(WindowStroke, "Color") -- Pulse the border
+	local Stroke = Instance.new("UIStroke", Window)
+	Stroke.Thickness = 2
+	Pulse(Stroke, "Color")
 
-	-- 2. Top Bar
-	local TopBar = Instance.new("Frame")
-	TopBar.Name = "TopBar"
+	--// TopBar
+	local TopBar = Instance.new("Frame", Window)
 	TopBar.Size = UDim2.new(1, 0, 0, 50)
 	TopBar.BackgroundColor3 = BG_COLOR
-	TopBar.BorderSizePixel = 0
-	TopBar.Parent = Window
-	local TopCorner = Instance.new("UICorner", TopBar)
-	TopCorner.CornerRadius = UDim.new(0, 10)
-	
-	-- Fix corners: We need to clip the bottom of the top bar or it looks round at the connection
-	-- A simple fix is adding a frame to cover the bottom corners of TopBar
-	local Filler = Instance.new("Frame")
-	Filler.Size = UDim2.new(1, 0, 0, 10)
-	Filler.Position = UDim2.new(0, 0, 1, -10)
-	Filler.BackgroundColor3 = BG_COLOR
-	Filler.BorderSizePixel = 0
-	Filler.Parent = TopBar
-
 	MakeDraggable(TopBar, Window)
 
-	-- 3. GLOWING HORIZONTAL DIVIDER (The line under TopBar)
-	local HorizontalLine = Instance.new("Frame")
-	HorizontalLine.Name = "NeonLine_Horizontal"
-	HorizontalLine.Size = UDim2.new(1, 0, 0, 2) -- 2px height
-	HorizontalLine.Position = UDim2.new(0, 0, 1, 0)
-	HorizontalLine.BorderSizePixel = 0
-	HorizontalLine.ZIndex = 5
-	HorizontalLine.Parent = TopBar
-	ApplyPulse(HorizontalLine, "BackgroundColor3") -- Pulse the line itself
+	local Line = Instance.new("Frame", TopBar)
+	Line.Size = UDim2.new(1, 0, 0, 2)
+	Line.Position = UDim2.new(0, 0, 1, 0)
+	Pulse(Line, "BackgroundColor3")
 
-	-- Top Bar Contents
-	local Icon = Instance.new("ImageLabel")
-	Icon.Size = UDim2.fromOffset(30, 30)
-	Icon.Position = UDim2.fromOffset(12, 10)
-	Icon.BackgroundTransparency = 1
-	Icon.Image = MainIcon
-	Icon.Parent = TopBar
-
-	local TitleLabel = Instance.new("TextLabel")
-	TitleLabel.Size = UDim2.new(1, -150, 0, 20)
-	TitleLabel.Position = UDim2.fromOffset(50, 8)
-	TitleLabel.BackgroundTransparency = 1
-	TitleLabel.Text = Title
-	TitleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-	TitleLabel.Font = Enum.Font.GothamBold
-	TitleLabel.TextSize = 16
-	TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
-	TitleLabel.Parent = TopBar
-
-	local SubLabel = Instance.new("TextLabel")
-	SubLabel.Size = UDim2.new(1, -150, 0, 15)
-	SubLabel.Position = UDim2.fromOffset(50, 28)
-	SubLabel.BackgroundTransparency = 1
-	SubLabel.Text = Author
-	SubLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
-	SubLabel.Font = Enum.Font.Gotham
-	SubLabel.TextSize = 12
-	SubLabel.TextXAlignment = Enum.TextXAlignment.Left
-	SubLabel.Parent = TopBar
-
-	-- Minimize/Close Buttons
-	local function createWinBtn(text, color, posOffset)
-		local btn = Instance.new("TextButton")
-		btn.Size = UDim2.fromOffset(30, 30)
-		btn.Position = UDim2.new(1, posOffset, 0.5, -15)
-		btn.Text = text
-		btn.Font = Enum.Font.GothamBold
-		btn.TextSize = 18
-		btn.TextColor3 = color
-		btn.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
-		btn.Parent = TopBar
-		Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
-		return btn
-	end
-	
-	local Close = createWinBtn("✕", Color3.fromRGB(255, 80, 80), -40)
-	local Minimize = createWinBtn("—", Color3.fromRGB(220, 220, 220), -80)
-
-	-- 4. Content Area
-	local Content = Instance.new("Frame")
-	Content.Position = UDim2.fromOffset(0, 52) -- Moved down by TopBar + Line height
+	--// Content
+	local Content = Instance.new("Frame", Window)
+	Content.Position = UDim2.fromOffset(0, 52)
 	Content.Size = UDim2.new(1, 0, 1, -52)
 	Content.BackgroundTransparency = 1
-	Content.Parent = Window
 
-	-- 5. Left Tabs Container
+	--// Tabs
 	local TAB_WIDTH = 130
-	local TabsContainer = Instance.new("Frame")
+	local TabsContainer = Instance.new("Frame", Content)
 	TabsContainer.Size = UDim2.new(0, TAB_WIDTH, 1, 0)
 	TabsContainer.BackgroundColor3 = BG_COLOR
-	TabsContainer.BorderSizePixel = 0
-	TabsContainer.Parent = Content
-	
-	local TabCorner = Instance.new("UICorner", TabsContainer)
-	TabCorner.CornerRadius = UDim.new(0, 10)
-	
-	-- Filler to fix corner visualization on the right side of tabs
-	local TabFiller = Instance.new("Frame")
-	TabFiller.Size = UDim2.new(0, 10, 1, 0)
-	TabFiller.Position = UDim2.new(1, -10, 0, 0)
-	TabFiller.BackgroundColor3 = BG_COLOR
-	TabFiller.BorderSizePixel = 0
-	TabFiller.Parent = TabsContainer
+	Instance.new("UICorner", TabsContainer).CornerRadius = UDim.new(0, 10)
 
-	-- 6. GLOWING VERTICAL DIVIDER (Line separating tabs from pages)
-	local VerticalLine = Instance.new("Frame")
-	VerticalLine.Name = "NeonLine_Vertical"
-	VerticalLine.Size = UDim2.new(0, 2, 1, 0) -- 2px width
-	VerticalLine.Position = UDim2.new(1, 0, 0, 0)
-	VerticalLine.BorderSizePixel = 0
-	VerticalLine.ZIndex = 5
-	VerticalLine.Parent = TabsContainer
-	ApplyPulse(VerticalLine, "BackgroundColor3") -- Pulse the line
+	local Divider = Instance.new("Frame", TabsContainer)
+	Divider.Size = UDim2.new(0, 2, 1, 0)
+	Divider.Position = UDim2.new(1, 0, 0, 0)
+	Pulse(Divider, "BackgroundColor3")
 
-	-- Tabs Scrolling Logic
-	local TabsScroll = Instance.new("ScrollingFrame")
-	TabsScroll.Size = UDim2.new(1, -5, 1, -10)
-	TabsScroll.Position = UDim2.fromOffset(5, 5)
-	TabsScroll.BackgroundTransparency = 1
+	--// SCROLL FIX (IMPORTANT)
+	local TabsScroll = Instance.new("ScrollingFrame", TabsContainer)
+	TabsScroll.Size = UDim2.new(1, -6, 1, -10)
+	TabsScroll.Position = UDim2.fromOffset(3, 5)
+	TabsScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+	TabsScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
 	TabsScroll.ScrollBarThickness = 0
-	TabsScroll.Parent = TabsContainer
-	
-	local UIList = Instance.new("UIListLayout", TabsScroll)
-	UIList.SortOrder = Enum.SortOrder.LayoutOrder
-	UIList.Padding = UDim.new(0, 8)
+	TabsScroll.BackgroundTransparency = 1
+	TabsScroll.ClipsDescendants = true
 
-	UIList:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-		TabsScroll.CanvasSize = UDim2.new(0,0,0, UIList.AbsoluteContentSize.Y + 10)
-	end)
+	local List = Instance.new("UIListLayout", TabsScroll)
+	List.Padding = UDim.new(0, 8)
 
-	-- Pages Container
-	local Pages = Instance.new("Frame")
-	Pages.Name = "Pages"
-	Pages.Size = UDim2.new(1, -TAB_WIDTH - 2, 1, 0) -- Subtract tab width and line width
+	--// Pages
+	local Pages = Instance.new("Frame", Content)
+	Pages.Size = UDim2.new(1, -TAB_WIDTH - 2, 1, 0)
 	Pages.Position = UDim2.new(0, TAB_WIDTH + 2, 0, 0)
 	Pages.BackgroundTransparency = 1
-	Pages.Parent = Content
-
-	--// Mini Button (Mobile)
-	local MiniButton = Instance.new("ImageButton")
-	MiniButton.Name = "MiniButton"
-	MiniButton.Size = MiniButtonSize
-	MiniButton.Position = UDim2.fromScale(0.1, 0.1)
-	MiniButton.BackgroundColor3 = BG_COLOR
-	MiniButton.Visible = false
-	MiniButton.Parent = ScreenGui
-	MiniButton.ZIndex = 999
-	Instance.new("UICorner", MiniButton).CornerRadius = UDim.new(0, 12)
-	
-	local MiniStroke = Instance.new("UIStroke")
-	MiniStroke.Thickness = 2
-	MiniStroke.Parent = MiniButton
-	ApplyPulse(MiniStroke, "Color") -- Pulse Mini Button
-
-	local MiniIcon = Instance.new("ImageLabel")
-	MiniIcon.Size = UDim2.fromScale(0.6, 0.6)
-	MiniIcon.Position = UDim2.fromScale(0.2, 0.2)
-	MiniIcon.BackgroundTransparency = 1
-	MiniIcon.Image = MainIcon
-	MiniIcon.Parent = MiniButton
-	
-	MakeDraggable(MiniButton, MiniButton)
-
-	-- Logic: Minimize / Restore
-	Minimize.MouseButton1Click:Connect(function()
-		Window.Visible = false
-		MiniButton.Visible = true
-	end)
-	MiniButton.MouseButton1Click:Connect(function()
-		MiniButton.Visible = false
-		Window.Visible = true
-	end)
-	Close.MouseButton1Click:Connect(function() ScreenGui:Destroy() end)
 
 	--// TAB SYSTEM
 	local tabs = {}
-	
-	local function SetActiveTab(selectedIndex)
-		for i, tab in ipairs(tabs) do
-			if i == selectedIndex then
-				-- Active State
-				tab.Btn.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
-				tab.Btn.UIStroke.Enabled = true -- TURN ON GLOW
-				tab.Page.Visible = true
-			else
-				-- Inactive State
-				tab.Btn.BackgroundColor3 = Color3.fromRGB(15, 15, 18)
-				tab.Btn.UIStroke.Enabled = false -- TURN OFF GLOW
-				tab.Page.Visible = false
-			end
+	local activeTab
+
+	local function SetActiveTab(index)
+		for i, t in ipairs(tabs) do
+			t.Page.Visible = (i == index)
+			t.Stroke.Enabled = (i == index)
 		end
+		activeTab = index
 	end
 
 	local function AddTab(name)
 		local index = #tabs + 1
-		
-		-- Tab Button
-		local Btn = Instance.new("TextButton")
-		Btn.Name = name
-		Btn.Size = UDim2.new(1, -8, 0, 40) -- Slightly smaller to fit stroke
-		Btn.BackgroundColor3 = Color3.fromRGB(15, 15, 18)
+
+		local Btn = Instance.new("TextButton", TabsScroll)
+		Btn.Size = UDim2.new(1, -8, 0, 40)
 		Btn.Text = name
-		Btn.TextColor3 = Color3.fromRGB(230, 230, 230)
+		Btn.BackgroundColor3 = Color3.fromRGB(15,15,18)
+		Btn.TextColor3 = Color3.fromRGB(230,230,230)
 		Btn.Font = Enum.Font.GothamMedium
 		Btn.TextSize = 14
-		Btn.Parent = TabsScroll
 		Instance.new("UICorner", Btn).CornerRadius = UDim.new(0, 8)
 
-		-- THE GLOWING STROKE FOR THE TAB
-		local BtnStroke = Instance.new("UIStroke")
-		BtnStroke.Thickness = 1.6
-		BtnStroke.Transparency = 0
-		BtnStroke.Enabled = false -- Hidden by default
-		BtnStroke.Parent = Btn
-		ApplyPulse(BtnStroke, "Color") -- Apply pulse immediately, show/hide via Enabled property
+		local BtnStroke = Instance.new("UIStroke", Btn)
+		BtnStroke.Thickness = 1.5
+		BtnStroke.Enabled = false
+		Pulse(BtnStroke, "Color")
 
-		-- Tab Page
-		local Page = Instance.new("Frame")
-		Page.Name = name .. "_Page"
+		local Page = Instance.new("Frame", Pages)
 		Page.Size = UDim2.new(1, -20, 1, -20)
 		Page.Position = UDim2.fromOffset(10, 10)
-		Page.BackgroundTransparency = 1
 		Page.Visible = false
-		Page.Parent = Pages
-
-		local entry = {Btn = Btn, Page = Page}
-		table.insert(tabs, entry)
+		Page.BackgroundTransparency = 1
 
 		Btn.MouseButton1Click:Connect(function()
 			SetActiveTab(index)
 		end)
 
-		-- Select first tab automatically
+		table.insert(tabs, {
+			Btn = Btn,
+			Page = Page,
+			Stroke = BtnStroke
+		})
+
 		if index == 1 then
 			SetActiveTab(1)
 		end
-		
+
 		return Page
 	end
 
+	--// SHORTCUT SYSTEM
+	local Shortcuts = {}
+
+	local function RegisterShortcut(key, tabIndex)
+		if not tabs[tabIndex] then return end
+		if typeof(key) ~= "table" then key = {key} end
+		for _, k in ipairs(key) do
+			if typeof(k) == "string" and Enum.KeyCode[k] then
+				Shortcuts[Enum.KeyCode[k]] = tabIndex
+			elseif typeof(k) == "EnumItem" then
+				Shortcuts[k] = tabIndex
+			end
+		end
+	end
+
+	UIS.InputBegan:Connect(function(i, gp)
+		if gp then return end
+		if i.UserInputType == Enum.UserInputType.Keyboard then
+			local idx = Shortcuts[i.KeyCode]
+			if idx then
+				SetActiveTab(idx)
+			end
+		end
+	end)
+
 	return {
 		Window = Window,
-		AddTab = AddTab
+		AddTab = AddTab,
+		RegisterShortcut = RegisterShortcut
 	}
 end
 
