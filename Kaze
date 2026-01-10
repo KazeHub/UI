@@ -7,8 +7,7 @@ KazeUI.__index = KazeUI
 --// Services
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
-local UserInputService = game:GetService("UserInputService")
-local RunService = game:GetService("RunService")
+local UIS = game:GetService("UserInputService")
 local LP = Players.LocalPlayer
 
 --// Create ScreenGui
@@ -35,6 +34,284 @@ workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(UpdateS
 function KazeUI:CreateWindow(config)
 	config = config or {}
 
+	local Title   = config.Title or "Kaze UI"
+	local Author  = config.Author or "Unknown"
+	local Version = config.Version or "1.0"
+	local IconId  = config.Icon or nil
+	local Callback = config.Callback
+
+	--// Main Window
+	local Window = Instance.new("Frame")
+	Window.Size = UDim2.fromOffset(650, 420)
+	Window.Position = UDim2.fromScale(0.5, 0.5)
+	Window.AnchorPoint = Vector2.new(0.5, 0.5)
+	Window.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
+	Window.BackgroundTransparency = 0.05
+	Window.BorderSizePixel = 0
+	Window.Parent = ScreenGui
+	Instance.new("UICorner", Window).CornerRadius = UDim.new(0, 14)
+
+	local Stroke = Instance.new("UIStroke")
+	Stroke.Color = Color3.fromRGB(0, 200, 255)
+	Stroke.Thickness = 1.5
+	Stroke.Parent = Window
+
+	--// =========================
+	--// TOP BAR
+	--// =========================
+	local TopBar = Instance.new("Frame")
+	TopBar.Size = UDim2.new(1, 0, 0, 56)
+	TopBar.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
+	TopBar.BorderSizePixel = 0
+	TopBar.Parent = Window
+	Instance.new("UICorner", TopBar).CornerRadius = UDim.new(0, 14)
+
+	--// Icon
+	local Icon = Instance.new("ImageLabel")
+	Icon.Size = UDim2.fromOffset(32, 32)
+	Icon.Position = UDim2.fromOffset(14, 12)
+	Icon.BackgroundTransparency = 1
+	Icon.Image = IconId and ("rbxassetid://" .. IconId) or ""
+	Icon.Visible = IconId ~= nil
+	Icon.Parent = TopBar
+
+	-- Make icon circular
+	local iconCorner = Instance.new("UICorner")
+	iconCorner.CornerRadius = UDim.new(1, 0)
+	iconCorner.Parent = Icon
+
+	--// Title
+	local TitleLabel = Instance.new("TextLabel")
+	TitleLabel.Size = UDim2.new(1, -160, 0, 22)
+	TitleLabel.Position = UDim2.fromOffset(IconId and 56 or 16, 8)
+	TitleLabel.BackgroundTransparency = 1
+	TitleLabel.Text = Title
+	TitleLabel.TextColor3 = Color3.fromRGB(235, 235, 235)
+	TitleLabel.Font = Enum.Font.GothamBold
+	TitleLabel.TextSize = 16
+	TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
+	TitleLabel.Parent = TopBar
+
+	--// Author + Version
+	local SubLabel = Instance.new("TextLabel")
+	SubLabel.Size = UDim2.new(1, -160, 0, 18)
+	SubLabel.Position = UDim2.fromOffset(IconId and 56 or 16, 30)
+	SubLabel.BackgroundTransparency = 1
+	SubLabel.Text = Author .. "  |  v" .. Version
+	SubLabel.TextColor3 = Color3.fromRGB(160, 160, 160)
+	SubLabel.Font = Enum.Font.Gotham
+	SubLabel.TextSize = 13
+	SubLabel.TextXAlignment = Enum.TextXAlignment.Left
+	SubLabel.Parent = TopBar
+
+	--// Minimize Button
+	local Minimize = Instance.new("TextButton")
+	Minimize.Size = UDim2.fromOffset(36, 36)
+	Minimize.Position = UDim2.new(1, -88, 0.5, -18)
+	Minimize.Text = "—"
+	Minimize.Font = Enum.Font.GothamBold
+	Minimize.TextSize = 20
+	Minimize.TextColor3 = Color3.fromRGB(220, 220, 220)
+	Minimize.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
+	Minimize.Parent = TopBar
+	Instance.new("UICorner", Minimize).CornerRadius = UDim.new(1, 0)
+
+	--// Close Button
+	local Close = Instance.new("TextButton")
+	Close.Size = UDim2.fromOffset(36, 36)
+	Close.Position = UDim2.new(1, -44, 0.5, -18)
+	Close.Text = "✕"
+	Close.Font = Enum.Font.GothamBold
+	Close.TextSize = 18
+	Close.TextColor3 = Color3.fromRGB(255, 90, 90)
+	Close.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
+	Close.Parent = TopBar
+	Instance.new("UICorner", Close).CornerRadius = UDim.new(1, 0)
+
+	--// Content Area
+	local Content = Instance.new("Frame")
+	Content.Position = UDim2.fromOffset(0, 56)
+	Content.Size = UDim2.new(1, 0, 1, -56)
+	Content.BackgroundTransparency = 1
+	Content.Parent = Window
+
+	-- Save original content transparency so we restore it exactly
+	local originalContentTransparency = Content.BackgroundTransparency
+
+	--// Minimize Logic (with Tween)
+	local minimized = false
+	local tweenInfo = TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+	Minimize.MouseButton1Click:Connect(function()
+		minimized = not minimized
+		if minimized then
+			-- minimize: shrink window and hide content
+			TweenService:Create(Window, tweenInfo, {Size = UDim2.fromOffset(650, 56)}):Play()
+			-- animate content to fully transparent, then hide
+			TweenService:Create(Content, tweenInfo, {BackgroundTransparency = 1}):Play()
+			task.delay(0.3, function()
+				Content.Visible = false
+			end)
+		else
+			-- restore: make content visible and restore original transparency
+			Content.Visible = true
+			-- restore to saved original transparency to avoid theme/color changes
+			TweenService:Create(Window, tweenInfo, {Size = UDim2.fromOffset(650, 420)}):Play()
+			TweenService:Create(Content, tweenInfo, {BackgroundTransparency = originalContentTransparency}):Play()
+		end
+	end)
+
+	--// Close Confirmation UI
+	local function ShowCloseConfirm()
+		-- Disable buttons
+		Minimize.Active = false
+		Close.Active = false
+
+		-- Dim overlay but keep it inside the Window so the confirm dialog sits within the UI
+		local Overlay = Instance.new("Frame")
+		Overlay.Size = UDim2.new(1, 0, 1, 0)
+		Overlay.Position = UDim2.new(0, 0, 0, 0)
+		Overlay.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+		Overlay.BackgroundTransparency = 0.6
+		Overlay.ZIndex = 10
+		Overlay.Parent = Window  -- keep inside Window
+
+		-- Confirmation Window (centered inside the Window)
+		local ConfirmWindow = Instance.new("Frame")
+		ConfirmWindow.Size = UDim2.fromOffset(350, 150)
+		ConfirmWindow.AnchorPoint = Vector2.new(0.5, 0.5)
+		ConfirmWindow.Position = UDim2.fromScale(0.5, 0.5)
+		ConfirmWindow.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
+		ConfirmWindow.BorderSizePixel = 0
+		ConfirmWindow.ZIndex = 11
+		ConfirmWindow.Parent = Overlay
+		Instance.new("UICorner", ConfirmWindow).CornerRadius = UDim.new(0, 12)
+
+		-- Confirmation Text
+		local ConfirmText = Instance.new("TextLabel")
+		ConfirmText.Size = UDim2.new(1, -32, 0, 48)
+		ConfirmText.Position = UDim2.fromOffset(16, 20)
+		ConfirmText.BackgroundTransparency = 1
+		ConfirmText.Text = "Are you sure you want to close the UI?"
+		ConfirmText.TextColor3 = Color3.fromRGB(230, 230, 230)
+		ConfirmText.Font = Enum.Font.GothamBold
+		ConfirmText.TextSize = 18
+		ConfirmText.TextWrapped = true
+		ConfirmText.TextXAlignment = Enum.TextXAlignment.Center
+		ConfirmText.Parent = ConfirmWindow
+		ConfirmText.ZIndex = 12
+
+		-- Buttons Container (anchored bottom center)
+		local ButtonsFrame = Instance.new("Frame")
+		ButtonsFrame.Size = UDim2.new(1, -32, 0, 40)
+		ButtonsFrame.Position = UDim2.new(0.5, 0, 1, -16)
+		ButtonsFrame.AnchorPoint = Vector2.new(0.5, 1)
+		ButtonsFrame.BackgroundTransparency = 1
+		ButtonsFrame.Parent = ConfirmWindow
+		ButtonsFrame.ZIndex = 12
+
+		-- Center the buttons horizontally using UIListLayout
+		local layout = Instance.new("UIListLayout")
+		layout.Parent = ButtonsFrame
+		layout.FillDirection = Enum.FillDirection.Horizontal
+		layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+		layout.VerticalAlignment = Enum.VerticalAlignment.Center
+		layout.Padding = UDim.new(0, 16)
+
+		-- Confirm Button
+		local ConfirmBtn = Instance.new("TextButton")
+		ConfirmBtn.Size = UDim2.new(0, 140, 1, 0)
+		ConfirmBtn.BackgroundColor3 = Color3.fromRGB(0, 170, 255)
+		ConfirmBtn.Text = "Confirm"
+		ConfirmBtn.Font = Enum.Font.GothamBold
+		ConfirmBtn.TextColor3 = Color3.fromRGB(230, 230, 230)
+		ConfirmBtn.TextSize = 18
+		ConfirmBtn.Parent = ButtonsFrame
+		ConfirmBtn.ZIndex = 13
+		Instance.new("UICorner", ConfirmBtn).CornerRadius = UDim.new(0, 8)
+
+		-- Cancel Button
+		local CancelBtn = Instance.new("TextButton")
+		CancelBtn.Size = UDim2.new(0, 140, 1, 0)
+		CancelBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+		CancelBtn.Text = "Cancel"
+		CancelBtn.Font = Enum.Font.GothamBold
+		CancelBtn.TextColor3 = Color3.fromRGB(220, 220, 220)
+		CancelBtn.TextSize = 18
+		CancelBtn.Parent = ButtonsFrame
+		CancelBtn.ZIndex = 13
+		Instance.new("UICorner", CancelBtn).CornerRadius = UDim.new(0, 8)
+
+		-- Confirm button callback: destroy UI
+		ConfirmBtn.MouseButton1Click:Connect(function()
+			ScreenGui:Destroy()
+		end)
+
+		-- Cancel button callback: remove overlay and re-enable buttons
+		CancelBtn.MouseButton1Click:Connect(function()
+			Overlay:Destroy()
+			Minimize.Active = true
+			Close.Active = true
+		end)
+	end
+
+	Close.MouseButton1Click:Connect(ShowCloseConfirm)
+
+	--// Dragging logic for TopBar (PC + mobile)
+	do
+		local dragging = false
+		local dragInput, dragStartPos, startPos
+
+		local function update(input)
+			local delta = input.Position - dragStartPos
+			local viewport = workspace.CurrentCamera.ViewportSize
+			local newPos = UDim2.new(
+				math.clamp(startPos.X.Scale, 0, 1),
+				math.clamp(startPos.X.Offset + delta.X, 0, viewport.X - Window.AbsoluteSize.X),
+				math.clamp(startPos.Y.Scale, 0, 1),
+				math.clamp(startPos.Y.Offset + delta.Y, 0, viewport.Y - Window.AbsoluteSize.Y)
+			)
+			Window.Position = newPos
+		end
+
+		TopBar.InputBegan:Connect(function(input)
+			if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+				dragging = true
+				dragStartPos = input.Position
+				startPos = Window.Position
+				input.Changed:Connect(function()
+					if input.UserInputState == Enum.UserInputState.End then
+						dragging = false
+					end
+				end)
+			end
+		end)
+
+		TopBar.InputChanged:Connect(function(input)
+			if input == dragInput then
+				update(input)
+			end
+		end)
+
+		UIS.InputChanged:Connect(function(input)
+			if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+				update(input)
+			end
+		end)
+	end
+
+	--// Callback
+	if typeof(Callback) == "function" then
+		pcall(Callback)
+	end
+
+	return {
+		Window = Window,
+		Content = Content,
+		Icon = Icon
+	}
+end
+
+return KazeUI
 	local Title   = config.Title or "Kaze UI"
 	local Author  = config.Author or "Unknown"
 	local Version = config.Version or "1.0"
