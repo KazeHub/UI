@@ -215,6 +215,9 @@ function KazeUI:CreateWindow(config)
 	Sidebar.BorderSizePixel = 0
 	Sidebar.Parent = Content
 	Instance.new("UICorner", Sidebar).CornerRadius = UDim.new(0, 8)
+	-- Sidebar layout and appearance fixes
+	Sidebar.ZIndex = 10
+	Sidebar.ClipsDescendants = false
 
 	local sidebarLayout = Instance.new("UIListLayout")
 	sidebarLayout.Parent = Sidebar
@@ -222,7 +225,11 @@ function KazeUI:CreateWindow(config)
 	sidebarLayout.SortOrder = Enum.SortOrder.LayoutOrder
 	sidebarLayout.Padding = UDim.new(0, 10)
 	sidebarLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-	sidebarLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+	sidebarLayout.VerticalAlignment = Enum.VerticalAlignment.Top
+
+	local sidebarPadding = Instance.new("UIPadding")
+	sidebarPadding.Parent = Sidebar
+	sidebarPadding.PaddingTop = UDim.new(0, 10)
 
 	--// Page Container (pages placed to the right of the sidebar; 75px offset)
 	local PageContainer = Instance.new("Frame")
@@ -232,6 +239,7 @@ function KazeUI:CreateWindow(config)
 	PageContainer.BackgroundTransparency = 1
 	PageContainer.BorderSizePixel = 0
 	PageContainer.Parent = Content
+	PageContainer.ZIndex = 5
 
 	-- internal trackers
 	local pages = {}
@@ -248,7 +256,7 @@ function KazeUI:CreateWindow(config)
 		if LucideMap[lower] then
 			return FormatImage(LucideMap[lower])
 		end
-		-- if user passed something like "rbxassetid://123" or "123" fall back to sanitizer
+		-- fallback: if user passed something like "rbxassetid://123" or "123" run sanitizer
 		return FormatImage(t)
 	end
 
@@ -268,13 +276,14 @@ function KazeUI:CreateWindow(config)
 		TabBtn.ScaleType = Enum.ScaleType.Fit
 		TabBtn.Parent = Sidebar
 		TabBtn.AutoButtonColor = false
+		TabBtn.ZIndex = Sidebar.ZIndex + 1
 
 		-- Neon indicator on the far left of the button
 		local Indicator = Instance.new("Frame")
 		Indicator.Name = "Indicator"
 		Indicator.Size = UDim2.fromOffset(2, 30)
 		Indicator.AnchorPoint = Vector2.new(0, 0.5)
-		Indicator.Position = UDim2.new(0, 0, 0.5, 0)
+		Indicator.Position = UDim2.new(0, 2, 0.5, 0)
 		Indicator.BackgroundColor3 = Color3.fromRGB(0, 255, 255)
 		Indicator.Visible = false
 		Indicator.ZIndex = TabBtn.ZIndex + 1
@@ -292,7 +301,7 @@ function KazeUI:CreateWindow(config)
 		Page.ScrollBarThickness = 8
 		Page.CanvasSize = UDim2.new(0, 0, 0, 0)
 		Page.Parent = PageContainer
-		Page.Visible = false
+		Page.Visible = false -- ensure hidden by default
 
 		-- simple content layout inside page (optional)
 		local pageLayout = Instance.new("UIListLayout")
@@ -304,34 +313,28 @@ function KazeUI:CreateWindow(config)
 		table.insert(pages, Page)
 		table.insert(tabs, TabBtn)
 
-		-- Tab click logic: fade-in this page, hide previous; update visuals
+		-- Tab click logic: immediately show this page, hide previous; update visuals
 		TabBtn.MouseButton1Click:Connect(function()
-			if activePage == Page then return end
-
-			-- Hide previous page with quick fade and deactivate its tab
-			if activePage then
-				local prevPage = activePage
-				local prevTab = activeTab
-				-- fade out previous page
-				TweenService:Create(prevPage, TweenInfo.new(0.18, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {BackgroundTransparency = 1}):Play()
-				delay(0.18, function()
-					if prevPage then prevPage.Visible = false end
-				end)
-				-- set prev tab inactive visuals
-				if prevTab and prevTab:IsA("ImageButton") then
-					prevTab.ImageColor3 = Color3.fromRGB(150, 150, 150)
-					local ind = prevTab:FindFirstChild("Indicator")
+			-- reset all other tabs to inactive visuals
+			for _, tbtn in ipairs(tabs) do
+				if tbtn ~= TabBtn and tbtn:IsA("ImageButton") then
+					TweenService:Create(tbtn, TweenInfo.new(0.12, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {ImageColor3 = Color3.fromRGB(150, 150, 150)}):Play()
+					local ind = tbtn:FindFirstChild("Indicator")
 					if ind then ind.Visible = false end
 				end
 			end
 
-			-- Activate new page
-			Page.BackgroundTransparency = 1
-			Page.Visible = true
-			TweenService:Create(Page, TweenInfo.new(0.22, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {BackgroundTransparency = 0}):Play()
+			-- Hide previous page immediately
+			if activePage then
+				activePage.Visible = false
+			end
 
-			-- Update button visuals
-			TabBtn.ImageColor3 = Color3.fromRGB(0, 255, 255)
+			-- Show new page immediately
+			Page.Visible = true
+			Page.BackgroundTransparency = 0
+
+			-- Update button visuals for clicked tab (tween to cyan)
+			TweenService:Create(TabBtn, TweenInfo.new(0.15, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {ImageColor3 = Color3.fromRGB(0, 255, 255)}):Play()
 			Indicator.Visible = true
 
 			-- set active refs
@@ -339,11 +342,10 @@ function KazeUI:CreateWindow(config)
 			activeTab = TabBtn
 		end)
 
-		-- If this is the first tab, activate it immediately
+		-- If this is the first tab, activate it immediately (manually set visuals)
 		if not activePage then
 			-- slight delay to ensure object parenting finished
 			delay(0.01, function()
-				TabBtn:Activate() -- basic activation of button (no effect on visuals)
 				TabBtn.ImageColor3 = Color3.fromRGB(0, 255, 255)
 				Indicator.Visible = true
 				Page.BackgroundTransparency = 0
