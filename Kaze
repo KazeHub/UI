@@ -1,439 +1,719 @@
---// Kaze UI v2 — Full Library (Core + Components)
---// Based on your original window system, enhanced with WindUI-style architecture
+-- KazeUI.lua
+-- Reworked: modular, theme-driven, factory-style UI library inspired by WindUI
+-- Single ModuleScript - require() to use
+-- Mobile-friendly, optimized, with clean lifecycle and event handling
 
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
-local UIS = game:GetService("UserInputType")
+local UIS = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
 local LP = Players.LocalPlayer
-local PlayerGui = LP:WaitForChild("PlayerGui")
 
---// ===== THEME SYSTEM (Centralized Design Tokens) =====
-local Theme = {
-	Window = {
-		Size = Vector2.new(650, 420),
-		Background = Color3.fromRGB(20, 20, 25),
-		CornerRadius = 14,
-		NeonColor = Color3.fromRGB(0, 160, 255),
-		NeonGlow = Color3.fromRGB(0, 255, 255),
-		NeonThickness = 2.5,
-	},
-	TopBar = {
-		Height = 56,
-		Background = Color3.fromRGB(15, 15, 20),
-		TitleColor = Color3.fromRGB(235, 235, 235),
-		SubtitleColor = Color3.fromRGB(160, 160, 160),
-		ButtonBG = Color3.fromRGB(25, 25, 30),
-		CloseColor = Color3.fromRGB(255, 90, 90),
-	},
-	Fonts = {
-		Bold = Enum.Font.GothamBold,
-		Normal = Enum.Font.Gotham,
-	},
-	Text = {
-		TitleSize = 16,
-		SubtitleSize = 13,
-		ButtonSize = 16,
-	},
-	Component = {
-		ButtonRadius = 8,
-		Padding = 10,
-		Spacing = 50,
-	},
-}
-
---// ===== HELPER FUNCTIONS =====
-local function FormatImage(id)
-	if not id then return "" end
-	id = tostring(id):gsub("%D", "")
-	return id == "" and "" or ("rbxassetid://" .. id)
-end
-local function MakeDraggable(handle, target)
-	local dragging, dragStart, startPos
-	handle.InputBegan:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-			dragging = true
-			dragStart = input.Position
-			startPos = target.Position
-			input.Changed:Connect(function()
-				if input.UserInputState == Enum.UserInputState.End then
-					dragging = false
-				end
-			end)
-		end
-	end)
-	game:GetService("UserInputService").InputChanged:Connect(function(input)
-		if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-			local delta = input.Position - dragStart
-			target.Position = UDim2.new(
-				startPos.X.Scale, startPos.X.Offset + delta.X,
-				startPos.Y.Scale, startPos.Y.Offset + delta.Y
-			)
-		end
-	end)
-end
-
---// ===== COMPONENT FACTORIES =====
-local Component = {}
-
-function Component:Button(title, desc, callback)
-	local hasDesc = desc and desc ~= ""
-	local height = hasDesc and 70 or 40
-
-	local btn = Instance.new("TextButton")
-	btn.Size = UDim2.new(1, -20, 0, height)
-	btn.Position = UDim2.new(0, 10, 0, #self.Components * Theme.Component.Spacing + 10)
-	btn.BackgroundColor3 = Theme.TopBar.ButtonBG
-	btn.AutoButtonColor = false
-	btn.Text = ""
-	btn.Parent = self.Frame
-
-	Instance.new("UICorner", btn).CornerRadius = UDim.new(0, Theme.Component.ButtonRadius)
-
-	local titleLbl = Instance.new("TextLabel")
-	titleLbl.BackgroundTransparency = 1
-	titleLbl.Text = title
-	titleLbl.TextColor3 = Theme.Window.Background:Lerp(Theme.TopBar.TitleColor, 0.9)
-	titleLbl.Font = Theme.Fonts.Bold
-	titleLbl.TextSize = hasDesc and 14 or 16
-	titleLbl.Size = UDim2.new(1, -8, 0, hasDesc and 20 or 30)
-	titleLbl.Position = UDim2.new(0, 8, 0, 6)	titleLbl.Parent = btn
-
-	if hasDesc then
-		local descLbl = Instance.new("TextLabel")
-		descLbl.BackgroundTransparency = 1
-		descLbl.Text = desc
-		descLbl.TextColor3 = Theme.TopBar.SubtitleColor
-		descLbl.Font = Theme.Fonts.Normal
-		descLbl.TextSize = 12
-		descLbl.TextWrapped = true
-		descLbl.Size = UDim2.new(1, -8, 0, 24)
-		descLbl.Position = UDim2.new(0, 8, 0, 34)
-		descLbl.Parent = btn
-	end
-
-	btn.MouseButton1Click:Connect(callback)
-	table.insert(self.Components, btn)
-	return btn
-end
-
-function Component:Section(title)
-	local section = Instance.new("Frame")
-	section.Size = UDim2.new(1, -20, 0, 40)
-	section.Position = UDim2.new(0, 10, 0, #self.Components * Theme.Component.Spacing + 10)
-	section.BackgroundColor3 = Theme.Window.Background
-	section.BorderSizePixel = 0
-	section.Parent = self.Frame
-
-	Instance.new("UICorner", section).CornerRadius = UDim.new(0, 8)
-
-	local label = Instance.new("TextLabel")
-	label.Size = UDim2.new(1, -16, 0, 30)
-	label.Position = UDim2.new(0, 8, 0, 5)
-	label.BackgroundTransparency = 1
-	label.Text = title
-	label.TextColor3 = Theme.TopBar.TitleColor
-	label.Font = Theme.Fonts.Bold
-	label.TextSize = 14
-	label.Parent = section
-
-	table.insert(self.Components, section)
-	return section
-end
-
---// ===== TAB SYSTEM =====
-local Tab = {}
-Tab.__index = Tab
-setmetatable(Tab, { __index = Component })
-
-function Tab.new(parent, name)	local self = setmetatable({
-		Name = name,
-		Frame = Instance.new("Frame"),
-		Components = {},
-	}, Tab)
-
-	self.Frame.Name = name
-	self.Frame.Size = UDim2.new(1, 0, 1, 0)
-	self.Frame.BackgroundTransparency = 1
-	self.Frame.Visible = false
-	self.Frame.Parent = parent
-
-	return self
-end
-
---// ===== WINDOW SYSTEM (Your Original Core, Slightly Refactored) =====
 local KazeUI = {}
 KazeUI.__index = KazeUI
 
-function KazeUI:CreateWindow(config)
-	config = config or {}
+-- ============================
+-- Utilities
+-- ============================
+local Maid = {}
+Maid.__index = Maid
+function Maid.new()
+	return setmetatable({_tasks = {}}, Maid)
+end
+function Maid:Give(task)
+	if not task then return end
+	table.insert(self._tasks, task)
+	return task
+end
+function Maid:DoCleaning()
+	for _, t in ipairs(self._tasks) do
+		local ok, err = pcall(function()
+			if typeof(t) == "RBXScriptConnection" then
+				t:Disconnect()
+			elseif typeof(t) == "Instance" then
+				t:Destroy()
+			elseif type(t) == "function" then
+				t()
+			elseif type(t) == "table" and t.Destroy then
+				t:Destroy()
+			end
+		end)
+		if not ok then
+			warn("Maid cleanup error:", err)
+		end
+	end
+	self._tasks = {}
+end
+
+-- Simple Signal implementation
+local Signal = {}
+Signal.__index = Signal
+function Signal.new()
+	return setmetatable({_handlers = {}}, Signal)
+end
+function Signal:Connect(fn)
+	table.insert(self._handlers, fn)
+	local i = #self._handlers
+	return {
+		Disconnect = function()
+			self._handlers[i] = nil
+		end
+	}
+end
+function Signal:Fire(...)
+	for _, h in ipairs(self._handlers) do
+		if type(h) == "function" then
+			task.spawn(h, ...)
+		end
+	end
+end
+function Signal:Clear()
+	self._handlers = {}
+end
+
+-- Lightweight debounce
+local function debounce(wait, fn)
+	local t = 0
+	return function(...)
+		local now = tick()
+		if now - t >= wait then
+			t = now
+			return fn(...)
+		end
+	end
+end
+
+-- Safer tween helper with default info
+local function Tween(instance, props, tweenInfo)
+	tweenInfo = tweenInfo or TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+	local ok, tween = pcall(function()
+		return TweenService:Create(instance, tweenInfo, props)
+	end)
+	if not ok or not tween then
+		warn("Failed to create tween for", instance, props)
+		return
+	end
+	tween:Play()
+	return tween
+end
+
+-- Robust texture sanitizer
+local function FormatImage(id)
+	if not id then return "" end
+	local s = tostring(id)
+	-- Accept rbxassetid://, rbxasset://, http(s) links to Roblox CDN, plain numbers
+	-- Extract digits
+	local digits = s:match("%d+")
+	if digits and digits ~= "" then
+		return "rbxassetid://" .. digits
+	end
+	-- fallback: if it's already an rbx or http url with asset, try to return as-is
+	if s:match("^rbxassetid://") or s:match("^http[s]?://") then
+		return s
+	end
+	return ""
+end
+
+-- Clamp position for window so it stays on-screen
+local function clampWindowPosition(pos, size)
+	local viewport = workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize or Vector2.new(1920, 1080)
+	local x = math.clamp(pos.X.Offset, 0, math.max(0, viewport.X - size.X.Offset))
+	local y = math.clamp(pos.Y.Offset, 0, math.max(0, viewport.Y - size.Y.Offset))
+	return UDim2.new(pos.X.Scale, x, pos.Y.Scale, y)
+end
+
+-- Draggable helper (works for touch and mouse)
+local function MakeDraggable(handle, target, maid)
+	handle.MouseButton1Down:Connect(function()
+		-- handle exists only for Buttons/ImageButton/TextButton. Support frames by MouseButton1Click fallback isn't available.
+	end)
+	local dragState = {dragging = false, dragStart = nil, startPos = nil, dragInput = nil}
+	local function update(input)
+		if not dragState.dragging or not dragState.dragStart or not dragState.startPos then return end
+		local delta = input.Position - dragState.dragStart
+		local newPos = UDim2.new(
+			dragState.startPos.X.Scale, dragState.startPos.X.Offset + delta.X,
+			dragState.startPos.Y.Scale, dragState.startPos.Y.Offset + delta.Y
+		)
+		local clamped = clampWindowPosition(newPos, target.AbsoluteSize and UDim2.fromOffset(target.AbsoluteSize.X, target.AbsoluteSize.Y) or target.Position)
+		target.Position = clamped
+	end
+
+	local beganConn = handle.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			dragState.dragging = true
+			dragState.dragStart = input.Position
+			dragState.startPos = target.Position
+			-- connect changed for input end
+			local changedConn
+			changedConn = input.Changed:Connect(function()
+				if input.UserInputState == Enum.UserInputState.End then
+					dragState.dragging = false
+					dragState.dragInput = nil
+					if changedConn then changedConn:Disconnect(); changedConn = nil end
+				end
+			end)
+			maid:Give(changedConn)
+		end
+	end)
+	local changedConn = handle.InputChanged:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+			dragState.dragInput = input
+		end
+	end)
+	local inputChangedConn = UIS.InputChanged:Connect(function(input)
+		if input == dragState.dragInput and dragState.dragging then
+			update(input)
+		end
+	end)
+
+	maid:Give(beganConn)
+	maid:Give(changedConn)
+	maid:Give(inputChangedConn)
+end
+
+-- ============================
+-- Theme Manager
+-- ============================
+local ThemeManager = {}
+ThemeManager.__index = ThemeManager
+function ThemeManager.new()
+	local self = setmetatable({}, ThemeManager)
+	self.themes = {}
+	self.current = nil
+	return self
+end
+function ThemeManager:Register(name, theme)
+	self.themes[name] = theme
+end
+function ThemeManager:SetTheme(name)
+	local t = self.themes[name]
+	if not t then warn("Theme not found:", name); return end
+	self.current = t
+end
+function ThemeManager:Get()
+	return self.current
+end
+
+-- Default theme
+local DefaultTheme = {
+	Window = Color3.fromRGB(20, 20, 25),
+	TopBar = Color3.fromRGB(15, 15, 20),
+	Accent = Color3.fromRGB(0, 160, 255),
+	AccentGlow = Color3.fromRGB(0, 255, 255),
+	TextPrimary = Color3.fromRGB(235,235,235),
+	TextSecondary = Color3.fromRGB(160,160,160),
+	Background = Color3.fromRGB(10,10,12),
+	MinBtnBg = Color3.fromRGB(25,25,30),
+	CloseColor = Color3.fromRGB(255,90,90),
+	MiniSize = Vector2.new(60,60),
+	ZIndexBase = 50,
+}
+
+-- ============================
+-- UI Factory
+-- ============================
+local UIFactory = {}
+UIFactory.__index = UIFactory
+
+function UIFactory.new(themeManager, screenGui)
+	local self = setmetatable({}, UIFactory)
+	self.theme = themeManager
+	self.screenGui = screenGui
+	return self
+end
+
+function UIFactory:CreateFrame(props)
+	local f = Instance.new("Frame")
+	f.Name = props.Name or "Frame"
+	if props.Size then f.Size = props.Size end
+	if props.Position then f.Position = props.Position end
+	if props.AnchorPoint then f.AnchorPoint = props.AnchorPoint end
+	if props.BackgroundColor3 then f.BackgroundColor3 = props.BackgroundColor3 end
+	if props.BackgroundTransparency then f.BackgroundTransparency = props.BackgroundTransparency end
+	f.BorderSizePixel = props.BorderSizePixel or 0
+	if props.Parent then f.Parent = props.Parent end
+	if props.ClipsDescendants ~= nil then f.ClipsDescendants = props.ClipsDescendants end
+	if props.ZIndex then f.ZIndex = props.ZIndex end
+	if props.CornerRadius then
+		local corner = Instance.new("UICorner")
+		corner.CornerRadius = props.CornerRadius
+		corner.Parent = f
+	end
+	return f
+end
+
+function UIFactory:CreateTextLabel(props)
+	local t = Instance.new("TextLabel")
+	t.Name = props.Name or "TextLabel"
+	t.Size = props.Size or UDim2.new(1,0,0,20)
+	if props.Position then t.Position = props.Position end
+	t.BackgroundTransparency = props.BackgroundTransparency or 1
+	t.Text = props.Text or ""
+	t.TextColor3 = props.TextColor3 or DefaultTheme.TextPrimary
+	t.Font = props.Font or Enum.Font.Gotham
+	t.TextSize = props.TextSize or 14
+	t.TextWrapped = props.TextWrapped or false
+	t.TextXAlignment = props.TextXAlignment or Enum.TextXAlignment.Left
+	if props.Parent then t.Parent = props.Parent end
+	if props.ZIndex then t.ZIndex = props.ZIndex end
+	return t
+end
+
+function UIFactory:CreateButton(props)
+	local b = Instance.new("TextButton")
+	b.Name = props.Name or "Button"
+	b.Size = props.Size or UDim2.new(0,120,0,36)
+	if props.Position then b.Position = props.Position end
+	b.BackgroundColor3 = props.BackgroundColor3 or DefaultTheme.Accent
+	b.Text = props.Text or ""
+	b.TextColor3 = props.TextColor3 or DefaultTheme.TextPrimary
+	b.Font = props.Font or Enum.Font.GothamBold
+	b.TextSize = props.TextSize or 14
+	b.ZIndex = props.ZIndex or DefaultTheme.ZIndexBase
+	if props.Parent then b.Parent = props.Parent end
+	if props.CornerRadius then
+		local corner = Instance.new("UICorner")
+		corner.CornerRadius = props.CornerRadius
+		corner.Parent = b
+	end
+	return b
+end
+
+function UIFactory:CreateImageButton(props)
+	local ib = Instance.new("ImageButton")
+	ib.Name = props.Name or "ImageButton"
+	ib.Size = props.Size or UDim2.fromOffset(32,32)
+	if props.Position then ib.Position = props.Position end
+	ib.BackgroundTransparency = props.BackgroundTransparency or 0
+	ib.BackgroundColor3 = props.BackgroundColor3 or DefaultTheme.MinBtnBg
+	ib.BorderSizePixel = 0
+	ib.Image = props.Image or ""
+	ib.ScaleType = props.ScaleType or Enum.ScaleType.Fit
+	if props.Parent then ib.Parent = props.Parent end
+	if props.ZIndex then ib.ZIndex = props.ZIndex end
+	if props.CornerRadius then
+		local corner = Instance.new("UICorner")
+		corner.CornerRadius = props.CornerRadius
+		corner.Parent = ib
+	end
+	return ib
+end
+
+-- ============================
+-- Global ScreenGui and UIScale
+-- ============================
+local function ensureScreenGui()
+	local existing = LP:FindFirstChild("PlayerGui") and LP.PlayerGui:FindFirstChild("KazeUI")
+	if existing then return existing end
 	local ScreenGui = Instance.new("ScreenGui")
 	ScreenGui.Name = "KazeUI"
 	ScreenGui.ResetOnSpawn = false
 	ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-	ScreenGui.Parent = PlayerGui
-
-	-- Mobile Scaling
+	ScreenGui.Parent = LP:WaitForChild("PlayerGui")
 	local UIScale = Instance.new("UIScale")
 	UIScale.Parent = ScreenGui
+
 	local function UpdateScale()
-		local size = workspace.CurrentCamera.ViewportSize
-		UIScale.Scale = size.X < 600 and math.clamp(size.X / 800, 0.5, 1) or math.clamp(size.X / 1920, 0.6, 1)
+		local cam = workspace.CurrentCamera
+		if not cam then return end
+		local size = cam.ViewportSize
+		if size.X < 600 then
+			UIScale.Scale = math.clamp(size.X / 800, 0.5, 1)
+		else
+			UIScale.Scale = math.clamp(size.X / 1920, 0.6, 1)
+		end
 	end
 	UpdateScale()
-	workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(UpdateScale)
+	if workspace.CurrentCamera then
+		workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(UpdateScale)
+	end
+	return ScreenGui
+end
 
-	-- Window
-	local Window = Instance.new("Frame")
-	Window.Name = "MainWindow"
-	Window.Size = UDim2.fromOffset(Theme.Window.Size.X, Theme.Window.Size.Y)
-	Window.Position = UDim2.fromScale(0.5, 0.5)
-	Window.AnchorPoint = Vector2.new(0.5, 0.5)
-	Window.BackgroundColor3 = Theme.Window.Background
-	Window.BorderSizePixel = 0
+-- ============================
+-- Window Factory
+-- ============================
+function KazeUI.new()
+	local self = setmetatable({}, KazeUI)
+	self.maid = Maid.new()
+	self.themeManager = ThemeManager.new()
+	self.themeManager:Register("Default", DefaultTheme)
+	self.themeManager:SetTheme("Default")
+	self.screenGui = ensureScreenGui()
+	self.factory = UIFactory.new(self.themeManager, self.screenGui)
+	return self
+end
+
+-- CreateWindow returns a window object with methods and events
+function KazeUI:CreateWindow(config)
+	config = config or {}
+	local theme = self.themeManager:Get() or DefaultTheme
+	local maid = Maid.new()
+
+	-- config
+	local Title = config.Title or "Kaze UI"
+	local Author = config.Author or "Unknown"
+	local Version = config.Version or "1.0"
+	local IconImage = FormatImage(config.Icon or "6031763447")
+	local OpenIcon = FormatImage((config.OpenButton and config.OpenButton.Icon) or config.Icon or "6031763447")
+	local callback = config.Callback
+	local miniSize = UDim2.fromOffset(theme.MiniSize.X, theme.MiniSize.Y)
+
+	-- Signals for API users
+	local onClose = Signal.new()
+	local onMinimize = Signal.new()
+	local onOpen = Signal.new()
+	local onDestroy = Signal.new()
+
+	-- Main Window
+	local Window = self.factory:CreateFrame({
+		Name = "MainWindow",
+		Size = UDim2.fromOffset(650, 420),
+		Position = UDim2.new(0.5, 0, 0.5, 0),
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		BackgroundColor3 = theme.Window,
+		Parent = self.screenGui,
+		CornerRadius = UDim.new(0, 14),
+		ZIndex = theme.ZIndexBase + 1,
+	})
+	local WindowStroke = Instance.new("UIStroke")
+	WindowStroke.Color = theme.Accent
+	WindowStroke.Thickness = 2.5
+	WindowStroke.Parent = Window
+
+	-- Neon tween on stroke
+	do
+		local tween = TweenService:Create(WindowStroke, TweenInfo.new(1.5, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), {Color = theme.AccentGlow})
+		tween:Play()
+		maid:Give(function() tween:Cancel() end)
+	end
+
 	Window.ClipsDescendants = true
-	Window.Parent = ScreenGui
-	Instance.new("UICorner", Window).CornerRadius = UDim.new(0, Theme.Window.CornerRadius)
 
-	local stroke = Instance.new("UIStroke")	stroke.Color = Theme.Window.NeonColor
-	stroke.Thickness = Theme.Window.NeonThickness
-	stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-	stroke.LineJoinMode = Enum.LineJoinMode.Bevel
-	stroke.Parent = Window
+	-- TopBar
+	local TopBar = self.factory:CreateFrame({
+		Name = "TopBar",
+		Size = UDim2.new(1,0,0,56),
+		Position = UDim2.new(0,0,0,0),
+		BackgroundColor3 = theme.TopBar,
+		Parent = Window,
+		CornerRadius = UDim.new(0,14),
+	})
+	TopBar.ClipsDescendants = true
 
-	-- Neon Glow Animation
-	spawn(function()
-		while Window.Parent do
-			TweenService:Create(stroke, TweenInfo.new(1.5, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), {
-				Color = Theme.Window.NeonGlow
-			}):Play():Completed:Wait()
-			TweenService:Create(stroke, TweenInfo.new(1.5, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), {
-				Color = Theme.Window.NeonColor
-			}):Play():Completed:Wait()
-		end
-	end)
+	local Icon = Instance.new("ImageLabel")
+	Icon.Name = "Icon"
+	Icon.Size = UDim2.fromOffset(32,32)
+	Icon.Position = UDim2.fromOffset(14,12)
+	Icon.BackgroundTransparency = 1
+	Icon.Image = IconImage
+	Icon.Parent = TopBar
+	local iconCorner = Instance.new("UICorner", Icon)
+	iconCorner.CornerRadius = UDim.new(1, 0)
 
-	-- Top Bar
-	local TopBar = Instance.new("Frame")
-	TopBar.Size = UDim2.new(1, 0, 0, Theme.TopBar.Height)
-	TopBar.BackgroundColor3 = Theme.TopBar.Background
-	TopBar.BorderSizePixel = 0
-	TopBar.Parent = Window
-	Instance.new("UICorner", TopBar).CornerRadius = UDim.new(0, Theme.Window.CornerRadius)
-	MakeDraggable(TopBar, Window)
+	local TitleLabel = self.factory:CreateTextLabel({
+		Name = "TitleLabel",
+		Size = UDim2.new(1, -160, 0, 22),
+		Position = UDim2.fromOffset(56, 8),
+		Text = Title,
+		TextColor3 = theme.TextPrimary,
+		Font = Enum.Font.GothamBold,
+		TextSize = 16,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		Parent = TopBar
+	})
 
-	local icon = Instance.new("ImageLabel")
-	icon.Size = UDim2.fromOffset(32, 32)
-	icon.Position = UDim2.fromOffset(14, 12)
-	icon.BackgroundTransparency = 1
-	icon.Image = FormatImage(config.Icon or "6031763447")
-	icon.Parent = TopBar
-	Instance.new("UICorner", icon).CornerRadius = UDim.new(1, 0)
+	local SubLabel = self.factory:CreateTextLabel({
+		Name = "SubLabel",
+		Size = UDim2.new(1, -160, 0, 18),
+		Position = UDim2.fromOffset(56, 30),
+		Text = Author .. " | v" .. Version,
+		TextColor3 = theme.TextSecondary,
+		Font = Enum.Font.Gotham,
+		TextSize = 13,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		Parent = TopBar
+	})
 
-	local titleLabel = Instance.new("TextLabel")
-	titleLabel.Size = UDim2.new(1, -160, 0, 22)
-	titleLabel.Position = UDim2.fromOffset(56, 8)
-	titleLabel.BackgroundTransparency = 1
-	titleLabel.Text = config.Title or "Kaze UI"
-	titleLabel.TextColor3 = Theme.TopBar.TitleColor
-	titleLabel.Font = Theme.Fonts.Bold
-	titleLabel.TextSize = Theme.Text.TitleSize
-	titleLabel.TextXAlignment = Enum.TextXAlignment.Left
-	titleLabel.Parent = TopBar
+	-- Buttons
+	local Minimize = self.factory:CreateButton({
+		Name = "Minimize",
+		Size = UDim2.fromOffset(36,36),
+		Position = UDim2.new(1, -88, 0.5, -18),
+		BackgroundColor3 = theme.MinBtnBg,
+		Text = "—",
+		Font = Enum.Font.GothamBold,
+		TextSize = 20,
+		TextColor3 = theme.TextPrimary,
+		Parent = TopBar,
+		CornerRadius = UDim.new(0, 18),
+	})
+	local Close = self.factory:CreateButton({
+		Name = "Close",
+		Size = UDim2.fromOffset(36,36),
+		Position = UDim2.new(1, -44, 0.5, -18),
+		BackgroundColor3 = theme.MinBtnBg,
+		Text = "✕",
+		Font = Enum.Font.GothamBold,
+		TextSize = 18,
+		TextColor3 = theme.CloseColor,
+		Parent = TopBar,
+		CornerRadius = UDim.new(0, 18),
+	})
 
-	local subLabel = Instance.new("TextLabel")
-	subLabel.Size = UDim2.new(1, -160, 0, 18)
-	subLabel.Position = UDim2.fromOffset(56, 30)
-	subLabel.BackgroundTransparency = 1	subLabel.Text = (config.Author or "Unknown") .. " | v" .. (config.Version or "1.0")
-	subLabel.TextColor3 = Theme.TopBar.SubtitleColor
-	subLabel.Font = Theme.Fonts.Normal
-	subLabel.TextSize = Theme.Text.SubtitleSize
-	subLabel.TextXAlignment = Enum.TextXAlignment.Left
-	subLabel.Parent = TopBar
+	-- Content
+	local Content = self.factory:CreateFrame({
+		Name = "Content",
+		Position = UDim2.fromOffset(0,56),
+		Size = UDim2.new(1,0,1,-56),
+		BackgroundTransparency = 1,
+		Parent = Window,
+	})
 
-	-- Minimize & Close
-	local Minimize = Instance.new("TextButton")
-	Minimize.Size = UDim2.fromOffset(36, 36)
-	Minimize.Position = UDim2.new(1, -88, 0.5, -18)
-	Minimize.Text = "—"
-	Minimize.Font = Theme.Fonts.Bold
-	Minimize.TextSize = 20
-	Minimize.TextColor3 = Theme.TopBar.TitleColor
-	Minimize.BackgroundColor3 = Theme.TopBar.ButtonBG
-	Minimize.Parent = TopBar
-	Instance.new("UICorner", Minimize).CornerRadius = UDim.new(1, 0)
-
-	local Close = Instance.new("TextButton")
-	Close.Size = UDim2.fromOffset(36, 36)
-	Close.Position = UDim2.new(1, -44, 0.5, -18)
-	Close.Text = "✕"
-	Close.Font = Theme.Fonts.Bold
-	Close.TextSize = 18
-	Close.TextColor3 = Theme.TopBar.CloseColor
-	Close.BackgroundColor3 = Theme.TopBar.ButtonBG
-	Close.Parent = TopBar
-	Instance.new("UICorner", Close).CornerRadius = UDim.new(1, 0)
-
-	-- Content Area
-	local Content = Instance.new("Frame")
-	Content.Position = UDim2.fromOffset(0, Theme.TopBar.Height)
-	Content.Size = UDim2.new(1, 0, 1, -Theme.TopBar.Height)
-	Content.BackgroundTransparency = 1
-	Content.Parent = Window
-
-	-- Mini Button (60x60)
-	local MiniButton = Instance.new("ImageButton")
-	MiniButton.Name = "MiniButton"
-	MiniButton.Size = UDim2.fromOffset(0, 0)
-	MiniButton.Position = UDim2.fromScale(0.1, 0.1)
-	MiniButton.BackgroundColor3 = Theme.Window.Background
-	MiniButton.BorderSizePixel = 0
+	-- Mini Button (standalone, enforced 60x60 size)
+	local MiniButton = self.factory:CreateImageButton({
+		Name = "MiniButton",
+		Size = miniSize,
+		Position = UDim2.fromScale(0.1, 0.1),
+		BackgroundColor3 = theme.Window,
+		Image = OpenIcon,
+		Parent = self.screenGui,
+		CornerRadius = UDim.new(0,12),
+	})
+	MiniButton.ZIndex = (theme.ZIndexBase or 50) + 100
 	MiniButton.Visible = false
-	MiniButton.ZIndex = 999
-	MiniButton.Parent = ScreenGui
-	MiniButton.ScaleType = Enum.ScaleType.Slice
-	MiniButton.SliceCenter = Rect.new(4, 4, 60, 60)
-	Instance.new("UICorner", MiniButton).CornerRadius = UDim.new(0, 12)
-	Instance.new("UIPadding", MiniButton).PaddingAll = UDim.new(0, 4)
 
-	local miniIcon = Instance.new("ImageLabel")
-	miniIcon.Size = UDim2.fromScale(1, 1)
-	miniIcon.Position = UDim2.fromScale(0.5, 0.5)
-	miniIcon.AnchorPoint = Vector2.new(0.5, 0.5)
-	miniIcon.BackgroundTransparency = 1
-	miniIcon.Image = FormatImage(config.Icon or "6031763447")
-	miniIcon.ZIndex = 1000
-	miniIcon.Parent = MiniButton
+	-- Padding and icon handling within MiniButton
+	local pad = Instance.new("UIPadding", MiniButton)
+	pad.PaddingTop = UDim.new(0,4)
+	pad.PaddingBottom = UDim.new(0,4)
+	pad.PaddingLeft = UDim.new(0,4)
+	pad.PaddingRight = UDim.new(0,4)
 
-	local miniStroke = Instance.new("UIStroke")
-	miniStroke.Color = Theme.Window.NeonColor
-	miniStroke.Thickness = Theme.Window.NeonThickness
-	miniStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-	miniStroke.LineJoinMode = Enum.LineJoinMode.Bevel
-	miniStroke.Parent = MiniButton
+	local MiniIcon = Instance.new("ImageLabel")
+	MiniIcon.Size = UDim2.fromScale(1,1)
+	MiniIcon.Position = UDim2.fromScale(0.5,0.5)
+	MiniIcon.AnchorPoint = Vector2.new(0.5,0.5)
+	MiniIcon.BackgroundTransparency = 1
+	MiniIcon.Image = OpenIcon
+	MiniIcon.Parent = MiniButton
+	MiniIcon.ZIndex = MiniButton.ZIndex + 1
 
-	MakeDraggable(MiniButton, MiniButton)
-	MakeDraggable(TopBar, Window)
+	local MiniStroke = Instance.new("UIStroke", MiniButton)
+	MiniStroke.Color = theme.Accent
+	MiniStroke.Thickness = 2.5
+	MiniStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+	MiniStroke.LineJoinMode = Enum.LineJoinMode.Bevel
 
-	-- Minimize Logic
+	-- Neon tween on mini stroke
+	do
+		local tween = TweenService:Create(MiniStroke, TweenInfo.new(1.5, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), {Color = theme.AccentGlow})
+		tween:Play()
+		maid:Give(function() tween:Cancel() end)
+	end
+
+	-- Make draggable (TopBar drags Window, MiniButton drags MiniButton)
+	MakeDraggable(TopBar, Window, maid)
+	MakeDraggable(MiniButton, MiniButton, maid)
+
+	-- Minimize / Restore behavior
 	Minimize.MouseButton1Click:Connect(function()
 		Window.Visible = false
 		MiniButton.Visible = true
-		TweenService:Create(MiniButton, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
-			Size = UDim2.fromOffset(60, 60)
-		}):Play()
+		MiniButton.Size = UDim2.fromOffset(0,0)
+		Tween(MiniButton, {Size = miniSize}, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out))
+		onMinimize:Fire()
 	end)
 
 	MiniButton.MouseButton1Click:Connect(function()
 		MiniButton.Visible = false
 		Window.Visible = true
-		Window.Size = UDim2.fromOffset(0, 0)
-		TweenService:Create(Window, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
-			Size = UDim2.fromOffset(Theme.Window.Size.X, Theme.Window.Size.Y)
-		}):Play()
+		Window.Size = UDim2.fromOffset(0,0)
+		Tween(Window, {Size = UDim2.fromOffset(650,420)}, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out))
+		onOpen:Fire()
 	end)
 
-	-- Close Confirmation (same as your original)
+	-- Close confirmation overlay
 	local function ShowCloseConfirm()
 		Minimize.Active = false
 		Close.Active = false
-		local overlay = Instance.new("Frame")
-		overlay.Size = UDim2.new(1, 0, 1, 0)
-		overlay.BackgroundColor3 = Color3.new()
-		overlay.BackgroundTransparency = 0.6
-		overlay.ZIndex = 20
-		overlay.Parent = Window
-		local confirmWin = Instance.new("Frame")
-		confirmWin.Size = UDim2.fromOffset(350, 150)
-		confirmWin.AnchorPoint = Vector2.new(0.5, 0.5)
-		confirmWin.Position = UDim2.fromScale(0.5, 0.5)
-		confirmWin.BackgroundColor3 = Theme.TopBar.ButtonBG
-		confirmWin.ZIndex = 21
-		confirmWin.Parent = overlay
-		Instance.new("UICorner", confirmWin).CornerRadius = UDim.new(0, 12)
+		local Overlay = Instance.new("Frame")
+		Overlay.Size = UDim2.new(1,0,1,0)
+		Overlay.BackgroundColor3 = Color3.new(0,0,0)
+		Overlay.BackgroundTransparency = 0.6
+		Overlay.ZIndex = Window.ZIndex + 20
+		Overlay.Parent = Window
 
-		local text = Instance.new("TextLabel")
-		text.Size = UDim2.new(1, -32, 0, 48)
-		text.Position = UDim2.fromOffset(16, 20)
-		text.BackgroundTransparency = 1
-		text.Text = "Are you sure you want to close the UI?"
-		text.TextColor3 = Theme.TopBar.TitleColor
-		text.Font = Theme.Fonts.Bold
-		text.TextSize = 18
-		text.TextWrapped = true
-		text.ZIndex = 22
-		text.Parent = confirmWin
+		local ConfirmWindow = Instance.new("Frame")
+		ConfirmWindow.Size = UDim2.fromOffset(350,150)
+		ConfirmWindow.AnchorPoint = Vector2.new(0.5,0.5)
+		ConfirmWindow.Position = UDim2.fromScale(0.5,0.5)
+		ConfirmWindow.BackgroundColor3 = theme.MinBtnBg
+		ConfirmWindow.ZIndex = Overlay.ZIndex + 1
+		ConfirmWindow.Parent = Overlay
+		local corner = Instance.new("UICorner", ConfirmWindow)
+		corner.CornerRadius = UDim.new(0,12)
 
-		local btns = Instance.new("Frame")
-		btns.Size = UDim2.new(1, 0, 0, 40)
-		btns.Position = UDim2.new(0, 0, 1, -20)
-		btns.AnchorPoint = Vector2.new(0, 1)
-		btns.BackgroundTransparency = 1
-		btns.ZIndex = 22
-		btns.Parent = confirmWin
+		local ConfirmText = self.factory:CreateTextLabel({
+			Name = "ConfirmText",
+			Size = UDim2.new(1, -32, 0, 48),
+			Position = UDim2.fromOffset(16,20),
+			Text = "Are you sure you want to close the UI?",
+			TextColor3 = theme.TextPrimary,
+			Font = Enum.Font.GothamBold,
+			TextSize = 18,
+			TextWrapped = true,
+			Parent = ConfirmWindow
+		})
 
-		local layout = Instance.new("UIListLayout")
+		local ButtonsFrame = Instance.new("Frame")
+		ButtonsFrame.Size = UDim2.new(1,0,0,40)
+		ButtonsFrame.Position = UDim2.new(0,0,1,-20)
+		ButtonsFrame.AnchorPoint = Vector2.new(0,1)
+		ButtonsFrame.BackgroundTransparency = 1
+		ButtonsFrame.ZIndex = ConfirmWindow.ZIndex + 1
+		ButtonsFrame.Parent = ConfirmWindow
+
+		local layout = Instance.new("UIListLayout", ButtonsFrame)
 		layout.FillDirection = Enum.FillDirection.Horizontal
 		layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-		layout.Padding = UDim.new(0, 16)
-		layout.Parent = btns
+		layout.Padding = UDim.new(0,16)
 
-		local confirmBtn = Instance.new("TextButton")
-		confirmBtn.Size = UDim2.new(0, 120, 0, 36)
-		confirmBtn.BackgroundColor3 = Color3.fromRGB(0, 170, 255)
-		confirmBtn.Text = "Confirm"
-		confirmBtn.TextColor3 = Theme.TopBar.TitleColor
-		confirmBtn.Font = Theme.Fonts.Bold
-		confirmBtn.TextSize = 16
-		confirmBtn.ZIndex = 23
-		confirmBtn.Parent = btns
-		Instance.new("UICorner", confirmBtn).CornerRadius = UDim.new(0, 8)
+		local ConfirmBtn = self.factory:CreateButton({
+			Name = "ConfirmBtn",
+			Size = UDim2.new(0,120,0,36),
+			BackgroundColor3 = theme.Accent,
+			Text = "Confirm",
+			TextColor3 = theme.TextPrimary,
+			Parent = ButtonsFrame,
+			CornerRadius = UDim.new(0,8),
+		})
 
-		local cancelBtn = Instance.new("TextButton")
-		cancelBtn.Size = UDim2.new(0, 120, 0, 36)
-		cancelBtn.BackgroundColor3 = Color3.fromRGB(45, 45, 50)		cancelBtn.Text = "Cancel"
-		cancelBtn.TextColor3 = Theme.TopBar.SubtitleColor
-		cancelBtn.Font = Theme.Fonts.Bold
-		cancelBtn.TextSize = 16
-		cancelBtn.ZIndex = 23
-		cancelBtn.Parent = btns
-		Instance.new("UICorner", cancelBtn).CornerRadius = UDim.new(0, 8)
+		local CancelBtn = self.factory:CreateButton({
+			Name = "CancelBtn",
+			Size = UDim2.new(0,120,0,36),
+			BackgroundColor3 = Color3.fromRGB(45,45,50),
+			Text = "Cancel",
+			TextColor3 = theme.TextPrimary,
+			Parent = ButtonsFrame,
+			CornerRadius = UDim.new(0,8),
+		})
 
-		confirmBtn.MouseButton1Click:Connect(function()
-			ScreenGui:Destroy()
+		ConfirmBtn.MouseButton1Click:Connect(function()
+			self.screenGui:Destroy()
+			onClose:Fire()
+			onDestroy:Fire()
 		end)
-		cancelBtn.MouseButton1Click:Connect(function()
-			overlay:Destroy()
+		CancelBtn.MouseButton1Click:Connect(function()
+			Overlay:Destroy()
 			Minimize.Active = true
 			Close.Active = true
 		end)
 	end
+
 	Close.MouseButton1Click:Connect(ShowCloseConfirm)
 
-	-- Callback
-	if type(config.Callback) == "function" then
-		spawn(config.Callback)
+	-- Execute user callback safely
+	if type(callback) == "function" then
+		task.spawn(function()
+			local ok, err = pcall(callback, {Window = Window, Content = Content, MiniButton = MiniButton})
+			if not ok then warn("KazeUI callback error:", err) end
+		end)
 	end
 
-	-- Return enhanced window object
-	local windowObj = {
-		ScreenGui = ScreenGui,
-		Window = Window,
-		Content = Content,
-		MiniButton = MiniButton,
-		Tabs = {},
-	}
+	-- API object returned to caller
+	local api = {}
+	api.Window = Window
+	api.Content = Content
+	api.Icon = Icon
+	api.MiniButton = MiniButton
+	api.OnClose = onClose
+	api.OnMinimize = onMinimize
+	api.OnOpen = onOpen
+	api.OnDestroy = onDestroy
 
-	-- Add tab creation method
-	function windowObj:CreateTab(name)
-		local tab = Tab.new(self.Content, name)
-		table.insert(self.Tabs, tab)
-		if #self.Tabs == 1 then
-			tab.Frame.Visible = true
+	function api:Open()
+		MiniButton.Visible = false
+		Window.Visible = true
+		onOpen:Fire()
+	end
+	function api:Close()
+		ShowCloseConfirm()
+	end
+	function api:Minimize()
+		Minimize:Activate()
+		Minimize:CaptureFocus()
+		-- simulate minimize clicked
+		Window.Visible = false
+		MiniButton.Visible = true
+		Tween(MiniButton, {Size = miniSize}, TweenInfo.new(0.2, Enum.EasingStyle.Back, Enum.EasingDirection.Out))
+		onMinimize:Fire()
+	end
+	function api:Destroy()
+		maid:DoCleaning()
+		if Window and Window.Parent then Window:Destroy() end
+		if MiniButton and MiniButton.Parent then MiniButton:Destroy() end
+		onDestroy:Fire()
+		onClose:Clear(); onMinimize:Clear(); onOpen:Clear(); onDestroy:Clear()
+	end
+
+	function api:SetTheme(themeName)
+		local t = self and self.theme and self.theme:Get() -- (not used here)
+		if type(themeName) == "table" then
+			-- set inline theme
+			self:_applyTheme(themeName)
+		elseif type(themeName) == "string" then
+			local tm = KazeUI and KazeUI.themeManager or nil
+			if tm then
+				tm:SetTheme(themeName)
+				api:_applyTheme(tm:Get())
+			end
 		end
-		return tab
 	end
 
-	return windowObj
+	function api:_applyTheme(themeTbl)
+		if not themeTbl then return end
+		Window.BackgroundColor3 = themeTbl.Window or Window.BackgroundColor3
+		TopBar.BackgroundColor3 = themeTbl.TopBar or TopBar.BackgroundColor3
+		WindowStroke.Color = themeTbl.Accent or WindowStroke.Color
+		MiniStroke.Color = themeTbl.Accent or MiniStroke.Color
+		TitleLabel.TextColor3 = themeTbl.TextPrimary or TitleLabel.TextColor3
+		SubLabel.TextColor3 = themeTbl.TextSecondary or SubLabel.TextColor3
+		Minimize.BackgroundColor3 = themeTbl.MinBtnBg or Minimize.BackgroundColor3
+		Close.TextColor3 = themeTbl.CloseColor or Close.TextColor3
+		MiniButton.BackgroundColor3 = themeTbl.Window or MiniButton.BackgroundColor3
+	end
+
+	-- Expose theme manager (optional)
+	api.themeManager = self.themeManager
+
+	-- Return the API and remember cleaning tasks
+	maid:Give(Window)
+	maid:Give(MiniButton)
+	maid:Give(function() -- when window destroyed, clear signals
+		onClose:Clear(); onMinimize:Clear(); onOpen:Clear(); onDestroy:Clear()
+	end)
+
+	-- attach maid to returned object for manual cleanup
+	api._maid = maid
+
+	return api
 end
 
-return KazeUI
+-- Expose theme registration helpers
+function KazeUI:RegisterTheme(name, theme)
+	self.themeManager:Register(name, theme)
+end
+function KazeUI:SetTheme(name)
+	self.themeManager:SetTheme(name)
+end
+
+-- Expose UI factory (optional advanced use)
+function KazeUI:GetFactory()
+	return self.factory
+end
+
+-- Provide a convenience create function similar to previous API
+local instance = KazeUI.new()
+return instance
