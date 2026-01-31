@@ -1,7 +1,10 @@
---// Kaze UI Base
+--// Kaze UI Base (auto-resize + traffic lights on RIGHT, stays above Core UI)
 --// Window System (PC + Mobile)
---// Added: Strict Texture ID Sanitizer + 60x60 Minimize ImageButton (draggable, ZIndex 999)
---// Changed: Larger window size and macOS-like traffic light controls (green/yellow/red)
+--// Changes:
+--  - Window auto-adjusts to viewport (responsive)
+--  - ScreenGui.DisplayOrder high + IgnoreGuiInset to avoid being covered by Roblox core UI
+--  - Traffic-light controls on right top bar
+--  - Restore/minimize use the computed target size
 
 local KazeUI = {}
 KazeUI.__index = KazeUI
@@ -17,6 +20,10 @@ local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "KazeUI"
 ScreenGui.ResetOnSpawn = false
 ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+-- Ensure the UI appears above Roblox core UI
+ScreenGui.DisplayOrder = 9999
+-- Ignore the default top/bottom insets so the UI won't be pushed by Roblox topbar
+ScreenGui.IgnoreGuiInset = true
 ScreenGui.Parent = LP:WaitForChild("PlayerGui")
 
 --// UIScale for consistent scaling across devices
@@ -35,8 +42,6 @@ UpdateScale()
 workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(UpdateScale)
 
 --// Texture ID Sanitizer
--- Accepts strings like "rbxassetid://123", "Rbxtextureid://123", "123", etc.
--- Extracts digits with string.gsub(id, "%D", "") and returns "rbxassetid://<digits>" or "" if none found.
 local function FormatImage(id)
 	if not id then return "" end
 	id = tostring(id)
@@ -98,27 +103,33 @@ function KazeUI:CreateWindow(config)
 
 	-- Open Button Config (ENFORCED to 60x60 for mobile playability)
 	local OpenIcon = FormatImage((config.OpenButton and config.OpenButton.Icon) or config.Icon or "6031763447")
-	-- Enforce exact 60x60 size (UDim2.fromOffset) as requested
 	local MiniButtonSize = UDim2.fromOffset(60, 60)
 
 	local Callback = config.Callback
 
-	--// Main Window (increased size to match screenshot-style layout)
+	-- Variables for responsive target
+	local windowTargetSize = UDim2.new(0.88, 0, 0.80, 0)
+	local minPixelWidth = 540
+	local minPixelHeight = 360
+
+	--// Main Window (initially set to target; UpdateWindowLayout will recalc)
 	local Window = Instance.new("Frame")
 	Window.Name = "MainWindow"
-	Window.Size = UDim2.fromOffset(1100, 680) -- bigger window
-	Window.Position = UDim2.fromScale(0.5, 0.5)
+	Window.Size = windowTargetSize
+	Window.Position = UDim2.new(0.5, 0, 0.5, 0)
 	Window.AnchorPoint = Vector2.new(0.5, 0.5)
 	Window.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
 	Window.BorderSizePixel = 0
 	Window.Parent = ScreenGui
 	Window.ClipsDescendants = true
-	Instance.new("UICorner", Window).CornerRadius = UDim.new(0, 14)
+	Window.ZIndex = 1000
+	Instance.new("UICorner", Window).CornerRadius = UDim.new(0, 12)
 
 	local WindowStroke = Instance.new("UIStroke")
 	WindowStroke.Color = Color3.fromRGB(0, 160, 255)
-	WindowStroke.Thickness = 2.5 -- neon thickness
+	WindowStroke.Thickness = 3 -- neon thickness slightly increased
 	WindowStroke.Parent = Window
+	WindowStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 
 	spawn(function()
 		while Window.Parent do
@@ -128,24 +139,69 @@ function KazeUI:CreateWindow(config)
 		end
 	end)
 
-	--// Top Bar (slightly taller)
+	-- Responsive layout computation
+	local function UpdateWindowLayout()
+		local vs = workspace.CurrentCamera.ViewportSize
+		-- Determine widthScale based on viewport width (breakpoints)
+		local widthScale
+		if vs.X < 800 then
+			widthScale = 0.95
+		elseif vs.X < 1200 then
+			widthScale = 0.92
+		else
+			widthScale = 0.88
+		end
+		-- Determine heightScale based on viewport height
+		local heightScale
+		if vs.Y < 600 then
+			heightScale = 0.92
+		elseif vs.Y < 900 then
+			heightScale = 0.86
+		else
+			heightScale = 0.80
+		end
+
+		-- Ensure minimum pixel sizes (clamp scales so result >= min pixels)
+		local targetPixelW = math.max(minPixelWidth, vs.X * widthScale)
+		local targetPixelH = math.max(minPixelHeight, vs.Y * heightScale)
+		-- Convert back to scale relative to viewport to avoid mixing scale+offset in size
+		local finalScaleX = targetPixelW / vs.X
+		local finalScaleY = targetPixelH / vs.Y
+
+		windowTargetSize = UDim2.new(finalScaleX, 0, finalScaleY, 0)
+
+		-- If window currently visible and not animating, update size/position immediately
+		if Window and Window.Parent and Window.Visible then
+			Window.Size = windowTargetSize
+			Window.Position = UDim2.new(0.5, 0, 0.5, 0)
+		end
+	end
+
+	-- Run once and on viewport changes
+	UpdateWindowLayout()
+	workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(UpdateWindowLayout)
+
+	--// Top Bar (taller)
 	local TopBar = Instance.new("Frame")
 	TopBar.Name = "TopBar"
 	TopBar.Size = UDim2.new(1, 0, 0, 64)
 	TopBar.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
 	TopBar.BorderSizePixel = 0
 	TopBar.Parent = Window
-	Instance.new("UICorner", TopBar).CornerRadius = UDim.new(0, 14)
+	TopBar.ZIndex = 1001
+	Instance.new("UICorner", TopBar).CornerRadius = UDim.new(0, 12)
 	MakeDraggable(TopBar, Window)
 
-	-- Traffic light (macOS-style) controls
+	-- Traffic light (macOS-style) controls moved to RIGHT side
 	local TrafficFrame = Instance.new("Frame")
 	TrafficFrame.Name = "TrafficFrame"
-	TrafficFrame.Size = UDim2.fromOffset(64, 28)
-	TrafficFrame.Position = UDim2.fromOffset(12, 18)
+	TrafficFrame.Size = UDim2.fromOffset(70, 28)
+	-- anchor to right so it won't be under Roblox topbar; positioned inside topbar's right edge
+	TrafficFrame.AnchorPoint = Vector2.new(1, 0)
+	TrafficFrame.Position = UDim2.new(1, -12, 0, 18)
 	TrafficFrame.BackgroundTransparency = 1
 	TrafficFrame.Parent = TopBar
-	TrafficFrame.ZIndex = 30
+	TrafficFrame.ZIndex = 1010
 
 	local function makeLight(name, color, xOffset)
 		local btn = Instance.new("TextButton")
@@ -157,20 +213,23 @@ function KazeUI:CreateWindow(config)
 		btn.AutoButtonColor = false
 		btn.Text = ""
 		btn.Parent = TrafficFrame
-		btn.ZIndex = 31
+		btn.ZIndex = 1011
 		local corner = Instance.new("UICorner", btn)
 		corner.CornerRadius = UDim.new(1, 0)
+		local s = Instance.new("UIStroke", btn)
+		s.Color = Color3.fromRGB(20,20,20)
+		s.Thickness = 1
 		return btn
 	end
 
-	local GreenLight = makeLight("GreenLight", Color3.fromRGB(88, 214, 141), 0) -- placeholder "do something"
-	local YellowLight = makeLight("YellowLight", Color3.fromRGB(255, 196, 0), 22) -- minimize
 	local RedLight = makeLight("RedLight", Color3.fromRGB(255, 95, 86), 44) -- close
+	local YellowLight = makeLight("YellowLight", Color3.fromRGB(255, 196, 0), 22) -- minimize
+	local GreenLight = makeLight("GreenLight", Color3.fromRGB(88, 214, 141), 0) -- placeholder
 
-	-- Icon (moved right to accommodate traffic lights)
+	-- Icon (kept left)
 	local Icon = Instance.new("ImageLabel")
 	Icon.Size = UDim2.fromOffset(32, 32)
-	Icon.Position = UDim2.fromOffset(52, 16)
+	Icon.Position = UDim2.fromOffset(14, 16)
 	Icon.BackgroundTransparency = 1
 	Icon.Image = MainIcon
 	Icon.Parent = TopBar
@@ -178,7 +237,7 @@ function KazeUI:CreateWindow(config)
 
 	local TitleLabel = Instance.new("TextLabel")
 	TitleLabel.Size = UDim2.new(1, -220, 0, 22)
-	TitleLabel.Position = UDim2.fromOffset(96, 10)
+	TitleLabel.Position = UDim2.fromOffset(58, 10)
 	TitleLabel.BackgroundTransparency = 1
 	TitleLabel.Text = Title
 	TitleLabel.TextColor3 = Color3.fromRGB(235, 235, 235)
@@ -189,7 +248,7 @@ function KazeUI:CreateWindow(config)
 
 	local SubLabel = Instance.new("TextLabel")
 	SubLabel.Size = UDim2.new(1, -220, 0, 18)
-	SubLabel.Position = UDim2.fromOffset(96, 32)
+	SubLabel.Position = UDim2.fromOffset(58, 32)
 	SubLabel.BackgroundTransparency = 1
 	SubLabel.Text = Author .. " | v" .. Version
 	SubLabel.TextColor3 = Color3.fromRGB(160, 160, 160)
@@ -209,13 +268,12 @@ function KazeUI:CreateWindow(config)
 	local MiniButton = Instance.new("ImageButton")
 	MiniButton.Name = "MiniButton"
 	MiniButton.Size = MiniButtonSize -- enforced exact 60x60
-	-- Default position (can be dragged by user)
 	MiniButton.Position = UDim2.fromScale(0.1, 0.1)
-	MiniButton.BackgroundColor3 = Color3.fromRGB(20, 20, 25) -- solid background
+	MiniButton.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
 	MiniButton.BorderSizePixel = 0
 	MiniButton.Visible = false
-	MiniButton.Parent = ScreenGui -- parent directly to ScreenGui to remain visible when Window hidden
-	MiniButton.ZIndex = 999 -- ensure never hidden behind other UI
+	MiniButton.Parent = ScreenGui -- parent directly so it stays above Window when minimized
+	MiniButton.ZIndex = 1100 -- ensure it's on top
 	MiniButton.ScaleType = Enum.ScaleType.Slice
 	MiniButton.SliceCenter = Rect.new(4,4,60,60)
 
@@ -223,7 +281,6 @@ function KazeUI:CreateWindow(config)
 	miniUICorner.CornerRadius = UDim.new(0, 12)
 	miniUICorner.Parent = MiniButton
 
-	-- Padding so the icon can be large but not cover the neon outline
 	local miniPadding = Instance.new("UIPadding")
 	miniPadding.PaddingTop = UDim.new(0, 4)
 	miniPadding.PaddingBottom = UDim.new(0, 4)
@@ -232,19 +289,17 @@ function KazeUI:CreateWindow(config)
 	miniPadding.Parent = MiniButton
 
 	local MiniIcon = Instance.new("ImageLabel")
-	-- Fill the padded area and center the icon
 	MiniIcon.Size = UDim2.fromScale(1, 1)
 	MiniIcon.Position = UDim2.fromScale(0.5, 0.5)
 	MiniIcon.AnchorPoint = Vector2.new(0.5, 0.5)
 	MiniIcon.BackgroundTransparency = 1
 	MiniIcon.Image = OpenIcon
 	MiniIcon.Parent = MiniButton
-	MiniIcon.ZIndex = 1000
+	MiniIcon.ZIndex = 1101
 
 	local MiniStroke = Instance.new("UIStroke")
 	MiniStroke.Color = Color3.fromRGB(0, 160, 255)
-	MiniStroke.Thickness = 2.5 -- neon thickness
-	-- ensure the glow stays on the outside edge
+	MiniStroke.Thickness = 2.5
 	MiniStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 	MiniStroke.Parent = MiniButton
 	MiniStroke.LineJoinMode = Enum.LineJoinMode.Bevel
@@ -257,93 +312,91 @@ function KazeUI:CreateWindow(config)
 		end
 	end)
 
-	-- Make both TopBar and MiniButton draggable (MiniButton draggable by itself)
+	-- Make draggable
 	MakeDraggable(TopBar, Window)
 	MakeDraggable(MiniButton, MiniButton)
 
-	-- Minimize behavior: hide Window, show 60x60 ImageButton (parented to ScreenGui)
+	-- Minimize: hide window, show mini button
 	local function DoMinimize()
 		Window.Visible = false
-		-- show the standalone 60x60 ImageButton (ensure exact size)
 		MiniButton.Visible = true
 		MiniButton.Size = UDim2.fromOffset(0, 0)
-		-- animate open
-		TweenService:Create(MiniButton, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Size = MiniButtonSize}):Play()
+		TweenService:Create(MiniButton, TweenInfo.new(0.28, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Size = MiniButtonSize}):Play()
 	end
 
-	-- Clicking the 60x60 ImageButton restores the window
+	-- Restore from mini button
 	MiniButton.MouseButton1Click:Connect(function()
 		MiniButton.Visible = false
 		Window.Visible = true
-		-- animate window open from 0 size to the main size
-		Window.Size = UDim2.fromOffset(0, 0)
-		TweenService:Create(Window, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Size = UDim2.fromOffset(1100, 680)}):Play()
+		Window.Size = UDim2.new(0, 0, 0, 0)
+		-- animate back to the computed target size
+		TweenService:Create(Window, TweenInfo.new(0.32, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Size = windowTargetSize}):Play()
 	end)
 
-	-- Close Logic with confirmation overlay
+	-- Close confirmation
 	local function ShowCloseConfirm()
 		TrafficFrame.Active = false
 		local Overlay = Instance.new("Frame")
 		Overlay.Size = UDim2.new(1, 0, 1, 0)
 		Overlay.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 		Overlay.BackgroundTransparency = 0.6
-		Overlay.ZIndex = 20
+		Overlay.ZIndex = 1020
 		Overlay.Parent = Window
 
 		local ConfirmWindow = Instance.new("Frame")
-		ConfirmWindow.Size = UDim2.fromOffset(350, 150)
+		ConfirmWindow.Size = UDim2.fromOffset(380, 160)
 		ConfirmWindow.AnchorPoint = Vector2.new(0.5, 0.5)
 		ConfirmWindow.Position = UDim2.fromScale(0.5, 0.5)
 		ConfirmWindow.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
-		ConfirmWindow.ZIndex = 21
+		ConfirmWindow.ZIndex = 1021
 		ConfirmWindow.Parent = Overlay
 		Instance.new("UICorner", ConfirmWindow).CornerRadius = UDim.new(0, 12)
 
 		local ConfirmText = Instance.new("TextLabel")
-		ConfirmText.Size = UDim2.new(1, -32, 0, 48)
-		ConfirmText.Position = UDim2.fromOffset(16, 20)
+		ConfirmText.Size = UDim2.new(1, -32, 0, 54)
+		ConfirmText.Position = UDim2.fromOffset(16, 18)
 		ConfirmText.BackgroundTransparency = 1
 		ConfirmText.Text = "Are you sure you want to close the UI?"
 		ConfirmText.TextColor3 = Color3.fromRGB(230, 230, 230)
 		ConfirmText.Font = Enum.Font.GothamBold
 		ConfirmText.TextSize = 18
 		ConfirmText.TextWrapped = true
-		ConfirmText.ZIndex = 22
+		ConfirmText.ZIndex = 1022
 		ConfirmText.Parent = ConfirmWindow
 
 		local ButtonsFrame = Instance.new("Frame")
-		ButtonsFrame.Size = UDim2.new(1, 0, 0, 40)
-		ButtonsFrame.Position = UDim2.new(0, 0, 1, -20)
+		ButtonsFrame.Size = UDim2.new(1, 0, 0, 44)
+		ButtonsFrame.Position = UDim2.new(0, 0, 1, -22)
 		ButtonsFrame.AnchorPoint = Vector2.new(0, 1)
 		ButtonsFrame.BackgroundTransparency = 1
-		ButtonsFrame.ZIndex = 22
+		ButtonsFrame.ZIndex = 1022
 		ButtonsFrame.Parent = ConfirmWindow
 
 		local layout = Instance.new("UIListLayout")
 		layout.Parent = ButtonsFrame
 		layout.FillDirection = Enum.FillDirection.Horizontal
 		layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-		layout.Padding = UDim.new(0, 16)
+		layout.Padding = UDim.new(0, 18)
 
 		local ConfirmBtn = Instance.new("TextButton")
-		ConfirmBtn.Size = UDim2.new(0, 120, 0, 36)
+		ConfirmBtn.Size = UDim2.new(0, 140, 0, 38)
 		ConfirmBtn.BackgroundColor3 = Color3.fromRGB(0, 170, 255)
 		ConfirmBtn.Text = "Confirm"
 		ConfirmBtn.TextColor3 = Color3.fromRGB(230, 230, 230)
 		ConfirmBtn.Font = Enum.Font.GothamBold
 		ConfirmBtn.TextSize = 16
-		ConfirmBtn.ZIndex = 23
+		ConfirmBtn.ZIndex = 1023
 		ConfirmBtn.Parent = ButtonsFrame
 		Instance.new("UICorner", ConfirmBtn).CornerRadius = UDim.new(0, 8)
 
 		local CancelBtn = Instance.new("TextButton")
-		CancelBtn.Size = UDim2.new(0, 120, 0, 36)
+		CancelBtn.Size = UDim2.new(0, 140, 0, 38)
 		CancelBtn.BackgroundColor3 = Color3.fromRGB(45, 45, 50)
 		CancelBtn.Text = "Cancel"
 		CancelBtn.TextColor3 = Color3.fromRGB(220, 220, 220)
 		CancelBtn.Font = Enum.Font.GothamBold
 		CancelBtn.TextSize = 16
-		CancelBtn.ZIndex = 23
+		CancelBtn.ZIndex = 1023
 		CancelBtn.Parent = ButtonsFrame
 		Instance.new("UICorner", CancelBtn).CornerRadius = UDim.new(0, 8)
 
@@ -359,7 +412,7 @@ function KazeUI:CreateWindow(config)
 	-- Traffic light behaviors
 	local accentToggled = false
 	GreenLight.MouseButton1Click:Connect(function()
-		-- Placeholder action: toggle accent color between default and green tint
+		-- placeholder: toggle accent color between default and green tint
 		accentToggled = not accentToggled
 		if accentToggled then
 			WindowStroke.Color = Color3.fromRGB(88, 214, 141) -- green accent
