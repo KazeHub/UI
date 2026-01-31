@@ -1,11 +1,9 @@
 --// Kaze UI Base
 --// Window System (PC + Mobile)
 --// Added: Strict Texture ID Sanitizer + 60x60 Minimize ImageButton (draggable, ZIndex 999)
---// Changed: Larger window size and macOS-like traffic light controls (green/yellow/red)
-
+--// Changed: Left-aligned window (like macOS apps), larger traffic lights (20x20), refined layout
 local KazeUI = {}
 KazeUI.__index = KazeUI
-
 --// Services
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
@@ -22,7 +20,6 @@ ScreenGui.Parent = LP:WaitForChild("PlayerGui")
 --// UIScale for consistent scaling across devices
 local UIScale = Instance.new("UIScale")
 UIScale.Parent = ScreenGui
-
 local function UpdateScale()
 	local size = workspace.CurrentCamera.ViewportSize
 	if size.X < 600 then
@@ -35,12 +32,10 @@ UpdateScale()
 workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(UpdateScale)
 
 --// Texture ID Sanitizer
--- Accepts strings like "rbxassetid://123", "Rbxtextureid://123", "123", etc.
--- Extracts digits with string.gsub(id, "%D", "") and returns "rbxassetid://<digits>" or "" if none found.
 local function FormatImage(id)
 	if not id then return "" end
 	id = tostring(id)
-	local clean = string.gsub(id, "%D", "") -- keep only digits
+	local clean = string.gsub(id, "%D", "")
 	if clean == "" then return "" end
 	return "rbxassetid://" .. clean
 end
@@ -49,16 +44,13 @@ end
 local function MakeDraggable(dragPart, targetPart)
 	local dragging = false
 	local dragInput, dragStart, startPos
-
 	local function update(input)
 		if not dragStart or not startPos then return end
 		local delta = input.Position - dragStart
-		targetPart.Position = UDim2.new(
-			startPos.X.Scale, startPos.X.Offset + delta.X,
+		targetPart.Position = UDim2.new(			startPos.X.Scale, startPos.X.Offset + delta.X,
 			startPos.Y.Scale, startPos.Y.Offset + delta.Y
 		)
 	end
-
 	dragPart.InputBegan:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 			dragging = true
@@ -72,13 +64,11 @@ local function MakeDraggable(dragPart, targetPart)
 			end)
 		end
 	end)
-
 	dragPart.InputChanged:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
 			dragInput = input
 		end
 	end)
-
 	UIS.InputChanged:Connect(function(input)
 		if input == dragInput and dragging then
 			update(input)
@@ -89,37 +79,29 @@ end
 --// CREATE WINDOW
 function KazeUI:CreateWindow(config)
 	config = config or {}
-
-	-- Main Config
 	local Title = config.Title or "Kaze UI"
 	local Author = config.Author or "Unknown"
 	local Version = config.Version or "1.0"
 	local MainIcon = FormatImage(config.Icon or "6031763447")
-
-	-- Open Button Config (ENFORCED to 60x60 for mobile playability)
 	local OpenIcon = FormatImage((config.OpenButton and config.OpenButton.Icon) or config.Icon or "6031763447")
-	-- Enforce exact 60x60 size (UDim2.fromOffset) as requested
 	local MiniButtonSize = UDim2.fromOffset(60, 60)
-
 	local Callback = config.Callback
 
-	--// Main Window (increased size to match screenshot-style layout)
+	--// Main Window: LEFT-ALIGNED (like second image), same height/width
 	local Window = Instance.new("Frame")
 	Window.Name = "MainWindow"
-	Window.Size = UDim2.fromOffset(1100, 680) -- bigger window
-	Window.Position = UDim2.fromScale(0.5, 0.5)
-	Window.AnchorPoint = Vector2.new(0.5, 0.5)
+	Window.Size = UDim2.fromOffset(1100, 680)
+	Window.Position = UDim2.fromOffset(32, 0)  -- ← Left-aligned, 32px from left edge
+	Window.AnchorPoint = Vector2.new(0, 0.5)   -- Anchor left-middle vertically
 	Window.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
 	Window.BorderSizePixel = 0
 	Window.Parent = ScreenGui
-	Window.ClipsDescendants = true
-	Instance.new("UICorner", Window).CornerRadius = UDim.new(0, 14)
+	Window.ClipsDescendants = true	Instance.new("UICorner", Window).CornerRadius = UDim.new(0, 14)
 
 	local WindowStroke = Instance.new("UIStroke")
 	WindowStroke.Color = Color3.fromRGB(0, 160, 255)
-	WindowStroke.Thickness = 2.5 -- neon thickness
+	WindowStroke.Thickness = 2.5
 	WindowStroke.Parent = Window
-
 	spawn(function()
 		while Window.Parent do
 			local t = TweenService:Create(WindowStroke, TweenInfo.new(1.5, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), {Color = Color3.fromRGB(0, 255, 255)})
@@ -138,13 +120,12 @@ function KazeUI:CreateWindow(config)
 	Instance.new("UICorner", TopBar).CornerRadius = UDim.new(0, 14)
 	MakeDraggable(TopBar, Window)
 
-	-- Traffic light (macOS-style) controls
+	-- Traffic light (macOS-style) — BIGGER: 20x20, total width ~72px
 	local TrafficFrame = Instance.new("Frame")
 	TrafficFrame.Name = "TrafficFrame"
-	TrafficFrame.Size = UDim2.fromOffset(64, 28)
-	-- moved to top-right of the TopBar (anchored to right)
+	TrafficFrame.Size = UDim2.fromOffset(72, 32)  -- wider/taller
 	TrafficFrame.AnchorPoint = Vector2.new(1, 0)
-	TrafficFrame.Position = UDim2.new(1, -12, 0, 18)
+	TrafficFrame.Position = UDim2.new(1, -16, 0, 16)  -- right-aligned, 16px inset
 	TrafficFrame.BackgroundTransparency = 1
 	TrafficFrame.Parent = TopBar
 	TrafficFrame.ZIndex = 30
@@ -152,8 +133,8 @@ function KazeUI:CreateWindow(config)
 	local function makeLight(name, color, xOffset)
 		local btn = Instance.new("TextButton")
 		btn.Name = name
-		btn.Size = UDim2.fromOffset(14, 14)
-		btn.Position = UDim2.fromOffset(xOffset, 7)
+		btn.Size = UDim2.fromOffset(20, 20)  -- ← BIGGER!
+		btn.Position = UDim2.fromOffset(xOffset, 6)  -- centered vertically in 32px bar
 		btn.BackgroundColor3 = color
 		btn.BorderSizePixel = 0
 		btn.AutoButtonColor = false
@@ -164,34 +145,33 @@ function KazeUI:CreateWindow(config)
 		corner.CornerRadius = UDim.new(1, 0)
 		return btn
 	end
+	local GreenLight = makeLight("GreenLight", Color3.fromRGB(88, 214, 141), 0)
+	local YellowLight = makeLight("YellowLight", Color3.fromRGB(255, 196, 0), 24)  -- spacing: 20 + 4 = 24
+	local RedLight = makeLight("RedLight", Color3.fromRGB(255, 95, 86), 48)       -- 24 + 24 = 48
 
-	local GreenLight = makeLight("GreenLight", Color3.fromRGB(88, 214, 141), 0) -- placeholder "do something"
-	local YellowLight = makeLight("YellowLight", Color3.fromRGB(255, 196, 0), 22) -- minimize
-	local RedLight = makeLight("RedLight", Color3.fromRGB(255, 95, 86), 44) -- close
-
-	-- Icon (moved right to accommodate traffic lights)
+	-- Icon (left of traffic lights, with 16px padding from left edge of TopBar)
 	local Icon = Instance.new("ImageLabel")
 	Icon.Size = UDim2.fromOffset(32, 32)
-	Icon.Position = UDim2.fromOffset(52, 16)
+	Icon.Position = UDim2.fromOffset(16, 16)  -- ← moved left (was 52 before)
 	Icon.BackgroundTransparency = 1
 	Icon.Image = MainIcon
 	Icon.Parent = TopBar
 	Instance.new("UICorner", Icon).CornerRadius = UDim.new(1, 0)
 
+	-- Title & Subtitle (shifted left to fit next to icon)
 	local TitleLabel = Instance.new("TextLabel")
-	TitleLabel.Size = UDim2.new(1, -220, 0, 22)
-	TitleLabel.Position = UDim2.fromOffset(96, 10)
+	TitleLabel.Size = UDim2.new(1, -240, 0, 22)  -- reduced width to avoid overlap
+	TitleLabel.Position = UDim2.fromOffset(64, 10)  -- 16 (icon) + 32 (icon size) + 16 = 64
 	TitleLabel.BackgroundTransparency = 1
 	TitleLabel.Text = Title
-	TitleLabel.TextColor3 = Color3.fromRGB(235, 235, 235)
-	TitleLabel.Font = Enum.Font.GothamBold
+	TitleLabel.TextColor3 = Color3.fromRGB(235, 235, 235	TitleLabel.Font = Enum.Font.GothamBold
 	TitleLabel.TextSize = 18
 	TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
 	TitleLabel.Parent = TopBar
 
 	local SubLabel = Instance.new("TextLabel")
-	SubLabel.Size = UDim2.new(1, -220, 0, 18)
-	SubLabel.Position = UDim2.fromOffset(96, 32)
+	SubLabel.Size = UDim2.new(1, -240, 0, 18)
+	SubLabel.Position = UDim2.fromOffset(64, 32)
 	SubLabel.BackgroundTransparency = 1
 	SubLabel.Text = Author .. " | v" .. Version
 	SubLabel.TextColor3 = Color3.fromRGB(160, 160, 160)
@@ -210,22 +190,19 @@ function KazeUI:CreateWindow(config)
 	--// MINI BUTTON (60x60 Square ImageButton)
 	local MiniButton = Instance.new("ImageButton")
 	MiniButton.Name = "MiniButton"
-	MiniButton.Size = MiniButtonSize -- enforced exact 60x60
-	-- Default position (can be dragged by user)
+	MiniButton.Size = MiniButtonSize
 	MiniButton.Position = UDim2.fromScale(0.1, 0.1)
-	MiniButton.BackgroundColor3 = Color3.fromRGB(20, 20, 25) -- solid background
+	MiniButton.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
 	MiniButton.BorderSizePixel = 0
-	MiniButton.Visible = false
-	MiniButton.Parent = ScreenGui -- parent directly to ScreenGui to remain visible when Window hidden
-	MiniButton.ZIndex = 999 -- ensure never hidden behind other UI
+	MiniButton.Visible = false	MiniButton.Parent = ScreenGui
+	MiniButton.ZIndex = 999
 	MiniButton.ScaleType = Enum.ScaleType.Slice
-	MiniButton.SliceCenter = Rect.new(4,4,60,60)
+	MiniButton.SliceCenter = Rect.new(4, 4, 60, 60)
 
 	local miniUICorner = Instance.new("UICorner")
 	miniUICorner.CornerRadius = UDim.new(0, 12)
 	miniUICorner.Parent = MiniButton
 
-	-- Padding so the icon can be large but not cover the neon outline
 	local miniPadding = Instance.new("UIPadding")
 	miniPadding.PaddingTop = UDim.new(0, 4)
 	miniPadding.PaddingBottom = UDim.new(0, 4)
@@ -234,7 +211,6 @@ function KazeUI:CreateWindow(config)
 	miniPadding.Parent = MiniButton
 
 	local MiniIcon = Instance.new("ImageLabel")
-	-- Fill the padded area and center the icon
 	MiniIcon.Size = UDim2.fromScale(1, 1)
 	MiniIcon.Position = UDim2.fromScale(0.5, 0.5)
 	MiniIcon.AnchorPoint = Vector2.new(0.5, 0.5)
@@ -245,8 +221,7 @@ function KazeUI:CreateWindow(config)
 
 	local MiniStroke = Instance.new("UIStroke")
 	MiniStroke.Color = Color3.fromRGB(0, 160, 255)
-	MiniStroke.Thickness = 2.5 -- neon thickness
-	-- ensure the glow stays on the outside edge
+	MiniStroke.Thickness = 2.5
 	MiniStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 	MiniStroke.Parent = MiniButton
 	MiniStroke.LineJoinMode = Enum.LineJoinMode.Bevel
@@ -259,30 +234,24 @@ function KazeUI:CreateWindow(config)
 		end
 	end)
 
-	-- Make both TopBar and MiniButton draggable (MiniButton draggable by itself)
 	MakeDraggable(TopBar, Window)
 	MakeDraggable(MiniButton, MiniButton)
 
-	-- Minimize behavior: hide Window, show 60x60 ImageButton (parented to ScreenGui)
+	-- Minimize behavior
 	local function DoMinimize()
 		Window.Visible = false
-		-- show the standalone 60x60 ImageButton (ensure exact size)
 		MiniButton.Visible = true
 		MiniButton.Size = UDim2.fromOffset(0, 0)
-		-- animate open
 		TweenService:Create(MiniButton, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Size = MiniButtonSize}):Play()
 	end
-
-	-- Clicking the 60x60 ImageButton restores the window
 	MiniButton.MouseButton1Click:Connect(function()
 		MiniButton.Visible = false
 		Window.Visible = true
-		-- animate window open from 0 size to the main size
 		Window.Size = UDim2.fromOffset(0, 0)
 		TweenService:Create(Window, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Size = UDim2.fromOffset(1100, 680)}):Play()
 	end)
 
-	-- Close Logic with confirmation overlay
+	-- Close Confirmation
 	local function ShowCloseConfirm()
 		TrafficFrame.Active = false
 		local Overlay = Instance.new("Frame")
@@ -323,8 +292,7 @@ function KazeUI:CreateWindow(config)
 
 		local layout = Instance.new("UIListLayout")
 		layout.Parent = ButtonsFrame
-		layout.FillDirection = Enum.FillDirection.Horizontal
-		layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+		layout.FillDirection = Enum.FillDirection.Horizontal		layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 		layout.Padding = UDim.new(0, 16)
 
 		local ConfirmBtn = Instance.new("TextButton")
@@ -361,28 +329,23 @@ function KazeUI:CreateWindow(config)
 	-- Traffic light behaviors
 	local accentToggled = false
 	GreenLight.MouseButton1Click:Connect(function()
-		-- Placeholder action: toggle accent color between default and green tint
 		accentToggled = not accentToggled
 		if accentToggled then
-			WindowStroke.Color = Color3.fromRGB(88, 214, 141) -- green accent
+			WindowStroke.Color = Color3.fromRGB(88, 214, 141)
 		else
-			WindowStroke.Color = Color3.fromRGB(0, 160, 255) -- default blue accent
+			WindowStroke.Color = Color3.fromRGB(0, 160, 255)
 		end
 	end)
-
 	YellowLight.MouseButton1Click:Connect(function()
 		DoMinimize()
 	end)
-
 	RedLight.MouseButton1Click:Connect(function()
 		ShowCloseConfirm()
 	end)
-
 	if typeof(Callback) == "function" then
 		pcall(Callback)
 	end
 
-	-- Return main UI handles (including the standalone MiniButton)
 	return {Window = Window, Content = Content, Icon = Icon, MiniButton = MiniButton}
 end
 
