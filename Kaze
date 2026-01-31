@@ -4,6 +4,7 @@
 --  - Window auto-adjusts to viewport (responsive)
 --  - ScreenGui.DisplayOrder high + IgnoreGuiInset to avoid being covered by Roblox core UI
 --  - Traffic-light controls on right top bar
+--  - Tabs / Pages system added (CreateTab / Section / Paragraph)
 --  - Restore/minimize use the computed target size
 
 local KazeUI = {}
@@ -89,6 +90,88 @@ local function MakeDraggable(dragPart, targetPart)
 			update(input)
 		end
 	end)
+end
+
+-- Local helpers for Tab/Section/Paragraph system (based on user's snippets)
+local function CreateParagraph(parent, title, text)
+	local Paragraph = {}
+
+	local Frame = Instance.new("Frame")
+	Frame.Size = UDim2.new(0.95, 0, 0, 0)
+	Frame.BackgroundColor3 = Color3.fromRGB(24, 24, 28)
+	Frame.AutomaticSize = Enum.AutomaticSize.Y
+	Frame.Parent = parent
+	Instance.new("UICorner", Frame).CornerRadius = UDim.new(0, 8)
+
+	local Padding = Instance.new("UIPadding")
+	Padding.PaddingTop = UDim.new(0, 10)
+	Padding.PaddingBottom = UDim.new(0, 10)
+	Padding.PaddingLeft = UDim.new(0, 12)
+	Padding.PaddingRight = UDim.new(0, 12)
+	Padding.Parent = Frame
+
+	if title and title ~= "" then
+		local Title = Instance.new("TextLabel")
+		Title.Size = UDim2.new(1, 0, 0, 20)
+		Title.BackgroundTransparency = 1
+		Title.Text = title
+		Title.TextWrapped = true
+		Title.TextXAlignment = Enum.TextXAlignment.Left
+		Title.TextColor3 = Color3.fromRGB(255, 255, 255)
+		Title.Font = Enum.Font.GothamBold
+		Title.TextSize = 16
+		Title.Parent = Frame
+	end
+
+	local Body = Instance.new("TextLabel")
+	Body.Size = UDim2.new(1, 0, 0, 0)
+	Body.BackgroundTransparency = 1
+	Body.TextWrapped = true
+	Body.AutomaticSize = Enum.AutomaticSize.Y
+	Body.TextXAlignment = Enum.TextXAlignment.Left
+	Body.TextYAlignment = Enum.TextYAlignment.Top
+	Body.Text = text or ""
+	Body.TextColor3 = Color3.fromRGB(220, 220, 220)
+	Body.Font = Enum.Font.Gotham
+	Body.TextSize = 14
+	Body.Parent = Frame
+
+	function Paragraph:SetText(newText)
+		Body.Text = tostring(newText or "")
+	end
+
+	return Paragraph
+end
+
+local function CreateSection(parent, title)
+	local Section = {}
+
+	local SectionFrame = Instance.new("Frame")
+	SectionFrame.Size = UDim2.new(1, -24, 0, 0)
+	SectionFrame.BackgroundTransparency = 1
+	SectionFrame.AutomaticSize = Enum.AutomaticSize.Y
+	SectionFrame.Parent = parent
+
+	local Layout = Instance.new("UIListLayout")
+	Layout.Padding = UDim.new(0, 8)
+	Layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+	Layout.Parent = SectionFrame
+
+	local TitleLabel = Instance.new("TextLabel")
+	TitleLabel.Size = UDim2.new(1, 0, 0, 30)
+	TitleLabel.BackgroundTransparency = 1
+	TitleLabel.Text = title
+	TitleLabel.TextColor3 = Color3.fromRGB(0, 150, 255)
+	TitleLabel.Font = Enum.Font.GothamBold
+	TitleLabel.TextSize = 20
+	TitleLabel.Parent = SectionFrame
+
+	-- ===== Paragraph inside Section =====
+	function Section:Paragraph(title, text)
+		return CreateParagraph(SectionFrame, title, text)
+	end
+
+	return Section
 end
 
 --// CREATE WINDOW
@@ -257,12 +340,159 @@ function KazeUI:CreateWindow(config)
 	SubLabel.TextXAlignment = Enum.TextXAlignment.Left
 	SubLabel.Parent = TopBar
 
-	--// Content
+	--// Content + Sidebar + Pages
 	local Content = Instance.new("Frame")
 	Content.Position = UDim2.fromOffset(0, 64)
 	Content.Size = UDim2.new(1, 0, 1, -64)
 	Content.BackgroundTransparency = 1
 	Content.Parent = Window
+
+	-- Sidebar (tabs)
+	local Sidebar = Instance.new("Frame")
+	Sidebar.Name = "Sidebar"
+	Sidebar.Size = UDim2.new(0, 260, 1, 0)
+	Sidebar.Position = UDim2.new(0, 0, 0, 0)
+	Sidebar.BackgroundTransparency = 1
+	Sidebar.Parent = Content
+	Sidebar.ZIndex = 1005
+
+	local SidebarInner = Instance.new("Frame")
+	SidebarInner.Size = UDim2.new(1, -24, 1, -40)
+	SidebarInner.Position = UDim2.fromOffset(12, 12)
+	SidebarInner.BackgroundColor3 = Color3.fromRGB(16, 16, 20)
+	SidebarInner.BorderSizePixel = 0
+	SidebarInner.Parent = Sidebar
+	Instance.new("UICorner", SidebarInner).CornerRadius = UDim.new(0, 10)
+
+	local TabsList = Instance.new("UIListLayout")
+	TabsList.Parent = SidebarInner
+	TabsList.Padding = UDim.new(0, 12)
+	TabsList.SortOrder = Enum.SortOrder.LayoutOrder
+
+	-- Pages container (rest of content)
+	local PagesContainer = Instance.new("Frame")
+	PagesContainer.Name = "PagesContainer"
+	PagesContainer.Size = UDim2.new(1, -260, 1, 0)
+	PagesContainer.Position = UDim2.new(0, 260, 0, 0)
+	PagesContainer.BackgroundTransparency = 1
+	PagesContainer.Parent = Content
+	PagesContainer.ZIndex = 1002
+
+	-- Manage tabs state
+	local tabs = {}
+	local activeTabButton = nil
+	local activePage = nil
+
+	-- Helper: set active tab
+	local function SetActiveTab(tabButton, page)
+		-- deactivate old
+		if activeTabButton and activeTabButton ~= tabButton then
+			activeTabButton.BackgroundTransparency = 1
+			activeTabButton.TextColor3 = Color3.fromRGB(200, 200, 200)
+			local leftIndicator = activeTabButton:FindFirstChild("LeftIndicator")
+			if leftIndicator then leftIndicator.Visible = false end
+		end
+		-- hide old page
+		if activePage and activePage ~= page then
+			activePage.Visible = false
+		end
+
+		-- activate new
+		activeTabButton = tabButton
+		activePage = page
+		activeTabButton.BackgroundTransparency = 0
+		activeTabButton.BackgroundColor3 = Color3.fromRGB(22,22,26)
+		activeTabButton.TextColor3 = Color3.fromRGB(255,255,255)
+		local leftIndicator = activeTabButton:FindFirstChild("LeftIndicator")
+		if leftIndicator then leftIndicator.Visible = true end
+		page.Visible = true
+	end
+
+	-- API: CreateTab
+	local function CreateTab(name)
+		local Tab = {}
+
+		-- Page
+		Tab.Page = Instance.new("Frame")
+		Tab.Page.Name = name .. "_Page"
+		Tab.Page.Size = UDim2.new(1, 0, 1, 0)
+		Tab.Page.BackgroundTransparency = 1
+		Tab.Page.Visible = false
+		Tab.Page.Parent = PagesContainer
+
+		local Layout = Instance.new("UIListLayout")
+		Layout.Padding = UDim.new(0, 8)
+		Layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+		Layout.Parent = Tab.Page
+
+		-- Create button in sidebar
+		local Btn = Instance.new("TextButton")
+		Btn.Name = name .. "_TabButton"
+		Btn.Size = UDim2.new(1, -12, 0, 44)
+		Btn.BackgroundTransparency = 1
+		Btn.Text = name
+		Btn.TextColor3 = Color3.fromRGB(200, 200, 200)
+		Btn.Font = Enum.Font.Gotham
+		Btn.TextSize = 16
+		Btn.TextXAlignment = Enum.TextXAlignment.Left
+		Btn.Parent = SidebarInner
+		Btn.AutoButtonColor = true
+		Btn.LayoutOrder = #tabs + 1
+		Btn.ZIndex = 1006
+		-- left indicator
+		local LeftIndicator = Instance.new("Frame")
+		LeftIndicator.Name = "LeftIndicator"
+		LeftIndicator.Size = UDim2.new(0, 4, 1, 0)
+		LeftIndicator.Position = UDim2.new(0, 0, 0, 0)
+		LeftIndicator.BackgroundColor3 = Color3.fromRGB(0, 160, 255)
+		LeftIndicator.Visible = false
+		LeftIndicator.Parent = Btn
+		Instance.new("UICorner", LeftIndicator).CornerRadius = UDim.new(0, 4)
+
+		-- small icon placeholder on left of text (optional)
+		local IconHolder = Instance.new("Frame")
+		IconHolder.Size = UDim2.new(0, 36, 0, 36)
+		IconHolder.Position = UDim2.new(0, 8, 0, 4)
+		IconHolder.BackgroundTransparency = 1
+		IconHolder.Parent = Btn
+		local iconImg = Instance.new("ImageLabel")
+		iconImg.Size = UDim2.fromOffset(20,20)
+		iconImg.Position = UDim2.fromOffset(8,12)
+		iconImg.BackgroundTransparency = 1
+		iconImg.Image = "" -- leave blank; user can set later via Tab.Page or returned handle
+		iconImg.Parent = Btn
+
+		-- adjust text position to avoid icon overlap
+		Btn.TextXAlignment = Enum.TextXAlignment.Left
+		Btn.TextScaled = false
+		Btn.TextWrapped = false
+		Btn.Padding = Instance.new("UIPadding", Btn)
+		Btn.Padding.PaddingLeft = UDim.new(0, 56)
+
+		Btn.MouseButton1Click:Connect(function()
+			SetActiveTab(Btn, Tab.Page)
+		end)
+
+		-- ===== Paragraph directly on Tab =====
+		function Tab:Paragraph(title, text)
+			return CreateParagraph(Tab.Page, title, text)
+		end
+
+		-- ===== Section inside Tab =====
+		function Tab:Section(title)
+			return CreateSection(Tab.Page, title)
+		end
+
+		-- store
+		table.insert(tabs, {name = name, button = Btn, page = Tab.Page})
+
+		-- if this is first tab, activate it
+		if #tabs == 1 then
+			SetActiveTab(Btn, Tab.Page)
+		end
+
+		return Tab
+	end
 
 	--// MINI BUTTON (60x60 Square ImageButton)
 	local MiniButton = Instance.new("ImageButton")
@@ -289,6 +519,7 @@ function KazeUI:CreateWindow(config)
 	miniPadding.Parent = MiniButton
 
 	local MiniIcon = Instance.new("ImageLabel")
+	-- Fill the padded area and center the icon
 	MiniIcon.Size = UDim2.fromScale(1, 1)
 	MiniIcon.Position = UDim2.fromScale(0.5, 0.5)
 	MiniIcon.AnchorPoint = Vector2.new(0.5, 0.5)
@@ -299,7 +530,8 @@ function KazeUI:CreateWindow(config)
 
 	local MiniStroke = Instance.new("UIStroke")
 	MiniStroke.Color = Color3.fromRGB(0, 160, 255)
-	MiniStroke.Thickness = 2.5
+	MiniStroke.Thickness = 2.5 -- neon thickness
+	-- ensure the glow stays on the outside edge
 	MiniStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 	MiniStroke.Parent = MiniButton
 	MiniStroke.LineJoinMode = Enum.LineJoinMode.Bevel
@@ -433,8 +665,27 @@ function KazeUI:CreateWindow(config)
 		pcall(Callback)
 	end
 
-	-- Return main UI handles (including the standalone MiniButton)
-	return {Window = Window, Content = Content, Icon = Icon, MiniButton = MiniButton}
+	-- Return API table for the created window (so user can call Window:CreateTab(...))
+	local api = {
+		Window = Window,
+		Content = Content,
+		Icon = Icon,
+		MiniButton = MiniButton,
+		CreateTab = CreateTab, -- method-style usage: local t = Window:CreateTab("Main")
+		-- convenience: expose PagesContainer & Sidebar for custom modifications
+		PagesContainer = PagesContainer,
+		Sidebar = SidebarInner,
+	}
+
+	-- Set metatable so user can call api:CreateTab(...) as method
+	setmetatable(api, {
+		__index = api,
+		__call = function(self, ...)
+			return CreateTab(...)
+		end
+	})
+
+	return api
 end
 
 return KazeUI
