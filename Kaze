@@ -1,7 +1,5 @@
-
--- Kaze UI Library (Fixed: Boxed Collapsible Sections + Custom Textbox & Slider Support with Aliases)
--- Full drop-in replacement.
--- Features: Tab:SectionUI("Title"), Tab:TextBox(), Tab:Slider() and standard components!
+-- Kaze UI Library (Fixed: Dropdowns, Boxed Collapsible Sections, Textbox, Slider, Toggle)
+-- Full drop-in replacement. Kazu approved. 💙
 local KazeUI = {}
 KazeUI.__index = KazeUI
 
@@ -112,6 +110,242 @@ local function ToggleScrollingAncestors(element, state)
 		end
 		current = current.Parent
 	end
+end
+
+-- Helper: Gumawa ng Dropdown Selection Row (Premium style)
+local function CreateDropdown(parentFrame, strokeColor, title, options, defaultOption, callback)
+	title = tostring(title or "Dropdown")
+	options = type(options) == "table" and options or {}
+	local selected = defaultOption or (options[1] or "")
+	local isOpen = false
+
+	local wrapper = Instance.new("Frame")
+	wrapper.Name = "DropdownWrapper"
+	wrapper.Size = UDim2.new(1, 0, 0, 0)
+	wrapper.BackgroundTransparency = 1
+	wrapper.Parent = parentFrame
+	wrapper.AutomaticSize = Enum.AutomaticSize.Y
+
+	local dropFrame = Instance.new("Frame")
+	dropFrame.Name = "DropdownFrame"
+	dropFrame.AnchorPoint = Vector2.new(0.5, 0)
+	dropFrame.Position = UDim2.new(0.5, 0, 0, 3)
+	dropFrame.Size = UDim2.new(0.95, 0, 0, 0)
+	dropFrame.BackgroundColor3 = Color3.fromRGB(24, 24, 28)
+	dropFrame.BorderSizePixel = 0
+	dropFrame.AutomaticSize = Enum.AutomaticSize.Y
+	Instance.new("UICorner", dropFrame).CornerRadius = UDim.new(0, 8)
+	dropFrame.Parent = wrapper
+
+	local padding = Instance.new("UIPadding", dropFrame)
+	padding.PaddingTop = UDim.new(0, 4)
+	padding.PaddingBottom = UDim.new(0, 4)
+
+	local boxStroke = Instance.new("UIStroke", dropFrame)
+	boxStroke.Thickness = 1.5
+	boxStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+	boxStroke.Color = strokeColor or Color3.fromRGB(0, 160, 255)
+	StartNeonLoop(boxStroke)
+
+	local layout = Instance.new("UIListLayout", dropFrame)
+	layout.SortOrder = Enum.SortOrder.LayoutOrder
+	layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+	layout.Padding = UDim.new(0, 4)
+
+	-- Header Area
+	local header = Instance.new("Frame")
+	header.Name = "Header"
+	header.Size = UDim2.new(1, -16, 0, 36)
+	header.BackgroundTransparency = 1
+	header.LayoutOrder = 1
+	header.Parent = dropFrame
+
+	local titleLabel = Instance.new("TextLabel", header)
+	titleLabel.Size = UDim2.new(0.5, 0, 1, 0)
+	titleLabel.BackgroundTransparency = 1
+	titleLabel.Text = title
+	titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+	titleLabel.Font = Enum.Font.GothamBold
+	titleLabel.TextSize = 14
+	titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+
+	local arrowIcon = Instance.new("ImageLabel", header)
+	arrowIcon.AnchorPoint = Vector2.new(1, 0.5)
+	arrowIcon.Position = UDim2.new(1, 0, 0.5, 0)
+	arrowIcon.Size = UDim2.fromOffset(16, 16)
+	arrowIcon.BackgroundTransparency = 1
+	arrowIcon.Image = "rbxassetid://6031091004"
+	arrowIcon.ImageColor3 = strokeColor or Color3.fromRGB(0, 160, 255)
+	arrowIcon.Rotation = 0
+
+	local selectedLabel = Instance.new("TextLabel", header)
+	selectedLabel.Size = UDim2.new(0.5, -24, 1, 0)
+	selectedLabel.Position = UDim2.new(0.5, 0, 0, 0)
+	selectedLabel.BackgroundTransparency = 1
+	selectedLabel.Text = tostring(selected)
+	selectedLabel.TextColor3 = strokeColor or Color3.fromRGB(0, 160, 255)
+	selectedLabel.Font = Enum.Font.Gotham
+	selectedLabel.TextSize = 13
+	selectedLabel.TextXAlignment = Enum.TextXAlignment.Right
+	selectedLabel.TextTruncate = Enum.TextTruncate.AtEnd
+
+	local clickBtn = Instance.new("TextButton", header)
+	clickBtn.Size = UDim2.fromScale(1, 1)
+	clickBtn.BackgroundTransparency = 1
+	clickBtn.Text = ""
+
+	-- Divider Line
+	local divider = Instance.new("Frame")
+	divider.Size = UDim2.new(1, -16, 0, 1)
+	divider.BackgroundColor3 = Color3.fromRGB(38, 38, 42)
+	divider.BorderSizePixel = 0
+	divider.LayoutOrder = 2
+	divider.Visible = false
+	divider.Parent = dropFrame
+
+	-- Scrollable Options Container
+	local listContainer = Instance.new("ScrollingFrame")
+	listContainer.Name = "OptionsContainer"
+	listContainer.Size = UDim2.new(1, -16, 0, 0)
+	listContainer.BackgroundTransparency = 1
+	listContainer.BorderSizePixel = 0
+	listContainer.LayoutOrder = 3
+	listContainer.Visible = false
+	listContainer.ScrollBarThickness = 4
+	listContainer.ScrollBarImageColor3 = Color3.fromRGB(60, 60, 65)
+	listContainer.CanvasSize = UDim2.new(0, 0, 0, 0)
+	listContainer.AutomaticCanvasSize = Enum.AutomaticSize.Y
+	listContainer.Parent = dropFrame
+
+	-- Prevent double-scrolling bug when cursor is over the dropdown list
+	listContainer.MouseEnter:Connect(function() ToggleScrollingAncestors(dropFrame, false) end)
+	listContainer.MouseLeave:Connect(function() ToggleScrollingAncestors(dropFrame, true) end)
+
+	local listLayout = Instance.new("UIListLayout", listContainer)
+	listLayout.SortOrder = Enum.SortOrder.LayoutOrder
+	listLayout.Padding = UDim.new(0, 2)
+
+	local optionItems = {}
+
+	local function CloseDropdown()
+		isOpen = false
+		divider.Visible = false
+		listContainer.Visible = false
+		TweenService:Create(arrowIcon, TweenInfo.new(0.2), {Rotation = 0}):Play()
+	end
+
+	local function Refresh(newOptions)
+		for _, item in ipairs(optionItems) do
+			item:Destroy()
+		end
+		table.clear(optionItems)
+
+		options = type(newOptions) == "table" and newOptions or {}
+
+		for _, opt in ipairs(options) do
+			local optStr = tostring(opt)
+			local btn = Instance.new("TextButton")
+			btn.Size = UDim2.new(1, -8, 0, 30)
+			btn.BackgroundColor3 = Color3.fromRGB(24, 24, 28)
+			btn.BorderSizePixel = 0
+			btn.Text = "  " .. optStr
+			btn.TextColor3 = Color3.fromRGB(200, 200, 200)
+			btn.Font = Enum.Font.Gotham
+			btn.TextSize = 13
+			btn.TextXAlignment = Enum.TextXAlignment.Left
+			btn.Parent = listContainer
+			Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 4)
+
+			btn.MouseEnter:Connect(function()
+				TweenService:Create(btn, TweenInfo.new(0.1), {BackgroundColor3 = Color3.fromRGB(35, 35, 40), TextColor3 = Color3.fromRGB(255,255,255)}):Play()
+			end)
+			btn.MouseLeave:Connect(function()
+				local isActive = (optStr == tostring(selected))
+				local targetColor = isActive and Color3.fromRGB(30, 30, 35) or Color3.fromRGB(24, 24, 28)
+				local targetText = isActive and (strokeColor or Color3.fromRGB(0, 160, 255)) or Color3.fromRGB(200, 200, 200)
+				TweenService:Create(btn, TweenInfo.new(0.1), {BackgroundColor3 = targetColor, TextColor3 = targetText}):Play()
+			end)
+
+			btn.MouseButton1Click:Connect(function()
+				selected = optStr
+				selectedLabel.Text = optStr
+				CloseDropdown()
+				
+				for _, otherBtn in ipairs(optionItems) do
+					local otherTxt = string.sub(otherBtn.Text, 3)
+					if otherTxt == selected then
+						otherBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
+						otherBtn.TextColor3 = strokeColor or Color3.fromRGB(0, 160, 255)
+					else
+						otherBtn.BackgroundColor3 = Color3.fromRGB(24, 24, 28)
+						otherBtn.TextColor3 = Color3.fromRGB(200, 200, 200)
+					end
+				end
+
+				if typeof(callback) == "function" then
+					task.spawn(callback, selected)
+				end
+			end)
+
+			table.insert(optionItems, btn)
+		end
+
+		for _, btn in ipairs(optionItems) do
+			local txt = string.sub(btn.Text, 3)
+			if txt == tostring(selected) then
+				btn.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
+				btn.TextColor3 = strokeColor or Color3.fromRGB(0, 160, 255)
+			end
+		end
+
+		local maxItems = 4.5
+		local totalItems = #options
+		local height = math.min(totalItems, maxItems) * 32
+		listContainer.Size = UDim2.new(1, -16, 0, height)
+	end
+
+	Refresh(options)
+
+	clickBtn.MouseButton1Click:Connect(function()
+		isOpen = not isOpen
+		if isOpen then
+			divider.Visible = true
+			listContainer.Visible = true
+			TweenService:Create(arrowIcon, TweenInfo.new(0.2), {Rotation = 180}):Play()
+		else
+			CloseDropdown()
+		end
+	end)
+
+	if selected ~= "" then
+		selectedLabel.Text = tostring(selected)
+	end
+
+	return {
+		Wrapper = wrapper,
+		Frame = dropFrame,
+		GetValue = function() return selected end,
+		SetValue = function(self, val)
+			selected = tostring(val)
+			selectedLabel.Text = selected
+			for _, btn in ipairs(optionItems) do
+				local txt = string.sub(btn.Text, 3)
+				if txt == selected then
+					btn.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
+					btn.TextColor3 = strokeColor or Color3.fromRGB(0, 160, 255)
+				else
+					btn.BackgroundColor3 = Color3.fromRGB(24, 24, 28)
+					btn.TextColor3 = Color3.fromRGB(200, 200, 200)
+				end
+			end
+			if typeof(callback) == "function" then
+				task.spawn(callback, selected)
+			end
+		end,
+		Refresh = function(self, newOpts)
+			Refresh(newOpts)
+		end
+	}
 end
 
 -- Helper: Gumawa ng Paragraph Component
@@ -577,7 +811,6 @@ local function CreateTextBoxInput(parentFrame, strokeColor, title, placeholder, 
 		titleHeight = math.max(16, math.ceil(ts.Y))
 	end
 	
-	-- Ang standard total height ng isang premium Textbox component
 	local totalHeight = 6 + titleHeight + 6 + 32 + 6
 	
 	local wrapper = Instance.new("Frame")
@@ -635,7 +868,6 @@ local function CreateTextBoxInput(parentFrame, strokeColor, title, placeholder, 
 		ptitleLabel.ZIndex = 3
 	end
 	
-	-- Ang mismong Text Box container (Sub-box para maging maganda ang text area)
 	local textBoxContainer = Instance.new("Frame")
 	textBoxContainer.Name = "InputBoxContainer"
 	textBoxContainer.Size = UDim2.new(1, 0, 0, 30)
@@ -667,7 +899,6 @@ local function CreateTextBoxInput(parentFrame, strokeColor, title, placeholder, 
 	textBox.ClearTextOnFocus = false
 	textBox.Parent = textBoxContainer
 
-	-- Hover effects on hover at active text entering
 	textBox.Focused:Connect(function()
 		TweenService:Create(innerStroke, TweenInfo.new(0.15), { Color = strokeColor or Color3.fromRGB(0, 160, 255) }):Play()
 		TweenService:Create(paraFrame, TweenInfo.new(0.12), { BackgroundColor3 = Color3.fromRGB(28,28,32) }):Play()
@@ -821,7 +1052,6 @@ local function CreateSliderInput(parentFrame, strokeColor, title, min, max, defa
 	knobStroke.Thickness = 1.5
 	knobStroke.Color = strokeColor or Color3.fromRGB(0, 160, 255)
 	
-	-- Custom Focus button to override Roblox 3D camera pan & swipe lock while sliding
 	local modalLock = Instance.new("TextButton")
 	modalLock.Name = "ModalLock"
 	modalLock.Size = UDim2.fromScale(1, 1)
@@ -866,7 +1096,6 @@ local function CreateSliderInput(parentFrame, strokeColor, title, min, max, defa
 		end
 	end
 	
-	-- Set original visual state
 	local startingPercentage = (value - min) / (max - min)
 	fill.Size = UDim2.new(startingPercentage, 0, 1, 0)
 	knob.Position = UDim2.new(startingPercentage, 0, 0.5, 0)
@@ -875,10 +1104,7 @@ local function CreateSliderInput(parentFrame, strokeColor, title, min, max, defa
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 			isDragging = true
 			
-			-- Temporarily lock ScrollingFrame scrolling so Touch sliders work smoothly on mobile
 			ToggleScrollingAncestors(track, false)
-			
-			-- Sinks character/camera rotation
 			modalLock.Visible = true
 			modalLock.Modal = true
 			
@@ -896,9 +1122,7 @@ local function CreateSliderInput(parentFrame, strokeColor, title, min, max, defa
 				if endInput.UserInputType == Enum.UserInputType.MouseButton1 or endInput.UserInputType == Enum.UserInputType.Touch then
 					isDragging = false
 					
-					-- Re-enable scrolling safely
 					ToggleScrollingAncestors(track, true)
-					
 					modalLock.Visible = false
 					modalLock.Modal = false
 					
@@ -938,7 +1162,6 @@ local function CreateCollapsibleSection(parentFrame, strokeColor, title)
 	title = tostring(title or "Section")
 	local isOpen = true
 
-	-- Isang Mother Box na may automatic height. Lahat ay nakapaloob dito para iwas overlap.
 	local sectionBox = Instance.new("Frame")
 	sectionBox.Name = "CollapsibleSection_" .. title
 	sectionBox.Size = UDim2.new(0.95, 0, 0, 0)
@@ -948,20 +1171,17 @@ local function CreateCollapsibleSection(parentFrame, strokeColor, title)
 	sectionBox.AutomaticSize = Enum.AutomaticSize.Y
 	Instance.new("UICorner", sectionBox).CornerRadius = UDim.new(0, 8)
 
-	-- Neon Glowing Border sa mismong Section Box
 	local boxStroke = Instance.new("UIStroke", sectionBox)
 	boxStroke.Thickness = 1.5
 	boxStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 	boxStroke.Color = strokeColor or Color3.fromRGB(0, 160, 255)
 	StartNeonLoop(boxStroke)
 
-	-- Layout upang maiayos nang sunod-sunod ang Header, Divider, at Elements
 	local boxLayout = Instance.new("UIListLayout", sectionBox)
 	boxLayout.SortOrder = Enum.SortOrder.LayoutOrder
 	boxLayout.Padding = UDim.new(0, 0)
 	boxLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 
-	-- Header Frame sa itaas ng Box (May hawak sa Title at Arrow)
 	local headerFrame = Instance.new("Frame")
 	headerFrame.Name = "Header"
 	headerFrame.Size = UDim2.new(1, 0, 0, 36)
@@ -981,7 +1201,6 @@ local function CreateCollapsibleSection(parentFrame, strokeColor, title)
 	titleLabel.TextXAlignment = Enum.TextXAlignment.Left
 	titleLabel.Parent = headerFrame
 
-	-- Down/Up Arrow Indicator
 	local arrowIcon = Instance.new("ImageLabel")
 	arrowIcon.Name = "ArrowIcon"
 	arrowIcon.AnchorPoint = Vector2.new(1, 0.5)
@@ -993,7 +1212,6 @@ local function CreateCollapsibleSection(parentFrame, strokeColor, title)
 	arrowIcon.Rotation = isOpen and 0 or -90
 	arrowIcon.Parent = headerFrame
 
-	-- Manipis na separator line na liliko lang kapag naka-open ang box
 	local divider = Instance.new("Frame")
 	divider.Name = "Divider"
 	divider.Size = UDim2.new(0.95, 0, 0, 1)
@@ -1003,7 +1221,6 @@ local function CreateCollapsibleSection(parentFrame, strokeColor, title)
 	divider.Visible = isOpen
 	divider.Parent = sectionBox
 
-	-- Container Box para sa mga elements sa loob (Dito dadaan ang mga buttons, toggles, paragraphs)
 	local sectionContent = Instance.new("Frame")
 	sectionContent.Name = "SectionContent"
 	sectionContent.Size = UDim2.new(1, 0, 0, 0)
@@ -1019,14 +1236,12 @@ local function CreateCollapsibleSection(parentFrame, strokeColor, title)
 	contentLayout.Padding = UDim.new(0, 4)
 	contentLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 
-	-- Kaunting layout padding para sa magandang space sa loob ng box
 	local contentPadding = Instance.new("UIPadding", sectionContent)
 	contentPadding.PaddingTop = UDim.new(0, 6)
 	contentPadding.PaddingBottom = UDim.new(0, 8)
 	contentPadding.PaddingLeft = UDim.new(0, 4)
 	contentPadding.PaddingRight = UDim.new(0, 4)
 
-	-- Transparent click detector button sa buong area ng header para ma-trigger ang dropdown
 	local toggleDetector = Instance.new("TextButton")
 	toggleDetector.Name = "ToggleDetector"
 	toggleDetector.Size = UDim2.fromScale(1, 1)
@@ -1035,7 +1250,6 @@ local function CreateCollapsibleSection(parentFrame, strokeColor, title)
 	toggleDetector.ZIndex = 10
 	toggleDetector.Parent = headerFrame
 
-	-- Toggle function para sa maayos na animation
 	toggleDetector.MouseButton1Click:Connect(function()
 		isOpen = not isOpen
 		sectionContent.Visible = isOpen
@@ -1065,62 +1279,33 @@ local function CreateCollapsibleSection(parentFrame, strokeColor, title)
 		return label
 	end
 
-	function sectionPublic:AddParagraph(ptitle, pbody)
-		return CreateParagraph(sectionContent, strokeColor, ptitle, pbody)
-	end
+	function sectionPublic:AddParagraph(ptitle, pbody) return CreateParagraph(sectionContent, strokeColor, ptitle, pbody) end
+	function sectionPublic:Paragraph(ptitle, pbody) return CreateParagraph(sectionContent, strokeColor, ptitle, pbody) end
 
-	function sectionPublic:Paragraph(ptitle, pbody)
-		return CreateParagraph(sectionContent, strokeColor, ptitle, pbody)
-	end
+	function sectionPublic:AddButton(btitle, callback) return CreateClickableParagraph(sectionContent, strokeColor, btitle, "", callback) end
+	function sectionPublic:Button(btitle, bdesc, callback) return CreateClickableParagraph(sectionContent, strokeColor, btitle, bdesc, callback) end
 
-	function sectionPublic:AddButton(btitle, callback)
-		return CreateClickableParagraph(sectionContent, strokeColor, btitle, "", callback)
-	end
+	function sectionPublic:AddToggle(ttitle, defaultState, callback) return CreateToggleSwitch(sectionContent, strokeColor, ttitle, "", defaultState, callback) end
+	function sectionPublic:Toggle(ttitle, tdesc, defaultState, callback) return CreateToggleSwitch(sectionContent, strokeColor, ttitle, tdesc, defaultState, callback) end
 
-	function sectionPublic:Button(btitle, bdesc, callback)
-		return CreateClickableParagraph(sectionContent, strokeColor, btitle, bdesc, callback)
-	end
+	function sectionPublic:AddTextBox(title, placeholder, callback) return CreateTextBoxInput(sectionContent, strokeColor, title, placeholder, callback) end
+	function sectionPublic:TextBox(title, placeholder, callback) return CreateTextBoxInput(sectionContent, strokeColor, title, placeholder, callback) end
 
-	function sectionPublic:AddToggle(ttitle, defaultState, callback)
-		return CreateToggleSwitch(sectionContent, strokeColor, ttitle, "", defaultState, callback)
-	end
+	function sectionPublic:AddSlider(title, min, max, default, callback) return CreateSliderInput(sectionContent, strokeColor, title, min, max, default, callback) end
+	function sectionPublic:Slider(title, min, max, default, callback) return CreateSliderInput(sectionContent, strokeColor, title, min, max, default, callback) end
 
-	function sectionPublic:Toggle(ttitle, tdesc, defaultState, callback)
-		return CreateToggleSwitch(sectionContent, strokeColor, ttitle, tdesc, defaultState, callback)
+	-- Bago! Dropdown Support sa loob ng SectionUI
+	function sectionPublic:AddDropdown(title, options, defaultOption, callback)
+		return CreateDropdown(sectionContent, strokeColor, title, options, defaultOption, callback)
 	end
-
-	-- Textbox sa loob ng SectionUI box!
-	function sectionPublic:AddTextBox(title, placeholder, callback)
-		return CreateTextBoxInput(sectionContent, strokeColor, title, placeholder, callback)
-	end
-	function sectionPublic:TextBox(title, placeholder, callback)
-		return CreateTextBoxInput(sectionContent, strokeColor, title, placeholder, callback)
-	end
-	function sectionPublic:AddTextbox(title, placeholder, callback)
-		return CreateTextBoxInput(sectionContent, strokeColor, title, placeholder, callback)
-	end
-	function sectionPublic:Textbox(title, placeholder, callback)
-		return CreateTextBoxInput(sectionContent, strokeColor, title, placeholder, callback)
-	end
-
-	-- Slider sa loob ng SectionUI box! (Saves camera/scroll conflicts)
-	function sectionPublic:AddSlider(title, min, max, default, callback)
-		return CreateSliderInput(sectionContent, strokeColor, title, min, max, default, callback)
-	end
-	function sectionPublic:Slider(title, min, max, default, callback)
-		return CreateSliderInput(sectionContent, strokeColor, title, min, max, default, callback)
-	end
-	function sectionPublic:Addslider(title, min, max, default, callback)
-		return CreateSliderInput(sectionContent, strokeColor, title, min, max, default, callback)
-	end
-	function sectionPublic:slider(title, min, max, default, callback)
-		return CreateSliderInput(sectionContent, strokeColor, title, min, max, default, callback)
+	function sectionPublic:Dropdown(title, options, defaultOption, callback)
+		return CreateDropdown(sectionContent, strokeColor, title, options, defaultOption, callback)
 	end
 
 	return sectionPublic
 end
 
--- OLD/LEGACY Helper: Standard Non-Collapsible Section Creator (walang Box para sa lumang layout)
+-- OLD/LEGACY Helper: Standard Non-Collapsible Section Creator
 local function CreateSectionUI(parentFrame, strokeColor, title)
 	local sectionFrame = Instance.new("Frame")
 	sectionFrame.Name = "Section_" .. title
@@ -1136,7 +1321,6 @@ local function CreateSectionUI(parentFrame, strokeColor, title)
 	sectionLayout.VerticalAlignment = Enum.VerticalAlignment.Top
 	sectionLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 
-	-- Section Title Header Text Component
 	local titleLabel = Instance.new("TextLabel")
 	titleLabel.Name = "SectionTitle"
 	titleLabel.Size = UDim2.new(1, 0, 0, 36)
@@ -1149,7 +1333,6 @@ local function CreateSectionUI(parentFrame, strokeColor, title)
 	titleLabel.TextXAlignment = Enum.TextXAlignment.Center
 	titleLabel.Parent = sectionFrame
 
-	-- Section Separator Line UI Element
 	local sep = Instance.new("Frame")
 	sep.Name = "SectionSeparator"
 	sep.Size = UDim2.new(0.6, 0, 0, 2)
@@ -1187,7 +1370,6 @@ function KazeUI:CreateWindow(config)
 	local MiniButtonSize = UDim2.fromOffset(46, 46)
 	local Callback = config.Callback
 
-	-- Main Window Frame
 	local Window = Instance.new("Frame")
 	Window.Name = "MainWindow"
 	Window.Size = UDim2.fromOffset(750, 450)
@@ -1205,7 +1387,6 @@ function KazeUI:CreateWindow(config)
 	WindowStroke.Parent = Window
 	StartNeonLoop(WindowStroke)
 
-	-- TopBar Design
 	local TopBar = Instance.new("Frame")
 	TopBar.Name = "TopBar"
 	TopBar.Size = UDim2.new(1,0,0,50)
@@ -1215,7 +1396,6 @@ function KazeUI:CreateWindow(config)
 	Instance.new("UICorner", TopBar).CornerRadius = UDim.new(0,12)
 	MakeDraggable(TopBar, Window)
 
-	-- Avatar at Window Details
 	local Avatar = Instance.new("ImageLabel")
 	Avatar.Name = "Avatar"
 	Avatar.Size = UDim2.fromOffset(32,32)
@@ -1252,7 +1432,6 @@ function KazeUI:CreateWindow(config)
 	SubLabel.TextWrapped = true
 	SubLabel.Parent = TopBar
 
-	-- Divider sa ilalim ng TopBar
 	local TopDivider = Instance.new("Frame")
 	TopDivider.Name = "TopDivider"
 	TopDivider.Size = UDim2.new(1,0,0,2)
@@ -1268,7 +1447,6 @@ function KazeUI:CreateWindow(config)
 	topDivStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 	StartNeonLoop(topDivStroke)
 
-	-- Traffic Lights Controls (Minimize, Maximize, Close)
 	local defaultWindowSize = UDim2.fromOffset(750, 450)
 	local lastNormalSize = defaultWindowSize
 	local lastNormalPosition = UDim2.fromScale(0.5,0.5)
@@ -1295,7 +1473,6 @@ function KazeUI:CreateWindow(config)
 	local BtnYellow = createCircleButton("BtnYellow", -68, Color3.fromRGB(255,204,51))
 	local BtnRed = createCircleButton("BtnRed", -40, Color3.fromRGB(235,80,80))
 
-	-- Mini Floating Action Button Setup
 	local MiniButton = Instance.new("ImageButton")
 	MiniButton.Name = "MiniButton"
 	MiniButton.Size = MiniButtonSize
@@ -1481,7 +1658,6 @@ function KazeUI:CreateWindow(config)
 	SideBar.Parent = Content
 	Instance.new("UICorner", SideBar).CornerRadius = UDim.new(0,12)
 
-	-- Vertical Separator Line
 	local VertDivider = Instance.new("Frame")
 	VertDivider.Name = "VertDivider"
 	VertDivider.Size = UDim2.new(0,2,1,0)
@@ -1496,7 +1672,6 @@ function KazeUI:CreateWindow(config)
 	vertDivStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 	StartNeonLoop(vertDivStroke)
 
-	-- Main Pages Area
 	local Pages = Instance.new("Frame")
 	Pages.Name = "Pages"
 	Pages.Position = UDim2.new(0,152,0,0)
@@ -1506,7 +1681,6 @@ function KazeUI:CreateWindow(config)
 	Pages.Parent = Content
 	Instance.new("UICorner", Pages).CornerRadius = UDim.new(0,12)
 
-	-- Tab Scroller List (Para sa maraming tabs)
 	local TabsScroller = Instance.new("ScrollingFrame")
 	TabsScroller.Name = "TabsScroller"
 	TabsScroller.Parent = SideBar
@@ -1531,7 +1705,6 @@ function KazeUI:CreateWindow(config)
 
 	local createdTabs = {}
 
-	-- Design configurations
 	local TAB_BUTTON_HEIGHT = 40
 	local TAB_CORNER_RADIUS = 6
 	local TAB_BG = Color3.fromRGB(24,24,28)
@@ -1551,7 +1724,6 @@ function KazeUI:CreateWindow(config)
 		_Stroke = WindowStroke,
 	}
 
-	-- CreateTab Method
 	function Win:CreateTab(name, iconId)
 		name = tostring(name or "Tab")
 		local formattedIcon = FormatImage(iconId or "")
@@ -1603,7 +1775,6 @@ function KazeUI:CreateWindow(config)
 		page.Parent = self._Pages
 		page.Visible = false
 
-		-- Scrollable Frame para sa Content ng Page
 		local pageContent = Instance.new("ScrollingFrame", page)
 		pageContent.Name = "PageContent"
 		pageContent.Size = UDim2.new(1, 0, 1, 0)
@@ -1681,65 +1852,31 @@ function KazeUI:CreateWindow(config)
 			_Stroke = self._Stroke,
 		}
 		
-		-- Paragraph directly on Tab
-		function public:Paragraph(ptitle, pbody)
-			return CreateParagraph(self._PageContent, self._Stroke.Color, ptitle, pbody)
-		end
+		function public:Paragraph(ptitle, pbody) return CreateParagraph(self._PageContent, self._Stroke.Color, ptitle, pbody) end
+		function public:Button(title, description, callback) return CreateClickableParagraph(self._PageContent, self._Stroke.Color, title, description, callback) end
+		function public:Toggle(title, description, defaultState, callback) return CreateToggleSwitch(self._PageContent, self._Stroke.Color, title, description, defaultState, callback) end
+		function public:TextBox(title, placeholder, callback) return CreateTextBoxInput(self._PageContent, self._Stroke.Color, title, placeholder, callback) end
+		function public:Slider(title, min, max, default, callback) return CreateSliderInput(self._PageContent, self._Stroke.Color, title, min, max, default, callback) end
 		
-		-- Button directly on Tab
-		function public:Button(title, description, callback)
-			return CreateClickableParagraph(self._PageContent, self._Stroke.Color, title, description, callback)
-		end
-		
-		-- Toggle directly on Tab
-		function public:Toggle(title, description, defaultState, callback)
-			return CreateToggleSwitch(self._PageContent, self._Stroke.Color, title, description, defaultState, callback)
+		-- Tab Dropdown Mapping!
+		function public:Dropdown(title, options, defaultOption, callback)
+			return CreateDropdown(self._PageContent, self._Stroke.Color, title, options, defaultOption, callback)
 		end
 
-		-- TextBox directly on Tab at mga Shortcut/Aliases
-		function public:TextBox(title, placeholder, callback)
-			return CreateTextBoxInput(self._PageContent, self._Stroke.Color, title, placeholder, callback)
-		end
-		function public:Textbox(title, placeholder, callback)
-			return CreateTextBoxInput(self._PageContent, self._Stroke.Color, title, placeholder, callback)
-		end
-		function public:AddTextBox(title, placeholder, callback)
-			return CreateTextBoxInput(self._PageContent, self._Stroke.Color, title, placeholder, callback)
-		end
-		function public:AddTextbox(title, placeholder, callback)
-			return CreateTextBoxInput(self._PageContent, self._Stroke.Color, title, placeholder, callback)
-		end
-
-		-- Slider directly on Tab at mga Shortcut/Aliases (Anti-camera movement setup)
-		function public:Slider(title, min, max, default, callback)
-			return CreateSliderInput(self._PageContent, self._Stroke.Color, title, min, max, default, callback)
-		end
-		function public:slider(title, min, max, default, callback)
-			return CreateSliderInput(self._PageContent, self._Stroke.Color, title, min, max, default, callback)
-		end
-		function public:AddSlider(title, min, max, default, callback)
-			return CreateSliderInput(self._PageContent, self._Stroke.Color, title, min, max, default, callback)
-		end
-		function public:Addslider(title, min, max, default, callback)
-			return CreateSliderInput(self._PageContent, self._Stroke.Color, title, min, max, default, callback)
-		end
-
-		-- Collapsible dropdown SectionUI box directly on Tab
+		-- SectionUI API
 		function public:SectionUI(title)
 			return CreateCollapsibleSection(self._PageContent, self._Stroke.Color, title)
 		end
 
-		-- OLD/LEGACY: Standard non-collapsible Section API Hook
+		-- Legacy Section API
 		function public:Section(title)
 			title = tostring(title or " ")
-			
 			local sectionFrame, titleLabel, sectionContent = CreateSectionUI(self._PageContent, self._Stroke.Color, title)
 
 			local sectionPublic = {}
 			sectionPublic.Frame = sectionFrame
 			sectionPublic.TitleLabel = titleLabel
 
-			-- Method: Magdagdag ng standard text label sa legacy section
 			function sectionPublic:AddLabel(text)
 				local label = Instance.new("TextLabel")
 				label.Size = UDim2.new(0.95, -20, 0, 24)
@@ -1753,59 +1890,15 @@ function KazeUI:CreateWindow(config)
 				return label
 			end
 
-			-- Method: Paragraph sa loob ng legacy section
-			function sectionPublic:AddParagraph(ptitle, pbody)
-				return CreateParagraph(sectionContent, self._Stroke.Color, ptitle, pbody)
-			end
-			-- Alias
-			function sectionPublic:Paragraph(ptitle, pbody)
-				return CreateParagraph(sectionContent, self._Stroke.Color, ptitle, pbody)
-			end
-
-			-- Method: Button sa loob ng legacy section
-			function sectionPublic:AddButton(text, callback)
-				return CreateClickableParagraph(sectionContent, self._Stroke.Color, text, "", callback)
-			end
-			-- Alias
-			function sectionPublic:Button(btitle, bdesc, callback)
-				return CreateClickableParagraph(sectionContent, self._Stroke.Color, btitle, bdesc, callback)
-			end
-
-			-- Method: Toggle sa loob ng legacy section
-			function sectionPublic:AddToggle(text, default, callback)
-				return CreateToggleSwitch(sectionContent, self._Stroke.Color, text, "", default, callback)
-			end
-			-- Alias
-			function sectionPublic:Toggle(ttitle, tdesc, defaultState, callback)
-				return CreateToggleSwitch(sectionContent, self._Stroke.Color, ttitle, tdesc, defaultState, callback)
-			end
-
-			-- Method: TextBox sa loob ng legacy section at Shortcut/Aliases
-			function sectionPublic:AddTextBox(title, placeholder, callback)
-				return CreateTextBoxInput(sectionContent, self._Stroke.Color, title, placeholder, callback)
-			end
-			function sectionPublic:TextBox(title, placeholder, callback)
-				return CreateTextBoxInput(sectionContent, self._Stroke.Color, title, placeholder, callback)
-			end
-			function sectionPublic:AddTextbox(title, placeholder, callback)
-				return CreateTextBoxInput(sectionContent, self._Stroke.Color, title, placeholder, callback)
-			end
-			function sectionPublic:Textbox(title, placeholder, callback)
-				return CreateTextBoxInput(sectionContent, self._Stroke.Color, title, placeholder, callback)
-			end
-
-			-- Method: Slider sa loob ng legacy section at Shortcut/Aliases
-			function sectionPublic:AddSlider(title, min, max, default, callback)
-				return CreateSliderInput(sectionContent, self._Stroke.Color, title, min, max, default, callback)
-			end
-			function sectionPublic:Slider(title, min, max, default, callback)
-				return CreateSliderInput(sectionContent, self._Stroke.Color, title, min, max, default, callback)
-			end
-			function sectionPublic:Addslider(title, min, max, default, callback)
-				return CreateSliderInput(sectionContent, self._Stroke.Color, title, min, max, default, callback)
-			end
-			function sectionPublic:slider(title, min, max, default, callback)
-				return CreateSliderInput(sectionContent, self._Stroke.Color, title, min, max, default, callback)
+			function sectionPublic:Paragraph(ptitle, pbody) return CreateParagraph(sectionContent, self._Stroke.Color, ptitle, pbody) end
+			function sectionPublic:Button(btitle, bdesc, callback) return CreateClickableParagraph(sectionContent, self._Stroke.Color, btitle, bdesc, callback) end
+			function sectionPublic:Toggle(ttitle, tdesc, defaultState, callback) return CreateToggleSwitch(sectionContent, self._Stroke.Color, ttitle, tdesc, defaultState, callback) end
+			function sectionPublic:TextBox(title, placeholder, callback) return CreateTextBoxInput(sectionContent, self._Stroke.Color, title, placeholder, callback) end
+			function sectionPublic:Slider(title, min, max, default, callback) return CreateSliderInput(sectionContent, self._Stroke.Color, title, min, max, default, callback) end
+			
+			-- Legacy Section Dropdown Mapping!
+			function sectionPublic:Dropdown(title, options, defaultOption, callback)
+				return CreateDropdown(sectionContent, self._Stroke.Color, title, options, defaultOption, callback)
 			end
 
 			return sectionPublic
@@ -1814,7 +1907,6 @@ function KazeUI:CreateWindow(config)
 		return public
 	end
 
-	-- GetTabs Method
 	function Win:GetTabs()
 		local out = {}
 		for i,t in ipairs(self._Tabs) do
