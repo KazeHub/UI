@@ -1,4 +1,5 @@
--- Kaze UI Library (Fixed: Dropdowns, Boxed Collapsible Sections, Textbox, Slider, Toggle)
+
+-- Kaze UI Library (Fixed: Dictionary Configs, Multi-Select Dropdowns, Boxed Collapsible Sections)
 -- Full drop-in replacement. Kazu approved. 💙
 local KazeUI = {}
 KazeUI.__index = KazeUI
@@ -112,12 +113,37 @@ local function ToggleScrollingAncestors(element, state)
 	end
 end
 
--- Helper: Gumawa ng Dropdown Selection Row (Premium style)
-local function CreateDropdown(parentFrame, strokeColor, title, options, defaultOption, callback)
-	title = tostring(title or "Dropdown")
-	options = type(options) == "table" and options or {}
-	local selected = defaultOption or (options[1] or "")
+-- Helper: Gumawa ng Dropdown Selection Row (Premium style + Multi-select)
+local function CreateDropdown(parentFrame, strokeColor, arg1, arg2, arg3, arg4)
+	local config = type(arg1) == "table" and arg1 or {Title = arg1, Values = arg2, Default = arg3, Callback = arg4}
+	
+	local title = tostring(config.Title or "Dropdown")
+	local options = type(config.Values) == "table" and config.Values or (type(config.Options) == "table" and config.Options or {})
+	local isMulti = config.Multi == true
+	local callback = config.Callback
 	local isOpen = false
+
+	local selected
+	if isMulti then
+		selected = {}
+		if type(config.Default) == "table" then
+			for _, v in ipairs(config.Default) do selected[tostring(v)] = true end
+		elseif config.Default ~= nil then
+			selected[tostring(config.Default)] = true
+		end
+	else
+		selected = config.Default ~= nil and tostring(config.Default) or (options[1] and tostring(options[1]) or "")
+	end
+
+	local function getSelectedText()
+		if not isMulti then return tostring(selected) end
+		local sel = {}
+		for _, o in ipairs(options) do
+			if selected[tostring(o)] then table.insert(sel, tostring(o)) end
+		end
+		if #sel == 0 then return "None" end
+		return table.concat(sel, ", ")
+	end
 
 	local wrapper = Instance.new("Frame")
 	wrapper.Name = "DropdownWrapper"
@@ -182,7 +208,7 @@ local function CreateDropdown(parentFrame, strokeColor, title, options, defaultO
 	selectedLabel.Size = UDim2.new(0.5, -24, 1, 0)
 	selectedLabel.Position = UDim2.new(0.5, 0, 0, 0)
 	selectedLabel.BackgroundTransparency = 1
-	selectedLabel.Text = tostring(selected)
+	selectedLabel.Text = getSelectedText()
 	selectedLabel.TextColor3 = strokeColor or Color3.fromRGB(0, 160, 255)
 	selectedLabel.Font = Enum.Font.Gotham
 	selectedLabel.TextSize = 13
@@ -217,7 +243,6 @@ local function CreateDropdown(parentFrame, strokeColor, title, options, defaultO
 	listContainer.AutomaticCanvasSize = Enum.AutomaticSize.Y
 	listContainer.Parent = dropFrame
 
-	-- Prevent double-scrolling bug when cursor is over the dropdown list
 	listContainer.MouseEnter:Connect(function() ToggleScrollingAncestors(dropFrame, false) end)
 	listContainer.MouseLeave:Connect(function() ToggleScrollingAncestors(dropFrame, true) end)
 
@@ -235,9 +260,7 @@ local function CreateDropdown(parentFrame, strokeColor, title, options, defaultO
 	end
 
 	local function Refresh(newOptions)
-		for _, item in ipairs(optionItems) do
-			item:Destroy()
-		end
+		for _, item in ipairs(optionItems) do item:Destroy() end
 		table.clear(optionItems)
 
 		options = type(newOptions) == "table" and newOptions or {}
@@ -255,47 +278,60 @@ local function CreateDropdown(parentFrame, strokeColor, title, options, defaultO
 			btn.TextXAlignment = Enum.TextXAlignment.Left
 			btn.Parent = listContainer
 			Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 4)
+			
+			local isSelected = isMulti and selected[optStr] == true or (not isMulti and optStr == tostring(selected))
+			btn.BackgroundColor3 = isSelected and Color3.fromRGB(30, 30, 35) or Color3.fromRGB(24, 24, 28)
+			btn.TextColor3 = isSelected and (strokeColor or Color3.fromRGB(0, 160, 255)) or Color3.fromRGB(200, 200, 200)
 
 			btn.MouseEnter:Connect(function()
 				TweenService:Create(btn, TweenInfo.new(0.1), {BackgroundColor3 = Color3.fromRGB(35, 35, 40), TextColor3 = Color3.fromRGB(255,255,255)}):Play()
 			end)
 			btn.MouseLeave:Connect(function()
-				local isActive = (optStr == tostring(selected))
-				local targetColor = isActive and Color3.fromRGB(30, 30, 35) or Color3.fromRGB(24, 24, 28)
-				local targetText = isActive and (strokeColor or Color3.fromRGB(0, 160, 255)) or Color3.fromRGB(200, 200, 200)
+				local currSelected = isMulti and selected[optStr] == true or (not isMulti and optStr == tostring(selected))
+				local targetColor = currSelected and Color3.fromRGB(30, 30, 35) or Color3.fromRGB(24, 24, 28)
+				local targetText = currSelected and (strokeColor or Color3.fromRGB(0, 160, 255)) or Color3.fromRGB(200, 200, 200)
 				TweenService:Create(btn, TweenInfo.new(0.1), {BackgroundColor3 = targetColor, TextColor3 = targetText}):Play()
 			end)
 
 			btn.MouseButton1Click:Connect(function()
-				selected = optStr
-				selectedLabel.Text = optStr
-				CloseDropdown()
-				
-				for _, otherBtn in ipairs(optionItems) do
-					local otherTxt = string.sub(otherBtn.Text, 3)
-					if otherTxt == selected then
-						otherBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
-						otherBtn.TextColor3 = strokeColor or Color3.fromRGB(0, 160, 255)
-					else
-						otherBtn.BackgroundColor3 = Color3.fromRGB(24, 24, 28)
-						otherBtn.TextColor3 = Color3.fromRGB(200, 200, 200)
+				if isMulti then
+					selected[optStr] = not selected[optStr]
+					if not selected[optStr] then selected[optStr] = nil end
+					
+					selectedLabel.Text = getSelectedText()
+					btn.BackgroundColor3 = selected[optStr] and Color3.fromRGB(30, 30, 35) or Color3.fromRGB(24, 24, 28)
+					btn.TextColor3 = selected[optStr] and (strokeColor or Color3.fromRGB(0, 160, 255)) or Color3.fromRGB(200, 200, 200)
+					
+					if typeof(callback) == "function" then
+						local returnTable = {}
+						for _, o in ipairs(options) do
+							if selected[tostring(o)] then table.insert(returnTable, tostring(o)) end
+						end
+						task.spawn(callback, returnTable)
 					end
-				end
+				else
+					selected = optStr
+					selectedLabel.Text = optStr
+					CloseDropdown()
+					
+					for _, otherBtn in ipairs(optionItems) do
+						local otherTxt = string.sub(otherBtn.Text, 3)
+						if otherTxt == selected then
+							otherBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
+							otherBtn.TextColor3 = strokeColor or Color3.fromRGB(0, 160, 255)
+						else
+							otherBtn.BackgroundColor3 = Color3.fromRGB(24, 24, 28)
+							otherBtn.TextColor3 = Color3.fromRGB(200, 200, 200)
+						end
+					end
 
-				if typeof(callback) == "function" then
-					task.spawn(callback, selected)
+					if typeof(callback) == "function" then
+						task.spawn(callback, selected)
+					end
 				end
 			end)
 
 			table.insert(optionItems, btn)
-		end
-
-		for _, btn in ipairs(optionItems) do
-			local txt = string.sub(btn.Text, 3)
-			if txt == tostring(selected) then
-				btn.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
-				btn.TextColor3 = strokeColor or Color3.fromRGB(0, 160, 255)
-			end
 		end
 
 		local maxItems = 4.5
@@ -317,29 +353,53 @@ local function CreateDropdown(parentFrame, strokeColor, title, options, defaultO
 		end
 	end)
 
-	if selected ~= "" then
-		selectedLabel.Text = tostring(selected)
-	end
-
 	return {
 		Wrapper = wrapper,
 		Frame = dropFrame,
-		GetValue = function() return selected end,
-		SetValue = function(self, val)
-			selected = tostring(val)
-			selectedLabel.Text = selected
-			for _, btn in ipairs(optionItems) do
-				local txt = string.sub(btn.Text, 3)
-				if txt == selected then
-					btn.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
-					btn.TextColor3 = strokeColor or Color3.fromRGB(0, 160, 255)
-				else
-					btn.BackgroundColor3 = Color3.fromRGB(24, 24, 28)
-					btn.TextColor3 = Color3.fromRGB(200, 200, 200)
+		GetValue = function()
+			if isMulti then
+				local returnTable = {}
+				for _, o in ipairs(options) do
+					if selected[tostring(o)] then table.insert(returnTable, tostring(o)) end
 				end
+				return returnTable
 			end
-			if typeof(callback) == "function" then
-				task.spawn(callback, selected)
+			return selected 
+		end,
+		SetValue = function(self, val)
+			if isMulti then
+				selected = {}
+				if type(val) == "table" then
+					for _, v in ipairs(val) do selected[tostring(v)] = true end
+				elseif val ~= nil then
+					selected[tostring(val)] = true
+				end
+				selectedLabel.Text = getSelectedText()
+				for _, btn in ipairs(optionItems) do
+					local txt = string.sub(btn.Text, 3)
+					if selected[txt] then
+						btn.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
+						btn.TextColor3 = strokeColor or Color3.fromRGB(0, 160, 255)
+					else
+						btn.BackgroundColor3 = Color3.fromRGB(24, 24, 28)
+						btn.TextColor3 = Color3.fromRGB(200, 200, 200)
+					end
+				end
+				if typeof(callback) == "function" then task.spawn(callback, self:GetValue()) end
+			else
+				selected = tostring(val)
+				selectedLabel.Text = selected
+				for _, btn in ipairs(optionItems) do
+					local txt = string.sub(btn.Text, 3)
+					if txt == selected then
+						btn.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
+						btn.TextColor3 = strokeColor or Color3.fromRGB(0, 160, 255)
+					else
+						btn.BackgroundColor3 = Color3.fromRGB(24, 24, 28)
+						btn.TextColor3 = Color3.fromRGB(200, 200, 200)
+					end
+				end
+				if typeof(callback) == "function" then task.spawn(callback, selected) end
 			end
 		end,
 		Refresh = function(self, newOpts)
@@ -349,9 +409,10 @@ local function CreateDropdown(parentFrame, strokeColor, title, options, defaultO
 end
 
 -- Helper: Gumawa ng Paragraph Component
-local function CreateParagraph(parentFrame, strokeColor, title, body)
-	title = tostring(title or "")
-	body = tostring(body or "")
+local function CreateParagraph(parentFrame, strokeColor, arg1, arg2)
+	local config = type(arg1) == "table" and arg1 or {Title = arg1, Content = arg2}
+	local title = tostring(config.Title or " ")
+	local body = tostring(config.Content or config.Description or "")
 	
 	local measuredWidth = 598 * 0.92
 	if parentFrame and parentFrame.AbsoluteSize and parentFrame.AbsoluteSize.X > 0 then
@@ -468,9 +529,11 @@ local function CreateParagraph(parentFrame, strokeColor, title, body)
 end
 
 -- Helper: Gumawa ng Interactive Button (Paragraph style)
-local function CreateClickableParagraph(parentFrame, strokeColor, title, body, callback)
-	title = tostring(title or "Button")
-	body = tostring(body or "")
+local function CreateClickableParagraph(parentFrame, strokeColor, arg1, arg2, arg3)
+	local config = type(arg1) == "table" and arg1 or {Title = arg1, Description = arg2, Callback = arg3}
+	local title = tostring(config.Title or "Button")
+	local body = tostring(config.Description or config.Content or "")
+	local callback = config.Callback
 	
 	local measuredWidth = 598 * 0.92
 	if parentFrame and parentFrame.AbsoluteSize and parentFrame.AbsoluteSize.X > 0 then
@@ -616,10 +679,12 @@ local function CreateClickableParagraph(parentFrame, strokeColor, title, body, c
 end
 
 -- Helper: Gumawa ng Interactive Toggle Switch Row
-local function CreateToggleSwitch(parentFrame, strokeColor, title, body, defaultState, callback)
-	title = tostring(title or "Toggle Switch")
-	body = tostring(body or "")
-	local state = defaultState or false
+local function CreateToggleSwitch(parentFrame, strokeColor, arg1, arg2, arg3, arg4)
+	local config = type(arg1) == "table" and arg1 or {Title = arg1, Description = arg2, Default = arg3, Callback = arg4}
+	local title = tostring(config.Title or "Toggle Switch")
+	local body = tostring(config.Description or config.Content or "")
+	local state = config.Default or false
+	local callback = config.Callback
 	
 	local measuredWidth = 598 * 0.92
 	if parentFrame and parentFrame.AbsoluteSize and parentFrame.AbsoluteSize.X > 0 then
@@ -794,9 +859,11 @@ local function CreateToggleSwitch(parentFrame, strokeColor, title, body, default
 end
 
 -- Helper: Gagawa ng Custom Textbox Input Row (Premium style)
-local function CreateTextBoxInput(parentFrame, strokeColor, title, placeholder, callback)
-	title = tostring(title or "Input Text")
-	placeholder = tostring(placeholder or "Type here...")
+local function CreateTextBoxInput(parentFrame, strokeColor, arg1, arg2, arg3)
+	local config = type(arg1) == "table" and arg1 or {Title = arg1, Placeholder = arg2, Callback = arg3}
+	local title = tostring(config.Title or "Input Text")
+	local placeholder = tostring(config.Placeholder or "Type here...")
+	local callback = config.Callback
 	
 	local measuredWidth = 598 * 0.92
 	if parentFrame and parentFrame.AbsoluteSize and parentFrame.AbsoluteSize.X > 0 then
@@ -926,12 +993,14 @@ local function CreateTextBoxInput(parentFrame, strokeColor, title, placeholder, 
 	return api
 end
 
--- Helper: Gagawa ng Custom Slider Input Row (Premium style, locks camera rotation & touch swipe while sliding)
-local function CreateSliderInput(parentFrame, strokeColor, title, min, max, default, callback)
-	title = tostring(title or "Slider")
-	min = tonumber(min) or 0
-	max = tonumber(max) or 100
-	default = tonumber(default) or min
+-- Helper: Gagawa ng Custom Slider Input Row
+local function CreateSliderInput(parentFrame, strokeColor, arg1, arg2, arg3, arg4, arg5)
+	local config = type(arg1) == "table" and arg1 or {Title = arg1, Min = arg2, Max = arg3, Default = arg4, Callback = arg5}
+	local title = tostring(config.Title or "Slider")
+	local min = tonumber(config.Min) or 0
+	local max = tonumber(config.Max) or 100
+	local default = tonumber(config.Default) or min
+	local callback = config.Callback
 	
 	local value = math.clamp(default, min, max)
 	
@@ -1157,9 +1226,10 @@ local function CreateSliderInput(parentFrame, strokeColor, title, min, max, defa
 	return api
 end
 
--- Helper: Gagawa ng Isang Pinag-isang Box na Collapsible SectionUI Block (No feedback loop bug)
-local function CreateCollapsibleSection(parentFrame, strokeColor, title)
-	title = tostring(title or "Section")
+-- Helper: Gagawa ng Isang Pinag-isang Box na Collapsible SectionUI Block
+local function CreateCollapsibleSection(parentFrame, strokeColor, arg1)
+	local config = type(arg1) == "table" and arg1 or {Title = arg1}
+	local title = tostring(config.Title or "Section")
 	local isOpen = true
 
 	local sectionBox = Instance.new("Frame")
@@ -1265,11 +1335,12 @@ local function CreateCollapsibleSection(parentFrame, strokeColor, title)
 		Header = headerFrame
 	}
 
-	function sectionPublic:AddLabel(text)
+	function sectionPublic:AddLabel(arg1)
+		local cfg = type(arg1) == "table" and arg1 or {Text = arg1}
 		local label = Instance.new("TextLabel")
 		label.Size = UDim2.new(1, -30, 0, 18)
 		label.BackgroundTransparency = 1
-		label.Text = tostring(text or " ")
+		label.Text = tostring(cfg.Text or cfg.Title or " ")
 		label.TextColor3 = Color3.fromRGB(220,220,220)
 		label.Font = Enum.Font.Gotham
 		label.TextSize = 13
@@ -1279,34 +1350,21 @@ local function CreateCollapsibleSection(parentFrame, strokeColor, title)
 		return label
 	end
 
-	function sectionPublic:AddParagraph(ptitle, pbody) return CreateParagraph(sectionContent, strokeColor, ptitle, pbody) end
-	function sectionPublic:Paragraph(ptitle, pbody) return CreateParagraph(sectionContent, strokeColor, ptitle, pbody) end
-
-	function sectionPublic:AddButton(btitle, callback) return CreateClickableParagraph(sectionContent, strokeColor, btitle, "", callback) end
-	function sectionPublic:Button(btitle, bdesc, callback) return CreateClickableParagraph(sectionContent, strokeColor, btitle, bdesc, callback) end
-
-	function sectionPublic:AddToggle(ttitle, defaultState, callback) return CreateToggleSwitch(sectionContent, strokeColor, ttitle, "", defaultState, callback) end
-	function sectionPublic:Toggle(ttitle, tdesc, defaultState, callback) return CreateToggleSwitch(sectionContent, strokeColor, ttitle, tdesc, defaultState, callback) end
-
-	function sectionPublic:AddTextBox(title, placeholder, callback) return CreateTextBoxInput(sectionContent, strokeColor, title, placeholder, callback) end
-	function sectionPublic:TextBox(title, placeholder, callback) return CreateTextBoxInput(sectionContent, strokeColor, title, placeholder, callback) end
-
-	function sectionPublic:AddSlider(title, min, max, default, callback) return CreateSliderInput(sectionContent, strokeColor, title, min, max, default, callback) end
-	function sectionPublic:Slider(title, min, max, default, callback) return CreateSliderInput(sectionContent, strokeColor, title, min, max, default, callback) end
-
-	-- Bago! Dropdown Support sa loob ng SectionUI
-	function sectionPublic:AddDropdown(title, options, defaultOption, callback)
-		return CreateDropdown(sectionContent, strokeColor, title, options, defaultOption, callback)
-	end
-	function sectionPublic:Dropdown(title, options, defaultOption, callback)
-		return CreateDropdown(sectionContent, strokeColor, title, options, defaultOption, callback)
-	end
+	function sectionPublic:Paragraph(a1, a2) return CreateParagraph(sectionContent, strokeColor, a1, a2) end
+	function sectionPublic:Button(a1, a2, a3) return CreateClickableParagraph(sectionContent, strokeColor, a1, a2, a3) end
+	function sectionPublic:Toggle(a1, a2, a3, a4) return CreateToggleSwitch(sectionContent, strokeColor, a1, a2, a3, a4) end
+	function sectionPublic:TextBox(a1, a2, a3) return CreateTextBoxInput(sectionContent, strokeColor, a1, a2, a3) end
+	function sectionPublic:Slider(a1, a2, a3, a4, a5) return CreateSliderInput(sectionContent, strokeColor, a1, a2, a3, a4, a5) end
+	function sectionPublic:Dropdown(a1, a2, a3, a4) return CreateDropdown(sectionContent, strokeColor, a1, a2, a3, a4) end
 
 	return sectionPublic
 end
 
 -- OLD/LEGACY Helper: Standard Non-Collapsible Section Creator
-local function CreateSectionUI(parentFrame, strokeColor, title)
+local function CreateSectionUI(parentFrame, strokeColor, arg1)
+	local config = type(arg1) == "table" and arg1 or {Title = arg1}
+	local title = tostring(config.Title or "Section")
+
 	local sectionFrame = Instance.new("Frame")
 	sectionFrame.Name = "Section_" .. title
 	sectionFrame.Size = UDim2.new(1, -24, 0, 0)
@@ -1724,9 +1782,11 @@ function KazeUI:CreateWindow(config)
 		_Stroke = WindowStroke,
 	}
 
-	function Win:CreateTab(name, iconId)
-		name = tostring(name or "Tab")
-		local formattedIcon = FormatImage(iconId or "")
+	function Win:CreateTab(arg1, arg2)
+		local cfg = type(arg1) == "table" and arg1 or {Title = arg1, Icon = arg2}
+		local name = tostring(cfg.Title or "Tab")
+		local formattedIcon = FormatImage(cfg.Icon or "")
+
 		local btn = Instance.new("TextButton")
 		btn.Name = "TabButton_" .. name
 		btn.Size = UDim2.new(1, -12, 0, TAB_BUTTON_HEIGHT)
@@ -1852,36 +1912,24 @@ function KazeUI:CreateWindow(config)
 			_Stroke = self._Stroke,
 		}
 		
-		function public:Paragraph(ptitle, pbody) return CreateParagraph(self._PageContent, self._Stroke.Color, ptitle, pbody) end
-		function public:Button(title, description, callback) return CreateClickableParagraph(self._PageContent, self._Stroke.Color, title, description, callback) end
-		function public:Toggle(title, description, defaultState, callback) return CreateToggleSwitch(self._PageContent, self._Stroke.Color, title, description, defaultState, callback) end
-		function public:TextBox(title, placeholder, callback) return CreateTextBoxInput(self._PageContent, self._Stroke.Color, title, placeholder, callback) end
-		function public:Slider(title, min, max, default, callback) return CreateSliderInput(self._PageContent, self._Stroke.Color, title, min, max, default, callback) end
-		
-		-- Tab Dropdown Mapping!
-		function public:Dropdown(title, options, defaultOption, callback)
-			return CreateDropdown(self._PageContent, self._Stroke.Color, title, options, defaultOption, callback)
-		end
+		function public:Paragraph(a1, a2) return CreateParagraph(self._PageContent, self._Stroke.Color, a1, a2) end
+		function public:Button(a1, a2, a3) return CreateClickableParagraph(self._PageContent, self._Stroke.Color, a1, a2, a3) end
+		function public:Toggle(a1, a2, a3, a4) return CreateToggleSwitch(self._PageContent, self._Stroke.Color, a1, a2, a3, a4) end
+		function public:TextBox(a1, a2, a3) return CreateTextBoxInput(self._PageContent, self._Stroke.Color, a1, a2, a3) end
+		function public:Slider(a1, a2, a3, a4, a5) return CreateSliderInput(self._PageContent, self._Stroke.Color, a1, a2, a3, a4, a5) end
+		function public:Dropdown(a1, a2, a3, a4) return CreateDropdown(self._PageContent, self._Stroke.Color, a1, a2, a3, a4) end
+		function public:SectionUI(a1) return CreateCollapsibleSection(self._PageContent, self._Stroke.Color, a1) end
 
-		-- SectionUI API
-		function public:SectionUI(title)
-			return CreateCollapsibleSection(self._PageContent, self._Stroke.Color, title)
-		end
+		function public:Section(a1)
+			local sectionFrame, titleLabel, sectionContent = CreateSectionUI(self._PageContent, self._Stroke.Color, a1)
+			local sectionPublic = { Frame = sectionFrame, TitleLabel = titleLabel }
 
-		-- Legacy Section API
-		function public:Section(title)
-			title = tostring(title or " ")
-			local sectionFrame, titleLabel, sectionContent = CreateSectionUI(self._PageContent, self._Stroke.Color, title)
-
-			local sectionPublic = {}
-			sectionPublic.Frame = sectionFrame
-			sectionPublic.TitleLabel = titleLabel
-
-			function sectionPublic:AddLabel(text)
+			function sectionPublic:AddLabel(arg1)
+				local cfg = type(arg1) == "table" and arg1 or {Text = arg1}
 				local label = Instance.new("TextLabel")
 				label.Size = UDim2.new(0.95, -20, 0, 24)
 				label.BackgroundTransparency = 1
-				label.Text = tostring(text or " ")
+				label.Text = tostring(cfg.Text or cfg.Title or " ")
 				label.TextColor3 = Color3.fromRGB(220,220,220)
 				label.Font = Enum.Font.Gotham
 				label.TextSize = 14
@@ -1890,16 +1938,12 @@ function KazeUI:CreateWindow(config)
 				return label
 			end
 
-			function sectionPublic:Paragraph(ptitle, pbody) return CreateParagraph(sectionContent, self._Stroke.Color, ptitle, pbody) end
-			function sectionPublic:Button(btitle, bdesc, callback) return CreateClickableParagraph(sectionContent, self._Stroke.Color, btitle, bdesc, callback) end
-			function sectionPublic:Toggle(ttitle, tdesc, defaultState, callback) return CreateToggleSwitch(sectionContent, self._Stroke.Color, ttitle, tdesc, defaultState, callback) end
-			function sectionPublic:TextBox(title, placeholder, callback) return CreateTextBoxInput(sectionContent, self._Stroke.Color, title, placeholder, callback) end
-			function sectionPublic:Slider(title, min, max, default, callback) return CreateSliderInput(sectionContent, self._Stroke.Color, title, min, max, default, callback) end
-			
-			-- Legacy Section Dropdown Mapping!
-			function sectionPublic:Dropdown(title, options, defaultOption, callback)
-				return CreateDropdown(sectionContent, self._Stroke.Color, title, options, defaultOption, callback)
-			end
+			function sectionPublic:Paragraph(a,b) return CreateParagraph(sectionContent, self._Stroke.Color, a, b) end
+			function sectionPublic:Button(a,b,c) return CreateClickableParagraph(sectionContent, self._Stroke.Color, a, b, c) end
+			function sectionPublic:Toggle(a,b,c,d) return CreateToggleSwitch(sectionContent, self._Stroke.Color, a, b, c, d) end
+			function sectionPublic:TextBox(a,b,c) return CreateTextBoxInput(sectionContent, self._Stroke.Color, a, b, c) end
+			function sectionPublic:Slider(a,b,c,d,e) return CreateSliderInput(sectionContent, self._Stroke.Color, a, b, c, d, e) end
+			function sectionPublic:Dropdown(a,b,c,d) return CreateDropdown(sectionContent, self._Stroke.Color, a, b, c, d) end
 
 			return sectionPublic
 		end
