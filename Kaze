@@ -1,6 +1,7 @@
--- Kaze UI Library (Fixed: Boxed Collapsible Sections + No Sizing Loop Bug)
+
+-- Kaze UI Library (Fixed: Boxed Collapsible Sections + Custom Textbox Support)
 -- Full drop-in replacement.
--- Features: Tab:SectionUI("Title") collapsible boxed sections & Tab:Section("Title") legacy sections
+-- Features: Tab:SectionUI("Title"), Tab:TextBox(), Section:TextBox() and standard components!
 local KazeUI = {}
 KazeUI.__index = KazeUI
 
@@ -56,7 +57,7 @@ local function MakeDraggable(dragPart, targetPart)
 		)
 	end
 	dragPart.InputBegan:Connect(function(input)
-		if input.UserInputType == Enum.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 			dragging = true
 			dragStart = input.Position
 			startPos = targetPart.Position
@@ -547,7 +548,143 @@ local function CreateToggleSwitch(parentFrame, strokeColor, title, body, default
 	}
 end
 
--- NEW Helper: Gagawa ng Isang Pinag-isang Box na Collapsible SectionUI Block (No feedback loop bug)
+-- NEW Helper: Gagawa ng Custom Textbox Input Row (Premium style)
+local function CreateTextBoxInput(parentFrame, strokeColor, title, placeholder, callback)
+	title = tostring(title or "Input Text")
+	placeholder = tostring(placeholder or "Type here...")
+	
+	local measuredWidth = 598 * 0.92
+	if parentFrame and parentFrame.AbsoluteSize and parentFrame.AbsoluteSize.X > 0 then
+		measuredWidth = parentFrame.AbsoluteSize.X * 0.95
+	end
+	
+	local textContainerWidth = measuredWidth - 24
+	
+	local titleHeight = 0
+	if title ~= " " and title ~= "" then
+		local ts = TextService:GetTextSize(title, 15, Enum.Font.GothamBold, Vector2.new(textContainerWidth, 1000))
+		titleHeight = math.max(16, math.ceil(ts.Y))
+	end
+	
+	-- Ang standard total height ng isang premium Textbox component
+	local totalHeight = 6 + titleHeight + 6 + 32 + 6
+	
+	local wrapper = Instance.new("Frame")
+	wrapper.Name = "TextBoxWrapper"
+	wrapper.Size = UDim2.new(1, 0, 0, 0)
+	wrapper.BackgroundTransparency = 1
+	wrapper.Parent = parentFrame
+	wrapper.AutomaticSize = Enum.AutomaticSize.Y
+	
+	local paraFrame = Instance.new("Frame")
+	paraFrame.Name = "TextBoxFrame"
+	paraFrame.AnchorPoint = Vector2.new(0.5, 0)
+	paraFrame.Position = UDim2.new(0.5, 0, 0, 3)
+	paraFrame.Size = UDim2.new(0.95, 0, 0, totalHeight)
+	paraFrame.BackgroundColor3 = Color3.fromRGB(24,24,28)
+	paraFrame.BorderSizePixel = 0
+	Instance.new("UICorner", paraFrame).CornerRadius = UDim.new(0, 8)
+	paraFrame.Parent = wrapper
+	
+	local glow = Instance.new("Frame")
+	glow.Name = "TextBoxGlow"
+	glow.AnchorPoint = Vector2.new(0.5, 0)
+	glow.Position = UDim2.new(0.5, 0, 0, 1)
+	glow.Size = UDim2.new(0.96, 0, 0, totalHeight + 6)
+	glow.BackgroundTransparency = 0.96
+	glow.BackgroundColor3 = strokeColor or Color3.fromRGB(0,160,255)
+	Instance.new("UICorner", glow).CornerRadius = UDim.new(0, 10)
+	glow.Parent = wrapper
+	StartNeonLoop(glow)
+	
+	local paraStroke = Instance.new("UIStroke", paraFrame)
+	paraStroke.Thickness = 1.5
+	paraStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+	paraStroke.Color = strokeColor or Color3.fromRGB(0,160,255)
+	StartNeonLoop(paraStroke)
+	
+	local inner = Instance.new("Frame", paraFrame)
+	inner.Size = UDim2.new(1, -16, 1, -12)
+	inner.Position = UDim2.fromOffset(8, 6)
+	inner.BackgroundTransparency = 1
+	inner.ZIndex = 2
+	
+	if title ~= " " and title ~= "" then
+		local ptitleLabel = Instance.new("TextLabel", inner)
+		ptitleLabel.Name = "InputTitle"
+		ptitleLabel.Size = UDim2.new(1, 0, 0, titleHeight)
+		ptitleLabel.Position = UDim2.fromOffset(0,0)
+		ptitleLabel.BackgroundTransparency = 1
+		ptitleLabel.Text = title
+		ptitleLabel.TextColor3 = Color3.fromRGB(255,255,255)
+		ptitleLabel.Font = Enum.Font.GothamBold
+		ptitleLabel.TextSize = 14
+		ptitleLabel.TextXAlignment = Enum.TextXAlignment.Left
+		ptitleLabel.TextWrapped = true
+		ptitleLabel.ZIndex = 3
+	end
+	
+	-- Ang mismong Text Box container (Sub-box para maging maganda ang text area)
+	local textBoxContainer = Instance.new("Frame")
+	textBoxContainer.Name = "InputBoxContainer"
+	textBoxContainer.Size = UDim2.new(1, 0, 0, 30)
+	textBoxContainer.Position = UDim2.new(0, 0, 0, titleHeight + 4)
+	textBoxContainer.BackgroundColor3 = Color3.fromRGB(16, 16, 20)
+	textBoxContainer.BorderSizePixel = 0
+	textBoxContainer.ZIndex = 3
+	textBoxContainer.Parent = inner
+	Instance.new("UICorner", textBoxContainer).CornerRadius = UDim.new(0, 5)
+	
+	local innerStroke = Instance.new("UIStroke", textBoxContainer)
+	innerStroke.Thickness = 1
+	innerStroke.Color = Color3.fromRGB(45, 45, 50)
+	
+	local textBox = Instance.new("TextBox")
+	textBox.Name = "TextBox"
+	textBox.Size = UDim2.new(1, -16, 1, 0)
+	textBox.Position = UDim2.fromOffset(8, 0)
+	textBox.BackgroundTransparency = 1
+	textBox.PlaceholderText = placeholder
+	textBox.PlaceholderColor3 = Color3.fromRGB(120, 120, 125)
+	textBox.Text = ""
+	textBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+	textBox.Font = Enum.Font.Gotham
+	textBox.TextSize = 13
+	textBox.TextXAlignment = Enum.TextXAlignment.Left
+	textBox.ClipsDescendants = true
+	textBox.ZIndex = 4
+	textBox.ClearTextOnFocus = false
+	textBox.Parent = textBoxContainer
+
+	-- Hover effects on hover at active text entering
+	textBox.Focused:Connect(function()
+		TweenService:Create(innerStroke, TweenInfo.new(0.15), { Color = strokeColor or Color3.fromRGB(0, 160, 255) }):Play()
+		TweenService:Create(paraFrame, TweenInfo.new(0.12), { BackgroundColor3 = Color3.fromRGB(28,28,32) }):Play()
+	end)
+
+	textBox.FocusLost:Connect(function(enterPressed)
+		TweenService:Create(innerStroke, TweenInfo.new(0.15), { Color = Color3.fromRGB(45, 45, 50) }):Play()
+		TweenService:Create(paraFrame, TweenInfo.new(0.12), { BackgroundColor3 = Color3.fromRGB(24,24,28) }):Play()
+		if typeof(callback) == "function" then
+			task.spawn(callback, textBox.Text, enterPressed)
+		end
+	end)
+	
+	local api = {
+		Wrapper = wrapper,
+		Frame = paraFrame,
+		TextBox = textBox,
+		GetText = function(self)
+			return textBox.Text
+		end,
+		SetText = function(self, value)
+			textBox.Text = tostring(value or "")
+		end
+	}
+	return api
+end
+
+-- Helper: Gagawa ng Isang Pinag-isang Box na Collapsible SectionUI Block (No feedback loop bug)
 local function CreateCollapsibleSection(parentFrame, strokeColor, title)
 	title = tostring(title or "Section")
 	local isOpen = true
@@ -562,7 +699,7 @@ local function CreateCollapsibleSection(parentFrame, strokeColor, title)
 	sectionBox.AutomaticSize = Enum.AutomaticSize.Y
 	Instance.new("UICorner", sectionBox).CornerRadius = UDim.new(0, 8)
 
-	-- Neon Glowing Border sa mismong Section Box (Inalis natin ang scale background glow para iwas infinity sizing loop bug)
+	-- Neon Glowing Border sa mismong Section Box
 	local boxStroke = Instance.new("UIStroke", sectionBox)
 	boxStroke.Thickness = 1.5
 	boxStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
@@ -660,7 +797,7 @@ local function CreateCollapsibleSection(parentFrame, strokeColor, title)
 	end)
 
 	local sectionPublic = {
-		Frame = sectionBox, -- Ginamit ang pinaka box para maging safe at compact
+		Frame = sectionBox, 
 		ContentFrame = sectionContent,
 		Header = headerFrame
 	}
@@ -701,6 +838,15 @@ local function CreateCollapsibleSection(parentFrame, strokeColor, title)
 
 	function sectionPublic:Toggle(ttitle, tdesc, defaultState, callback)
 		return CreateToggleSwitch(sectionContent, strokeColor, ttitle, tdesc, defaultState, callback)
+	end
+
+	-- NEW: Textbox sa loob ng SectionUI box!
+	function sectionPublic:AddTextBox(title, placeholder, callback)
+		return CreateTextBoxInput(sectionContent, strokeColor, title, placeholder, callback)
+	end
+
+	function sectionPublic:TextBox(title, placeholder, callback)
+		return CreateTextBoxInput(sectionContent, strokeColor, title, placeholder, callback)
 	end
 
 	return sectionPublic
@@ -1282,6 +1428,11 @@ function KazeUI:CreateWindow(config)
 			return CreateToggleSwitch(self._PageContent, self._Stroke.Color, title, description, defaultState, callback)
 		end
 
+		-- NEW: TextBox directly on Tab
+		function public:TextBox(title, placeholder, callback)
+			return CreateTextBoxInput(self._PageContent, self._Stroke.Color, title, placeholder, callback)
+		end
+
 		-- NEW: Collapsible dropdown SectionUI box directly on Tab (Fixed loop bug)
 		function public:SectionUI(title)
 			return CreateCollapsibleSection(self._PageContent, self._Stroke.Color, title)
@@ -1336,6 +1487,15 @@ function KazeUI:CreateWindow(config)
 			-- Alias
 			function sectionPublic:Toggle(ttitle, tdesc, defaultState, callback)
 				return CreateToggleSwitch(sectionContent, self._Stroke.Color, ttitle, tdesc, defaultState, callback)
+			end
+
+			-- Method: TextBox sa loob ng legacy section
+			function sectionPublic:AddTextBox(title, placeholder, callback)
+				return CreateTextBoxInput(sectionContent, self._Stroke.Color, title, placeholder, callback)
+			end
+			-- Alias
+			function sectionPublic:TextBox(title, placeholder, callback)
+				return CreateTextBoxInput(sectionContent, self._Stroke.Color, title, placeholder, callback)
 			end
 
 			return sectionPublic
