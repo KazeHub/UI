@@ -1,6 +1,6 @@
--- Kaze UI Library (Fixed: Collapsible Dropdown Sections + Dropdown Elements + Compact Layout + Custom Icons)
+-- Kaze UI Library (Fixed: Collapsible Dropdown Sections + Compact Layout + Custom Icons)
 -- Full drop-in replacement. Kazu approved. 💙
--- Features: Single-Select & Multi-Select Dropdowns added!
+-- Features: Tab:SectionUI("Title", defaultOpen) collapsible dropdown sections!
 local KazeUI = {}
 KazeUI.__index = KazeUI
 
@@ -525,227 +525,6 @@ local function CreateToggleSwitch(parentFrame, strokeColor, title, body, default
 	}
 end
 
--- Helper: Create Selective Dropdown Element (Supports Multi-select & Single-select)
-local function CreateDropdownElement(parentFrame, strokeColor, title, description, options, defaultSelected, isMulti, callback)
-	title = tostring(title or "Dropdown")
-	description = tostring(description or "Select an option")
-	options = typeof(options) == "table" and options or {}
-	
-	local selectedOptions = {}
-	if isMulti then
-		if typeof(defaultSelected) == "table" then
-			for _, v in ipairs(defaultSelected) do selectedOptions[v] = true end
-		end
-	else
-		if defaultSelected then selectedOptions[defaultSelected] = true end
-	end
-
-	local isOpen = false
-	local measuredWidth = 598 * 0.92
-	if parentFrame and parentFrame.AbsoluteSize and parentFrame.AbsoluteSize.X > 0 then
-		measuredWidth = parentFrame.AbsoluteSize.X * 0.95
-	end
-
-	local wrapper = Instance.new("Frame")
-	wrapper.Name = "DropdownWrapper"
-	wrapper.Size = UDim2.new(1, 0, 0, 0)
-	wrapper.BackgroundTransparency = 1
-	wrapper.Parent = parentFrame
-	wrapper.AutomaticSize = Enum.AutomaticSize.Y
-
-	local mainFrame = Instance.new("Frame")
-	mainFrame.Name = "DropdownMain"
-	mainFrame.AnchorPoint = Vector2.new(0.5, 0)
-	mainFrame.Position = UDim2.new(0.5, 0, 0, 3)
-	mainFrame.Size = UDim2.new(0.95, 0, 0, 52)
-	mainFrame.BackgroundColor3 = Color3.fromRGB(24, 24, 28)
-	mainFrame.BorderSizePixel = 0
-	Instance.new("UICorner", mainFrame).CornerRadius = UDim.new(0, 8)
-	mainFrame.Parent = wrapper
-
-	local mainLayout = Instance.new("UIListLayout", mainFrame)
-	mainLayout.SortOrder = Enum.SortOrder.LayoutOrder
-	mainLayout.Padding = UDim.new(0, 4)
-	mainLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-
-	local glow = Instance.new("Frame")
-	glow.Name = "DropdownGlow"
-	glow.AnchorPoint = Vector2.new(0.5, 0)
-	glow.Position = UDim2.new(0.5, 0, 0, 1)
-	glow.Size = UDim2.new(0.96, 0, 1, 6)
-	glow.BackgroundTransparency = 0.96
-	glow.BackgroundColor3 = strokeColor or Color3.fromRGB(0, 160, 255)
-	Instance.new("UICorner", glow).CornerRadius = UDim.new(0, 10)
-	glow.Parent = wrapper
-	StartNeonLoop(glow)
-
-	local stroke = Instance.new("UIStroke", mainFrame)
-	stroke.Thickness = 1.5
-	stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-	stroke.Color = strokeColor or Color3.fromRGB(0, 160, 255)
-	StartNeonLoop(stroke)
-
-	-- Header Section
-	local header = Instance.new("Frame")
-	header.Name = "Header"
-	header.Size = UDim2.new(1, 0, 0, 52)
-	header.BackgroundTransparency = 1
-	header.Parent = mainFrame
-
-	local titleLabel = Instance.new("TextLabel", header)
-	titleLabel.Size = UDim2.new(1, -60, 0, 22)
-	titleLabel.Position = UDim2.fromOffset(12, 6)
-	titleLabel.BackgroundTransparency = 1
-	titleLabel.Text = title
-	titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-	titleLabel.Font = Enum.Font.GothamBold
-	titleLabel.TextSize = 14
-	titleLabel.TextXAlignment = Enum.TextXAlignment.Left
-
-	local selectionText = ""
-	local function updateSelectionDisplay()
-		local displayList = {}
-		for _, opt in ipairs(options) do
-			if selectedOptions[opt] then table.insert(displayList, opt) end
-		end
-		if #displayList == 0 then
-			selectionText = description
-		else
-			selectionText = table.concat(displayList, ", ")
-		end
-		if #selectionText > 40 then selectionText = string.sub(selectionText, 1, 37) .. "..." end
-		titleLabel.Parent.SubText.Text = selectionText
-	end
-
-	local subLabel = Instance.new("TextLabel", header)
-	subLabel.Name = "SubText"
-	subLabel.Size = UDim2.new(1, -60, 0, 18)
-	subLabel.Position = UDim2.fromOffset(12, 26)
-	subLabel.BackgroundTransparency = 1
-	subLabel.Text = description
-	subLabel.TextColor3 = Color3.fromRGB(160, 160, 160)
-	subLabel.Font = Enum.Font.Gotham
-	subLabel.TextSize = 12
-	subLabel.TextXAlignment = Enum.TextXAlignment.Left
-	updateSelectionDisplay()
-
-	local arrow = Instance.new("ImageLabel", header)
-	arrow.AnchorPoint = Vector2.new(1, 0.5)
-	arrow.Position = UDim2.new(1, -12, 0.5, 0)
-	arrow.Size = UDim2.fromOffset(18, 18)
-	arrow.BackgroundTransparency = 1
-	arrow.Image = "rbxassetid://6031091004"
-	arrow.ImageColor3 = strokeColor or Color3.fromRGB(0, 160, 255)
-	arrow.Rotation = -90
-
-	-- Container for Options
-	local container = Instance.new("Frame", mainFrame)
-	container.Name = "OptionsContainer"
-	container.Size = UDim2.new(1, 0, 0, 0)
-	container.BackgroundTransparency = 1
-	container.Visible = false
-	container.AutomaticSize = Enum.AutomaticSize.Y
-
-	local containerLayout = Instance.new("UIListLayout", container)
-	containerLayout.SortOrder = Enum.SortOrder.LayoutOrder
-	containerLayout.Padding = UDim.new(0, 2)
-	containerLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-
-	local function toggleDropdown()
-		isOpen = not isOpen
-		container.Visible = isOpen
-		mainFrame.AutomaticSize = isOpen and Enum.AutomaticSize.Y or Enum.AutomaticSize.None
-		if not isOpen then mainFrame.Size = UDim2.new(0.95, 0, 0, 52) end
-		TweenService:Create(arrow, TweenInfo.new(0.15), { Rotation = isOpen and 0 or -90 }):Play()
-	end
-
-	local clickButton = Instance.new("TextButton", header)
-	clickButton.Size = UDim2.fromScale(1, 1)
-	clickButton.BackgroundTransparency = 1
-	clickButton.Text = ""
-	clickButton.MouseButton1Click:Connect(toggleDropdown)
-
-	-- Generate rows
-	for i, opt in ipairs(options) do
-		local row = Instance.new("Frame", container)
-		row.Size = UDim2.new(0.96, 0, 0, 30)
-		row.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
-		row.BackgroundTransparency = selectedOptions[opt] and 0.4 or 1
-		Instance.new("UICorner", row).CornerRadius = UDim.new(0, 4)
-
-		local rowText = Instance.new("TextLabel", row)
-		rowText.Size = UDim2.new(1, -30, 1, 0)
-		rowText.Position = UDim2.fromOffset(10, 0)
-		rowText.BackgroundTransparency = 1
-		rowText.Text = tostring(opt)
-		rowText.TextColor3 = selectedOptions[opt] and (strokeColor or Color3.fromRGB(0, 160, 255)) or Color3.fromRGB(220, 220, 220)
-		rowText.Font = selectedOptions[opt] and Enum.Font.GothamBold or Enum.Font.Gotham
-		rowText.TextSize = 13
-		rowText.TextXAlignment = Enum.TextXAlignment.Left
-
-		local checkIcon = Instance.new("ImageLabel", row)
-		checkIcon.AnchorPoint = Vector2.new(1, 0.5)
-		checkIcon.Position = UDim2.new(1, -8, 0.5, 0)
-		checkIcon.Size = UDim2.fromOffset(14, 14)
-		checkIcon.BackgroundTransparency = 1
-		checkIcon.Image = "rbxassetid://6031094678" -- Roblox checkmark
-		checkIcon.ImageColor3 = strokeColor or Color3.fromRGB(0, 160, 255)
-		checkIcon.Visible = selectedOptions[opt] or false
-
-		local rowBtn = Instance.new("TextButton", row)
-		rowBtn.Size = UDim2.fromScale(1, 1)
-		rowBtn.BackgroundTransparency = 1
-		rowBtn.Text = ""
-
-		rowBtn.MouseButton1Click:Connect(function()
-			if isMulti then
-				selectedOptions[opt] = not selectedOptions[opt]
-				row.BackgroundTransparency = selectedOptions[opt] and 0.4 or 1
-				rowText.TextColor3 = selectedOptions[opt] and (strokeColor or Color3.fromRGB(0, 160, 255)) or Color3.fromRGB(220, 220, 220)
-				rowText.Font = selectedOptions[opt] and Enum.Font.GothamBold or Enum.Font.Gotham
-				checkIcon.Visible = selectedOptions[opt]
-				
-				updateSelectionDisplay()
-				if typeof(callback) == "function" then
-					local callbackTable = {}
-					for _, o in ipairs(options) do
-						if selectedOptions[o] then table.insert(callbackTable, o) end
-					end
-					task.spawn(callback, callbackTable)
-				end
-			else
-				for _, o in ipairs(options) do selectedOptions[o] = nil end
-				selectedOptions[opt] = true
-				for _, child in ipairs(container:GetChildren()) do
-					if child:IsA("Frame") then
-						child.BackgroundTransparency = 1
-						if child:FindFirstChild("TextLabel") then
-							child.TextLabel.TextColor3 = Color3.fromRGB(220, 220, 220)
-							child.TextLabel.Font = Enum.Font.Gotham
-						end
-						if child:FindFirstChild("ImageLabel") then child.ImageLabel.Visible = false end
-					end
-				end
-				row.BackgroundTransparency = 0.4
-				rowText.TextColor3 = strokeColor or Color3.fromRGB(0, 160, 255)
-				rowText.Font = Enum.Font.GothamBold
-				checkIcon.Visible = true
-				
-				updateSelectionDisplay()
-				toggleDropdown()
-				if typeof(callback) == "function" then
-					task.spawn(callback, opt)
-				end
-			end
-		end)
-	end
-
-	return {
-		Wrapper = wrapper,
-		Frame = mainFrame
-	}
-end
-
 -- NEW Helper: Create Dropdown Collapsible SectionUI Block
 local function CreateCollapsibleSection(parentFrame, strokeColor, title, defaultOpen)
 	title = tostring(title or "Section")
@@ -884,14 +663,6 @@ local function CreateCollapsibleSection(parentFrame, strokeColor, title, default
 
 	function sectionPublic:Toggle(ttitle, tdesc, defaultState, callback)
 		return CreateToggleSwitch(sectionContent, strokeColor, ttitle, tdesc, defaultState, callback)
-	end
-
-	function sectionPublic:Dropdown(dtitle, ddesc, doptions, ddefault, dcallback)
-		return CreateDropdownElement(sectionContent, strokeColor, dtitle, ddesc, doptions, ddefault, false, dcallback)
-	end
-
-	function sectionPublic:MultiDropdown(dtitle, ddesc, doptions, ddefaults, dcallback)
-		return CreateDropdownElement(sectionContent, strokeColor, dtitle, ddesc, doptions, ddefaults, true, dcallback)
 	end
 
 	return sectionPublic
@@ -1419,22 +1190,12 @@ function KazeUI:CreateWindow(config)
 			return CreateToggleSwitch(self._PageContent, self._Stroke.Color, title, description, defaultState, callback)
 		end
 
-		-- Dropdown (Single-Select) directly on Tab
-		function public:Dropdown(title, description, options, defaultSelected, callback)
-			return CreateDropdownElement(self._PageContent, self._Stroke.Color, title, description, options, defaultSelected, false, callback)
-		end
-
-		-- MultiDropdown (Multi-Select) directly on Tab
-		function public:MultiDropdown(title, description, options, defaultSelected, callback)
-			return CreateDropdownElement(self._PageContent, self._Stroke.Color, title, description, options, defaultSelected, true, callback)
-		end
-
-		-- Collapsible dropdown SectionUI block directly on Tab
+		-- NEW: Collapsible dropdown SectionUI block directly on Tab
 		function public:SectionUI(title, defaultOpen)
 			return CreateCollapsibleSection(self._PageContent, self._Stroke.Color, title, defaultOpen)
 		end
 
-		-- Standard legacy non-collapsible Section API (Cleaned up as requested: NO toggle/button elements)
+		-- Standard legacy non-collapsible Section API
 		function public:Section(title)
 			title = tostring(title or " ")
 			local sectionFrame = Instance.new("Frame")
@@ -1504,6 +1265,14 @@ function KazeUI:CreateWindow(config)
 
 			function sectionPublic:AddParagraph(ptitle, pbody)
 				return CreateParagraph(sectionContent, Win._Stroke.Color, ptitle, pbody)
+			end
+			
+			function sectionPublic:Button(btitle, bdesc, callback)
+				return CreateClickableParagraph(sectionContent, Win._Stroke.Color, btitle, bdesc, callback)
+			end
+			
+			function sectionPublic:Toggle(ttitle, tdesc, defaultState, callback)
+				return CreateToggleSwitch(sectionContent, Win._Stroke.Color, ttitle, tdesc, defaultState, callback)
 			end
 
 			return sectionPublic
