@@ -1,7 +1,6 @@
--- Kaze UI Library (Fixed: Mobile/PC Optimized Size + Scrollable Tabs + Tab Order)
+-- Kaze UI Library (Fixed: Square Toggle, Lowered Position, Clickable Multi-Line Paragraph-Style Buttons)
 -- Full drop-in replacement. Kazu approved. 💙
--- Button functionality REMOVED per request.
--- Updated: Main window size perfectly balanced to 750 x 450
+-- Features: Clean Tab:Button("Title", "Description", Callback) syntax
 local KazeUI = {}
 KazeUI.__index = KazeUI
 
@@ -26,14 +25,9 @@ UIScale.Parent = ScreenGui
 -- Smart dynamic scaling based on viewport constraints
 local function UpdateScale()
 	local size = workspace.CurrentCamera.ViewportSize
-	
-	-- If the screen is smaller than our target UI resolution, scale it down evenly.
 	local scaleX = math.clamp(size.X / 800, 0.35, 1)
 	local scaleY = math.clamp(size.Y / 500, 0.35, 1)
-	
-	-- Pick the smallest scale to ensure the UI perfectly fits without clipping
 	UIScale.Scale = math.min(scaleX, scaleY)
-	
 	ScreenGui.IgnoreGuiInset = true
 end
 
@@ -112,7 +106,6 @@ local function CreateParagraph(parentFrame, strokeColor, title, body)
 	title = tostring(title or "")
 	body = tostring(body or "")
 	
-	-- Base width: 750 (Window) - 152 (Sidebar/Divider) = 598. Padding makes it slightly smaller.
 	local measuredWidth = 598 * 0.92
 	if parentFrame and parentFrame.AbsoluteSize and parentFrame.AbsoluteSize.X > 0 then
 		measuredWidth = parentFrame.AbsoluteSize.X * 0.95
@@ -227,6 +220,133 @@ local function CreateParagraph(parentFrame, strokeColor, title, body)
 	return paraAPI
 end
 
+-- NEW Helper: Create Clickable Paragraph-Style Button
+local function CreateClickableParagraph(parentFrame, strokeColor, title, body, callback)
+	title = tostring(title or "Button")
+	body = tostring(body or "Description")
+	
+	local measuredWidth = 598 * 0.92
+	if parentFrame and parentFrame.AbsoluteSize and parentFrame.AbsoluteSize.X > 0 then
+		measuredWidth = parentFrame.AbsoluteSize.X * 0.95
+	end
+	
+	local titleHeight = 0
+	if title ~= " " then
+		local ts = TextService:GetTextSize(title, 16, Enum.Font.GothamBold, Vector2.new(measuredWidth - 32, 1000))
+		titleHeight = math.max(20, math.ceil(ts.Y))
+	end
+	
+	local bodySize = TextService:GetTextSize(body, 14, Enum.Font.Gotham, Vector2.new(measuredWidth - 32, 2000))
+	local bodyHeight = math.ceil(bodySize.Y)
+	local totalHeight = 10 + titleHeight + 6 + bodyHeight + 10
+	
+	local wrapper = Instance.new("Frame")
+	wrapper.Name = "ButtonWrapper"
+	wrapper.Size = UDim2.new(1, 0, 0, 0)
+	wrapper.BackgroundTransparency = 1
+	wrapper.Parent = parentFrame
+	wrapper.AutomaticSize = Enum.AutomaticSize.Y
+	
+	local paraFrame = Instance.new("Frame")
+	paraFrame.Name = "ButtonFrame"
+	paraFrame.AnchorPoint = Vector2.new(0.5, 0)
+	paraFrame.Position = UDim2.new(0.5, 0, 0, 6)
+	paraFrame.Size = UDim2.new(0.95, 0, 0, totalHeight)
+	paraFrame.BackgroundColor3 = Color3.fromRGB(24,24,28)
+	paraFrame.BorderSizePixel = 0
+	Instance.new("UICorner", paraFrame).CornerRadius = UDim.new(0, 8)
+	paraFrame.Parent = wrapper
+	
+	local glow = Instance.new("Frame")
+	glow.Name = "ButtonGlow"
+	glow.AnchorPoint = Vector2.new(0.5, 0)
+	glow.Position = UDim2.new(0.5, 0, 0, 4)
+	glow.Size = UDim2.new(0.96, 0, 0, totalHeight + 10)
+	glow.BackgroundTransparency = 0.96
+	glow.BackgroundColor3 = strokeColor or Color3.fromRGB(0,160,255)
+	Instance.new("UICorner", glow).CornerRadius = UDim.new(0, 10)
+	glow.Parent = wrapper
+	StartNeonLoop(glow)
+	
+	local paraStroke = Instance.new("UIStroke", paraFrame)
+	paraStroke.Thickness = 2
+	paraStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+	paraStroke.Color = strokeColor or Color3.fromRGB(0,160,255)
+	StartNeonLoop(paraStroke)
+	
+	local inner = Instance.new("Frame", paraFrame)
+	inner.Size = UDim2.new(1, -20, 1, -20)
+	inner.Position = UDim2.fromOffset(10,10)
+	inner.BackgroundTransparency = 1
+	inner.ZIndex = 2
+	
+	if title ~= " " then
+		local ptitleLabel = Instance.new("TextLabel", inner)
+		ptitleLabel.Name = "ButtonTitle"
+		ptitleLabel.Size = UDim2.new(1,0,0,titleHeight)
+		ptitleLabel.Position = UDim2.fromOffset(0,0)
+		ptitleLabel.BackgroundTransparency = 1
+		ptitleLabel.Text = title
+		ptitleLabel.TextColor3 = Color3.fromRGB(255,255,255)
+		ptitleLabel.Font = Enum.Font.GothamBold
+		ptitleLabel.TextSize = 16
+		ptitleLabel.TextXAlignment = Enum.TextXAlignment.Left
+		ptitleLabel.TextWrapped = true
+		ptitleLabel.ZIndex = 3
+	end
+	
+	local bodyLabel = Instance.new("TextLabel", inner)
+	bodyLabel.Name = "ButtonBody"
+	bodyLabel.Size = UDim2.new(1,0,0,bodyHeight)
+	bodyLabel.Position = UDim2.fromOffset(0, titleHeight + 6)
+	bodyLabel.BackgroundTransparency = 1
+	bodyLabel.Text = body
+	bodyLabel.TextColor3 = Color3.fromRGB(200,200,200)
+	bodyLabel.Font = Enum.Font.Gotham
+	bodyLabel.TextSize = 14
+	bodyLabel.TextWrapped = true
+	bodyLabel.TextXAlignment = Enum.TextXAlignment.Left
+	bodyLabel.TextYAlignment = Enum.TextYAlignment.Top
+	bodyLabel.ZIndex = 3
+
+	-- Invisible overlay button to handle touch, mouse click and hover safely
+	local clickDetector = Instance.new("TextButton")
+	clickDetector.Name = "ClickDetector"
+	clickDetector.Size = UDim2.fromScale(1, 1)
+	clickDetector.BackgroundTransparency = 1
+	clickDetector.Text = ""
+	clickDetector.ZIndex = 10
+	clickDetector.Parent = paraFrame
+
+	-- Interactive animations
+	clickDetector.MouseEnter:Connect(function()
+		TweenService:Create(paraFrame, TweenInfo.new(0.12), { BackgroundColor3 = Color3.fromRGB(32,32,36) }):Play()
+		TweenService:Create(glow, TweenInfo.new(0.12), { BackgroundTransparency = 0.92 }):Play()
+	end)
+	clickDetector.MouseLeave:Connect(function()
+		TweenService:Create(paraFrame, TweenInfo.new(0.12), { BackgroundColor3 = Color3.fromRGB(24,24,28) }):Play()
+		TweenService:Create(glow, TweenInfo.new(0.12), { BackgroundTransparency = 0.96 }):Play()
+		TweenService:Create(paraFrame, TweenInfo.new(0.1), { Size = UDim2.new(0.95, 0, 0, totalHeight), Position = UDim2.new(0.5, 0, 0, 6) }):Play()
+	end)
+	clickDetector.MouseButton1Down:Connect(function()
+		TweenService:Create(paraFrame, TweenInfo.new(0.08), { Size = UDim2.new(0.93, 0, 0, totalHeight - 4), Position = UDim2.new(0.5, 0, 0, 8) }):Play()
+	end)
+	clickDetector.MouseButton1Up:Connect(function()
+		TweenService:Create(paraFrame, TweenInfo.new(0.08), { Size = UDim2.new(0.95, 0, 0, totalHeight), Position = UDim2.new(0.5, 0, 0, 6) }):Play()
+		if typeof(callback) == "function" then
+			task.spawn(callback)
+		end
+	end)
+	
+	return {
+		Wrapper = wrapper,
+		Frame = paraFrame,
+		SetText = function(self, newText)
+			bodyLabel.Text = tostring(newText or "")
+		end
+	}
+end
+
 -- CreateWindow
 function KazeUI:CreateWindow(config)
 	config = config or {}
@@ -235,10 +355,10 @@ function KazeUI:CreateWindow(config)
 	local Version = config.Version or "1.0"
 	local MainIcon = FormatImage(config.Icon or "6031763447")
 	local OpenIcon = FormatImage((config.OpenButton and config.OpenButton.Icon) or config.Icon or "6031763447")
-	local MiniButtonSize = UDim2.fromOffset(50, 50)
+	local MiniButtonSize = UDim2.fromOffset(46, 46)
 	local Callback = config.Callback
 
-	-- Main window — OPTIMIZED FOR PC & MOBILE (750x450)
+	-- Main window
 	local Window = Instance.new("Frame")
 	Window.Name = "MainWindow"
 	Window.Size = UDim2.fromOffset(750, 450)
@@ -346,11 +466,11 @@ function KazeUI:CreateWindow(config)
 	local BtnYellow = createCircleButton("BtnYellow", -68, Color3.fromRGB(255,204,51))
 	local BtnRed = createCircleButton("BtnRed", -40, Color3.fromRGB(235,80,80))
 
-	-- MiniButton
+	-- MiniButton (Lowered perfectly to avoid Roblox Menu overlap)
 	local MiniButton = Instance.new("ImageButton")
 	MiniButton.Name = "MiniButton"
 	MiniButton.Size = MiniButtonSize
-	MiniButton.Position = UDim2.fromScale(0.1,0.1)
+	MiniButton.Position = UDim2.new(0, 16, 0, 85) -- Safe position below Developer Console
 	MiniButton.BackgroundColor3 = Color3.fromRGB(20,20,25)
 	MiniButton.BorderSizePixel = 0
 	MiniButton.Visible = false
@@ -358,7 +478,7 @@ function KazeUI:CreateWindow(config)
 	MiniButton.ZIndex = 999
 	MiniButton.ScaleType = Enum.ScaleType.Slice
 	MiniButton.SliceCenter = Rect.new(4,4,60,60)
-	Instance.new("UICorner", MiniButton).CornerRadius = UDim.new(0,10)
+	Instance.new("UICorner", MiniButton).CornerRadius = UDim.new(0,6) -- Clean square design
 
 	local miniPadding = Instance.new("UIPadding", MiniButton)
 	miniPadding.PaddingTop = UDim.new(0,4); miniPadding.PaddingBottom = UDim.new(0,4)
@@ -522,7 +642,7 @@ function KazeUI:CreateWindow(config)
 	Content.BackgroundTransparency = 1
 	Content.Parent = Window
 
-	-- Sidebar (Thinner for better layout)
+	-- Sidebar
 	local SideBar = Instance.new("Frame")
 	SideBar.Name = "SideBar"
 	SideBar.Size = UDim2.new(0,150,1,0)
@@ -580,10 +700,9 @@ function KazeUI:CreateWindow(config)
 	tabsLayout.SortOrder = Enum.SortOrder.LayoutOrder
 	tabsLayout.Padding = UDim.new(0,6)
 
-	-- Tab storage
 	local createdTabs = {}
 
-	-- Appearance
+	-- Appearance defaults
 	local TAB_BUTTON_HEIGHT = 40
 	local TAB_CORNER_RADIUS = 6
 	local TAB_BG = Color3.fromRGB(24,24,28)
@@ -591,7 +710,6 @@ function KazeUI:CreateWindow(config)
 	local TAB_TEXT_COLOR = Color3.fromRGB(240,240,240)
 	local TAB_TEXT_INACTIVE = Color3.fromRGB(200,200,200)
 
-	-- Window wrapper
 	local Win = {
 		Window = Window,
 		Content = Content,
@@ -617,8 +735,6 @@ function KazeUI:CreateWindow(config)
 		btn.AutoButtonColor = false
 		btn.Parent = TabsList
 		Instance.new("UICorner", btn).CornerRadius = UDim.new(0, TAB_CORNER_RADIUS)
-
-		-- SET LAYOUT ORDER TO APPEND AT BOTTOM
 		btn.LayoutOrder = #self._Tabs + 1
 
 		local leftIndicator = Instance.new("Frame", btn)
@@ -658,7 +774,7 @@ function KazeUI:CreateWindow(config)
 		page.Parent = self._Pages
 		page.Visible = false
 
-		-- PageContent ScrollingFrame
+		-- Content area Scrollable Frame
 		local pageContent = Instance.new("ScrollingFrame", page)
 		pageContent.Name = "PageContent"
 		pageContent.Size = UDim2.new(1, 0, 1, 0)
@@ -671,7 +787,6 @@ function KazeUI:CreateWindow(config)
 		pageContent.ClipsDescendants = true
 		pageContent.ScrollBarImageColor3 = Color3.fromRGB(40,40,45)
 
-		-- UIPadding to prevent child frames from hugging borders
 		local pagePadding = Instance.new("UIPadding", pageContent)
 		pagePadding.PaddingTop = UDim.new(0, 10)
 		pagePadding.PaddingBottom = UDim.new(0, 10)
@@ -695,7 +810,6 @@ function KazeUI:CreateWindow(config)
 		}
 		table.insert(self._Tabs, tabObj)
 
-		-- activation
 		local function activate()
 			for _, t in ipairs(self._Tabs) do
 				if t.Button and t.Indicator and t.Page and t.Label then
@@ -714,7 +828,6 @@ function KazeUI:CreateWindow(config)
 			page.Parent = self._Pages
 		end
 
-		-- hover
 		local hoverTweenInfo = TweenInfo.new(0.10, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 		local hoverBG = Color3.fromRGB(28,28,31)
 		local leaveBG = TAB_BG
@@ -741,9 +854,14 @@ function KazeUI:CreateWindow(config)
 			_Stroke = self._Stroke,
 		}
 		
-		-- Allow direct Paragraph creation on tab
+		-- Paragraph directly on Tab
 		function public:Paragraph(ptitle, pbody)
 			return CreateParagraph(self._PageContent, self._Stroke.Color, ptitle, pbody)
+		end
+		
+		-- NEW: Button directly on Tab (not connected to a section!)
+		function public:Button(title, description, callback)
+			return CreateClickableParagraph(self._PageContent, self._Stroke.Color, title, description, callback)
 		end
 
 		-- Section API
@@ -816,6 +934,11 @@ function KazeUI:CreateWindow(config)
 
 			function sectionPublic:AddParagraph(ptitle, pbody)
 				return CreateParagraph(sectionContent, Win._Stroke.Color, ptitle, pbody)
+			end
+			
+			-- NEW: Button inside a Section
+			function sectionPublic:Button(btitle, bdesc, callback)
+				return CreateClickableParagraph(sectionContent, Win._Stroke.Color, btitle, bdesc, callback)
 			end
 
 			return sectionPublic
