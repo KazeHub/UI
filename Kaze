@@ -1,7 +1,7 @@
 
--- Kaze UI Library (Fixed: Boxed Collapsible Sections + Custom Textbox Support)
+-- Kaze UI Library (Fixed: Boxed Collapsible Sections + Custom Textbox & Slider Support with Aliases)
 -- Full drop-in replacement.
--- Features: Tab:SectionUI("Title"), Tab:TextBox(), Section:TextBox() and standard components!
+-- Features: Tab:SectionUI("Title"), Tab:TextBox(), Tab:Slider() and standard components!
 local KazeUI = {}
 KazeUI.__index = KazeUI
 
@@ -101,6 +101,17 @@ local function StartNeonLoop(target)
 			tween:Play() 
 		end
 	end)
+end
+
+-- Helper: Temporarily disables parent ScrollingFrames so sliding isn't interrupted on Mobile
+local function ToggleScrollingAncestors(element, state)
+	local current = element.Parent
+	while current do
+		if current:IsA("ScrollingFrame") then
+			current.ScrollingEnabled = state
+		end
+		current = current.Parent
+	end
 end
 
 -- Helper: Gumawa ng Paragraph Component
@@ -548,7 +559,7 @@ local function CreateToggleSwitch(parentFrame, strokeColor, title, body, default
 	}
 end
 
--- NEW Helper: Gagawa ng Custom Textbox Input Row (Premium style)
+-- Helper: Gagawa ng Custom Textbox Input Row (Premium style)
 local function CreateTextBoxInput(parentFrame, strokeColor, title, placeholder, callback)
 	title = tostring(title or "Input Text")
 	placeholder = tostring(placeholder or "Type here...")
@@ -679,6 +690,244 @@ local function CreateTextBoxInput(parentFrame, strokeColor, title, placeholder, 
 		end,
 		SetText = function(self, value)
 			textBox.Text = tostring(value or "")
+		end
+	}
+	return api
+end
+
+-- Helper: Gagawa ng Custom Slider Input Row (Premium style, locks camera rotation & touch swipe while sliding)
+local function CreateSliderInput(parentFrame, strokeColor, title, min, max, default, callback)
+	title = tostring(title or "Slider")
+	min = tonumber(min) or 0
+	max = tonumber(max) or 100
+	default = tonumber(default) or min
+	
+	local value = math.clamp(default, min, max)
+	
+	local measuredWidth = 598 * 0.92
+	if parentFrame and parentFrame.AbsoluteSize and parentFrame.AbsoluteSize.X > 0 then
+		measuredWidth = parentFrame.AbsoluteSize.X * 0.95
+	end
+	
+	local textContainerWidth = measuredWidth - 24
+	
+	local titleHeight = 0
+	if title ~= " " and title ~= "" then
+		local ts = TextService:GetTextSize(title, 15, Enum.Font.GothamBold, Vector2.new(textContainerWidth - 80, 1000))
+		titleHeight = math.max(16, math.ceil(ts.Y))
+	end
+	
+	local totalHeight = 6 + titleHeight + 6 + 18 + 6
+	
+	local wrapper = Instance.new("Frame")
+	wrapper.Name = "SliderWrapper"
+	wrapper.Size = UDim2.new(1, 0, 0, 0)
+	wrapper.BackgroundTransparency = 1
+	wrapper.Parent = parentFrame
+	wrapper.AutomaticSize = Enum.AutomaticSize.Y
+	
+	local paraFrame = Instance.new("Frame")
+	paraFrame.Name = "SliderFrame"
+	paraFrame.AnchorPoint = Vector2.new(0.5, 0)
+	paraFrame.Position = UDim2.new(0.5, 0, 0, 3)
+	paraFrame.Size = UDim2.new(0.95, 0, 0, totalHeight)
+	paraFrame.BackgroundColor3 = Color3.fromRGB(24,24,28)
+	paraFrame.BorderSizePixel = 0
+	Instance.new("UICorner", paraFrame).CornerRadius = UDim.new(0, 8)
+	paraFrame.Parent = wrapper
+	
+	local glow = Instance.new("Frame")
+	glow.Name = "SliderGlow"
+	glow.AnchorPoint = Vector2.new(0.5, 0)
+	glow.Position = UDim2.new(0.5, 0, 0, 1)
+	glow.Size = UDim2.new(0.96, 0, 0, totalHeight + 6)
+	glow.BackgroundTransparency = 0.96
+	glow.BackgroundColor3 = strokeColor or Color3.fromRGB(0,160,255)
+	Instance.new("UICorner", glow).CornerRadius = UDim.new(0, 10)
+	glow.Parent = wrapper
+	StartNeonLoop(glow)
+	
+	local paraStroke = Instance.new("UIStroke", paraFrame)
+	paraStroke.Thickness = 1.5
+	paraStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+	paraStroke.Color = strokeColor or Color3.fromRGB(0,160,255)
+	StartNeonLoop(paraStroke)
+	
+	local inner = Instance.new("Frame", paraFrame)
+	inner.Size = UDim2.new(1, -16, 1, -12)
+	inner.Position = UDim2.fromOffset(8, 6)
+	inner.BackgroundTransparency = 1
+	inner.ZIndex = 2
+	
+	if title ~= " " and title ~= "" then
+		local ptitleLabel = Instance.new("TextLabel", inner)
+		ptitleLabel.Name = "SliderTitle"
+		ptitleLabel.Size = UDim2.new(1, -80, 0, titleHeight)
+		ptitleLabel.Position = UDim2.fromOffset(0,0)
+		ptitleLabel.BackgroundTransparency = 1
+		ptitleLabel.Text = title
+		ptitleLabel.TextColor3 = Color3.fromRGB(255,255,255)
+		ptitleLabel.Font = Enum.Font.GothamBold
+		ptitleLabel.TextSize = 14
+		ptitleLabel.TextXAlignment = Enum.TextXAlignment.Left
+		ptitleLabel.TextWrapped = true
+		ptitleLabel.ZIndex = 3
+	end
+	
+	local valueLabel = Instance.new("TextLabel", inner)
+	valueLabel.Name = "ValueLabel"
+	valueLabel.Size = UDim2.new(0, 70, 0, titleHeight > 0 and titleHeight or 16)
+	valueLabel.Position = UDim2.new(1, -70, 0, 0)
+	valueLabel.BackgroundTransparency = 1
+	valueLabel.Text = tostring(value)
+	valueLabel.TextColor3 = strokeColor or Color3.fromRGB(0, 160, 255)
+	valueLabel.Font = Enum.Font.GothamBold
+	valueLabel.TextSize = 13
+	valueLabel.TextXAlignment = Enum.TextXAlignment.Right
+	valueLabel.ZIndex = 3
+	
+	local track = Instance.new("Frame")
+	track.Name = "Track"
+	track.Size = UDim2.new(1, 0, 0, 6)
+	track.Position = UDim2.new(0, 0, 0, titleHeight + 8)
+	track.BackgroundColor3 = Color3.fromRGB(16, 16, 20)
+	track.BorderSizePixel = 0
+	track.ZIndex = 3
+	track.Parent = inner
+	Instance.new("UICorner", track).CornerRadius = UDim.new(1, 0)
+	
+	local fill = Instance.new("Frame")
+	fill.Name = "Fill"
+	fill.Size = UDim2.new(0, 0, 1, 0)
+	fill.BackgroundColor3 = strokeColor or Color3.fromRGB(0, 160, 255)
+	fill.BorderSizePixel = 0
+	fill.ZIndex = 4
+	fill.Parent = track
+	Instance.new("UICorner", fill).CornerRadius = UDim.new(1, 0)
+	StartNeonLoop(fill)
+	
+	local knob = Instance.new("Frame")
+	knob.Name = "Knob"
+	knob.AnchorPoint = Vector2.new(0.5, 0.5)
+	knob.Size = UDim2.fromOffset(12, 12)
+	knob.Position = UDim2.new(0, 0, 0.5, 0)
+	knob.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+	knob.BorderSizePixel = 0
+	knob.ZIndex = 5
+	knob.Parent = track
+	Instance.new("UICorner", knob).CornerRadius = UDim.new(1, 0)
+	
+	local knobStroke = Instance.new("UIStroke", knob)
+	knobStroke.Thickness = 1.5
+	knobStroke.Color = strokeColor or Color3.fromRGB(0, 160, 255)
+	
+	-- Custom Focus button to override Roblox 3D camera pan & swipe lock while sliding
+	local modalLock = Instance.new("TextButton")
+	modalLock.Name = "ModalLock"
+	modalLock.Size = UDim2.fromScale(1, 1)
+	modalLock.BackgroundTransparency = 1
+	modalLock.Text = ""
+	modalLock.Visible = false
+	modalLock.Modal = false
+	modalLock.ZIndex = 9999
+	modalLock.Parent = ScreenGui
+
+	local clickDetector = Instance.new("TextButton")
+	clickDetector.Name = "ClickDetector"
+	clickDetector.Size = UDim2.new(1, 0, 1, 14)
+	clickDetector.Position = UDim2.new(0, 0, 0, -4)
+	clickDetector.BackgroundTransparency = 1
+	clickDetector.Text = ""
+	clickDetector.ZIndex = 10
+	clickDetector.Parent = track
+	
+	local isDragging = false
+	
+	local function UpdateValueFromInput(input)
+		local trackWidth = track.AbsoluteSize.X
+		if trackWidth <= 0 then return end
+		
+		local relativeX = input.Position.X - track.AbsolutePosition.X
+		local percentage = math.clamp(relativeX / trackWidth, 0, 1)
+		
+		local newVal = min + (max - min) * percentage
+		newVal = math.floor(newVal + 0.5)
+		newVal = math.clamp(newVal, min, max)
+		
+		value = newVal
+		valueLabel.Text = tostring(value)
+		
+		local visualPercentage = (value - min) / (max - min)
+		fill.Size = UDim2.new(visualPercentage, 0, 1, 0)
+		knob.Position = UDim2.new(visualPercentage, 0, 0.5, 0)
+		
+		if typeof(callback) == "function" then
+			task.spawn(callback, value)
+		end
+	end
+	
+	-- Set original visual state
+	local startingPercentage = (value - min) / (max - min)
+	fill.Size = UDim2.new(startingPercentage, 0, 1, 0)
+	knob.Position = UDim2.new(startingPercentage, 0, 0.5, 0)
+	
+	clickDetector.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			isDragging = true
+			
+			-- Temporarily lock ScrollingFrame scrolling so Touch sliders work smoothly on mobile
+			ToggleScrollingAncestors(track, false)
+			
+			-- Sinks character/camera rotation
+			modalLock.Visible = true
+			modalLock.Modal = true
+			
+			UpdateValueFromInput(input)
+			
+			local moveCon, endCon
+			
+			moveCon = UIS.InputChanged:Connect(function(moveInput)
+				if isDragging and (moveInput.UserInputType == Enum.UserInputType.MouseMovement or moveInput.UserInputType == Enum.UserInputType.Touch) then
+					UpdateValueFromInput(moveInput)
+				end
+			end)
+			
+			endCon = UIS.InputEnded:Connect(function(endInput)
+				if endInput.UserInputType == Enum.UserInputType.MouseButton1 or endInput.UserInputType == Enum.UserInputType.Touch then
+					isDragging = false
+					
+					-- Re-enable scrolling safely
+					ToggleScrollingAncestors(track, true)
+					
+					modalLock.Visible = false
+					modalLock.Modal = false
+					
+					if moveCon then moveCon:Disconnect() end
+					if endCon then endCon:Disconnect() end
+				end
+			end)
+		end
+	end)
+	
+	wrapper.Destroying:Connect(function()
+		modalLock:Destroy()
+	end)
+	
+	local api = {
+		Wrapper = wrapper,
+		Frame = paraFrame,
+		GetValue = function(self)
+			return value
+		end,
+		SetValue = function(self, newVal)
+			value = math.clamp(tonumber(newVal) or min, min, max)
+			valueLabel.Text = tostring(value)
+			local valPercentage = (value - min) / (max - min)
+			fill.Size = UDim2.new(valPercentage, 0, 1, 0)
+			knob.Position = UDim2.new(valPercentage, 0, 0.5, 0)
+			if typeof(callback) == "function" then
+				task.spawn(callback, value)
+			end
 		end
 	}
 	return api
@@ -840,13 +1089,32 @@ local function CreateCollapsibleSection(parentFrame, strokeColor, title)
 		return CreateToggleSwitch(sectionContent, strokeColor, ttitle, tdesc, defaultState, callback)
 	end
 
-	-- NEW: Textbox sa loob ng SectionUI box!
+	-- Textbox sa loob ng SectionUI box!
 	function sectionPublic:AddTextBox(title, placeholder, callback)
 		return CreateTextBoxInput(sectionContent, strokeColor, title, placeholder, callback)
 	end
-
 	function sectionPublic:TextBox(title, placeholder, callback)
 		return CreateTextBoxInput(sectionContent, strokeColor, title, placeholder, callback)
+	end
+	function sectionPublic:AddTextbox(title, placeholder, callback)
+		return CreateTextBoxInput(sectionContent, strokeColor, title, placeholder, callback)
+	end
+	function sectionPublic:Textbox(title, placeholder, callback)
+		return CreateTextBoxInput(sectionContent, strokeColor, title, placeholder, callback)
+	end
+
+	-- Slider sa loob ng SectionUI box! (Saves camera/scroll conflicts)
+	function sectionPublic:AddSlider(title, min, max, default, callback)
+		return CreateSliderInput(sectionContent, strokeColor, title, min, max, default, callback)
+	end
+	function sectionPublic:Slider(title, min, max, default, callback)
+		return CreateSliderInput(sectionContent, strokeColor, title, min, max, default, callback)
+	end
+	function sectionPublic:Addslider(title, min, max, default, callback)
+		return CreateSliderInput(sectionContent, strokeColor, title, min, max, default, callback)
+	end
+	function sectionPublic:slider(title, min, max, default, callback)
+		return CreateSliderInput(sectionContent, strokeColor, title, min, max, default, callback)
 	end
 
 	return sectionPublic
@@ -1428,12 +1696,35 @@ function KazeUI:CreateWindow(config)
 			return CreateToggleSwitch(self._PageContent, self._Stroke.Color, title, description, defaultState, callback)
 		end
 
-		-- NEW: TextBox directly on Tab
+		-- TextBox directly on Tab at mga Shortcut/Aliases
 		function public:TextBox(title, placeholder, callback)
 			return CreateTextBoxInput(self._PageContent, self._Stroke.Color, title, placeholder, callback)
 		end
+		function public:Textbox(title, placeholder, callback)
+			return CreateTextBoxInput(self._PageContent, self._Stroke.Color, title, placeholder, callback)
+		end
+		function public:AddTextBox(title, placeholder, callback)
+			return CreateTextBoxInput(self._PageContent, self._Stroke.Color, title, placeholder, callback)
+		end
+		function public:AddTextbox(title, placeholder, callback)
+			return CreateTextBoxInput(self._PageContent, self._Stroke.Color, title, placeholder, callback)
+		end
 
-		-- NEW: Collapsible dropdown SectionUI box directly on Tab (Fixed loop bug)
+		-- Slider directly on Tab at mga Shortcut/Aliases (Anti-camera movement setup)
+		function public:Slider(title, min, max, default, callback)
+			return CreateSliderInput(self._PageContent, self._Stroke.Color, title, min, max, default, callback)
+		end
+		function public:slider(title, min, max, default, callback)
+			return CreateSliderInput(self._PageContent, self._Stroke.Color, title, min, max, default, callback)
+		end
+		function public:AddSlider(title, min, max, default, callback)
+			return CreateSliderInput(self._PageContent, self._Stroke.Color, title, min, max, default, callback)
+		end
+		function public:Addslider(title, min, max, default, callback)
+			return CreateSliderInput(self._PageContent, self._Stroke.Color, title, min, max, default, callback)
+		end
+
+		-- Collapsible dropdown SectionUI box directly on Tab
 		function public:SectionUI(title)
 			return CreateCollapsibleSection(self._PageContent, self._Stroke.Color, title)
 		end
@@ -1489,13 +1780,32 @@ function KazeUI:CreateWindow(config)
 				return CreateToggleSwitch(sectionContent, self._Stroke.Color, ttitle, tdesc, defaultState, callback)
 			end
 
-			-- Method: TextBox sa loob ng legacy section
+			-- Method: TextBox sa loob ng legacy section at Shortcut/Aliases
 			function sectionPublic:AddTextBox(title, placeholder, callback)
 				return CreateTextBoxInput(sectionContent, self._Stroke.Color, title, placeholder, callback)
 			end
-			-- Alias
 			function sectionPublic:TextBox(title, placeholder, callback)
 				return CreateTextBoxInput(sectionContent, self._Stroke.Color, title, placeholder, callback)
+			end
+			function sectionPublic:AddTextbox(title, placeholder, callback)
+				return CreateTextBoxInput(sectionContent, self._Stroke.Color, title, placeholder, callback)
+			end
+			function sectionPublic:Textbox(title, placeholder, callback)
+				return CreateTextBoxInput(sectionContent, self._Stroke.Color, title, placeholder, callback)
+			end
+
+			-- Method: Slider sa loob ng legacy section at Shortcut/Aliases
+			function sectionPublic:AddSlider(title, min, max, default, callback)
+				return CreateSliderInput(sectionContent, self._Stroke.Color, title, min, max, default, callback)
+			end
+			function sectionPublic:Slider(title, min, max, default, callback)
+				return CreateSliderInput(sectionContent, self._Stroke.Color, title, min, max, default, callback)
+			end
+			function sectionPublic:Addslider(title, min, max, default, callback)
+				return CreateSliderInput(sectionContent, self._Stroke.Color, title, min, max, default, callback)
+			end
+			function sectionPublic:slider(title, min, max, default, callback)
+				return CreateSliderInput(sectionContent, self._Stroke.Color, title, min, max, default, callback)
 			end
 
 			return sectionPublic
