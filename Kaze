@@ -1,4 +1,4 @@
--- Kaze UI Library (Fixed: Minimize/Restore Bug, Enhanced MiniButton Icon Fit, Close Spam, Flushed Layout)
+-- Kaze UI Library (Fixed: Minimize/Restore Bug, Enhanced MiniButton Icon Fit, Close Spam, Flushed Layout, Sidebar Toggle via Avatar)
 -- Full drop-in replacement. Kazu approved. 💙
 local KazeUI = {}
 KazeUI.__index = KazeUI
@@ -61,7 +61,7 @@ pcall(function()
 	end
 end)
 
--- Image Formatter Helper (Now with Auto Icon Support!)
+-- Image Formatter Helper
 local function FormatImage(id)
 	if not id or id == "" then return "" end
 	id = tostring(id)
@@ -85,7 +85,7 @@ local function FormatImage(id)
 	end
 	
 	local clean = string.gsub(id, "%D", "")
-	if clean == "" then return id end -- Return original if no digits
+	if clean == "" then return id end
 	return "rbxassetid://" .. clean
 end
 
@@ -211,7 +211,6 @@ local function CreateDropdown(parentFrame, strokeColor, title, options, defaultO
 	layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 	layout.Padding = UDim.new(0, 4)
 
-	-- Header Area
 	local header = Instance.new("Frame")
 	header.Name = "Header"
 	header.Size = UDim2.new(1, -16, 0, 36)
@@ -271,7 +270,6 @@ local function CreateDropdown(parentFrame, strokeColor, title, options, defaultO
 	end
 	UpdateHeaderVisual()
 
-	-- Search Bar
 	local searchWrapper = Instance.new("Frame")
 	searchWrapper.Name = "SearchWrapper"
 	searchWrapper.Size = UDim2.new(1, -16, 0, 30)
@@ -301,7 +299,6 @@ local function CreateDropdown(parentFrame, strokeColor, title, options, defaultO
 	searchBox.Focused:Connect(function() searchStroke.Color = strokeColor or Color3.fromRGB(0, 160, 255) end)
 	searchBox.FocusLost:Connect(function() searchStroke.Color = Color3.fromRGB(45, 45, 50) end)
 
-	-- Divider Line
 	local divider = Instance.new("Frame")
 	divider.Size = UDim2.new(1, -16, 0, 1)
 	divider.BackgroundColor3 = Color3.fromRGB(38, 38, 42)
@@ -310,7 +307,6 @@ local function CreateDropdown(parentFrame, strokeColor, title, options, defaultO
 	divider.Visible = false
 	divider.Parent = dropFrame
 
-	-- Scrollable Options Container
 	local listContainer = Instance.new("ScrollingFrame")
 	listContainer.Name = "OptionsContainer"
 	listContainer.Size = UDim2.new(1, -16, 0, 0)
@@ -344,7 +340,7 @@ local function CreateDropdown(parentFrame, strokeColor, title, options, defaultO
 
 	local function CloseDropdown()
 		isOpen = false
-		searchBox.Text = "" -- reset search when closed
+		searchBox.Text = "" 
 		searchWrapper.Visible = false
 		divider.Visible = false
 		listContainer.Visible = false
@@ -653,6 +649,7 @@ local function CreateClickableParagraph(parentFrame, strokeColor, title, body, c
 	rightIcon.Size = UDim2.fromOffset(26, 26)
 	rightIcon.BackgroundTransparency = 1
 	rightIcon.Image = FormatImage("17260727409")
+	rightIcon.ScaleType = Enum.ScaleType.Fit
 	rightIcon.ZIndex = 4
 	rightIcon.Parent = inner
 	
@@ -1391,22 +1388,17 @@ local function AttachElementsToAPI(apiTable, parentFrame, strokeColor)
 		return CreateDropdown(parentFrame, strokeColor, title, vals, def, callback, multi)
 	end
 
-	-- Full Collapsible UI Section Box
 	function apiTable:SectionUI(arg1)
 		local title = type(arg1) == "table" and arg1.Title or arg1
 		return CreateCollapsibleSection(parentFrame, strokeColor, title)
 	end
 	
-	-- Clean Visual Title Separator (Fixes the issue where Section was a container)
 	function apiTable:Section(arg1)
 		local title = type(arg1) == "table" and arg1.Title or arg1
 		CreateVisualSectionDivider(parentFrame, strokeColor, title)
-		
-		-- RETURNS THE PARENT API! This allows doing: local Group = Home:Section() -> Group:Toggle() and it drops right in perfectly.
 		return apiTable 
 	end
 
-	-- Backwards Compatibility Legacy Aliases
 	apiTable.Label = apiTable.AddLabel
 	apiTable.AddParagraph = apiTable.Paragraph
 	apiTable.AddButton = apiTable.Button
@@ -1558,7 +1550,6 @@ CreateCollapsibleSection = function(parentFrame, strokeColor, titleArg)
 		Header = headerFrame
 	}
 
-	-- Gamitin ang unified API Attachment para maging compatible sa Table Syntax
 	AttachElementsToAPI(sectionPublic, sectionContent, strokeColor)
 
 	return sectionPublic
@@ -1592,7 +1583,6 @@ function KazeUI:CreateWindow(config)
 	WindowStroke.Parent = Window
 	StartNeonLoop(WindowStroke)
 
-	-- Wrapped everything in a CanvasGroup to PERFECTLY clip sharp corners of inner frames
 	local ContentClipper = Instance.new("CanvasGroup")
 	ContentClipper.Name = "ContentClipper"
 	ContentClipper.Size = UDim2.fromScale(1, 1)
@@ -1609,17 +1599,28 @@ function KazeUI:CreateWindow(config)
 	TopBar.Parent = ContentClipper
 	MakeDraggable(TopBar, Window)
 
-	local Avatar = Instance.new("ImageLabel")
+	-- GINAWANG IMAGEBUTTON PARA CLICKABLE
+	local Avatar = Instance.new("ImageButton")
 	Avatar.Name = "Avatar"
 	Avatar.Size = UDim2.fromOffset(32,32)
 	Avatar.Position = UDim2.fromOffset(10,9)
 	Avatar.BackgroundColor3 = Color3.fromRGB(30,30,35)
 	Avatar.Image = MainIcon
+	Avatar.ScaleType = Enum.ScaleType.Fit -- Fit PARA SAGAD AT SAKTO, walang mapuputol!
+	Avatar.AutoButtonColor = false
 	Avatar.Parent = TopBar
 	Instance.new("UICorner", Avatar).CornerRadius = UDim.new(1,0)
 	local avatarStroke = Instance.new("UIStroke", Avatar)
 	avatarStroke.Color = Color3.fromRGB(0,140,200)
 	avatarStroke.Thickness = 1
+
+	-- Maganda kung may on-hover glow logic ang toggle button
+	Avatar.MouseEnter:Connect(function()
+		TweenService:Create(avatarStroke, TweenInfo.new(0.2), {Color = Color3.fromRGB(0, 200, 255)}):Play()
+	end)
+	Avatar.MouseLeave:Connect(function()
+		TweenService:Create(avatarStroke, TweenInfo.new(0.2), {Color = Color3.fromRGB(0, 140, 200)}):Play()
+	end)
 
 	local TitleLabel = Instance.new("TextLabel")
 	TitleLabel.Size = UDim2.new(1, -200, 0, 20)
@@ -1681,8 +1682,7 @@ function KazeUI:CreateWindow(config)
 	local BtnYellow = createCircleButton("BtnYellow", -68, Color3.fromRGB(255,204,51))
 	local BtnRed = createCircleButton("BtnRed", -40, Color3.fromRGB(235,80,80))
 
-	-- INAYOS NA ANG MINI BUTTON PARA SAKTONG-SAKTO ANG ICON
-	local MiniButton = Instance.new("TextButton") -- Ginawang TextButton imbes na ImageButton para maiwasan ang slice issues
+	local MiniButton = Instance.new("TextButton") 
 	MiniButton.Name = "MiniButton"
 	MiniButton.Size = MiniButtonSize
 	MiniButton.Position = UDim2.new(0, 16, 0, 85)
@@ -1695,12 +1695,12 @@ function KazeUI:CreateWindow(config)
 	Instance.new("UICorner", MiniButton).CornerRadius = UDim.new(0,8)
 
 	local MiniIcon = Instance.new("ImageLabel")
-	MiniIcon.Size = UDim2.fromScale(0.7, 0.7) -- 70% ang laki para perpektong gitna at hindi stretch
+	MiniIcon.Size = UDim2.fromScale(0.7, 0.7) 
 	MiniIcon.Position = UDim2.fromScale(0.5, 0.5)
 	MiniIcon.AnchorPoint = Vector2.new(0.5, 0.5)
 	MiniIcon.BackgroundTransparency = 1
 	MiniIcon.Image = OpenIcon
-	MiniIcon.ScaleType = Enum.ScaleType.Fit -- Fix stretch issue kung hindi square ang image
+	MiniIcon.ScaleType = Enum.ScaleType.Fit -- Fit scale type sa icon
 	MiniIcon.Parent = MiniButton
 	MiniIcon.ZIndex = 1000
 
@@ -1715,7 +1715,6 @@ function KazeUI:CreateWindow(config)
 	MakeDraggable(MiniButton, MiniButton)
 
 	local function minimizeWindow()
-		-- I-save lahat ng positions + drag bago i-minimize!
 		if not toggledMaximized then
 			lastNormalSize = Window.Size
 			lastNormalPosition = Window.Position
@@ -1745,7 +1744,6 @@ function KazeUI:CreateWindow(config)
 
 	BtnYellow.MouseButton1Click:Connect(minimizeWindow)
 
-	-- CUSTOM CLICK DETECTOR SA MINIBUTTON UPANG HINDI MAG-GLITCH SA MOBILE/DRAG
 	local miniDragStart
 	MiniButton.InputBegan:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
@@ -1757,7 +1755,7 @@ function KazeUI:CreateWindow(config)
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 			if miniDragStart then
 				local dist = (input.Position - miniDragStart).Magnitude
-				if dist < 5 then -- Kapag click lang ang ginawa (hindi drag), io-open ulit ang UI
+				if dist < 5 then
 					unminimizeWindow()
 				end
 			end
@@ -1886,14 +1884,23 @@ function KazeUI:CreateWindow(config)
 	Content.BackgroundTransparency = 1
 	Content.Parent = ContentClipper
 
+	-- MASK CONTAINER PARA SA SIDEBAR (Ito yung magtatago/magpapakita sa contents smoothly walang squish!)
+	local SideBarMask = Instance.new("Frame")
+	SideBarMask.Name = "SideBarMask"
+	SideBarMask.Size = UDim2.new(0, 150, 1, 0)
+	SideBarMask.Position = UDim2.new(0, 0, 0, 0)
+	SideBarMask.BackgroundTransparency = 1
+	SideBarMask.ClipsDescendants = true
+	SideBarMask.Parent = Content
+
 	-- Sidebar Navigation
 	local SideBar = Instance.new("Frame")
 	SideBar.Name = "SideBar"
-	SideBar.Size = UDim2.new(0,150,1,0)
+	SideBar.Size = UDim2.new(0,150,1,0) -- Mananatiling exact 150 para hindi masira design pag lumiit mask
 	SideBar.Position = UDim2.new(0,0,0,0)
 	SideBar.BackgroundColor3 = Color3.fromRGB(20,20,25)
 	SideBar.BorderSizePixel = 0
-	SideBar.Parent = Content
+	SideBar.Parent = SideBarMask
 
 	local VertDivider = Instance.new("Frame")
 	VertDivider.Name = "VertDivider"
@@ -1911,6 +1918,25 @@ function KazeUI:CreateWindow(config)
 	Pages.BackgroundColor3 = Color3.fromRGB(18,18,23)
 	Pages.BorderSizePixel = 0
 	Pages.Parent = Content
+	
+	-- AVATAR TOGGLE LOGIC (Hiding/Showing Sidebar smoothly)
+	local isSidebarOpen = true
+	Avatar.MouseButton1Click:Connect(function()
+		isSidebarOpen = not isSidebarOpen
+		local tInfo = TweenInfo.new(0.35, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
+		
+		if isSidebarOpen then
+			-- Open Animation
+			TweenService:Create(SideBarMask, tInfo, {Size = UDim2.new(0, 150, 1, 0)}):Play()
+			TweenService:Create(VertDivider, tInfo, {Position = UDim2.new(0, 150, 0, 0), BackgroundTransparency = 0}):Play()
+			TweenService:Create(Pages, tInfo, {Position = UDim2.new(0, 152, 0, 0), Size = UDim2.new(1, -152, 1, 0)}):Play()
+		else
+			-- Close Animation
+			TweenService:Create(SideBarMask, tInfo, {Size = UDim2.new(0, 0, 1, 0)}):Play()
+			TweenService:Create(VertDivider, tInfo, {Position = UDim2.new(0, 0, 0, 0), BackgroundTransparency = 1}):Play()
+			TweenService:Create(Pages, tInfo, {Position = UDim2.new(0, 0, 0, 0), Size = UDim2.new(1, 0, 1, 0)}):Play()
+		end
+	end)
 
 	local TabsScroller = Instance.new("ScrollingFrame")
 	TabsScroller.Name = "TabsScroller"
@@ -1994,6 +2020,7 @@ function KazeUI:CreateWindow(config)
 		iconLabel.Position = UDim2.new(0,8,0.5,-12)
 		iconLabel.BackgroundTransparency = 1
 		iconLabel.Image = formattedIcon
+		iconLabel.ScaleType = Enum.ScaleType.Fit -- Fit scale type sa icon rin dito
 		Instance.new("UICorner", iconLabel).CornerRadius = UDim.new(1,0)
 
 		local txt = Instance.new("TextLabel", btn)
@@ -2093,7 +2120,6 @@ function KazeUI:CreateWindow(config)
 			_Stroke = self._Stroke,
 		}
 		
-		-- Gamitin ang unified API attachment para sa Tab Elements
 		AttachElementsToAPI(public, pageContent, self._Stroke.Color)
 
 		return public
@@ -2112,3 +2138,4 @@ function KazeUI:CreateWindow(config)
 end
 
 return KazeUI
+
