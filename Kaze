@@ -1,4 +1,4 @@
--- Kaze UI Library (Fixed: Table-based Config Shortcuts, Dropdowns, Boxed Collapsible Sections, Textbox, Slider, Toggle)
+-- Kaze UI Library (Fixed: Section Contexting, Dropdown Search & Multi-Select, Table Shortcuts)
 -- Full drop-in replacement. Kazu approved. 💙
 local KazeUI = {}
 KazeUI.__index = KazeUI
@@ -112,12 +112,24 @@ local function ToggleScrollingAncestors(element, state)
 	end
 end
 
--- Helper: Gumawa ng Dropdown Selection Row (Premium style)
-local function CreateDropdown(parentFrame, strokeColor, title, options, defaultOption, callback)
+-- Helper: Dropdown Selection Row (Now with Search Bar & Multi-Select Support)
+local function CreateDropdown(parentFrame, strokeColor, title, options, defaultOption, callback, isMulti)
 	title = tostring(title or "Dropdown")
 	options = type(options) == "table" and options or {}
-	local selected = defaultOption or (options[1] or "")
 	local isOpen = false
+
+	local selectedSingle = ""
+	local selectedMulti = {}
+
+	if isMulti then
+		if type(defaultOption) == "table" then
+			for _, v in ipairs(defaultOption) do selectedMulti[tostring(v)] = true end
+		elseif defaultOption then
+			selectedMulti[tostring(defaultOption)] = true
+		end
+	else
+		selectedSingle = defaultOption or (options[1] or "")
+	end
 
 	local wrapper = Instance.new("Frame")
 	wrapper.Name = "DropdownWrapper"
@@ -182,7 +194,6 @@ local function CreateDropdown(parentFrame, strokeColor, title, options, defaultO
 	selectedLabel.Size = UDim2.new(0.5, -24, 1, 0)
 	selectedLabel.Position = UDim2.new(0.5, 0, 0, 0)
 	selectedLabel.BackgroundTransparency = 1
-	selectedLabel.Text = tostring(selected)
 	selectedLabel.TextColor3 = strokeColor or Color3.fromRGB(0, 160, 255)
 	selectedLabel.Font = Enum.Font.Gotham
 	selectedLabel.TextSize = 13
@@ -194,12 +205,61 @@ local function CreateDropdown(parentFrame, strokeColor, title, options, defaultO
 	clickBtn.BackgroundTransparency = 1
 	clickBtn.Text = ""
 
+	local function UpdateHeaderVisual()
+		if isMulti then
+			local count = 0
+			local firstVal = ""
+			for k, v in pairs(selectedMulti) do
+				if v then 
+					count = count + 1 
+					if firstVal == "" then firstVal = k end
+				end
+			end
+			if count == 0 then selectedLabel.Text = "None"
+			elseif count == 1 then selectedLabel.Text = firstVal
+			else selectedLabel.Text = count .. " Selected" end
+		else
+			selectedLabel.Text = tostring(selectedSingle)
+		end
+	end
+	UpdateHeaderVisual()
+
+	-- Search Bar
+	local searchWrapper = Instance.new("Frame")
+	searchWrapper.Name = "SearchWrapper"
+	searchWrapper.Size = UDim2.new(1, -16, 0, 30)
+	searchWrapper.BackgroundTransparency = 1
+	searchWrapper.LayoutOrder = 2
+	searchWrapper.Visible = false
+	searchWrapper.Parent = dropFrame
+
+	local searchBox = Instance.new("TextBox")
+	searchBox.Size = UDim2.new(1, 0, 1, -2)
+	searchBox.Position = UDim2.new(0, 0, 0, 1)
+	searchBox.BackgroundColor3 = Color3.fromRGB(16, 16, 20)
+	searchBox.BorderSizePixel = 0
+	searchBox.PlaceholderText = "   Search option..."
+	searchBox.PlaceholderColor3 = Color3.fromRGB(120, 120, 125)
+	searchBox.Text = ""
+	searchBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+	searchBox.Font = Enum.Font.Gotham
+	searchBox.TextSize = 13
+	searchBox.TextXAlignment = Enum.TextXAlignment.Left
+	searchBox.Parent = searchWrapper
+	Instance.new("UICorner", searchBox).CornerRadius = UDim.new(0, 5)
+
+	local searchStroke = Instance.new("UIStroke", searchBox)
+	searchStroke.Color = Color3.fromRGB(45, 45, 50)
+	searchStroke.Thickness = 1
+	searchBox.Focused:Connect(function() searchStroke.Color = strokeColor or Color3.fromRGB(0, 160, 255) end)
+	searchBox.FocusLost:Connect(function() searchStroke.Color = Color3.fromRGB(45, 45, 50) end)
+
 	-- Divider Line
 	local divider = Instance.new("Frame")
 	divider.Size = UDim2.new(1, -16, 0, 1)
 	divider.BackgroundColor3 = Color3.fromRGB(38, 38, 42)
 	divider.BorderSizePixel = 0
-	divider.LayoutOrder = 2
+	divider.LayoutOrder = 3
 	divider.Visible = false
 	divider.Parent = dropFrame
 
@@ -209,15 +269,13 @@ local function CreateDropdown(parentFrame, strokeColor, title, options, defaultO
 	listContainer.Size = UDim2.new(1, -16, 0, 0)
 	listContainer.BackgroundTransparency = 1
 	listContainer.BorderSizePixel = 0
-	listContainer.LayoutOrder = 3
+	listContainer.LayoutOrder = 4
 	listContainer.Visible = false
 	listContainer.ScrollBarThickness = 4
 	listContainer.ScrollBarImageColor3 = Color3.fromRGB(60, 60, 65)
 	listContainer.CanvasSize = UDim2.new(0, 0, 0, 0)
-	listContainer.AutomaticCanvasSize = Enum.AutomaticSize.Y
 	listContainer.Parent = dropFrame
 
-	-- Prevent double-scrolling bug when cursor is over the dropdown list
 	listContainer.MouseEnter:Connect(function() ToggleScrollingAncestors(dropFrame, false) end)
 	listContainer.MouseLeave:Connect(function() ToggleScrollingAncestors(dropFrame, true) end)
 
@@ -227,17 +285,27 @@ local function CreateDropdown(parentFrame, strokeColor, title, options, defaultO
 
 	local optionItems = {}
 
+	local function CalcHeight()
+		local count = 0
+		for _, item in ipairs(optionItems) do
+			if item.Btn.Visible then count = count + 1 end
+		end
+		local height = math.min(count, 4.5) * 32
+		listContainer.Size = UDim2.new(1, -16, 0, height)
+		listContainer.CanvasSize = UDim2.new(0, 0, 0, count * 32)
+	end
+
 	local function CloseDropdown()
 		isOpen = false
+		searchBox.Text = "" -- reset search when closed
+		searchWrapper.Visible = false
 		divider.Visible = false
 		listContainer.Visible = false
 		TweenService:Create(arrowIcon, TweenInfo.new(0.2), {Rotation = 0}):Play()
 	end
 
 	local function Refresh(newOptions)
-		for _, item in ipairs(optionItems) do
-			item:Destroy()
-		end
+		for _, item in ipairs(optionItems) do item.Btn:Destroy() end
 		table.clear(optionItems)
 
 		options = type(newOptions) == "table" and newOptions or {}
@@ -256,91 +324,90 @@ local function CreateDropdown(parentFrame, strokeColor, title, options, defaultO
 			btn.Parent = listContainer
 			Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 4)
 
-			btn.MouseEnter:Connect(function()
-				TweenService:Create(btn, TweenInfo.new(0.1), {BackgroundColor3 = Color3.fromRGB(35, 35, 40), TextColor3 = Color3.fromRGB(255,255,255)}):Play()
-			end)
-			btn.MouseLeave:Connect(function()
-				local isActive = (optStr == tostring(selected))
-				local targetColor = isActive and Color3.fromRGB(30, 30, 35) or Color3.fromRGB(24, 24, 28)
-				local targetText = isActive and (strokeColor or Color3.fromRGB(0, 160, 255)) or Color3.fromRGB(200, 200, 200)
-				TweenService:Create(btn, TweenInfo.new(0.1), {BackgroundColor3 = targetColor, TextColor3 = targetText}):Play()
-			end)
+			local indicator
+			if isMulti then
+				indicator = Instance.new("Frame", btn)
+				indicator.AnchorPoint = Vector2.new(1, 0.5)
+				indicator.Position = UDim2.new(1, -6, 0.5, 0)
+				indicator.Size = UDim2.fromOffset(14, 14)
+				indicator.BackgroundColor3 = Color3.fromRGB(24, 24, 28)
+				local indStroke = Instance.new("UIStroke", indicator)
+				indStroke.Color = Color3.fromRGB(60, 60, 65)
+				Instance.new("UICorner", indicator).CornerRadius = UDim.new(0, 4)
+			end
+
+			local function UpdateVisuals()
+				local active = isMulti and selectedMulti[optStr] or (not isMulti and selectedSingle == optStr)
+				btn.BackgroundColor3 = active and Color3.fromRGB(30, 30, 35) or Color3.fromRGB(24, 24, 28)
+				btn.TextColor3 = active and (strokeColor or Color3.fromRGB(0, 160, 255)) or Color3.fromRGB(200, 200, 200)
+				if isMulti and indicator then
+					indicator.BackgroundColor3 = active and (strokeColor or Color3.fromRGB(0, 160, 255)) or Color3.fromRGB(24, 24, 28)
+				end
+			end
+			UpdateVisuals()
+
+			btn.MouseEnter:Connect(function() TweenService:Create(btn, TweenInfo.new(0.1), {BackgroundColor3 = Color3.fromRGB(35, 35, 40), TextColor3 = Color3.fromRGB(255,255,255)}):Play() end)
+			btn.MouseLeave:Connect(UpdateVisuals)
 
 			btn.MouseButton1Click:Connect(function()
-				selected = optStr
-				selectedLabel.Text = optStr
-				CloseDropdown()
-				
-				for _, otherBtn in ipairs(optionItems) do
-					local otherTxt = string.sub(otherBtn.Text, 3)
-					if otherTxt == selected then
-						otherBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
-						otherBtn.TextColor3 = strokeColor or Color3.fromRGB(0, 160, 255)
-					else
-						otherBtn.BackgroundColor3 = Color3.fromRGB(24, 24, 28)
-						otherBtn.TextColor3 = Color3.fromRGB(200, 200, 200)
+				if isMulti then
+					selectedMulti[optStr] = not selectedMulti[optStr]
+					UpdateVisuals()
+					UpdateHeaderVisual()
+					if type(callback) == "function" then
+						local ret = {}
+						for k,v in pairs(selectedMulti) do if v then table.insert(ret, k) end end
+						task.spawn(callback, ret)
 					end
-				end
-
-				if typeof(callback) == "function" then
-					task.spawn(callback, selected)
+				else
+					selectedSingle = optStr
+					UpdateHeaderVisual()
+					CloseDropdown()
+					for _, item in ipairs(optionItems) do item.Update() end
+					if type(callback) == "function" then
+						task.spawn(callback, selectedSingle)
+					end
 				end
 			end)
 
-			table.insert(optionItems, btn)
+			table.insert(optionItems, { Btn = btn, Text = optStr, Update = UpdateVisuals })
 		end
-
-		for _, btn in ipairs(optionItems) do
-			local txt = string.sub(btn.Text, 3)
-			if txt == tostring(selected) then
-				btn.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
-				btn.TextColor3 = strokeColor or Color3.fromRGB(0, 160, 255)
-			end
-		end
-
-		local maxItems = 4.5
-		local totalItems = #options
-		local height = math.min(totalItems, maxItems) * 32
-		listContainer.Size = UDim2.new(1, -16, 0, height)
+		CalcHeight()
 	end
 
 	Refresh(options)
 
+	searchBox:GetPropertyChangedSignal("Text"):Connect(function()
+		local q = string.lower(searchBox.Text)
+		for _, item in ipairs(optionItems) do
+			item.Btn.Visible = (q == "" or string.find(string.lower(item.Text), q, 1, true)) ~= nil
+		end
+		CalcHeight()
+	end)
+
 	clickBtn.MouseButton1Click:Connect(function()
 		isOpen = not isOpen
 		if isOpen then
+			searchWrapper.Visible = true
 			divider.Visible = true
 			listContainer.Visible = true
+			CalcHeight()
 			TweenService:Create(arrowIcon, TweenInfo.new(0.2), {Rotation = 180}):Play()
 		else
 			CloseDropdown()
 		end
 	end)
 
-	if selected ~= "" then
-		selectedLabel.Text = tostring(selected)
-	end
-
 	return {
 		Wrapper = wrapper,
 		Frame = dropFrame,
-		GetValue = function() return selected end,
-		SetValue = function(self, val)
-			selected = tostring(val)
-			selectedLabel.Text = selected
-			for _, btn in ipairs(optionItems) do
-				local txt = string.sub(btn.Text, 3)
-				if txt == selected then
-					btn.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
-					btn.TextColor3 = strokeColor or Color3.fromRGB(0, 160, 255)
-				else
-					btn.BackgroundColor3 = Color3.fromRGB(24, 24, 28)
-					btn.TextColor3 = Color3.fromRGB(200, 200, 200)
-				end
+		GetValue = function() 
+			if isMulti then
+				local ret = {}
+				for k,v in pairs(selectedMulti) do if v then table.insert(ret, k) end end
+				return ret
 			end
-			if typeof(callback) == "function" then
-				task.spawn(callback, selected)
-			end
+			return selectedSingle 
 		end,
 		Refresh = function(self, newOpts)
 			Refresh(newOpts)
@@ -926,7 +993,7 @@ local function CreateTextBoxInput(parentFrame, strokeColor, title, placeholder, 
 	return api
 end
 
--- Helper: Gagawa ng Custom Slider Input Row (Premium style, locks camera rotation & touch swipe while sliding)
+-- Helper: Gagawa ng Custom Slider Input Row
 local function CreateSliderInput(parentFrame, strokeColor, title, min, max, default, callback)
 	title = tostring(title or "Slider")
 	min = tonumber(min) or 0
@@ -1157,8 +1224,17 @@ local function CreateSliderInput(parentFrame, strokeColor, title, min, max, defa
 	return api
 end
 
+
+-- =========================================================================
+-- Forward Declarations for API Builders
+-- =========================================================================
+local CreateCollapsibleSection
+local CreateVisualSectionDivider
+
+
 -- =========================================================================
 -- API ATTACHMENT SYSTEM (Supports both Positional Args and Table Args)
+-- This ensures Methods like SectionUI are ALWAYS available!
 -- =========================================================================
 local function AttachElementsToAPI(apiTable, parentFrame, strokeColor)
 	function apiTable:AddLabel(arg1)
@@ -1250,20 +1326,37 @@ local function AttachElementsToAPI(apiTable, parentFrame, strokeColor)
 		return CreateSliderInput(parentFrame, strokeColor, title, min, max, def, callback)
 	end
 
-	function apiTable:Dropdown(arg1, arg2, arg3, arg4)
-		local title, vals, def, callback
+	function apiTable:Dropdown(arg1, arg2, arg3, arg4, arg5)
+		local title, vals, def, callback, multi
 		if type(arg1) == "table" then
 			title = arg1.Title
 			vals = arg1.Values or arg1.Options
 			def = arg1.Default
+			multi = arg1.Multi or false
 			callback = arg1.Callback
 		else
 			title = arg1
 			vals = arg2
 			def = arg3
 			callback = arg4
+			multi = arg5 or false
 		end
-		return CreateDropdown(parentFrame, strokeColor, title, vals, def, callback)
+		return CreateDropdown(parentFrame, strokeColor, title, vals, def, callback, multi)
+	end
+
+	-- Full Collapsible UI Section Box
+	function apiTable:SectionUI(arg1)
+		local title = type(arg1) == "table" and arg1.Title or arg1
+		return CreateCollapsibleSection(parentFrame, strokeColor, title)
+	end
+	
+	-- Clean Visual Title Separator (Fixes the issue where Section was a container)
+	function apiTable:Section(arg1)
+		local title = type(arg1) == "table" and arg1.Title or arg1
+		CreateVisualSectionDivider(parentFrame, strokeColor, title)
+		
+		-- RETURNS THE PARENT API! This allows doing: local Group = Home:Section() -> Group:Toggle() and it drops right in perfectly.
+		return apiTable 
 	end
 
 	-- Backwards Compatibility Legacy Aliases
@@ -1276,8 +1369,42 @@ local function AttachElementsToAPI(apiTable, parentFrame, strokeColor)
 	apiTable.AddDropdown = apiTable.Dropdown
 end
 
+-- =========================================================================
+-- Visual Section Divider logic (Just purely visual, no box container)
+-- =========================================================================
+CreateVisualSectionDivider = function(parentFrame, strokeColor, titleArg)
+	local title = tostring(titleArg or "Section")
+
+	local wrapper = Instance.new("Frame")
+	wrapper.Name = "SectionDivider_" .. title
+	wrapper.Size = UDim2.new(0.95, 0, 0, 32)
+	wrapper.BackgroundTransparency = 1
+	wrapper.Parent = parentFrame
+
+	local label = Instance.new("TextLabel")
+	label.Size = UDim2.new(1, -12, 1, 0)
+	label.Position = UDim2.fromOffset(12, 0)
+	label.BackgroundTransparency = 1
+	label.Text = title
+	label.TextColor3 = strokeColor or Color3.fromRGB(0, 160, 255)
+	label.Font = Enum.Font.GothamBold
+	label.TextSize = 14
+	label.TextXAlignment = Enum.TextXAlignment.Left
+	label.Parent = wrapper
+	
+	local leftLine = Instance.new("Frame")
+	leftLine.Size = UDim2.new(0, 3, 0, 14)
+	leftLine.Position = UDim2.new(0, 0, 0.5, -7)
+	leftLine.BackgroundColor3 = strokeColor or Color3.fromRGB(0, 160, 255)
+	leftLine.BorderSizePixel = 0
+	leftLine.Parent = wrapper
+	Instance.new("UICorner", leftLine).CornerRadius = UDim.new(1, 0)
+end
+
+-- =========================================================================
 -- Helper: Gagawa ng Isang Pinag-isang Box na Collapsible SectionUI Block
-local function CreateCollapsibleSection(parentFrame, strokeColor, titleArg)
+-- =========================================================================
+CreateCollapsibleSection = function(parentFrame, strokeColor, titleArg)
 	local title = type(titleArg) == "table" and titleArg.Title or tostring(titleArg or "Section")
 	local isOpen = true
 
@@ -1388,59 +1515,6 @@ local function CreateCollapsibleSection(parentFrame, strokeColor, titleArg)
 	AttachElementsToAPI(sectionPublic, sectionContent, strokeColor)
 
 	return sectionPublic
-end
-
--- OLD/LEGACY Helper: Standard Non-Collapsible Section Creator
-local function CreateSectionUI(parentFrame, strokeColor, title)
-	local sectionFrame = Instance.new("Frame")
-	sectionFrame.Name = "Section_" .. title
-	sectionFrame.Size = UDim2.new(1, -24, 0, 0)
-	sectionFrame.BackgroundTransparency = 1
-	sectionFrame.BorderSizePixel = 0
-	sectionFrame.Parent = parentFrame
-	sectionFrame.AutomaticSize = Enum.AutomaticSize.Y
-
-	local sectionLayout = Instance.new("UIListLayout", sectionFrame)
-	sectionLayout.SortOrder = Enum.SortOrder.LayoutOrder
-	sectionLayout.Padding = UDim.new(0, 10)			
-	sectionLayout.VerticalAlignment = Enum.VerticalAlignment.Top
-	sectionLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-
-	local titleLabel = Instance.new("TextLabel")
-	titleLabel.Name = "SectionTitle"
-	titleLabel.Size = UDim2.new(1, 0, 0, 36)
-	titleLabel.BackgroundTransparency = 1
-	titleLabel.Text = title
-	titleLabel.TextColor3 = Color3.fromRGB(0, 120, 255)
-	titleLabel.Font = Enum.Font.GothamBold
-	titleLabel.TextSize = 22
-	titleLabel.TextWrapped = true
-	titleLabel.TextXAlignment = Enum.TextXAlignment.Center
-	titleLabel.Parent = sectionFrame
-
-	local sep = Instance.new("Frame")
-	sep.Name = "SectionSeparator"
-	sep.Size = UDim2.new(0.6, 0, 0, 2)
-	sep.BackgroundColor3 = Color3.fromRGB(38, 38, 42)
-	sep.BorderSizePixel = 0
-	sep.Parent = sectionFrame
-	Instance.new("UICorner", sep).CornerRadius = UDim.new(0, 4)
-
-	local sectionContent = Instance.new("Frame")
-	sectionContent.Name = "SectionContent"
-	sectionContent.Size = UDim2.new(1, 0, 0, 0)
-	sectionContent.BackgroundTransparency = 1
-	sectionContent.BorderSizePixel = 0
-	sectionContent.Parent = sectionFrame
-	sectionContent.AutomaticSize = Enum.AutomaticSize.Y
-
-	local secLayout = Instance.new("UIListLayout", sectionContent)
-	secLayout.SortOrder = Enum.SortOrder.LayoutOrder
-	secLayout.Padding = UDim.new(0, 8)
-	secLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-	secLayout.VerticalAlignment = Enum.VerticalAlignment.Top
-
-	return sectionFrame, titleLabel, sectionContent
 end
 
 
@@ -1949,28 +2023,6 @@ function KazeUI:CreateWindow(config)
 		
 		-- Gamitin ang unified API attachment para sa Tab Elements
 		AttachElementsToAPI(public, pageContent, self._Stroke.Color)
-
-		-- SectionUI API (New Table Syntax Supported)
-		function public:SectionUI(arg1)
-			local title = type(arg1) == "table" and arg1.Title or arg1
-			return CreateCollapsibleSection(self._PageContent, self._Stroke.Color, title)
-		end
-
-		-- Legacy Section API (New Table Syntax Supported)
-		function public:Section(arg1)
-			local title = type(arg1) == "table" and arg1.Title or arg1
-			title = tostring(title or " ")
-			local sectionFrame, titleLabel, sectionContent = CreateSectionUI(self._PageContent, self._Stroke.Color, title)
-
-			local sectionPublic = {}
-			sectionPublic.Frame = sectionFrame
-			sectionPublic.TitleLabel = titleLabel
-
-			-- Gamitin ang unified API attachment para sa Legacy Section
-			AttachElementsToAPI(sectionPublic, sectionContent, self._Stroke.Color)
-
-			return sectionPublic
-		end
 
 		return public
 	end
