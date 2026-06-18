@@ -1,4 +1,5 @@
--- Kaze UI Library (Fixed: Section Contexting, Dropdown Search & Multi-Select, Table Shortcuts)
+
+-- Kaze UI Library (Fixed: Section Contexting, Dropdown Search & Multi-Select, Table Shortcuts, Default Closed Section, Auto Icons)
 -- Full drop-in replacement. Kazu approved. 💙
 local KazeUI = {}
 KazeUI.__index = KazeUI
@@ -8,6 +9,7 @@ local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local UIS = game:GetService("UserInputService")
 local TextService = game:GetService("TextService")
+local HttpService = game:GetService("HttpService")
 local LP = Players.LocalPlayer
 
 -- ScreenGui Setup
@@ -33,12 +35,58 @@ end
 UpdateScale()
 workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(UpdateScale)
 
--- Image Formatter Helper
+-- Auto-Icon Fetcher via game:HttpGet
+local IconsMap = {}
+pcall(function()
+	if game and game.HttpGet then
+		local rawIcons = game:HttpGet("https://raw.githubusercontent.com/KazeHub/UI/refs/heads/main/Icons.lua.txt")
+		if rawIcons then
+			local success, res = pcall(function()
+				local func = loadstring(rawIcons)
+				return func and func()
+			end)
+			
+			if not success or type(res) ~= "table" then
+				-- Fallback to JSON Decode if it wasn't a valid Lua return
+				success, res = pcall(function()
+					return HttpService:JSONDecode(rawIcons)
+				end)
+			end
+			
+			if type(res) == "table" then
+				for k, v in pairs(res) do
+					IconsMap[string.lower(tostring(k))] = tostring(v)
+				end
+			end
+		end
+	end
+end)
+
+-- Image Formatter Helper (Now with Auto Icon Support!)
 local function FormatImage(id)
-	if not id then return "" end
+	if not id or id == "" then return "" end
 	id = tostring(id)
+	
+	-- Check for auto icon by name (case-insensitive)
+	local lowerId = string.lower(id)
+	if IconsMap[lowerId] then
+		local mapped = IconsMap[lowerId]
+		if not string.find(mapped, "rbxassetid://") and not string.find(mapped, "http") then
+			local clean = string.gsub(mapped, "%D", "")
+			if clean ~= "" then
+				return "rbxassetid://" .. clean
+			end
+		end
+		return mapped
+	end
+	
+	-- Ignore parsing if already formatted
+	if string.find(id, "rbxassetid://") or string.find(id, "http") then
+		return id
+	end
+	
 	local clean = string.gsub(id, "%D", "")
-	if clean == "" then return "" end
+	if clean == "" then return id end -- Return original if no digits
 	return "rbxassetid://" .. clean
 end
 
@@ -112,7 +160,7 @@ local function ToggleScrollingAncestors(element, state)
 	end
 end
 
--- Helper: Dropdown Selection Row (Now with Search Bar & Multi-Select Support)
+-- Helper: Dropdown Selection Row
 local function CreateDropdown(parentFrame, strokeColor, title, options, defaultOption, callback, isMulti)
 	title = tostring(title or "Dropdown")
 	options = type(options) == "table" and options or {}
@@ -860,7 +908,7 @@ local function CreateToggleSwitch(parentFrame, strokeColor, title, body, default
 	}
 end
 
--- Helper: Gagawa ng Custom Textbox Input Row (Premium style)
+-- Helper: Gagawa ng Custom Textbox Input Row
 local function CreateTextBoxInput(parentFrame, strokeColor, title, placeholder, callback)
 	title = tostring(title or "Input Text")
 	placeholder = tostring(placeholder or "Type here...")
@@ -1406,7 +1454,7 @@ end
 -- =========================================================================
 CreateCollapsibleSection = function(parentFrame, strokeColor, titleArg)
 	local title = type(titleArg) == "table" and titleArg.Title or tostring(titleArg or "Section")
-	local isOpen = true
+	local isOpen = false
 
 	local sectionBox = Instance.new("Frame")
 	sectionBox.Name = "CollapsibleSection_" .. title
