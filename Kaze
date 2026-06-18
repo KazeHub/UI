@@ -1,4 +1,4 @@
--- Kaze UI Library (Fixed: Poking Corners/Lines, Flushed Layout, Close Prompt Spam)
+-- Kaze UI Library (Fixed: Minimize/Restore Bug, Enhanced MiniButton Icon Fit, Close Spam, Flushed Layout)
 -- Full drop-in replacement. Kazu approved. 💙
 local KazeUI = {}
 KazeUI.__index = KazeUI
@@ -1681,29 +1681,26 @@ function KazeUI:CreateWindow(config)
 	local BtnYellow = createCircleButton("BtnYellow", -68, Color3.fromRGB(255,204,51))
 	local BtnRed = createCircleButton("BtnRed", -40, Color3.fromRGB(235,80,80))
 
-	local MiniButton = Instance.new("ImageButton")
+	-- INAYOS NA ANG MINI BUTTON PARA SAKTONG-SAKTO ANG ICON
+	local MiniButton = Instance.new("TextButton") -- Ginawang TextButton imbes na ImageButton para maiwasan ang slice issues
 	MiniButton.Name = "MiniButton"
 	MiniButton.Size = MiniButtonSize
 	MiniButton.Position = UDim2.new(0, 16, 0, 85)
 	MiniButton.BackgroundColor3 = Color3.fromRGB(20,20,25)
 	MiniButton.BorderSizePixel = 0
+	MiniButton.Text = ""
 	MiniButton.Visible = false
 	MiniButton.Parent = ScreenGui
 	MiniButton.ZIndex = 999
-	MiniButton.ScaleType = Enum.ScaleType.Slice
-	MiniButton.SliceCenter = Rect.new(4,4,60,60)
-	Instance.new("UICorner", MiniButton).CornerRadius = UDim.new(0,6)
-
-	local miniPadding = Instance.new("UIPadding", MiniButton)
-	miniPadding.PaddingTop = UDim.new(0,4); miniPadding.PaddingBottom = UDim.new(0,4)
-	miniPadding.PaddingLeft = UDim.new(0,4); miniPadding.PaddingRight = UDim.new(0,4)
+	Instance.new("UICorner", MiniButton).CornerRadius = UDim.new(0,8)
 
 	local MiniIcon = Instance.new("ImageLabel")
-	MiniIcon.Size = UDim2.fromScale(1,1)
-	MiniIcon.Position = UDim2.fromScale(0.5,0.5)
-	MiniIcon.AnchorPoint = Vector2.new(0.5,0.5)
+	MiniIcon.Size = UDim2.fromScale(0.7, 0.7) -- 70% ang laki para perpektong gitna at hindi stretch
+	MiniIcon.Position = UDim2.fromScale(0.5, 0.5)
+	MiniIcon.AnchorPoint = Vector2.new(0.5, 0.5)
 	MiniIcon.BackgroundTransparency = 1
 	MiniIcon.Image = OpenIcon
+	MiniIcon.ScaleType = Enum.ScaleType.Fit -- Fix stretch issue kung hindi square ang image
 	MiniIcon.Parent = MiniButton
 	MiniIcon.ZIndex = 1000
 
@@ -1718,13 +1715,54 @@ function KazeUI:CreateWindow(config)
 	MakeDraggable(MiniButton, MiniButton)
 
 	local function minimizeWindow()
+		-- I-save lahat ng positions + drag bago i-minimize!
+		if not toggledMaximized then
+			lastNormalSize = Window.Size
+			lastNormalPosition = Window.Position
+			lastNormalAnchor = Window.AnchorPoint
+		end
 		Window.Visible = false
 		MiniButton.Visible = true
 		MiniButton.Size = UDim2.fromOffset(0,0)
 		TweenService:Create(MiniButton, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Size = MiniButtonSize }):Play()
 	end
 
+	local function unminimizeWindow()
+		if Window.Visible then return end
+		MiniButton.Visible = false
+		Window.Visible = true
+		Window.Size = UDim2.fromOffset(0,0)
+		if toggledMaximized then
+			Window.AnchorPoint = Vector2.new(0.5,0.5)
+			Window.Position = UDim2.fromScale(0.5,0.5)
+			TweenService:Create(Window, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Size = UDim2.fromScale(0.95,0.9) }):Play()
+		else
+			Window.AnchorPoint = lastNormalAnchor
+			Window.Position = lastNormalPosition
+			TweenService:Create(Window, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Size = lastNormalSize, Position = lastNormalPosition }):Play()
+		end
+	end
+
 	BtnYellow.MouseButton1Click:Connect(minimizeWindow)
+
+	-- CUSTOM CLICK DETECTOR SA MINIBUTTON UPANG HINDI MAG-GLITCH SA MOBILE/DRAG
+	local miniDragStart
+	MiniButton.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			miniDragStart = input.Position
+		end
+	end)
+	
+	MiniButton.InputEnded:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			if miniDragStart then
+				local dist = (input.Position - miniDragStart).Magnitude
+				if dist < 5 then -- Kapag click lang ang ginawa (hindi drag), io-open ulit ang UI
+					unminimizeWindow()
+				end
+			end
+		end
+	end)
 
 	BtnGreen.MouseButton1Click:Connect(function()
 		if not toggledMaximized then
