@@ -1,7 +1,7 @@
 --[[
 	Kaze UI Library
 	Optimized: Deep Obsidian Only, Dynamic Tab Text Scaling (No "..." Dots), Wider Sidebar, Safe Close Dialog Margin Padding
-	*Keybinds completely removed as requested*
+	Added: New Dynamic Keybind Component
 --]]
 
 local KazeUI = {}
@@ -19,7 +19,7 @@ local LP = Players.LocalPlayer
 KazeUI.GlowColor = Color3.fromRGB(0, 160, 255)
 KazeUI.BackgroundColor = Color3.fromRGB(10, 10, 12) -- Locked to Deep Obsidian
 KazeUI.Flags = {}
-KazeUI.ActiveWindows = {} -- FIXED: Initialized table to resolve the 'table expected, got nil' crash!
+KazeUI.ActiveWindows = {} 
 
 -- Visual Controllers
 KazeUI.GlowElements = {}
@@ -1561,6 +1561,158 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 	}
 end
 
+local function CreateKeybindInput(parentFrame, title, defaultKey, callback, flag)
+	title = tostring(title or "Keybind")
+	local currentKey = defaultKey or Enum.KeyCode.Unknown
+	local isBinding = false
+	
+	local measuredWidth = 598 * 0.92
+	if parentFrame and parentFrame.AbsoluteSize and parentFrame.AbsoluteSize.X > 0 then measuredWidth = parentFrame.AbsoluteSize.X * 0.95 end
+	local textContainerWidth = measuredWidth - 24 - 90
+	
+	local titleHeight = 0
+	if title ~= " " and title ~= "" then
+		local ts = TextService:GetTextSize(title, 15, Enum.Font.GothamBold, Vector2.new(textContainerWidth, 1000))
+		titleHeight = math.max(16, math.ceil(ts.Y))
+	end
+	
+	local totalHeight = 6 + math.max(titleHeight, 24) + 6
+	
+	local wrapper = Instance.new("Frame")
+	wrapper.Size = UDim2.new(1, 0, 0, 0)
+	wrapper.BackgroundTransparency = 1
+	wrapper.Parent = parentFrame
+	wrapper.AutomaticSize = Enum.AutomaticSize.Y
+	
+	local paraFrame = Instance.new("Frame")
+	paraFrame.AnchorPoint = Vector2.new(0.5, 0)
+	paraFrame.Position = UDim2.new(0.5, 0, 0, 3)
+	paraFrame.Size = UDim2.new(0.95, 0, 0, totalHeight)
+	paraFrame.BorderSizePixel = 0
+	Instance.new("UICorner", paraFrame).CornerRadius = UDim.new(0, 8)
+	paraFrame.Parent = wrapper
+	KazeUI:AddPanel(paraFrame, 0.02)
+	KazeUI:AddTransparentElement(paraFrame, 0)
+	
+	local glow = Instance.new("Frame")
+	glow.AnchorPoint = Vector2.new(0.5, 0)
+	glow.Position = UDim2.new(0.5, 0, 0, 1)
+	glow.Size = UDim2.new(0.96, 0, 0, totalHeight + 6)
+	glow.BackgroundTransparency = 0.96
+	Instance.new("UICorner", glow).CornerRadius = UDim.new(0, 10)
+	glow.Parent = wrapper
+	StartNeonLoop(glow)
+	
+	local paraStroke = Instance.new("UIStroke", paraFrame)
+	paraStroke.Thickness = 1.5
+	paraStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+	StartNeonLoop(paraStroke)
+	
+	local inner = Instance.new("Frame", paraFrame)
+	inner.Size = UDim2.new(1, -16, 1, -12)
+	inner.Position = UDim2.fromOffset(8, 6)
+	inner.BackgroundTransparency = 1
+	
+	local ptitleLabel
+	if title ~= " " and title ~= "" then
+		ptitleLabel = Instance.new("TextLabel", inner)
+		ptitleLabel.Size = UDim2.new(1, -90, 1, 0)
+		ptitleLabel.BackgroundTransparency = 1
+		ptitleLabel.Text = title
+		ptitleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+		ptitleLabel.Font = Enum.Font.GothamBold
+		ptitleLabel.TextSize = 14
+		ptitleLabel.TextXAlignment = Enum.TextXAlignment.Left
+	end
+	
+	local bindContainer = Instance.new("TextButton", inner)
+	bindContainer.Size = UDim2.new(0, 80, 0, 24)
+	bindContainer.AnchorPoint = Vector2.new(1, 0.5)
+	bindContainer.Position = UDim2.new(1, 0, 0.5, 0)
+	bindContainer.BackgroundColor3 = KazeUI.GetColor(0.05)
+	bindContainer.BorderSizePixel = 0
+	bindContainer.Text = ""
+	bindContainer.AutoButtonColor = false
+	Instance.new("UICorner", bindContainer).CornerRadius = UDim.new(0, 5)
+	local bindStroke = Instance.new("UIStroke", bindContainer)
+	bindStroke.Thickness = 1
+	bindStroke.Color = Color3.fromRGB(45, 45, 50)
+	
+	local bindLabel = Instance.new("TextLabel", bindContainer)
+	bindLabel.Size = UDim2.new(1, 0, 1, 0)
+	bindLabel.BackgroundTransparency = 1
+	bindLabel.Text = currentKey == Enum.KeyCode.Unknown and "None" or currentKey.Name
+	bindLabel.TextColor3 = Color3.fromRGB(220, 220, 220)
+	bindLabel.Font = Enum.Font.GothamBold
+	bindLabel.TextSize = 13
+	
+	bindContainer.MouseEnter:Connect(function()
+		if not isBinding then bindStroke.Color = Color3.fromRGB(80, 80, 85) end
+	end)
+	bindContainer.MouseLeave:Connect(function()
+		if not isBinding then bindStroke.Color = Color3.fromRGB(45, 45, 50) end
+	end)
+	
+	bindContainer.MouseButton1Click:Connect(function()
+		if isBinding then return end
+		isBinding = true
+		bindLabel.Text = "..."
+		StartNeonLoop(bindStroke)
+		
+		local conn
+		conn = UIS.InputBegan:Connect(function(input)
+			local isKey = input.UserInputType == Enum.UserInputType.Keyboard
+			local isMouse = input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.MouseButton2 or input.UserInputType == Enum.UserInputType.MouseButton3
+			
+			if isKey or isMouse then
+				if isKey then
+					local key = input.KeyCode
+					if key == Enum.KeyCode.Escape then
+						-- Cancel bindings, preserve old key
+					elseif key == Enum.KeyCode.Backspace or key == Enum.KeyCode.Delete then
+						currentKey = Enum.KeyCode.Unknown
+					else
+						currentKey = key
+					end
+				end
+				-- If mouse is pressed, simply cancel the binding to prevent freezing
+				
+				isBinding = false
+				bindLabel.Text = currentKey == Enum.KeyCode.Unknown and "None" or currentKey.Name
+				StopNeonLoop(bindStroke)
+				bindStroke.Color = Color3.fromRGB(45, 45, 50)
+				conn:Disconnect()
+			end
+		end)
+	end)
+	
+	UIS.InputBegan:Connect(function(input, gp)
+		if not gp and not isBinding and currentKey ~= Enum.KeyCode.Unknown and input.KeyCode == currentKey then
+			if typeof(callback) == "function" then
+				task.spawn(callback, currentKey)
+			end
+		end
+	end)
+
+	RegisterFlag(flag, function() return currentKey.Name end, function(val)
+		pcall(function()
+			currentKey = Enum.KeyCode[val] or Enum.KeyCode.Unknown
+			bindLabel.Text = currentKey == Enum.KeyCode.Unknown and "None" or currentKey.Name
+		end)
+	end)
+
+	return {
+		Wrapper = wrapper,
+		SetText = function(self, newTitle)
+			if ptitleLabel and newTitle then ptitleLabel.Text = newTitle end
+		end,
+		SetKey = function(self, newKey)
+			currentKey = newKey
+			bindLabel.Text = currentKey == Enum.KeyCode.Unknown and "None" or currentKey.Name
+		end
+	}
+end
+
 local function CreateVisualSectionDivider(parentFrame, titleArg)
 	local title = tostring(titleArg or "Section")
 
@@ -1678,6 +1830,16 @@ AttachElementsToAPI = function(apiTable, parentFrame)
 			title, def, cb, flag = arg1, arg2, arg3, arg4
 		end
 		return CreateColorPicker(parentFrame, title, def, cb, flag)
+	end
+	
+	function apiTable:Keybind(arg1, arg2, arg3, arg4)
+		local title, def, cb, flag
+		if type(arg1) == "table" then
+			title, def, cb, flag = arg1.Title, arg1.Default, arg1.Callback, arg1.Flag
+		else
+			title, def, cb, flag = arg1, arg2, arg3, arg4
+		end
+		return CreateKeybindInput(parentFrame, title, def, cb, flag)
 	end
 
 	function apiTable:SectionUI(arg1)
@@ -2022,7 +2184,6 @@ function KazeUI:CreateWindow(config)
 		Overlay.ZIndex = 50
 		Instance.new("UICorner", Overlay).CornerRadius = UDim.new(0, 12)
 
-		-- FIXED: Sized larger to provide professional margins and prevent text crowding
 		local ConfirmWindow = Instance.new("Frame", Overlay)
 		ConfirmWindow.Size = UDim2.fromOffset(360, 150)
 		ConfirmWindow.AnchorPoint = Vector2.new(0.5,0.5)
@@ -2034,7 +2195,6 @@ function KazeUI:CreateWindow(config)
 		confirmStroke.Thickness = 2.5
 		StartNeonLoop(confirmStroke)
 
-		-- FIXED: Generous internal padding (20px off sides, 18px off top) and text wrapping
 		local ConfirmText = Instance.new("TextLabel", ConfirmWindow)
 		ConfirmText.Size = UDim2.new(1, -40, 0, 50)
 		ConfirmText.Position = UDim2.fromOffset(20, 18)
@@ -2088,7 +2248,6 @@ function KazeUI:CreateWindow(config)
 	Content.BackgroundTransparency = 1
 	Content.Parent = ContentClipper
 
-	-- FIXED: Widened sidebar mask to 190 pixels to accommodate very long tab layouts perfectly
 	local SideBarMask = Instance.new("Frame")
 	SideBarMask.Size = UDim2.new(0, 190, 1, 0)
 	SideBarMask.BackgroundTransparency = 1
@@ -2234,8 +2393,6 @@ function KazeUI:CreateWindow(config)
 
 	function Win:CreateThemeManager(tab)
 		local sec = tab:SectionUI("Theme & Visuals")
-
-		-- Completely removed Background selection. Clean deep obsidian aesthetic.
 		
 		sec:ColorPicker({
 			Title = "UI Glow Color",
@@ -2288,7 +2445,6 @@ function KazeUI:CreateWindow(config)
 		iconLabel.ScaleType = Enum.ScaleType.Fit
 		iconLabel.Parent = btn
 		
-		-- FIXED: Removed dots completely by using responsive TextScaled + TextWrapped, keeping text clean and intact!
 		local txt = Instance.new("TextLabel", btn)
 		txt.Size = UDim2.new(1, -44, 1, 0)
 		txt.Position = UDim2.fromOffset(40,0)
@@ -2299,7 +2455,6 @@ function KazeUI:CreateWindow(config)
 		txt.TextScaled = true 
 		txt.TextWrapped = true 
 		
-		-- Minimum size threshold to prevent extreme shrinking while avoiding clipping
 		local textConstraint = Instance.new("UITextSizeConstraint", txt)
 		textConstraint.MaxTextSize = 13
 		textConstraint.MinTextSize = 8
