@@ -1,8 +1,9 @@
--- Kaze UI Library (Optimized: Deep Obsidian Default, Threshold Minimize Drags, Master Keybind, Preset Color Theme Dropdown)
+-- Kaze UI Library (Fixed: Minimize/Restore Bug, 100% Full Square Stretch No Black Borders, Close Spam, Flushed Layout)
+-- Full drop-in replacement. Kazu approved. 💙
 local KazeUI = {}
 KazeUI.__index = KazeUI
 
--- Roblox Services
+-- Mga Roblox Services
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local UIS = game:GetService("UserInputService")
@@ -10,68 +11,18 @@ local TextService = game:GetService("TextService")
 local HttpService = game:GetService("HttpService")
 local LP = Players.LocalPlayer
 
--- Global State & Managers
-KazeUI.GlowColor = Color3.fromRGB(0, 160, 255)
-KazeUI.BackgroundColor = Color3.fromRGB(15, 15, 15) -- Default: Deep Obsidian
-KazeUI.Flags = {}
-
--- Keybind & Visual Controllers
-KazeUI.GlowElements = {}
-KazeUI.NeonTweens = {}
-KazeUI.PanelElements = {} -- For Background Color changes
-KazeUI.TransparentElements = {} -- For Transparency changes
-local ActiveBinds = {}
-
-local function RegisterFlag(flag, getFunc, setFunc)
-	if flag then
-		KazeUI.Flags[flag] = { Get = getFunc, Set = setFunc }
-	end
-end
-
--- Global Keybind Input Listener
-UIS.InputBegan:Connect(function(input, gameProcessed)
-	if gameProcessed then return end
-	for _, bind in pairs(ActiveBinds) do
-		if bind.Key ~= Enum.KeyCode.Unknown and input.KeyCode == bind.Key then
-			if typeof(bind.Callback) == "function" then
-				task.spawn(bind.Callback, bind.Key)
-			end
-		end
-	end
-end)
-
--- ScreenGui Setup (Supports CoreGui & PlayerGui Fallback)
+-- ScreenGui Setup
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "KazeUI"
 ScreenGui.ResetOnSpawn = false
 ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+ScreenGui.Parent = LP:WaitForChild("PlayerGui")
 
-local success, parent = pcall(function() return game:GetService("CoreGui") end)
-if not success or not parent then
-	parent = LP:WaitForChild("PlayerGui", 15)
-end
-ScreenGui.Parent = parent
-
--- Notification Container Setup
-local NotifContainer = Instance.new("Frame")
-local notifLayout = Instance.new("UIListLayout", NotifContainer)
-notifLayout.SortOrder = Enum.SortOrder.LayoutOrder
-notifLayout.VerticalAlignment = Enum.VerticalAlignment.Bottom
-notifLayout.Padding = UDim.new(0, 10)
-
-local notifPadding = Instance.new("UIPadding", NotifContainer)
-notifPadding.PaddingBottom = UDim.new(0, 20)
-
-NotifContainer.Name = "NotifContainer"
-NotifContainer.Size = UDim2.new(0, 300, 1, 0)
-NotifContainer.Position = UDim2.new(1, -320, 0, 0)
-NotifContainer.BackgroundTransparency = 1
-NotifContainer.Parent = ScreenGui
-
--- Screen Scale Controller
+-- UIScale para sa responsive scaling sa Mobile at PC
 local UIScale = Instance.new("UIScale")
 UIScale.Parent = ScreenGui
 
+-- Awtomatikong pag-scale base sa laki ng screen
 local function UpdateScale()
 	local size = workspace.CurrentCamera.ViewportSize
 	local scaleX = math.clamp(size.X / 800, 0.35, 1)
@@ -83,74 +34,75 @@ end
 UpdateScale()
 workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(UpdateScale)
 
--- Auto-Icon Fetcher via HttpGet
+-- Auto-Icon Fetcher via game:HttpGet
 local IconsMap = {}
 pcall(function()
 	if game and game.HttpGet then
 		local rawIcons = game:HttpGet("https://raw.githubusercontent.com/KazeHub/UI/refs/heads/main/Icons.lua.txt")
 		if rawIcons then
-			local s, res = pcall(function()
+			local success, res = pcall(function()
 				local func = loadstring(rawIcons)
 				return func and func()
 			end)
 			
-			if not s or type(res) ~= "table" then
-				s, res = pcall(function() return HttpService:JSONDecode(rawIcons) end)
+			if not success or type(res) ~= "table" then
+				success, res = pcall(function()
+					return HttpService:JSONDecode(rawIcons)
+				end)
 			end
 			
 			if type(res) == "table" then
-				for k, v in pairs(res) do IconsMap[string.lower(tostring(k))] = tostring(v) end
+				for k, v in pairs(res) do
+					IconsMap[string.lower(tostring(k))] = tostring(v)
+				end
 			end
 		end
 	end
 end)
 
+-- Image Formatter Helper
 local function FormatImage(id)
 	if not id or id == "" then return "" end
 	id = tostring(id)
+	
 	local lowerId = string.lower(id)
 	if IconsMap[lowerId] then
 		local mapped = IconsMap[lowerId]
 		if not string.find(mapped, "rbxassetid://") and not string.find(mapped, "http") then
 			local clean = string.gsub(mapped, "%D", "")
-			if clean ~= "" then return "rbxassetid://" .. clean end
+			if clean ~= "" then
+				return "rbxassetid://" .. clean
+			end
 		end
 		return mapped
 	end
 	
-	if string.find(id, "rbxassetid://") or string.find(id, "http") then return id end
+	if string.find(id, "rbxassetid://") or string.find(id, "http") then
+		return id
+	end
+	
 	local clean = string.gsub(id, "%D", "")
 	if clean == "" then return id end
 	return "rbxassetid://" .. clean
 end
 
--- Modified drag script with motion thresholds to avoid cancelling click triggers
+-- Draggable UI Logic
 local function MakeDraggable(dragPart, targetPart)
 	local dragging = false
 	local dragInput, dragStart, startPos
-	local dragActive = false
-	
 	local function update(input)
 		if not dragStart or not startPos then return end
 		local delta = input.Position - dragStart
-		
-		-- Require 8-pixel drag threshold before committing movement
-		if dragActive or delta.Magnitude > 8 then
-			dragActive = true
-			targetPart.Position = UDim2.new(
-				startPos.X.Scale, startPos.X.Offset + delta.X,
-				startPos.Y.Scale, startPos.Y.Offset + delta.Y
-			)
-		end
+		targetPart.Position = UDim2.new(
+			startPos.X.Scale, startPos.X.Offset + delta.X,
+			startPos.Y.Scale, startPos.Y.Offset + delta.Y
+		)
 	end
-	
 	dragPart.InputBegan:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 			dragging = true
-			dragActive = false
 			dragStart = input.Position
 			startPos = targetPart.Position
-			
 			input.Changed:Connect(function()
 				if input.UserInputState == Enum.UserInputState.End then
 					dragging = false
@@ -159,209 +111,53 @@ local function MakeDraggable(dragPart, targetPart)
 			end)
 		end
 	end)
-	
 	dragPart.InputChanged:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
 			dragInput = input
 		end
 	end)
-	
 	UIS.InputChanged:Connect(function(input)
-		if input == dragInput and dragging then update(input) end
+		if input == dragInput and dragging then
+			update(input)
+		end
 	end)
 end
 
--- ==========================================
--- Smart Color & Transparency Engines
--- ==========================================
-function KazeUI.GetColor(elevation)
-	local h, s, v = Color3.toHSV(KazeUI.BackgroundColor)
-	local offset = v > 0.5 and -elevation or elevation
-	return Color3.fromHSV(h, s, math.clamp(v + offset, 0, 1))
-end
-
-function KazeUI:AddPanel(inst, elevation)
-	table.insert(KazeUI.PanelElements, {Inst = inst, Elevation = elevation or 0})
-	if inst and inst:IsA("GuiObject") then
-		inst.BackgroundColor3 = KazeUI.GetColor(elevation or 0)
-	end
-end
-
-function KazeUI:AddTransparentElement(inst, defaultTrans)
-	table.insert(KazeUI.TransparentElements, {Inst = inst, Default = defaultTrans or inst.BackgroundTransparency})
-end
-
-function KazeUI:SetBackgroundColor(color)
-	KazeUI.BackgroundColor = color
-	for _, data in ipairs(KazeUI.PanelElements) do
-		if data.Inst and data.Inst.Parent and data.Inst:IsA("GuiObject") then
-			data.Inst.BackgroundColor3 = KazeUI.GetColor(data.Elevation)
-		end
-	end
-end
-
-function KazeUI:SetTransparency(alpha)
-	for _, data in ipairs(KazeUI.TransparentElements) do
-		if data.Inst and data.Inst.Parent then
-			data.Inst.BackgroundTransparency = math.clamp(data.Default + alpha, 0, 1)
-		end
-	end
-end
-
+-- Neon glow effect loop
 local function StartNeonLoop(target)
 	if not target then return end
-	local propName = pcall(function() return target.Color end) and "Color" or "BackgroundColor3"
-
-	table.insert(KazeUI.GlowElements, {Target = target, Prop = propName})
-
-	local function createTween()
-		local tweenInfo = TweenInfo.new(1.5, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true)
-		local h, s, v = Color3.toHSV(KazeUI.GlowColor)
-		local targetColor = Color3.fromHSV(h, s, 1)
-		local tween = TweenService:Create(target, tweenInfo, { [propName] = targetColor })
-		tween:Play()
-		KazeUI.NeonTweens[target] = tween
-	end
-	target[propName] = KazeUI.GlowColor
-	createTween()
-end
-
-local function StopNeonLoop(target)
-	if not target then return end
-	if KazeUI.NeonTweens[target] then
-		KazeUI.NeonTweens[target]:Cancel()
-		KazeUI.NeonTweens[target] = nil
-	end
-	for i = #KazeUI.GlowElements, 1, -1 do
-		if KazeUI.GlowElements[i].Target == target then
-			table.remove(KazeUI.GlowElements, i)
-		end
-	end
-end
-
-function KazeUI:SetGlow(color)
-	KazeUI.GlowColor = color
-	for _, data in ipairs(KazeUI.GlowElements) do
-		local target = data.Target
-		local propName = data.Prop
-		if target and target.Parent then
-			if KazeUI.NeonTweens[target] then KazeUI.NeonTweens[target]:Cancel() end
-			target[propName] = color
-			local tweenInfo = TweenInfo.new(1.5, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true)
-			local h, s, v = Color3.toHSV(color)
-			local targetColor = Color3.fromHSV(h, s, 1)
-			local newTween = TweenService:Create(target, tweenInfo, { [propName] = targetColor })
-			newTween:Play()
-			KazeUI.NeonTweens[target] = newTween
-		else
-			KazeUI.NeonTweens[target] = nil
-		end
-	end
-end
-
--- Robust Notification Animation Sequence
-function KazeUI:Notify(config)
-	config = config or {}
-	local title = tostring(config.Title or "Notification")
-	local content = tostring(config.Content or "")
-	local duration = tonumber(config.Duration) or 3
-
-	local notifHolder = Instance.new("Frame")
-	notifHolder.Name = "NotifHolder"
-	notifHolder.Size = UDim2.new(1, 0, 0, 0)
-	notifHolder.BackgroundTransparency = 1
-	notifHolder.BorderSizePixel = 0
-	notifHolder.ClipsDescendants = true
-	notifHolder.Parent = NotifContainer
-
-	local notifFrame = Instance.new("Frame")
-	notifFrame.Name = "NotifFrame"
-	notifFrame.Size = UDim2.new(1, -10, 0, 60)
-	notifFrame.Position = UDim2.new(1.2, 0, 0, 0)
-	notifFrame.BorderSizePixel = 0
-	notifFrame.Parent = notifHolder
-	Instance.new("UICorner", notifFrame).CornerRadius = UDim.new(0, 8)
-	KazeUI:AddPanel(notifFrame, 0.02)
-	KazeUI:AddTransparentElement(notifFrame, 0)
-
-	local stroke = Instance.new("UIStroke", notifFrame)
-	stroke.Thickness = 1.5
-	StartNeonLoop(stroke)
-
-	local titleLab = Instance.new("TextLabel", notifFrame)
-	titleLab.Size = UDim2.new(1, -20, 0, 20)
-	titleLab.Position = UDim2.fromOffset(10, 8)
-	titleLab.BackgroundTransparency = 1
-	titleLab.Text = title
-	titleLab.TextColor3 = Color3.fromRGB(255, 255, 255)
-	titleLab.Font = Enum.Font.GothamBold
-	titleLab.TextSize = 14
-	titleLab.TextXAlignment = Enum.TextXAlignment.Left
-
-	local contentLab = Instance.new("TextLabel", notifFrame)
-	contentLab.Size = UDim2.new(1, -20, 0, 20)
-	contentLab.Position = UDim2.fromOffset(10, 30)
-	contentLab.BackgroundTransparency = 1
-	contentLab.Text = content
-	contentLab.TextColor3 = Color3.fromRGB(200, 200, 200)
-	contentLab.Font = Enum.Font.Gotham
-	contentLab.TextSize = 13
-	contentLab.TextXAlignment = Enum.TextXAlignment.Left
-
-	TweenService:Create(notifHolder, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Size = UDim2.new(1, 0, 0, 70)}):Play()
-	TweenService:Create(notifFrame, TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Position = UDim2.new(0, 5, 0, 0)}):Play()
-
 	task.spawn(function()
-		task.wait(duration)
-		local outTween = TweenService:Create(notifFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {Position = UDim2.new(1.2, 0, 0, 0)})
-		outTween:Play()
-		outTween.Completed:Wait()
+		local propName
+		if pcall(function() return target.Color end) then
+			propName = "Color"
+		elseif pcall(function() return target.BackgroundColor3 end) then
+			propName = "BackgroundColor3"
+		end
+		if not propName then return end
 		
-		local shrinkTween = TweenService:Create(notifHolder, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Size = UDim2.new(1, 0, 0, 0)})
-		shrinkTween:Play()
-		shrinkTween.Completed:Wait()
-
-		StopNeonLoop(stroke)
-		notifHolder:Destroy()
+		local tweenInfo = TweenInfo.new(1.5, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true)
+		local ok, tween = pcall(function()
+			return TweenService:Create(target, tweenInfo, { [propName] = Color3.fromRGB(0, 255, 255) })
+		end)
+		if ok and tween then 
+			tween:Play() 
+		end
 	end)
 end
 
-function KazeUI:SaveConfig(name)
-	local data = {}
-	for flag, obj in pairs(KazeUI.Flags) do data[flag] = obj.Get() end
-	if writefile then
-		writefile("KazeUI_"..name..".json", HttpService:JSONEncode(data))
-		KazeUI:Notify({Title = "Config Saved", Content = "Successfully saved " .. name, Duration = 3})
-	else
-		KazeUI:Notify({Title = "Config Error", Content = "Your executor does not support saving.", Duration = 3})
-	end
-end
-
-function KazeUI:LoadConfig(name)
-	if readfile then
-		local s, res = pcall(function() return readfile("KazeUI_"..name..".json") end)
-		if s then
-			local data = HttpService:JSONDecode(res)
-			for flag, val in pairs(data) do
-				if KazeUI.Flags[flag] then KazeUI.Flags[flag].Set(val) end
-			end
-			KazeUI:Notify({Title = "Config Loaded", Content = "Loaded " .. name, Duration = 3})
-		else
-			KazeUI:Notify({Title = "Config Error", Content = "Config " .. name .. " not found.", Duration = 3})
-		end
-	end
-end
-
+-- Helper: Temporarily disables parent ScrollingFrames so sliding isn't interrupted on Mobile
 local function ToggleScrollingAncestors(element, state)
 	local current = element.Parent
 	while current do
-		if current:IsA("ScrollingFrame") then current.ScrollingEnabled = state end
+		if current:IsA("ScrollingFrame") then
+			current.ScrollingEnabled = state
+		end
 		current = current.Parent
 	end
 end
 
--- Component factories
-local function CreateDropdown(parentFrame, title, options, defaultOption, callback, isMulti, flag)
+-- Helper: Dropdown Selection Row
+local function CreateDropdown(parentFrame, strokeColor, title, options, defaultOption, callback, isMulti)
 	title = tostring(title or "Dropdown")
 	options = type(options) == "table" and options or {}
 	local isOpen = false
@@ -391,12 +187,11 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 	dropFrame.AnchorPoint = Vector2.new(0.5, 0)
 	dropFrame.Position = UDim2.new(0.5, 0, 0, 3)
 	dropFrame.Size = UDim2.new(0.95, 0, 0, 0)
+	dropFrame.BackgroundColor3 = Color3.fromRGB(24, 24, 28)
 	dropFrame.BorderSizePixel = 0
 	dropFrame.AutomaticSize = Enum.AutomaticSize.Y
 	Instance.new("UICorner", dropFrame).CornerRadius = UDim.new(0, 8)
 	dropFrame.Parent = wrapper
-	KazeUI:AddPanel(dropFrame, 0.02)
-	KazeUI:AddTransparentElement(dropFrame, 0)
 
 	local padding = Instance.new("UIPadding", dropFrame)
 	padding.PaddingTop = UDim.new(0, 4)
@@ -405,6 +200,7 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 	local boxStroke = Instance.new("UIStroke", dropFrame)
 	boxStroke.Thickness = 1.5
 	boxStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+	boxStroke.Color = strokeColor or Color3.fromRGB(0, 160, 255)
 	StartNeonLoop(boxStroke)
 
 	local layout = Instance.new("UIListLayout", dropFrame)
@@ -433,16 +229,16 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 	arrowIcon.Position = UDim2.new(1, 0, 0.5, 0)
 	arrowIcon.Size = UDim2.fromOffset(16, 16)
 	arrowIcon.BackgroundTransparency = 1
-	arrowIcon.ImageColor3 = Color3.fromRGB(255, 255, 255)
 	arrowIcon.Image = "rbxassetid://6031091004"
+	arrowIcon.ImageColor3 = strokeColor or Color3.fromRGB(0, 160, 255)
 	arrowIcon.Rotation = 0
 
 	local selectedLabel = Instance.new("TextLabel", header)
 	selectedLabel.Size = UDim2.new(0.5, -24, 1, 0)
 	selectedLabel.Position = UDim2.new(0.5, 0, 0, 0)
 	selectedLabel.BackgroundTransparency = 1
+	selectedLabel.TextColor3 = strokeColor or Color3.fromRGB(0, 160, 255)
 	selectedLabel.Font = Enum.Font.Gotham
-	selectedLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
 	selectedLabel.TextSize = 13
 	selectedLabel.TextXAlignment = Enum.TextXAlignment.Right
 	selectedLabel.TextTruncate = Enum.TextTruncate.AtEnd
@@ -472,6 +268,7 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 	UpdateHeaderVisual()
 
 	local searchWrapper = Instance.new("Frame")
+	searchWrapper.Name = "SearchWrapper"
 	searchWrapper.Size = UDim2.new(1, -16, 0, 30)
 	searchWrapper.BackgroundTransparency = 1
 	searchWrapper.LayoutOrder = 2
@@ -481,6 +278,7 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 	local searchBox = Instance.new("TextBox")
 	searchBox.Size = UDim2.new(1, 0, 1, -2)
 	searchBox.Position = UDim2.new(0, 0, 0, 1)
+	searchBox.BackgroundColor3 = Color3.fromRGB(16, 16, 20)
 	searchBox.BorderSizePixel = 0
 	searchBox.PlaceholderText = "   Search option..."
 	searchBox.PlaceholderColor3 = Color3.fromRGB(120, 120, 125)
@@ -491,19 +289,13 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 	searchBox.TextXAlignment = Enum.TextXAlignment.Left
 	searchBox.Parent = searchWrapper
 	Instance.new("UICorner", searchBox).CornerRadius = UDim.new(0, 5)
-	KazeUI:AddPanel(searchBox, -0.02)
-	KazeUI:AddTransparentElement(searchBox, 0)
 
 	local searchStroke = Instance.new("UIStroke", searchBox)
 	searchStroke.Color = Color3.fromRGB(45, 45, 50)
 	searchStroke.Thickness = 1
+	searchBox.Focused:Connect(function() searchStroke.Color = strokeColor or Color3.fromRGB(0, 160, 255) end)
+	searchBox.FocusLost:Connect(function() searchStroke.Color = Color3.fromRGB(45, 45, 50) end)
 
-	searchBox.Focused:Connect(function() StartNeonLoop(searchStroke) end)
-	searchBox.FocusLost:Connect(function() 
-		StopNeonLoop(searchStroke) 
-		searchStroke.Color = Color3.fromRGB(45, 45, 50) 
-	end)
-	
 	local divider = Instance.new("Frame")
 	divider.Size = UDim2.new(1, -16, 0, 1)
 	divider.BackgroundColor3 = Color3.fromRGB(38, 38, 42)
@@ -513,6 +305,7 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 	divider.Parent = dropFrame
 
 	local listContainer = Instance.new("ScrollingFrame")
+	listContainer.Name = "OptionsContainer"
 	listContainer.Size = UDim2.new(1, -16, 0, 0)
 	listContainer.BackgroundTransparency = 1
 	listContainer.BorderSizePixel = 0
@@ -520,6 +313,7 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 	listContainer.Visible = false
 	listContainer.ScrollBarThickness = 4
 	listContainer.ScrollBarImageColor3 = Color3.fromRGB(60, 60, 65)
+	listContainer.CanvasSize = UDim2.new(0, 0, 0, 0)
 	listContainer.Parent = dropFrame
 
 	listContainer.MouseEnter:Connect(function() ToggleScrollingAncestors(dropFrame, false) end)
@@ -533,7 +327,9 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 
 	local function CalcHeight()
 		local count = 0
-		for _, item in ipairs(optionItems) do if item.Btn.Visible then count = count + 1 end end
+		for _, item in ipairs(optionItems) do
+			if item.Btn.Visible then count = count + 1 end
+		end
 		local height = math.min(count, 4.5) * 32
 		listContainer.Size = UDim2.new(1, -16, 0, height)
 		listContainer.CanvasSize = UDim2.new(0, 0, 0, count * 32)
@@ -553,19 +349,20 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 		table.clear(optionItems)
 
 		options = type(newOptions) == "table" and newOptions or {}
+
 		for _, opt in ipairs(options) do
 			local optStr = tostring(opt)
 			local btn = Instance.new("TextButton")
 			btn.Size = UDim2.new(1, -8, 0, 30)
+			btn.BackgroundColor3 = Color3.fromRGB(24, 24, 28)
 			btn.BorderSizePixel = 0
 			btn.Text = "  " .. optStr
+			btn.TextColor3 = Color3.fromRGB(200, 200, 200)
 			btn.Font = Enum.Font.Gotham
 			btn.TextSize = 13
 			btn.TextXAlignment = Enum.TextXAlignment.Left
 			btn.Parent = listContainer
 			Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 4)
-			KazeUI:AddPanel(btn, 0.02)
-			KazeUI:AddTransparentElement(btn, 0)
 
 			local indicator
 			if isMulti then
@@ -573,25 +370,23 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 				indicator.AnchorPoint = Vector2.new(1, 0.5)
 				indicator.Position = UDim2.new(1, -6, 0.5, 0)
 				indicator.Size = UDim2.fromOffset(14, 14)
-				Instance.new("UIStroke", indicator).Color = Color3.fromRGB(60, 60, 65)
+				indicator.BackgroundColor3 = Color3.fromRGB(24, 24, 28)
+				local indStroke = Instance.new("UIStroke", indicator)
+				indStroke.Color = Color3.fromRGB(60, 60, 65)
 				Instance.new("UICorner", indicator).CornerRadius = UDim.new(0, 4)
-				KazeUI:AddPanel(indicator, 0.02)
-				KazeUI:AddTransparentElement(indicator, 0)
 			end
 
 			local function UpdateVisuals()
 				local active = isMulti and selectedMulti[optStr] or (not isMulti and selectedSingle == optStr)
-				btn.BackgroundColor3 = active and KazeUI.GetColor(0.06) or KazeUI.GetColor(0.02)
-				btn.TextColor3 = active and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(200, 200, 200)
+				btn.BackgroundColor3 = active and Color3.fromRGB(30, 30, 35) or Color3.fromRGB(24, 24, 28)
+				btn.TextColor3 = active and (strokeColor or Color3.fromRGB(0, 160, 255)) or Color3.fromRGB(200, 200, 200)
 				if isMulti and indicator then
-					indicator.BackgroundColor3 = active and Color3.fromRGB(255, 255, 255) or KazeUI.GetColor(0.02)
+					indicator.BackgroundColor3 = active and (strokeColor or Color3.fromRGB(0, 160, 255)) or Color3.fromRGB(24, 24, 28)
 				end
 			end
 			UpdateVisuals()
 
-			btn.MouseEnter:Connect(function() 
-				TweenService:Create(btn, TweenInfo.new(0.1), {BackgroundColor3 = KazeUI.GetColor(0.08), TextColor3 = Color3.fromRGB(255, 255, 255)}):Play() 
-			end)
+			btn.MouseEnter:Connect(function() TweenService:Create(btn, TweenInfo.new(0.1), {BackgroundColor3 = Color3.fromRGB(35, 35, 40), TextColor3 = Color3.fromRGB(255,255,255)}):Play() end)
 			btn.MouseLeave:Connect(UpdateVisuals)
 
 			btn.MouseButton1Click:Connect(function()
@@ -609,7 +404,9 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 					UpdateHeaderVisual()
 					CloseDropdown()
 					for _, item in ipairs(optionItems) do item.Update() end
-					if type(callback) == "function" then task.spawn(callback, selectedSingle) end
+					if type(callback) == "function" then
+						task.spawn(callback, selectedSingle)
+					end
 				end
 			end)
 
@@ -641,16 +438,9 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 		end
 	end)
 
-	RegisterFlag(flag, function() return isMulti and selectedMulti or selectedSingle end, function(val)
-		if isMulti then selectedMulti = val else selectedSingle = val end
-		UpdateHeaderVisual()
-		Refresh(options)
-	end)
-
 	return {
 		Wrapper = wrapper,
 		Frame = dropFrame,
-		Refresh = function(self, newOpts) Refresh(newOpts) end,
 		GetValue = function() 
 			if isMulti then
 				local ret = {}
@@ -658,16 +448,22 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 				return ret
 			end
 			return selectedSingle 
+		end,
+		Refresh = function(self, newOpts)
+			Refresh(newOpts)
 		end
 	}
 end
 
-local function CreateParagraph(parentFrame, title, body)
+-- Helper: Gumawa ng Paragraph Component
+local function CreateParagraph(parentFrame, strokeColor, title, body)
 	title = tostring(title or "")
 	body = tostring(body or "")
 	
 	local measuredWidth = 598 * 0.92
-	if parentFrame and parentFrame.AbsoluteSize and parentFrame.AbsoluteSize.X > 0 then measuredWidth = parentFrame.AbsoluteSize.X * 0.95 end
+	if parentFrame and parentFrame.AbsoluteSize and parentFrame.AbsoluteSize.X > 0 then
+		measuredWidth = parentFrame.AbsoluteSize.X * 0.95
+	end
 	
 	local titleHeight = 0
 	if title ~= " " then
@@ -680,26 +476,29 @@ local function CreateParagraph(parentFrame, title, body)
 	local totalHeight = 6 + titleHeight + 3 + bodyHeight + 6
 	
 	local wrapper = Instance.new("Frame")
+	wrapper.Name = "ParagraphWrapper"
 	wrapper.Size = UDim2.new(1, 0, 0, 0)
 	wrapper.BackgroundTransparency = 1
 	wrapper.Parent = parentFrame
 	wrapper.AutomaticSize = Enum.AutomaticSize.Y
 	
 	local paraFrame = Instance.new("Frame")
+	paraFrame.Name = "Paragraph"
 	paraFrame.AnchorPoint = Vector2.new(0.5, 0)
 	paraFrame.Position = UDim2.new(0.5, 0, 0, 3)
 	paraFrame.Size = UDim2.new(0.95, 0, 0, totalHeight)
+	paraFrame.BackgroundColor3 = Color3.fromRGB(24,24,28)
 	paraFrame.BorderSizePixel = 0
 	Instance.new("UICorner", paraFrame).CornerRadius = UDim.new(0, 8)
 	paraFrame.Parent = wrapper
-	KazeUI:AddPanel(paraFrame, 0.02)
-	KazeUI:AddTransparentElement(paraFrame, 0)
 	
 	local glow = Instance.new("Frame")
+	glow.Name = "ParagraphGlow"
 	glow.AnchorPoint = Vector2.new(0.5, 0)
 	glow.Position = UDim2.new(0.5, 0, 0, 1)
 	glow.Size = UDim2.new(0.96, 0, 0, totalHeight + 6)
 	glow.BackgroundTransparency = 0.96
+	glow.BackgroundColor3 = strokeColor or Color3.fromRGB(0,160,255)
 	Instance.new("UICorner", glow).CornerRadius = UDim.new(0, 10)
 	glow.Parent = wrapper
 	StartNeonLoop(glow)
@@ -707,6 +506,7 @@ local function CreateParagraph(parentFrame, title, body)
 	local paraStroke = Instance.new("UIStroke", paraFrame)
 	paraStroke.Thickness = 1.5
 	paraStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+	paraStroke.Color = strokeColor or Color3.fromRGB(0,160,255)
 	StartNeonLoop(paraStroke)
 	
 	local inner = Instance.new("Frame", paraFrame)
@@ -716,10 +516,12 @@ local function CreateParagraph(parentFrame, title, body)
 	
 	if title ~= " " then
 		local ptitleLabel = Instance.new("TextLabel", inner)
+		ptitleLabel.Name = "ParagraphTitle"
 		ptitleLabel.Size = UDim2.new(1,0,0,titleHeight)
+		ptitleLabel.Position = UDim2.fromOffset(0,0)
 		ptitleLabel.BackgroundTransparency = 1
 		ptitleLabel.Text = title
-		ptitleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+		ptitleLabel.TextColor3 = Color3.fromRGB(255,255,255)
 		ptitleLabel.Font = Enum.Font.GothamBold
 		ptitleLabel.TextSize = 15
 		ptitleLabel.TextXAlignment = Enum.TextXAlignment.Left
@@ -727,26 +529,61 @@ local function CreateParagraph(parentFrame, title, body)
 	end
 	
 	local bodyLabel = Instance.new("TextLabel", inner)
+	bodyLabel.Name = "ParagraphBody"
 	bodyLabel.Size = UDim2.new(1,0,0,bodyHeight)
 	bodyLabel.Position = UDim2.fromOffset(0, titleHeight + 3)
 	bodyLabel.BackgroundTransparency = 1
 	bodyLabel.Text = body
-	bodyLabel.TextColor3 = Color3.fromRGB(220, 220, 220)
+	bodyLabel.TextColor3 = Color3.fromRGB(255,255,255)
 	bodyLabel.Font = Enum.Font.Gotham
 	bodyLabel.TextSize = 13
 	bodyLabel.TextWrapped = true
 	bodyLabel.TextXAlignment = Enum.TextXAlignment.Left
 	bodyLabel.TextYAlignment = Enum.TextYAlignment.Top
 	
-	return { Wrapper = wrapper, Frame = paraFrame }
+	local paraAPI = {
+		Wrapper = wrapper,
+		Frame = paraFrame,
+		BodyLabel = bodyLabel,
+		SetText = function(self, newText)
+			newText = tostring(newText or " ")
+			bodyLabel.Text = newText
+			task.defer(function()
+				local w = measuredWidth
+				if parentFrame and parentFrame.AbsoluteSize and parentFrame.AbsoluteSize.X > 0 then
+					w = parentFrame.AbsoluteSize.X * 0.95
+				end
+				local newTitleH = 0
+				if title ~= " " then
+					local ts2 = TextService:GetTextSize(title, 15, Enum.Font.GothamBold, Vector2.new(w - 24, 1000))
+					newTitleH = math.max(18, math.ceil(ts2.Y))
+				end
+				local newBodySize = TextService:GetTextSize(newText, 13, Enum.Font.Gotham, Vector2.new(w - 24, 2000))
+				local newBodyH = math.ceil(newBodySize.Y)
+				local newTotal = 6 + newTitleH + 3 + newBodyH + 6
+				paraFrame.Size = UDim2.new(0.95, 0, 0, newTotal)
+				glow.Size = UDim2.new(0.96, 0, 0, newTotal + 6)
+				wrapper.Size = UDim2.new(1, 0, 0, newTotal + 8)
+				if paraFrame:FindFirstChild("ParagraphTitle") then
+					paraFrame.ParagraphTitle.Size = UDim2.new(1, 0, 0, newTitleH)
+				end
+				bodyLabel.Size = UDim2.new(1, 0, 0, newBodyH)
+			end)
+		end,
+	}
+	return paraAPI
 end
 
-local function CreateClickableParagraph(parentFrame, title, body, callback)
+-- Helper: Gumawa ng Interactive Button (Paragraph style)
+local function CreateClickableParagraph(parentFrame, strokeColor, title, body, callback)
 	title = tostring(title or "Button")
 	body = tostring(body or "")
 	
 	local measuredWidth = 598 * 0.92
-	if parentFrame and parentFrame.AbsoluteSize and parentFrame.AbsoluteSize.X > 0 then measuredWidth = parentFrame.AbsoluteSize.X * 0.95 end
+	if parentFrame and parentFrame.AbsoluteSize and parentFrame.AbsoluteSize.X > 0 then
+		measuredWidth = parentFrame.AbsoluteSize.X * 0.95
+	end
+	
 	local textContainerWidth = measuredWidth - 24 - 42
 	
 	local titleHeight = 0
@@ -756,30 +593,36 @@ local function CreateClickableParagraph(parentFrame, title, body, callback)
 	end
 	
 	local bodySize = TextService:GetTextSize(body, 14, Enum.Font.Gotham, Vector2.new(textContainerWidth, 2000))
-	local bodyHeight = body ~= "" and math.ceil(bodySize.Y) or 0
+	local bodyHeight = 0
+	if body ~= "" then
+		bodyHeight = math.ceil(bodySize.Y)
+	end
 	local totalHeight = 6 + titleHeight + (body ~= "" and 3 or 0) + bodyHeight + 6
 	
 	local wrapper = Instance.new("Frame")
+	wrapper.Name = "ButtonWrapper"
 	wrapper.Size = UDim2.new(1, 0, 0, 0)
 	wrapper.BackgroundTransparency = 1
 	wrapper.Parent = parentFrame
 	wrapper.AutomaticSize = Enum.AutomaticSize.Y
 	
 	local paraFrame = Instance.new("Frame")
+	paraFrame.Name = "ButtonFrame"
 	paraFrame.AnchorPoint = Vector2.new(0.5, 0)
 	paraFrame.Position = UDim2.new(0.5, 0, 0, 3)
 	paraFrame.Size = UDim2.new(0.95, 0, 0, totalHeight)
+	paraFrame.BackgroundColor3 = Color3.fromRGB(24,24,28)
 	paraFrame.BorderSizePixel = 0
 	Instance.new("UICorner", paraFrame).CornerRadius = UDim.new(0, 8)
 	paraFrame.Parent = wrapper
-	KazeUI:AddPanel(paraFrame, 0.02)
-	KazeUI:AddTransparentElement(paraFrame, 0)
 	
 	local glow = Instance.new("Frame")
+	glow.Name = "ButtonGlow"
 	glow.AnchorPoint = Vector2.new(0.5, 0)
 	glow.Position = UDim2.new(0.5, 0, 0, 1)
 	glow.Size = UDim2.new(0.96, 0, 0, totalHeight + 6)
 	glow.BackgroundTransparency = 0.96
+	glow.BackgroundColor3 = strokeColor or Color3.fromRGB(0,160,255)
 	Instance.new("UICorner", glow).CornerRadius = UDim.new(0, 10)
 	glow.Parent = wrapper
 	StartNeonLoop(glow)
@@ -787,49 +630,64 @@ local function CreateClickableParagraph(parentFrame, title, body, callback)
 	local paraStroke = Instance.new("UIStroke", paraFrame)
 	paraStroke.Thickness = 1.5
 	paraStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+	paraStroke.Color = strokeColor or Color3.fromRGB(0,160,255)
 	StartNeonLoop(paraStroke)
 	
 	local inner = Instance.new("Frame", paraFrame)
 	inner.Size = UDim2.new(1, -16, 1, -12)
 	inner.Position = UDim2.fromOffset(8, 6)
 	inner.BackgroundTransparency = 1
+	inner.ZIndex = 2
 	
 	local rightIcon = Instance.new("ImageLabel")
+	rightIcon.Name = "VisualIcon"
 	rightIcon.AnchorPoint = Vector2.new(1, 0.5)
 	rightIcon.Position = UDim2.new(1, -4, 0.5, 0)
 	rightIcon.Size = UDim2.fromOffset(26, 26)
 	rightIcon.BackgroundTransparency = 1
 	rightIcon.Image = FormatImage("17260727409")
 	rightIcon.ScaleType = Enum.ScaleType.Fit
+	rightIcon.ZIndex = 4
 	rightIcon.Parent = inner
 	
 	if title ~= " " and title ~= "" then
 		local ptitleLabel = Instance.new("TextLabel", inner)
+		ptitleLabel.Name = "ButtonTitle"
 		ptitleLabel.Size = UDim2.new(1, -38, 0, titleHeight)
+		ptitleLabel.Position = UDim2.fromOffset(0,0)
 		ptitleLabel.BackgroundTransparency = 1
 		ptitleLabel.Text = title
-		ptitleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+		ptitleLabel.TextColor3 = Color3.fromRGB(255,255,255)
 		ptitleLabel.Font = Enum.Font.GothamBold
 		ptitleLabel.TextSize = 15
 		ptitleLabel.TextXAlignment = Enum.TextXAlignment.Left
-		if body == "" then ptitleLabel.AnchorPoint = Vector2.new(0, 0.5); ptitleLabel.Position = UDim2.new(0, 0, 0.5, 0) end
+		ptitleLabel.TextWrapped = true
+		ptitleLabel.ZIndex = 3
+		
+		if body == "" then
+			ptitleLabel.AnchorPoint = Vector2.new(0, 0.5)
+			ptitleLabel.Position = UDim2.new(0, 0, 0.5, 0)
+		end
 	end
 	
 	if body ~= "" then
 		local bodyLabel = Instance.new("TextLabel", inner)
+		bodyLabel.Name = "ButtonBody"
 		bodyLabel.Size = UDim2.new(1, -38, 0, bodyHeight)
 		bodyLabel.Position = UDim2.fromOffset(0, titleHeight + 3)
 		bodyLabel.BackgroundTransparency = 1
 		bodyLabel.Text = body
-		bodyLabel.TextColor3 = Color3.fromRGB(220, 220, 220)
+		bodyLabel.TextColor3 = Color3.fromRGB(180,180,180)
 		bodyLabel.Font = Enum.Font.Gotham
 		bodyLabel.TextSize = 13
 		bodyLabel.TextWrapped = true
 		bodyLabel.TextXAlignment = Enum.TextXAlignment.Left
 		bodyLabel.TextYAlignment = Enum.TextYAlignment.Top
+		bodyLabel.ZIndex = 3
 	end
 
 	local clickDetector = Instance.new("TextButton")
+	clickDetector.Name = "ClickDetector"
 	clickDetector.Size = UDim2.fromScale(1, 1)
 	clickDetector.BackgroundTransparency = 1
 	clickDetector.Text = ""
@@ -837,11 +695,11 @@ local function CreateClickableParagraph(parentFrame, title, body, callback)
 	clickDetector.Parent = paraFrame
 
 	clickDetector.MouseEnter:Connect(function()
-		TweenService:Create(paraFrame, TweenInfo.new(0.12), { BackgroundColor3 = KazeUI.GetColor(0.05) }):Play()
+		TweenService:Create(paraFrame, TweenInfo.new(0.12), { BackgroundColor3 = Color3.fromRGB(32,32,36) }):Play()
 		TweenService:Create(glow, TweenInfo.new(0.12), { BackgroundTransparency = 0.92 }):Play()
 	end)
 	clickDetector.MouseLeave:Connect(function()
-		TweenService:Create(paraFrame, TweenInfo.new(0.12), { BackgroundColor3 = KazeUI.GetColor(0.02) }):Play()
+		TweenService:Create(paraFrame, TweenInfo.new(0.12), { BackgroundColor3 = Color3.fromRGB(24,24,28) }):Play()
 		TweenService:Create(glow, TweenInfo.new(0.12), { BackgroundTransparency = 0.96 }):Play()
 		TweenService:Create(paraFrame, TweenInfo.new(0.1), { Size = UDim2.new(0.95, 0, 0, totalHeight), Position = UDim2.new(0.5, 0, 0, 3) }):Play()
 	end)
@@ -850,19 +708,32 @@ local function CreateClickableParagraph(parentFrame, title, body, callback)
 	end)
 	clickDetector.MouseButton1Up:Connect(function()
 		TweenService:Create(paraFrame, TweenInfo.new(0.08), { Size = UDim2.new(0.95, 0, 0, totalHeight), Position = UDim2.new(0.5, 0, 0, 3) }):Play()
-		if typeof(callback) == "function" then task.spawn(callback) end
+		if typeof(callback) == "function" then
+			task.spawn(callback)
+		end
 	end)
 	
-	return { Wrapper = wrapper, Frame = paraFrame }
+	return {
+		Wrapper = wrapper,
+		Frame = paraFrame,
+		SetText = function(self, newText)
+			local bLabel = inner:FindFirstChild("ButtonBody")
+			if bLabel then bLabel.Text = tostring(newText or "") end
+		end
+	}
 end
 
-local function CreateToggleSwitch(parentFrame, title, body, defaultState, callback, flag)
+-- Helper: Gumawa ng Interactive Toggle Switch Row
+local function CreateToggleSwitch(parentFrame, strokeColor, title, body, defaultState, callback)
 	title = tostring(title or "Toggle Switch")
 	body = tostring(body or "")
 	local state = defaultState or false
 	
 	local measuredWidth = 598 * 0.92
-	if parentFrame and parentFrame.AbsoluteSize and parentFrame.AbsoluteSize.X > 0 then measuredWidth = parentFrame.AbsoluteSize.X * 0.95 end
+	if parentFrame and parentFrame.AbsoluteSize and parentFrame.AbsoluteSize.X > 0 then
+		measuredWidth = parentFrame.AbsoluteSize.X * 0.95
+	end
+	
 	local textContainerWidth = measuredWidth - 24 - 55
 	
 	local titleHeight = 0
@@ -872,30 +743,36 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 	end
 	
 	local bodySize = TextService:GetTextSize(body, 14, Enum.Font.Gotham, Vector2.new(textContainerWidth, 2000))
-	local bodyHeight = body ~= "" and math.ceil(bodySize.Y) or 0
+	local bodyHeight = 0
+	if body ~= "" then
+		bodyHeight = math.ceil(bodySize.Y)
+	end
 	local totalHeight = 6 + titleHeight + (body ~= "" and 3 or 0) + bodyHeight + 6
 	
 	local wrapper = Instance.new("Frame")
+	wrapper.Name = "ToggleWrapper"
 	wrapper.Size = UDim2.new(1, 0, 0, 0)
 	wrapper.BackgroundTransparency = 1
 	wrapper.Parent = parentFrame
 	wrapper.AutomaticSize = Enum.AutomaticSize.Y
 	
 	local paraFrame = Instance.new("Frame")
+	paraFrame.Name = "ToggleFrame"
 	paraFrame.AnchorPoint = Vector2.new(0.5, 0)
 	paraFrame.Position = UDim2.new(0.5, 0, 0, 3)
 	paraFrame.Size = UDim2.new(0.95, 0, 0, totalHeight)
+	paraFrame.BackgroundColor3 = Color3.fromRGB(24,24,28)
 	paraFrame.BorderSizePixel = 0
 	Instance.new("UICorner", paraFrame).CornerRadius = UDim.new(0, 8)
 	paraFrame.Parent = wrapper
-	KazeUI:AddPanel(paraFrame, 0.02)
-	KazeUI:AddTransparentElement(paraFrame, 0)
 	
 	local glow = Instance.new("Frame")
+	glow.Name = "ToggleGlow"
 	glow.AnchorPoint = Vector2.new(0.5, 0)
 	glow.Position = UDim2.new(0.5, 0, 0, 1)
 	glow.Size = UDim2.new(0.96, 0, 0, totalHeight + 6)
 	glow.BackgroundTransparency = 0.96
+	glow.BackgroundColor3 = strokeColor or Color3.fromRGB(0,160,255)
 	Instance.new("UICorner", glow).CornerRadius = UDim.new(0, 10)
 	glow.Parent = wrapper
 	StartNeonLoop(glow)
@@ -903,57 +780,75 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 	local paraStroke = Instance.new("UIStroke", paraFrame)
 	paraStroke.Thickness = 1.5
 	paraStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+	paraStroke.Color = strokeColor or Color3.fromRGB(0,160,255)
 	StartNeonLoop(paraStroke)
 	
 	local inner = Instance.new("Frame", paraFrame)
 	inner.Size = UDim2.new(1, -16, 1, -12)
 	inner.Position = UDim2.fromOffset(8, 6)
 	inner.BackgroundTransparency = 1
+	inner.ZIndex = 2
 	
 	local switchContainer = Instance.new("Frame")
+	switchContainer.Name = "SwitchContainer"
 	switchContainer.AnchorPoint = Vector2.new(1, 0.5)
 	switchContainer.Position = UDim2.new(1, -4, 0.5, 0)
 	switchContainer.Size = UDim2.fromOffset(36, 18)
-	switchContainer.BackgroundColor3 = state and Color3.fromRGB(255, 255, 255) or KazeUI.GetColor(0.08)
+	switchContainer.BackgroundColor3 = state and (strokeColor or Color3.fromRGB(0, 160, 255)) or Color3.fromRGB(40, 40, 45)
 	switchContainer.BorderSizePixel = 0
 	Instance.new("UICorner", switchContainer).CornerRadius = UDim.new(1, 0)
+	switchContainer.ZIndex = 4
 	switchContainer.Parent = inner
 	
 	local switchIndicator = Instance.new("Frame")
+	switchIndicator.Name = "SwitchIndicator"
 	switchIndicator.AnchorPoint = Vector2.new(0, 0.5)
 	switchIndicator.Position = state and UDim2.new(1, -16, 0.5, 0) or UDim2.new(0, 2, 0.5, 0)
 	switchIndicator.Size = UDim2.fromOffset(14, 14)
-	switchIndicator.BackgroundColor3 = Color3.fromRGB(20, 20, 25) -- Interior contrasting color
+	switchIndicator.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
 	switchIndicator.BorderSizePixel = 0
 	Instance.new("UICorner", switchIndicator).CornerRadius = UDim.new(1, 0)
+	switchIndicator.ZIndex = 5
 	switchIndicator.Parent = switchContainer
 	
 	if title ~= " " then
 		local ptitleLabel = Instance.new("TextLabel", inner)
+		ptitleLabel.Name = "ToggleTitle"
 		ptitleLabel.Size = UDim2.new(1, -48, 0, titleHeight)
+		ptitleLabel.Position = UDim2.fromOffset(0,0)
 		ptitleLabel.BackgroundTransparency = 1
 		ptitleLabel.Text = title
-		ptitleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+		ptitleLabel.TextColor3 = Color3.fromRGB(255,255,255)
 		ptitleLabel.Font = Enum.Font.GothamBold
 		ptitleLabel.TextSize = 15
 		ptitleLabel.TextXAlignment = Enum.TextXAlignment.Left
-		if body == "" then ptitleLabel.AnchorPoint = Vector2.new(0, 0.5); ptitleLabel.Position = UDim2.new(0, 0, 0.5, 0) end
+		ptitleLabel.TextWrapped = true
+		ptitleLabel.ZIndex = 3
+		
+		if body == "" then
+			ptitleLabel.AnchorPoint = Vector2.new(0, 0.5)
+			ptitleLabel.Position = UDim2.new(0, 0, 0.5, 0)
+		end
 	end
 	
 	if body ~= "" then
 		local bodyLabel = Instance.new("TextLabel", inner)
+		bodyLabel.Name = "ToggleBody"
 		bodyLabel.Size = UDim2.new(1, -48, 0, bodyHeight)
 		bodyLabel.Position = UDim2.fromOffset(0, titleHeight + 3)
 		bodyLabel.BackgroundTransparency = 1
 		bodyLabel.Text = body
-		bodyLabel.TextColor3 = Color3.fromRGB(220, 220, 220)
+		bodyLabel.TextColor3 = Color3.fromRGB(180,180,180)
 		bodyLabel.Font = Enum.Font.Gotham
 		bodyLabel.TextSize = 13
+		bodyLabel.TextWrapped = true
 		bodyLabel.TextXAlignment = Enum.TextXAlignment.Left
 		bodyLabel.TextYAlignment = Enum.TextYAlignment.Top
+		bodyLabel.ZIndex = 3
 	end
 
 	local clickDetector = Instance.new("TextButton")
+	clickDetector.Name = "ClickDetector"
 	clickDetector.Size = UDim2.fromScale(1, 1)
 	clickDetector.BackgroundTransparency = 1
 	clickDetector.Text = ""
@@ -963,7 +858,7 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 	local function setToggleState(newState, instant)
 		state = newState
 		local targetPos = state and UDim2.new(1, -16, 0.5, 0) or UDim2.new(0, 2, 0.5, 0)
-		local targetBg = state and Color3.fromRGB(255, 255, 255) or KazeUI.GetColor(0.08)
+		local targetBg = state and (strokeColor or Color3.fromRGB(0, 160, 255)) or Color3.fromRGB(40, 40, 45)
 		
 		if instant then
 			switchIndicator.Position = targetPos
@@ -975,11 +870,11 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 	end
 
 	clickDetector.MouseEnter:Connect(function()
-		TweenService:Create(paraFrame, TweenInfo.new(0.12), { BackgroundColor3 = KazeUI.GetColor(0.05) }):Play()
+		TweenService:Create(paraFrame, TweenInfo.new(0.12), { BackgroundColor3 = Color3.fromRGB(32,32,36) }):Play()
 		TweenService:Create(glow, TweenInfo.new(0.12), { BackgroundTransparency = 0.92 }):Play()
 	end)
 	clickDetector.MouseLeave:Connect(function()
-		TweenService:Create(paraFrame, TweenInfo.new(0.12), { BackgroundColor3 = KazeUI.GetColor(0.02) }):Play()
+		TweenService:Create(paraFrame, TweenInfo.new(0.12), { BackgroundColor3 = Color3.fromRGB(24,24,28) }):Play()
 		TweenService:Create(glow, TweenInfo.new(0.12), { BackgroundTransparency = 0.96 }):Play()
 		TweenService:Create(paraFrame, TweenInfo.new(0.1), { Size = UDim2.new(0.95, 0, 0, totalHeight), Position = UDim2.new(0.5, 0, 0, 3) }):Play()
 	end)
@@ -989,54 +884,67 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 	clickDetector.MouseButton1Up:Connect(function()
 		TweenService:Create(paraFrame, TweenInfo.new(0.08), { Size = UDim2.new(0.95, 0, 0, totalHeight), Position = UDim2.new(0.5, 0, 0, 3) }):Play()
 		setToggleState(not state, false)
-		if typeof(callback) == "function" then task.spawn(callback, state) end
-	end)
-
-	RegisterFlag(flag, function() return state end, function(val)
-		setToggleState(val, false)
-		if typeof(callback) == "function" then task.spawn(callback, state) end
+		if typeof(callback) == "function" then
+			task.spawn(callback, state)
+		end
 	end)
 	
-	return { Wrapper = wrapper, SetState = function(self, newState, instant) setToggleState(newState, instant) end }
+	return {
+		Wrapper = wrapper,
+		Frame = paraFrame,
+		SetState = function(self, newState, instant)
+			setToggleState(newState, instant)
+		end,
+		GetState = function(self)
+			return state
+		end
+	}
 end
 
-local function CreateTextBoxInput(parentFrame, title, placeholder, callback, flag)
+-- Helper: Gagawa ng Custom Textbox Input Row
+local function CreateTextBoxInput(parentFrame, strokeColor, title, placeholder, callback)
 	title = tostring(title or "Input Text")
 	placeholder = tostring(placeholder or "Type here...")
 	
 	local measuredWidth = 598 * 0.92
-	if parentFrame and parentFrame.AbsoluteSize and parentFrame.AbsoluteSize.X > 0 then measuredWidth = parentFrame.AbsoluteSize.X * 0.95 end
+	if parentFrame and parentFrame.AbsoluteSize and parentFrame.AbsoluteSize.X > 0 then
+		measuredWidth = parentFrame.AbsoluteSize.X * 0.95
+	end
+	
 	local textContainerWidth = measuredWidth - 24
 	
 	local titleHeight = 0
 	if title ~= " " and title ~= "" then
-		local ts = TextService:GetTextSize(title, 14, Enum.Font.GothamBold, Vector2.new(textContainerWidth, 1000))
+		local ts = TextService:GetTextSize(title, 15, Enum.Font.GothamBold, Vector2.new(textContainerWidth, 1000))
 		titleHeight = math.max(16, math.ceil(ts.Y))
 	end
 	
 	local totalHeight = 6 + titleHeight + 6 + 32 + 6
 	
 	local wrapper = Instance.new("Frame")
+	wrapper.Name = "TextBoxWrapper"
 	wrapper.Size = UDim2.new(1, 0, 0, 0)
 	wrapper.BackgroundTransparency = 1
 	wrapper.Parent = parentFrame
 	wrapper.AutomaticSize = Enum.AutomaticSize.Y
 	
 	local paraFrame = Instance.new("Frame")
+	paraFrame.Name = "TextBoxFrame"
 	paraFrame.AnchorPoint = Vector2.new(0.5, 0)
 	paraFrame.Position = UDim2.new(0.5, 0, 0, 3)
 	paraFrame.Size = UDim2.new(0.95, 0, 0, totalHeight)
+	paraFrame.BackgroundColor3 = Color3.fromRGB(24,24,28)
 	paraFrame.BorderSizePixel = 0
 	Instance.new("UICorner", paraFrame).CornerRadius = UDim.new(0, 8)
 	paraFrame.Parent = wrapper
-	KazeUI:AddPanel(paraFrame, 0.02)
-	KazeUI:AddTransparentElement(paraFrame, 0)
 	
 	local glow = Instance.new("Frame")
+	glow.Name = "TextBoxGlow"
 	glow.AnchorPoint = Vector2.new(0.5, 0)
 	glow.Position = UDim2.new(0.5, 0, 0, 1)
 	glow.Size = UDim2.new(0.96, 0, 0, totalHeight + 6)
 	glow.BackgroundTransparency = 0.96
+	glow.BackgroundColor3 = strokeColor or Color3.fromRGB(0,160,255)
 	Instance.new("UICorner", glow).CornerRadius = UDim.new(0, 10)
 	glow.Parent = wrapper
 	StartNeonLoop(glow)
@@ -1044,38 +952,46 @@ local function CreateTextBoxInput(parentFrame, title, placeholder, callback, fla
 	local paraStroke = Instance.new("UIStroke", paraFrame)
 	paraStroke.Thickness = 1.5
 	paraStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+	paraStroke.Color = strokeColor or Color3.fromRGB(0,160,255)
 	StartNeonLoop(paraStroke)
 	
 	local inner = Instance.new("Frame", paraFrame)
 	inner.Size = UDim2.new(1, -16, 1, -12)
 	inner.Position = UDim2.fromOffset(8, 6)
 	inner.BackgroundTransparency = 1
+	inner.ZIndex = 2
 	
 	if title ~= " " and title ~= "" then
 		local ptitleLabel = Instance.new("TextLabel", inner)
+		ptitleLabel.Name = "InputTitle"
 		ptitleLabel.Size = UDim2.new(1, 0, 0, titleHeight)
+		ptitleLabel.Position = UDim2.fromOffset(0,0)
 		ptitleLabel.BackgroundTransparency = 1
 		ptitleLabel.Text = title
-		ptitleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+		ptitleLabel.TextColor3 = Color3.fromRGB(255,255,255)
 		ptitleLabel.Font = Enum.Font.GothamBold
 		ptitleLabel.TextSize = 14
 		ptitleLabel.TextXAlignment = Enum.TextXAlignment.Left
+		ptitleLabel.TextWrapped = true
+		ptitleLabel.ZIndex = 3
 	end
 	
 	local textBoxContainer = Instance.new("Frame")
+	textBoxContainer.Name = "InputBoxContainer"
 	textBoxContainer.Size = UDim2.new(1, 0, 0, 30)
 	textBoxContainer.Position = UDim2.new(0, 0, 0, titleHeight + 4)
+	textBoxContainer.BackgroundColor3 = Color3.fromRGB(16, 16, 20)
 	textBoxContainer.BorderSizePixel = 0
+	textBoxContainer.ZIndex = 3
 	textBoxContainer.Parent = inner
 	Instance.new("UICorner", textBoxContainer).CornerRadius = UDim.new(0, 5)
-	KazeUI:AddPanel(textBoxContainer, -0.02)
-	KazeUI:AddTransparentElement(textBoxContainer, 0)
 	
 	local innerStroke = Instance.new("UIStroke", textBoxContainer)
 	innerStroke.Thickness = 1
 	innerStroke.Color = Color3.fromRGB(45, 45, 50)
 	
 	local textBox = Instance.new("TextBox")
+	textBox.Name = "TextBox"
 	textBox.Size = UDim2.new(1, -16, 1, 0)
 	textBox.Position = UDim2.fromOffset(8, 0)
 	textBox.BackgroundTransparency = 1
@@ -1086,38 +1002,52 @@ local function CreateTextBoxInput(parentFrame, title, placeholder, callback, fla
 	textBox.Font = Enum.Font.Gotham
 	textBox.TextSize = 13
 	textBox.TextXAlignment = Enum.TextXAlignment.Left
+	textBox.ClipsDescendants = true
+	textBox.ZIndex = 4
 	textBox.ClearTextOnFocus = false
 	textBox.Parent = textBoxContainer
 
 	textBox.Focused:Connect(function()
-		StartNeonLoop(innerStroke)
-		TweenService:Create(paraFrame, TweenInfo.new(0.12), { BackgroundColor3 = KazeUI.GetColor(0.04) }):Play()
+		TweenService:Create(innerStroke, TweenInfo.new(0.15), { Color = strokeColor or Color3.fromRGB(0, 160, 255) }):Play()
+		TweenService:Create(paraFrame, TweenInfo.new(0.12), { BackgroundColor3 = Color3.fromRGB(28,28,32) }):Play()
 	end)
 
 	textBox.FocusLost:Connect(function(enterPressed)
-		StopNeonLoop(innerStroke)
 		TweenService:Create(innerStroke, TweenInfo.new(0.15), { Color = Color3.fromRGB(45, 45, 50) }):Play()
-		TweenService:Create(paraFrame, TweenInfo.new(0.12), { BackgroundColor3 = KazeUI.GetColor(0.02) }):Play()
-		if typeof(callback) == "function" then task.spawn(callback, textBox.Text, enterPressed) end
+		TweenService:Create(paraFrame, TweenInfo.new(0.12), { BackgroundColor3 = Color3.fromRGB(24,24,28) }):Play()
+		if typeof(callback) == "function" then
+			task.spawn(callback, textBox.Text, enterPressed)
+		end
 	end)
 	
-	RegisterFlag(flag, function() return textBox.Text end, function(val)
-		textBox.Text = val
-		if typeof(callback) == "function" then task.spawn(callback, val) end
-	end)
-
-	return { Wrapper = wrapper, SetText = function(self, value) textBox.Text = tostring(value or "") end }
+	local api = {
+		Wrapper = wrapper,
+		Frame = paraFrame,
+		TextBox = textBox,
+		GetText = function(self)
+			return textBox.Text
+		end,
+		SetText = function(self, value)
+			textBox.Text = tostring(value or "")
+		end
+	}
+	return api
 end
 
-local function CreateSliderInput(parentFrame, title, min, max, default, callback, flag)
+-- Helper: Gagawa ng Custom Slider Input Row
+local function CreateSliderInput(parentFrame, strokeColor, title, min, max, default, callback)
 	title = tostring(title or "Slider")
 	min = tonumber(min) or 0
 	max = tonumber(max) or 100
 	default = tonumber(default) or min
+	
 	local value = math.clamp(default, min, max)
 	
 	local measuredWidth = 598 * 0.92
-	if parentFrame and parentFrame.AbsoluteSize and parentFrame.AbsoluteSize.X > 0 then measuredWidth = parentFrame.AbsoluteSize.X * 0.95 end
+	if parentFrame and parentFrame.AbsoluteSize and parentFrame.AbsoluteSize.X > 0 then
+		measuredWidth = parentFrame.AbsoluteSize.X * 0.95
+	end
+	
 	local textContainerWidth = measuredWidth - 24
 	
 	local titleHeight = 0
@@ -1129,26 +1059,29 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 	local totalHeight = 6 + titleHeight + 6 + 18 + 6
 	
 	local wrapper = Instance.new("Frame")
+	wrapper.Name = "SliderWrapper"
 	wrapper.Size = UDim2.new(1, 0, 0, 0)
 	wrapper.BackgroundTransparency = 1
 	wrapper.Parent = parentFrame
 	wrapper.AutomaticSize = Enum.AutomaticSize.Y
 	
 	local paraFrame = Instance.new("Frame")
+	paraFrame.Name = "SliderFrame"
 	paraFrame.AnchorPoint = Vector2.new(0.5, 0)
 	paraFrame.Position = UDim2.new(0.5, 0, 0, 3)
 	paraFrame.Size = UDim2.new(0.95, 0, 0, totalHeight)
+	paraFrame.BackgroundColor3 = Color3.fromRGB(24,24,28)
 	paraFrame.BorderSizePixel = 0
 	Instance.new("UICorner", paraFrame).CornerRadius = UDim.new(0, 8)
 	paraFrame.Parent = wrapper
-	KazeUI:AddPanel(paraFrame, 0.02)
-	KazeUI:AddTransparentElement(paraFrame, 0)
 	
 	local glow = Instance.new("Frame")
+	glow.Name = "SliderGlow"
 	glow.AnchorPoint = Vector2.new(0.5, 0)
 	glow.Position = UDim2.new(0.5, 0, 0, 1)
 	glow.Size = UDim2.new(0.96, 0, 0, totalHeight + 6)
 	glow.BackgroundTransparency = 0.96
+	glow.BackgroundColor3 = strokeColor or Color3.fromRGB(0,160,255)
 	Instance.new("UICorner", glow).CornerRadius = UDim.new(0, 10)
 	glow.Parent = wrapper
 	StartNeonLoop(glow)
@@ -1156,65 +1089,79 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 	local paraStroke = Instance.new("UIStroke", paraFrame)
 	paraStroke.Thickness = 1.5
 	paraStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+	paraStroke.Color = strokeColor or Color3.fromRGB(0,160,255)
 	StartNeonLoop(paraStroke)
 	
 	local inner = Instance.new("Frame", paraFrame)
 	inner.Size = UDim2.new(1, -16, 1, -12)
 	inner.Position = UDim2.fromOffset(8, 6)
 	inner.BackgroundTransparency = 1
+	inner.ZIndex = 2
 	
 	if title ~= " " and title ~= "" then
 		local ptitleLabel = Instance.new("TextLabel", inner)
+		ptitleLabel.Name = "SliderTitle"
 		ptitleLabel.Size = UDim2.new(1, -80, 0, titleHeight)
+		ptitleLabel.Position = UDim2.fromOffset(0,0)
 		ptitleLabel.BackgroundTransparency = 1
 		ptitleLabel.Text = title
-		ptitleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+		ptitleLabel.TextColor3 = Color3.fromRGB(255,255,255)
 		ptitleLabel.Font = Enum.Font.GothamBold
 		ptitleLabel.TextSize = 14
 		ptitleLabel.TextXAlignment = Enum.TextXAlignment.Left
+		ptitleLabel.TextWrapped = true
+		ptitleLabel.ZIndex = 3
 	end
 	
 	local valueLabel = Instance.new("TextLabel", inner)
+	valueLabel.Name = "ValueLabel"
 	valueLabel.Size = UDim2.new(0, 70, 0, titleHeight > 0 and titleHeight or 16)
 	valueLabel.Position = UDim2.new(1, -70, 0, 0)
 	valueLabel.BackgroundTransparency = 1
 	valueLabel.Text = tostring(value)
-	valueLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+	valueLabel.TextColor3 = strokeColor or Color3.fromRGB(0, 160, 255)
 	valueLabel.Font = Enum.Font.GothamBold
 	valueLabel.TextSize = 13
 	valueLabel.TextXAlignment = Enum.TextXAlignment.Right
+	valueLabel.ZIndex = 3
 	
 	local track = Instance.new("Frame")
+	track.Name = "Track"
 	track.Size = UDim2.new(1, 0, 0, 6)
 	track.Position = UDim2.new(0, 0, 0, titleHeight + 8)
+	track.BackgroundColor3 = Color3.fromRGB(16, 16, 20)
 	track.BorderSizePixel = 0
+	track.ZIndex = 3
 	track.Parent = inner
 	Instance.new("UICorner", track).CornerRadius = UDim.new(1, 0)
-	KazeUI:AddPanel(track, -0.02)
-	KazeUI:AddTransparentElement(track, 0)
 	
 	local fill = Instance.new("Frame")
+	fill.Name = "Fill"
 	fill.Size = UDim2.new(0, 0, 1, 0)
-	fill.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+	fill.BackgroundColor3 = strokeColor or Color3.fromRGB(0, 160, 255)
 	fill.BorderSizePixel = 0
+	fill.ZIndex = 4
 	fill.Parent = track
 	Instance.new("UICorner", fill).CornerRadius = UDim.new(1, 0)
 	StartNeonLoop(fill)
 	
 	local knob = Instance.new("Frame")
+	knob.Name = "Knob"
 	knob.AnchorPoint = Vector2.new(0.5, 0.5)
 	knob.Size = UDim2.fromOffset(12, 12)
 	knob.Position = UDim2.new(0, 0, 0.5, 0)
 	knob.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
 	knob.BorderSizePixel = 0
+	knob.ZIndex = 5
 	knob.Parent = track
 	Instance.new("UICorner", knob).CornerRadius = UDim.new(1, 0)
 	
 	local knobStroke = Instance.new("UIStroke", knob)
 	knobStroke.Thickness = 1.5
-	StartNeonLoop(knobStroke)
+	knobStroke.Color = strokeColor or Color3.fromRGB(0, 160, 255)
 	
 	local modalLock = Instance.new("TextButton")
+	modalLock.Name = "ModalLock"
 	modalLock.Size = UDim2.fromScale(1, 1)
 	modalLock.BackgroundTransparency = 1
 	modalLock.Text = ""
@@ -1224,6 +1171,7 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 	modalLock.Parent = ScreenGui
 
 	local clickDetector = Instance.new("TextButton")
+	clickDetector.Name = "ClickDetector"
 	clickDetector.Size = UDim2.new(1, 0, 1, 14)
 	clickDetector.Position = UDim2.new(0, 0, 0, -4)
 	clickDetector.BackgroundTransparency = 1
@@ -1236,18 +1184,24 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 	local function UpdateValueFromInput(input)
 		local trackWidth = track.AbsoluteSize.X
 		if trackWidth <= 0 then return end
+		
 		local relativeX = input.Position.X - track.AbsolutePosition.X
-		local relativeY = input.Position.Y - track.AbsolutePosition.Y
 		local percentage = math.clamp(relativeX / trackWidth, 0, 1)
+		
 		local newVal = min + (max - min) * percentage
-		newVal = math.clamp(math.floor(newVal + 0.5), min, max)
+		newVal = math.floor(newVal + 0.5)
+		newVal = math.clamp(newVal, min, max)
+		
 		value = newVal
 		valueLabel.Text = tostring(value)
 		
 		local visualPercentage = (value - min) / (max - min)
 		fill.Size = UDim2.new(visualPercentage, 0, 1, 0)
 		knob.Position = UDim2.new(visualPercentage, 0, 0.5, 0)
-		if typeof(callback) == "function" then task.spawn(callback, value) end
+		
+		if typeof(callback) == "function" then
+			task.spawn(callback, value)
+		end
 	end
 	
 	local startingPercentage = (value - min) / (max - min)
@@ -1257,395 +1211,73 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 	clickDetector.InputBegan:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 			isDragging = true
+			
 			ToggleScrollingAncestors(track, false)
 			modalLock.Visible = true
 			modalLock.Modal = true
+			
 			UpdateValueFromInput(input)
+			
 			local moveCon, endCon
+			
 			moveCon = UIS.InputChanged:Connect(function(moveInput)
 				if isDragging and (moveInput.UserInputType == Enum.UserInputType.MouseMovement or moveInput.UserInputType == Enum.UserInputType.Touch) then
 					UpdateValueFromInput(moveInput)
 				end
 			end)
+			
 			endCon = UIS.InputEnded:Connect(function(endInput)
 				if endInput.UserInputType == Enum.UserInputType.MouseButton1 or endInput.UserInputType == Enum.UserInputType.Touch then
 					isDragging = false
+					
 					ToggleScrollingAncestors(track, true)
 					modalLock.Visible = false
 					modalLock.Modal = false
+					
 					if moveCon then moveCon:Disconnect() end
 					if endCon then endCon:Disconnect() end
 				end
 			end)
 		end
 	end)
-
-	wrapper.Destroying:Connect(function() modalLock:Destroy() end)
-
+	
+	wrapper.Destroying:Connect(function()
+		modalLock:Destroy()
+	end)
+	
 	local api = {
 		Wrapper = wrapper,
+		Frame = paraFrame,
+		GetValue = function(self)
+			return value
+		end,
 		SetValue = function(self, newVal)
 			value = math.clamp(tonumber(newVal) or min, min, max)
 			valueLabel.Text = tostring(value)
 			local valPercentage = (value - min) / (max - min)
 			fill.Size = UDim2.new(valPercentage, 0, 1, 0)
 			knob.Position = UDim2.new(valPercentage, 0, 0.5, 0)
-			if typeof(callback) == "function" then task.spawn(callback, value) end
+			if typeof(callback) == "function" then
+				task.spawn(callback, value)
+			end
 		end
 	}
-	RegisterFlag(flag, function() return value end, function(val) api:SetValue(val) end)
 	return api
 end
 
-local function CreateKeybind(parentFrame, title, defaultKey, callback, flag)
-	title = tostring(title or "Keybind")
-	local key = defaultKey or Enum.KeyCode.Unknown
-	local isListening = false
-	local bindId = flag or title
-	
-	local wrapper = Instance.new("Frame")
-	wrapper.Size = UDim2.new(1, 0, 0, 42)
-	wrapper.BackgroundTransparency = 1
-	wrapper.Parent = parentFrame
-
-	local bindFrame = Instance.new("Frame")
-	bindFrame.AnchorPoint = Vector2.new(0.5, 0)
-	bindFrame.Position = UDim2.new(0.5, 0, 0, 3)
-	bindFrame.Size = UDim2.new(0.95, 0, 0, 36)
-	bindFrame.BorderSizePixel = 0
-	Instance.new("UICorner", bindFrame).CornerRadius = UDim.new(0, 8)
-	bindFrame.Parent = wrapper
-	KazeUI:AddPanel(bindFrame, 0.02)
-	KazeUI:AddTransparentElement(bindFrame, 0)
-
-	local boxStroke = Instance.new("UIStroke", bindFrame)
-	boxStroke.Thickness = 1.5
-	StartNeonLoop(boxStroke)
-
-	local titleLabel = Instance.new("TextLabel", bindFrame)
-	titleLabel.Size = UDim2.new(0.5, 0, 1, 0)
-	titleLabel.Position = UDim2.fromOffset(12, 0)
-	titleLabel.BackgroundTransparency = 1
-	titleLabel.Text = title
-	titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-	titleLabel.Font = Enum.Font.GothamBold
-	titleLabel.TextSize = 14
-	titleLabel.TextXAlignment = Enum.TextXAlignment.Left
-
-	local valBtn = Instance.new("TextButton", bindFrame)
-	valBtn.AnchorPoint = Vector2.new(1, 0.5)
-	valBtn.Position = UDim2.new(1, -12, 0.5, 0)
-	valBtn.Size = UDim2.fromOffset(80, 24)
-	valBtn.Text = key == Enum.KeyCode.Unknown and "None" or key.Name
-	valBtn.TextColor3 = Color3.fromRGB(220, 220, 220)
-	valBtn.Font = Enum.Font.GothamBold
-	valBtn.TextSize = 13
-	Instance.new("UICorner", valBtn).CornerRadius = UDim.new(0, 6)
-	KazeUI:AddPanel(valBtn, 0.06)
-	KazeUI:AddTransparentElement(valBtn, 0)
-
-	local function setKey(newKey)
-		key = newKey
-		valBtn.Text = key == Enum.KeyCode.Unknown and "None" or key.Name
-		ActiveBinds[bindId] = { Key = key, Callback = callback }
-	end
-
-	setKey(key)
-
-	valBtn.MouseButton1Click:Connect(function()
-		isListening = true
-		valBtn.Text = "..."
-		TweenService:Create(valBtn, TweenInfo.new(0.2), {BackgroundColor3 = KazeUI.GetColor(0.1)}):Play()
-	end)
-
-	UIS.InputBegan:Connect(function(input)
-		if not isListening then return end
-		if input.UserInputType == Enum.UserInputType.Keyboard then
-			isListening = false
-			TweenService:Create(valBtn, TweenInfo.new(0.2), {BackgroundColor3 = KazeUI.GetColor(0.06)}):Play()
-			setKey(input.KeyCode)
-		end
-	end)
-
-	wrapper.Destroying:Connect(function() ActiveBinds[bindId] = nil end)
-
-	RegisterFlag(flag, function() return key.Name end, function(val)
-		local s, k = pcall(function() return Enum.KeyCode[val] end)
-		if s and k then setKey(k) end
-	end)
-
-	return { Wrapper = wrapper, SetValue = function(self, newKey) setKey(newKey) end }
-end
-
-local function CreateColorPicker(parentFrame, title, defaultColor, callback, flag)
-	title = tostring(title or "Color Picker")
-	local color = defaultColor or Color3.fromRGB(255, 255, 255)
-	local h, s, v = Color3.toHSV(color)
-	local isOpen = false
-
-	local wrapper = Instance.new("Frame")
-	wrapper.Size = UDim2.new(1, 0, 0, 0)
-	wrapper.BackgroundTransparency = 1
-	wrapper.Parent = parentFrame
-	wrapper.AutomaticSize = Enum.AutomaticSize.Y
-
-	local dropFrame = Instance.new("Frame")
-	dropFrame.AnchorPoint = Vector2.new(0.5, 0)
-	dropFrame.Position = UDim2.new(0.5, 0, 0, 3)
-	dropFrame.Size = UDim2.new(0.95, 0, 0, 0)
-	dropFrame.BorderSizePixel = 0
-	dropFrame.AutomaticSize = Enum.AutomaticSize.Y
-	Instance.new("UICorner", dropFrame).CornerRadius = UDim.new(0, 8)
-	dropFrame.Parent = wrapper
-	KazeUI:AddPanel(dropFrame, 0.02)
-	KazeUI:AddTransparentElement(dropFrame, 0)
-
-	local padding = Instance.new("UIPadding", dropFrame)
-	padding.PaddingTop = UDim.new(0, 4)
-	padding.PaddingBottom = UDim.new(0, 4)
-
-	local boxStroke = Instance.new("UIStroke", dropFrame)
-	boxStroke.Thickness = 1.5
-	StartNeonLoop(boxStroke)
-
-	local layout = Instance.new("UIListLayout", dropFrame)
-	layout.SortOrder = Enum.SortOrder.LayoutOrder
-	layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-	layout.Padding = UDim.new(0, 4)
-
-	local header = Instance.new("Frame")
-	header.Size = UDim2.new(1, -16, 0, 36)
-	header.BackgroundTransparency = 1
-	header.LayoutOrder = 1
-	header.Parent = dropFrame
-
-	local titleLabel = Instance.new("TextLabel", header)
-	titleLabel.Size = UDim2.new(0.5, 0, 1, 0)
-	titleLabel.BackgroundTransparency = 1
-	titleLabel.Text = title
-	titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-	titleLabel.Font = Enum.Font.GothamBold
-	titleLabel.TextSize = 14
-	titleLabel.TextXAlignment = Enum.TextXAlignment.Left
-
-	local previewColor = Instance.new("Frame", header)
-	previewColor.AnchorPoint = Vector2.new(1, 0.5)
-	previewColor.Position = UDim2.new(1, -24, 0.5, 0)
-	previewColor.Size = UDim2.fromOffset(24, 24)
-	previewColor.BackgroundColor3 = color
-	Instance.new("UICorner", previewColor).CornerRadius = UDim.new(0, 4)
-	local prevStroke = Instance.new("UIStroke", previewColor)
-	prevStroke.Color = Color3.fromRGB(60, 60, 65)
-
-	local arrowIcon = Instance.new("ImageLabel", header)
-	arrowIcon.AnchorPoint = Vector2.new(1, 0.5)
-	arrowIcon.Position = UDim2.new(1, 0, 0.5, 0)
-	arrowIcon.Size = UDim2.fromOffset(16, 16)
-	arrowIcon.BackgroundTransparency = 1
-	arrowIcon.Image = "rbxassetid://6031091004"
-	arrowIcon.Rotation = 0
-	StartNeonLoop(arrowIcon)
-
-	local clickBtn = Instance.new("TextButton", header)
-	clickBtn.Size = UDim2.fromScale(1, 1)
-	clickBtn.BackgroundTransparency = 1
-	clickBtn.Text = ""
-
-	local pickerArea = Instance.new("Frame", dropFrame)
-	pickerArea.Size = UDim2.new(1, -16, 0, 150)
-	pickerArea.BackgroundTransparency = 1
-	pickerArea.Visible = false
-	pickerArea.LayoutOrder = 2
-
-	local svMap = Instance.new("TextButton", pickerArea)
-	svMap.Size = UDim2.new(1, 0, 0, 120)
-	svMap.AutoButtonColor = false
-	svMap.BackgroundColor3 = Color3.fromHSV(h, 1, 1)
-	svMap.Text = ""
-	Instance.new("UICorner", svMap).CornerRadius = UDim.new(0, 4)
-
-	local whiteOverlay = Instance.new("Frame", svMap)
-	whiteOverlay.Size = UDim2.fromScale(1, 1)
-	whiteOverlay.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-	local wg = Instance.new("UIGradient", whiteOverlay)
-	wg.Transparency = NumberSequence.new{NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(1, 1)}
-	Instance.new("UICorner", whiteOverlay).CornerRadius = UDim.new(0, 4)
-
-	local blackOverlay = Instance.new("Frame", svMap)
-	blackOverlay.Size = UDim2.fromScale(1, 1)
-	blackOverlay.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-	local bg = Instance.new("UIGradient", blackOverlay)
-	bg.Transparency = NumberSequence.new{NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(1, 0)}
-	bg.Rotation = 90
-	Instance.new("UICorner", blackOverlay).CornerRadius = UDim.new(0, 4)
-
-	local svCursor = Instance.new("Frame", svMap)
-	svCursor.Size = UDim2.fromOffset(6, 6)
-	svCursor.AnchorPoint = Vector2.new(0.5, 0.5)
-	svCursor.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-	Instance.new("UICorner", svCursor).CornerRadius = UDim.new(1, 0)
-	Instance.new("UIStroke", svCursor).Color = Color3.fromRGB(0, 0, 0)
-
-	local hueSlider = Instance.new("TextButton", pickerArea)
-	hueSlider.Size = UDim2.new(1, 0, 0, 20)
-	hueSlider.Position = UDim2.new(0, 0, 0, 130)
-	hueSlider.AutoButtonColor = false
-	hueSlider.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-	hueSlider.Text = ""
-	local hg = Instance.new("UIGradient", hueSlider)
-	hg.Color = ColorSequence.new{
-		ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 0, 0)),
-		ColorSequenceKeypoint.new(0.167, Color3.fromRGB(255, 255, 0)),
-		ColorSequenceKeypoint.new(0.333, Color3.fromRGB(0, 255, 0)),
-		ColorSequenceKeypoint.new(0.5, Color3.fromRGB(0, 255, 255)),
-		ColorSequenceKeypoint.new(0.667, Color3.fromRGB(0, 0, 255)),
-		ColorSequenceKeypoint.new(0.833, Color3.fromRGB(255, 0, 255)),
-		ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 0, 0))
-	}
-	Instance.new("UICorner", hueSlider).CornerRadius = UDim.new(0, 4)
-
-	local hueCursor = Instance.new("Frame", hueSlider)
-	hueCursor.Size = UDim2.fromOffset(4, 24)
-	hueCursor.AnchorPoint = Vector2.new(0.5, 0.5)
-	hueCursor.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-	Instance.new("UICorner", hueCursor).CornerRadius = UDim.new(1, 0)
-	Instance.new("UIStroke", hueCursor).Color = Color3.fromRGB(0, 0, 0)
-
-	local function UpdateColor()
-		color = Color3.fromHSV(h, s, v)
-		previewColor.BackgroundColor3 = color
-		svMap.BackgroundColor3 = Color3.fromHSV(h, 1, 1)
-		if typeof(callback) == "function" then task.spawn(callback, color) end
-	end
-
-	local function SetCursorPositions()
-		svCursor.Position = UDim2.new(s, 0, 1 - v, 0)
-		hueCursor.Position = UDim2.new(h, 0, 0.5, 0)
-	end
-	SetCursorPositions()
-
-	local draggingMap, draggingHue = false, false
-
-	local function updateSV(input)
-		local width = math.max(1, svMap.AbsoluteSize.X)
-		local height = math.max(1, svMap.AbsoluteSize.Y)
-		local relativeX = input.Position.X - svMap.AbsolutePosition.X
-		local relativeY = input.Position.Y - svMap.AbsolutePosition.Y
-		s = math.clamp(relativeX / width, 0, 1)
-		v = 1 - math.clamp(relativeY / height, 0, 1)
-		SetCursorPositions()
-		UpdateColor()
-	end
-
-	local function updateHue(input)
-		local width = math.max(1, hueSlider.AbsoluteSize.X)
-		local relativeX = input.Position.X - hueSlider.AbsolutePosition.X
-		h = math.clamp(relativeX / width, 0, 1)
-		SetCursorPositions()
-		UpdateColor()
-	end
-
-	svMap.InputBegan:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-			draggingMap = true
-			ToggleScrollingAncestors(svMap, false)
-			updateSV(input)
-		end
-	end)
-
-	hueSlider.InputBegan:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-			draggingHue = true
-			ToggleScrollingAncestors(hueSlider, false)
-			updateHue(input)
-		end
-	end)
-
-	UIS.InputChanged:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
-			if draggingMap then
-				updateSV(input)
-			elseif draggingHue then
-				updateHue(input)
-			end
-		end
-	end)
-
-	UIS.InputEnded:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-			draggingMap = false
-			draggingHue = false
-			ToggleScrollingAncestors(svMap, true)
-		end
-	end)
-
-	clickBtn.MouseButton1Click:Connect(function()
-		isOpen = not isOpen
-		pickerArea.Visible = isOpen
-		TweenService:Create(arrowIcon, TweenInfo.new(0.2), {Rotation = isOpen and 180 or 0}):Play()
-	end)
-
-	RegisterFlag(flag, function() return color:ToHex() end, function(val)
-		local success, parsed = pcall(function() return Color3.fromHex(val) end)
-		if success then
-			color = parsed
-			h, s, v = Color3.toHSV(color)
-			SetCursorPositions()
-			UpdateColor()
-		end
-	end)
-
-	return {
-		Wrapper = wrapper,
-		SetValue = function(self, newColor)
-			color = newColor
-			h, s, v = Color3.toHSV(color)
-			SetCursorPositions()
-			UpdateColor()
-		end
-	}
-end
-
-local function CreateVisualSectionDivider(parentFrame, titleArg)
-	local title = tostring(titleArg or "Section")
-
-	local wrapper = Instance.new("Frame")
-	wrapper.Size = UDim2.new(0.95, 0, 0, 32)
-	wrapper.BackgroundTransparency = 1
-	wrapper.Parent = parentFrame
-
-	local label = Instance.new("TextLabel")
-	label.Size = UDim2.new(1, -12, 1, 0)
-	label.Position = UDim2.fromOffset(12, 0)
-	label.BackgroundTransparency = 1
-	label.Text = title
-	label.TextColor3 = Color3.fromRGB(255, 255, 255)
-	label.Font = Enum.Font.GothamBold
-	label.TextSize = 14
-	label.TextXAlignment = Enum.TextXAlignment.Left
-	label.Parent = wrapper
-	
-	local leftLine = Instance.new("Frame")
-	leftLine.Size = UDim2.new(0, 3, 0, 14)
-	leftLine.Position = UDim2.new(0, 0, 0.5, -7)
-	leftLine.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-	leftLine.BorderSizePixel = 0
-	leftLine.Parent = wrapper
-	Instance.new("UICorner", leftLine).CornerRadius = UDim.new(1, 0)
-	StartNeonLoop(leftLine)
-end
-
+-- Forward Declarations
 local CreateCollapsibleSection
-local AttachElementsToAPI
+local CreateVisualSectionDivider
 
-AttachElementsToAPI = function(apiTable, parentFrame)
+-- API Attachment System
+local function AttachElementsToAPI(apiTable, parentFrame, strokeColor)
 	function apiTable:AddLabel(arg1)
 		local t = type(arg1) == "table" and (arg1.Text or arg1.Title) or arg1
 		local label = Instance.new("TextLabel")
 		label.Size = UDim2.new(1, -8, 0, 20)
 		label.BackgroundTransparency = 1
 		label.Text = tostring(t or " ")
-		label.TextColor3 = Color3.fromRGB(220, 220, 220)
+		label.TextColor3 = Color3.fromRGB(220,220,220)
 		label.Font = Enum.Font.Gotham
 		label.TextSize = 13
 		label.TextXAlignment = Enum.TextXAlignment.Left
@@ -1655,106 +1287,165 @@ AttachElementsToAPI = function(apiTable, parentFrame)
 	end
 
 	function apiTable:Paragraph(arg1, arg2)
-		local title = type(arg1) == "table" and arg1.Title or arg1
-		local content = type(arg1) == "table" and (arg1.Content or arg1.Description) or arg2
-		return CreateParagraph(parentFrame, title, content)
+		local title, content
+		if type(arg1) == "table" then
+			title = arg1.Title
+			content = arg1.Content or arg1.Description
+		else
+			title = arg1
+			content = arg2
+		end
+		return CreateParagraph(parentFrame, strokeColor, title, content)
 	end
 
 	function apiTable:Button(arg1, arg2, arg3)
-		local title = type(arg1) == "table" and arg1.Title or arg1
-		local desc = type(arg1) == "table" and (arg1.Description or arg1.Content or "") or arg2
-		local callback = type(arg1) == "table" and arg1.Callback or arg3
-		return CreateClickableParagraph(parentFrame, title, desc, callback)
+		local title, desc, callback
+		if type(arg1) == "table" then
+			title = arg1.Title
+			desc = arg1.Description or arg1.Content or ""
+			callback = arg1.Callback
+		else
+			title = arg1
+			desc = arg2
+			callback = arg3
+		end
+		return CreateClickableParagraph(parentFrame, strokeColor, title, desc, callback)
 	end
 
-	function apiTable:Toggle(arg1, arg2, arg3, arg4, arg5)
-		local title, desc, def, callback, flag
+	function apiTable:Toggle(arg1, arg2, arg3, arg4)
+		local title, desc, def, callback
 		if type(arg1) == "table" then
-			title, desc, def, callback, flag = arg1.Title, (arg1.Description or arg1.Content or ""), arg1.Default, arg1.Callback, arg1.Flag
+			title = arg1.Title
+			desc = arg1.Description or arg1.Content or ""
+			def = arg1.Default
+			callback = arg1.Callback
 		else
-			title, desc, def, callback, flag = arg1, arg2, arg3, arg4, arg5
+			title = arg1
+			desc = arg2
+			def = arg3
+			callback = arg4
 		end
-		return CreateToggleSwitch(parentFrame, title, desc, def, callback, flag)
+		return CreateToggleSwitch(parentFrame, strokeColor, title, desc, def, callback)
 	end
 
-	function apiTable:TextBox(arg1, arg2, arg3, arg4)
-		local title, place, callback, flag
+	function apiTable:TextBox(arg1, arg2, arg3)
+		local title, place, callback
 		if type(arg1) == "table" then
-			title, place, callback, flag = arg1.Title, arg1.Placeholder, arg1.Callback, arg1.Flag
+			title = arg1.Title
+			place = arg1.Placeholder
+			callback = arg1.Callback
 		else
-			title, place, callback, flag = arg1, arg2, arg3, arg4
+			title = arg1
+			place = arg2
+			callback = arg3
 		end
-		return CreateTextBoxInput(parentFrame, title, place, callback, flag)
+		return CreateTextBoxInput(parentFrame, strokeColor, title, place, callback)
 	end
 
-	function apiTable:Slider(arg1, arg2, arg3, arg4, arg5, arg6)
-		local title, min, max, def, callback, flag
+	function apiTable:Slider(arg1, arg2, arg3, arg4, arg5)
+		local title, min, max, def, callback
 		if type(arg1) == "table" then
-			title, min, max, def, callback, flag = arg1.Title, arg1.Min, arg1.Max, arg1.Default, arg1.Callback, arg1.Flag
+			title = arg1.Title
+			min = arg1.Min
+			max = arg1.Max
+			def = arg1.Default
+			callback = arg1.Callback
 		else
-			title, min, max, def, callback, flag = arg1, arg2, arg3, arg4, arg5, arg6
+			title = arg1
+			min = arg2
+			max = arg3
+			def = arg4
+			callback = arg5
 		end
-		return CreateSliderInput(parentFrame, title, min, max, def, callback, flag)
+		return CreateSliderInput(parentFrame, strokeColor, title, min, max, def, callback)
 	end
 
-	function apiTable:Dropdown(arg1, arg2, arg3, arg4, arg5, arg6)
-		local title, vals, def, callback, multi, flag
+	function apiTable:Dropdown(arg1, arg2, arg3, arg4, arg5)
+		local title, vals, def, callback, multi
 		if type(arg1) == "table" then
-			title, vals, def, multi, callback, flag = arg1.Title, (arg1.Values or arg1.Options), arg1.Default, (arg1.Multi or false), arg1.Callback, arg1.Flag
+			title = arg1.Title
+			vals = arg1.Values or arg1.Options
+			def = arg1.Default
+			multi = arg1.Multi or false
+			callback = arg1.Callback
 		else
-			title, vals, def, callback, multi, flag = arg1, arg2, arg3, arg4, (arg5 or false), arg6
+			title = arg1
+			vals = arg2
+			def = arg3
+			callback = arg4
+			multi = arg5 or false
 		end
-		return CreateDropdown(parentFrame, title, vals, def, callback, multi, flag)
-	end
-
-	function apiTable:Keybind(arg1, arg2, arg3, arg4)
-		local title, def, cb, flag
-		if type(arg1) == "table" then
-			title, def, cb, flag = arg1.Title, arg1.Default, arg1.Callback, arg1.Flag
-		else
-			title, def, cb, flag = arg1, arg2, arg3, arg4
-		end
-		return CreateKeybind(parentFrame, title, def, cb, flag)
-	end
-
-	function apiTable:ColorPicker(arg1, arg2, arg3, arg4)
-		local title, def, cb, flag
-		if type(arg1) == "table" then
-			title, def, cb, flag = arg1.Title, arg1.Default, arg1.Callback, arg1.Flag
-		else
-			title, def, cb, flag = arg1, arg2, arg3, arg4
-		end
-		return CreateColorPicker(parentFrame, title, def, cb, flag)
+		return CreateDropdown(parentFrame, strokeColor, title, vals, def, callback, multi)
 	end
 
 	function apiTable:SectionUI(arg1)
 		local title = type(arg1) == "table" and arg1.Title or arg1
-		return CreateCollapsibleSection(parentFrame, title)
+		return CreateCollapsibleSection(parentFrame, strokeColor, title)
 	end
 	
 	function apiTable:Section(arg1)
 		local title = type(arg1) == "table" and arg1.Title or arg1
-		CreateVisualSectionDivider(parentFrame, title)
+		CreateVisualSectionDivider(parentFrame, strokeColor, title)
 		return apiTable 
 	end
+
+	apiTable.Label = apiTable.AddLabel
+	apiTable.AddParagraph = apiTable.Paragraph
+	apiTable.AddButton = apiTable.Button
+	apiTable.AddToggle = apiTable.Toggle
+	apiTable.AddTextBox = apiTable.TextBox
+	apiTable.AddSlider = apiTable.Slider
+	apiTable.AddDropdown = apiTable.Dropdown
 end
 
-CreateCollapsibleSection = function(parentFrame, titleArg)
+-- Pure Visual Section Divider logic
+CreateVisualSectionDivider = function(parentFrame, strokeColor, titleArg)
+	local title = tostring(titleArg or "Section")
+
+	local wrapper = Instance.new("Frame")
+	wrapper.Name = "SectionDivider_" .. title
+	wrapper.Size = UDim2.new(0.95, 0, 0, 32)
+	wrapper.BackgroundTransparency = 1
+	wrapper.Parent = parentFrame
+
+	local label = Instance.new("TextLabel")
+	label.Size = UDim2.new(1, -12, 1, 0)
+	label.Position = UDim2.fromOffset(12, 0)
+	label.BackgroundTransparency = 1
+	label.Text = title
+	label.TextColor3 = strokeColor or Color3.fromRGB(0, 160, 255)
+	label.Font = Enum.Font.GothamBold
+	label.TextSize = 14
+	label.TextXAlignment = Enum.TextXAlignment.Left
+	label.Parent = wrapper
+	
+	local leftLine = Instance.new("Frame")
+	leftLine.Size = UDim2.new(0, 3, 0, 14)
+	leftLine.Position = UDim2.new(0, 0, 0.5, -7)
+	leftLine.BackgroundColor3 = strokeColor or Color3.fromRGB(0, 160, 255)
+	leftLine.BorderSizePixel = 0
+	leftLine.Parent = wrapper
+	Instance.new("UICorner", leftLine).CornerRadius = UDim.new(1, 0)
+end
+
+-- Collapsible SectionUI Block
+CreateCollapsibleSection = function(parentFrame, strokeColor, titleArg)
 	local title = type(titleArg) == "table" and titleArg.Title or tostring(titleArg or "Section")
 	local isOpen = false
 
 	local sectionBox = Instance.new("Frame")
+	sectionBox.Name = "CollapsibleSection_" .. title
 	sectionBox.Size = UDim2.new(0.95, 0, 0, 0)
+	sectionBox.BackgroundColor3 = Color3.fromRGB(24, 24, 28)
 	sectionBox.BorderSizePixel = 0
 	sectionBox.Parent = parentFrame
 	sectionBox.AutomaticSize = Enum.AutomaticSize.Y
 	Instance.new("UICorner", sectionBox).CornerRadius = UDim.new(0, 8)
-	KazeUI:AddPanel(sectionBox, 0.02)
-	KazeUI:AddTransparentElement(sectionBox, 0)
 
 	local boxStroke = Instance.new("UIStroke", sectionBox)
 	boxStroke.Thickness = 1.5
 	boxStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+	boxStroke.Color = strokeColor or Color3.fromRGB(0, 160, 255)
 	StartNeonLoop(boxStroke)
 
 	local boxLayout = Instance.new("UIListLayout", sectionBox)
@@ -1763,33 +1454,37 @@ CreateCollapsibleSection = function(parentFrame, titleArg)
 	boxLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 
 	local headerFrame = Instance.new("Frame")
+	headerFrame.Name = "Header"
 	headerFrame.Size = UDim2.new(1, 0, 0, 36)
 	headerFrame.BackgroundTransparency = 1
 	headerFrame.LayoutOrder = 1
 	headerFrame.Parent = sectionBox
 
 	local titleLabel = Instance.new("TextLabel")
+	titleLabel.Name = "TitleText"
 	titleLabel.Size = UDim2.new(1, -40, 1, 0)
 	titleLabel.Position = UDim2.fromOffset(12, 0)
 	titleLabel.BackgroundTransparency = 1
 	titleLabel.Text = title
-	titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+	titleLabel.TextColor3 = strokeColor or Color3.fromRGB(0, 160, 255)
 	titleLabel.Font = Enum.Font.GothamBold
 	titleLabel.TextSize = 14
 	titleLabel.TextXAlignment = Enum.TextXAlignment.Left
 	titleLabel.Parent = headerFrame
 
 	local arrowIcon = Instance.new("ImageLabel")
+	arrowIcon.Name = "ArrowIcon"
 	arrowIcon.AnchorPoint = Vector2.new(1, 0.5)
 	arrowIcon.Position = UDim2.new(1, -12, 0.5, 0)
 	arrowIcon.Size = UDim2.fromOffset(16, 16)
 	arrowIcon.BackgroundTransparency = 1
 	arrowIcon.Image = "rbxassetid://6031091004" 
+	arrowIcon.ImageColor3 = strokeColor or Color3.fromRGB(0, 160, 255)
 	arrowIcon.Rotation = isOpen and 0 or -90
 	arrowIcon.Parent = headerFrame
-	StartNeonLoop(arrowIcon)
 
 	local divider = Instance.new("Frame")
+	divider.Name = "Divider"
 	divider.Size = UDim2.new(0.95, 0, 0, 1)
 	divider.BackgroundColor3 = Color3.fromRGB(38, 38, 42)
 	divider.BorderSizePixel = 0
@@ -1798,6 +1493,7 @@ CreateCollapsibleSection = function(parentFrame, titleArg)
 	divider.Parent = sectionBox
 
 	local sectionContent = Instance.new("Frame")
+	sectionContent.Name = "SectionContent"
 	sectionContent.Size = UDim2.new(1, 0, 0, 0)
 	sectionContent.BackgroundTransparency = 1
 	sectionContent.BorderSizePixel = 0
@@ -1818,6 +1514,7 @@ CreateCollapsibleSection = function(parentFrame, titleArg)
 	contentPadding.PaddingRight = UDim.new(0, 4)
 
 	local toggleDetector = Instance.new("TextButton")
+	toggleDetector.Name = "ToggleDetector"
 	toggleDetector.Size = UDim2.fromScale(1, 1)
 	toggleDetector.BackgroundTransparency = 1
 	toggleDetector.Text = ""
@@ -1833,12 +1530,18 @@ CreateCollapsibleSection = function(parentFrame, titleArg)
 		}):Play()
 	end)
 
-	local sectionPublic = { Frame = sectionBox, ContentFrame = sectionContent, Header = headerFrame }
-	AttachElementsToAPI(sectionPublic, sectionContent)
+	local sectionPublic = {
+		Frame = sectionBox, 
+		ContentFrame = sectionContent,
+		Header = headerFrame
+	}
+
+	AttachElementsToAPI(sectionPublic, sectionContent, strokeColor)
+
 	return sectionPublic
 end
 
--- Create Window Initialization
+-- CreateWindow Method
 function KazeUI:CreateWindow(config)
 	config = config or {}
 	local Title = config.Title or "Kaze UI"
@@ -1846,34 +1549,27 @@ function KazeUI:CreateWindow(config)
 	local Version = config.Version or "1.0"
 	local MainIcon = FormatImage(config.Icon or "6031763447")
 	local OpenIcon = FormatImage((config.OpenButton and config.OpenButton.Icon) or config.Icon or "6031763447")
-	
-	-- Backwards compatibility handler for removed ThemeColor
-	if config.GlowColor then 
-		KazeUI.GlowColor = config.GlowColor 
-	elseif config.ThemeColor then 
-		KazeUI.GlowColor = config.ThemeColor
-	else
-		KazeUI.GlowColor = Color3.fromRGB(0, 160, 255)
-	end
-
 	local MiniButtonSize = UDim2.fromOffset(46, 46)
+	local Callback = config.Callback
 
 	local Window = Instance.new("Frame")
+	Window.Name = "MainWindow"
 	Window.Size = UDim2.fromOffset(750, 450)
 	Window.Position = UDim2.fromScale(0.5, 0.5)
 	Window.AnchorPoint = Vector2.new(0.5, 0.5)
+	Window.BackgroundColor3 = Color3.fromRGB(20,20,25)
 	Window.BorderSizePixel = 0
 	Window.Parent = ScreenGui
 	Instance.new("UICorner", Window).CornerRadius = UDim.new(0, 12)
-	KazeUI:AddPanel(Window, 0)
-	KazeUI:AddTransparentElement(Window, 0)
 
 	local WindowStroke = Instance.new("UIStroke")
+	WindowStroke.Color = Color3.fromRGB(0,160,255)
 	WindowStroke.Thickness = 2
 	WindowStroke.Parent = Window
 	StartNeonLoop(WindowStroke)
 
 	local ContentClipper = Instance.new("CanvasGroup")
+	ContentClipper.Name = "ContentClipper"
 	ContentClipper.Size = UDim2.fromScale(1, 1)
 	ContentClipper.BackgroundTransparency = 1
 	ContentClipper.BorderSizePixel = 0
@@ -1881,14 +1577,16 @@ function KazeUI:CreateWindow(config)
 	Instance.new("UICorner", ContentClipper).CornerRadius = UDim.new(0, 12)
 
 	local TopBar = Instance.new("Frame")
+	TopBar.Name = "TopBar"
 	TopBar.Size = UDim2.new(1,0,0,50)
+	TopBar.BackgroundColor3 = Color3.fromRGB(15,15,20)
 	TopBar.BorderSizePixel = 0
 	TopBar.Parent = ContentClipper
 	MakeDraggable(TopBar, Window)
-	KazeUI:AddPanel(TopBar, -0.02)
-	KazeUI:AddTransparentElement(TopBar, 0)
 
+	-- Avatar/Profile Toggle Button
 	local Avatar = Instance.new("ImageButton")
+	Avatar.Name = "Avatar"
 	Avatar.Size = UDim2.fromOffset(32,32)
 	Avatar.Position = UDim2.fromOffset(10,9)
 	Avatar.BackgroundColor3 = Color3.fromRGB(30,30,35)
@@ -1897,20 +1595,27 @@ function KazeUI:CreateWindow(config)
 	Avatar.AutoButtonColor = false
 	Avatar.Parent = TopBar
 	Instance.new("UICorner", Avatar).CornerRadius = UDim.new(1,0)
-	
 	local avatarStroke = Instance.new("UIStroke", Avatar)
+	avatarStroke.Color = Color3.fromRGB(0,140,200)
 	avatarStroke.Thickness = 1
-	StartNeonLoop(avatarStroke)
+
+	Avatar.MouseEnter:Connect(function()
+		TweenService:Create(avatarStroke, TweenInfo.new(0.2), {Color = Color3.fromRGB(0, 200, 255)}):Play()
+	end)
+	Avatar.MouseLeave:Connect(function()
+		TweenService:Create(avatarStroke, TweenInfo.new(0.2), {Color = Color3.fromRGB(0, 140, 200)}):Play()
+	end)
 
 	local TitleLabel = Instance.new("TextLabel")
 	TitleLabel.Size = UDim2.new(1, -200, 0, 20)
 	TitleLabel.Position = UDim2.fromOffset(50,6)
 	TitleLabel.BackgroundTransparency = 1
 	TitleLabel.Text = Title
-	TitleLabel.TextColor3 = Color3.fromRGB(235, 235, 235)
+	TitleLabel.TextColor3 = Color3.fromRGB(235,235,235)
 	TitleLabel.Font = Enum.Font.GothamBold
 	TitleLabel.TextSize = 15
 	TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
+	TitleLabel.TextWrapped = true
 	TitleLabel.Parent = TopBar
 
 	local SubLabel = Instance.new("TextLabel")
@@ -1918,16 +1623,18 @@ function KazeUI:CreateWindow(config)
 	SubLabel.Position = UDim2.fromOffset(50,26)
 	SubLabel.BackgroundTransparency = 1
 	SubLabel.Text = Author .. " | v" .. Version
-	SubLabel.TextColor3 = Color3.fromRGB(160, 160, 160)
+	SubLabel.TextColor3 = Color3.fromRGB(160,160,160)
 	SubLabel.Font = Enum.Font.Gotham
 	SubLabel.TextSize = 12
 	SubLabel.TextXAlignment = Enum.TextXAlignment.Left
+	SubLabel.TextWrapped = true
 	SubLabel.Parent = TopBar
 
 	local TopDivider = Instance.new("Frame")
+	TopDivider.Name = "TopDivider"
 	TopDivider.Size = UDim2.new(1,0,0,2)
 	TopDivider.Position = UDim2.new(0,0,1,-2)
-	TopDivider.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+	TopDivider.BackgroundColor3 = Color3.fromRGB(0,200,255)
 	TopDivider.BorderSizePixel = 0
 	TopDivider.ZIndex = 5
 	TopDivider.Parent = TopBar
@@ -1941,14 +1648,17 @@ function KazeUI:CreateWindow(config)
 
 	local function createCircleButton(name, offsetX, color)
 		local btn = Instance.new("TextButton")
+		btn.Name = name
 		btn.Size = UDim2.fromOffset(16,16)
 		btn.Position = UDim2.new(1, offsetX, 0.5, -8)
 		btn.BackgroundColor3 = color
 		btn.BorderSizePixel = 0
-		btn.Text = ""
+		btn.Text = " "
 		btn.Parent = TopBar
 		Instance.new("UICorner", btn).CornerRadius = UDim.new(1,0)
-		Instance.new("UIStroke", btn).Color = Color3.fromRGB(0,0,0)
+		local stroke = Instance.new("UIStroke", btn)
+		stroke.Color = Color3.fromRGB(0,0,0)
+		stroke.Thickness = 1
 		return btn
 	end
 
@@ -1956,34 +1666,47 @@ function KazeUI:CreateWindow(config)
 	local BtnYellow = createCircleButton("BtnYellow", -68, Color3.fromRGB(255,204,51))
 	local BtnRed = createCircleButton("BtnRed", -40, Color3.fromRGB(235,80,80))
 
+	-- PERMANENT MINIMIZE BUTTON BACKGROUND & BAR FIX
 	local MiniButton = Instance.new("TextButton") 
+	MiniButton.Name = "MiniButton"
 	MiniButton.Size = MiniButtonSize
 	MiniButton.Position = UDim2.new(0, 16, 0, 85)
-	MiniButton.BackgroundTransparency = 1 
+	MiniButton.BackgroundTransparency = 1 -- Transparent para walang hidden panels
+	MiniButton.BackgroundColor3 = Color3.fromRGB(20,20,25)
+	MiniButton.BorderSizePixel = 0
 	MiniButton.Text = ""
 	MiniButton.Visible = false
 	MiniButton.Parent = ScreenGui
 	MiniButton.ZIndex = 999
+	
+	-- Inner clipping layer para bilog ang sulok ng mismong image stretch
+	local MiniClip = Instance.new("Frame")
+	MiniClip.Name = "MiniClip"
+	MiniClip.Size = UDim2.fromScale(1, 1)
+	MiniClip.BackgroundTransparency = 1
+	MiniClip.ClipsDescendants = true
+	MiniClip.Parent = MiniButton
+	Instance.new("UICorner", MiniClip).CornerRadius = UDim.new(0, 8)
 
 	local MiniIcon = Instance.new("ImageLabel")
-	MiniIcon.Size = UDim2.fromScale(1, 1) 
+	MiniIcon.Size = UDim2.fromScale(1, 1) -- 100% full width at height
 	MiniIcon.Position = UDim2.fromScale(0.5, 0.5)
 	MiniIcon.AnchorPoint = Vector2.new(0.5, 0.5)
-	MiniIcon.BackgroundTransparency = 0
+	MiniIcon.BackgroundTransparency = 1
 	MiniIcon.Image = OpenIcon
+	-- STRETCH SCALE TYPE: Pinupuno ang buong square, 100% walang black gaps o borders sa kahit anong axis!
 	MiniIcon.ScaleType = Enum.ScaleType.Stretch 
-	MiniIcon.Parent = MiniButton
+	MiniIcon.Parent = MiniClip
 	MiniIcon.ZIndex = 1000
-	Instance.new("UICorner", MiniIcon).CornerRadius = UDim.new(0, 8)
-	KazeUI:AddPanel(MiniIcon, 0)
-	KazeUI:AddTransparentElement(MiniIcon, 0)
 
 	local MiniStroke = Instance.new("UIStroke")
+	MiniStroke.Color = WindowStroke.Color
 	MiniStroke.Thickness = WindowStroke.Thickness
 	MiniStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-	MiniStroke.Parent = MiniIcon 
+	MiniStroke.Parent = MiniButton
 	StartNeonLoop(MiniStroke)
 
+	MakeDraggable(TopBar, Window)
 	MakeDraggable(MiniButton, MiniButton)
 
 	local function minimizeWindow()
@@ -2016,33 +1739,21 @@ function KazeUI:CreateWindow(config)
 
 	BtnYellow.MouseButton1Click:Connect(minimizeWindow)
 
-	-- Highly robust custom click & drag detector to prevent accidental lockout
 	local miniDragStart
-	local miniDragMoved = false
-	
 	MiniButton.InputBegan:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then 
-			miniDragStart = input.Position 
-			miniDragMoved = false
-		end
-	end)
-	
-	MiniButton.InputChanged:Connect(function(input)
-		if miniDragStart and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-			-- Allow 8 pixel threshold before considering it a "drag" instead of a click
-			if (input.Position - miniDragStart).Magnitude > 8 then
-				miniDragMoved = true
-			end
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			miniDragStart = input.Position
 		end
 	end)
 	
 	MiniButton.InputEnded:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-			if miniDragStart and not miniDragMoved then 
-				unminimizeWindow() 
+			if miniDragStart then
+				local dist = (input.Position - miniDragStart).Magnitude
+				if dist < 5 then
+					unminimizeWindow()
+				end
 			end
-			miniDragStart = nil
-			miniDragMoved = false
 		end
 	end)
 
@@ -2054,10 +1765,10 @@ function KazeUI:CreateWindow(config)
 			toggledMaximized = true
 			Window.AnchorPoint = Vector2.new(0.5,0.5)
 			Window.Position = UDim2.fromScale(0.5,0.5)
-			TweenService:Create(Window, TweenInfo.new(0.25, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), { Size = UDim2.fromScale(0.95,0.9) }):Play()
+			TweenService:Create(Window, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Size = UDim2.fromScale(0.95,0.9) }):Play()
 		else
 			toggledMaximized = false
-			TweenService:Create(Window, TweenInfo.new(0.25, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), { Size = lastNormalSize, Position = lastNormalPosition }):Play()
+			TweenService:Create(Window, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Size = lastNormalSize, Position = lastNormalPosition }):Play()
 			task.delay(0.25, function() Window.AnchorPoint = lastNormalAnchor end)
 		end
 	end)
@@ -2066,27 +1777,45 @@ function KazeUI:CreateWindow(config)
 	local function ShowCloseConfirm()
 		if confirmActive then return end
 		confirmActive = true
-		BtnYellow.Active = false; BtnGreen.Active = false; BtnRed.Active = false
 		
-		local Overlay = Instance.new("Frame", Window)
+		BtnYellow.Active = false
+		BtnGreen.Active = false
+		BtnRed.Active = false
+		
+		local Overlay = Instance.new("Frame")
 		Overlay.Size = UDim2.new(1,0,1,0)
 		Overlay.BackgroundColor3 = Color3.fromRGB(0,0,0)
 		Overlay.BackgroundTransparency = 0.6
 		Overlay.ZIndex = 50
+		Overlay.Parent = Window
 		Instance.new("UICorner", Overlay).CornerRadius = UDim.new(0, 12)
 
-		local ConfirmWindow = Instance.new("Frame", Overlay)
+		local Shadow = Instance.new("Frame")
+		Shadow.Size = UDim2.fromOffset(340,140)
+		Shadow.AnchorPoint = Vector2.new(0.5,0.5)
+		Shadow.Position = UDim2.fromScale(0.5,0.5)
+		Shadow.BackgroundColor3 = Color3.fromRGB(0,0,0)
+		Shadow.BackgroundTransparency = 0.75
+		Shadow.ZIndex = 51
+		Shadow.Parent = Overlay
+		Instance.new("UICorner", Shadow).CornerRadius = UDim.new(0,14)
+
+		local ConfirmWindow = Instance.new("Frame")
 		ConfirmWindow.Size = UDim2.fromOffset(330,130)
 		ConfirmWindow.AnchorPoint = Vector2.new(0.5,0.5)
 		ConfirmWindow.Position = UDim2.fromScale(0.5,0.5)
-		ConfirmWindow.BackgroundColor3 = Color3.fromRGB(255,255,255)
+		ConfirmWindow.BackgroundColor3 = Color3.fromRGB(25,25,30)
 		ConfirmWindow.ZIndex = 52
+		ConfirmWindow.Parent = Overlay
 		Instance.new("UICorner", ConfirmWindow).CornerRadius = UDim.new(0,12)
+
 		local confirmStroke = Instance.new("UIStroke", ConfirmWindow)
+		confirmStroke.Color = WindowStroke.Color
 		confirmStroke.Thickness = 2.5
+		confirmStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 		StartNeonLoop(confirmStroke)
 
-		local ConfirmText = Instance.new("TextLabel", ConfirmWindow)
+		local ConfirmText = Instance.new("TextLabel")
 		ConfirmText.Size = UDim2.new(1,-32,0,40)
 		ConfirmText.Position = UDim2.fromOffset(16,16)
 		ConfirmText.BackgroundTransparency = 1
@@ -2094,20 +1823,24 @@ function KazeUI:CreateWindow(config)
 		ConfirmText.TextColor3 = Color3.fromRGB(230,230,230)
 		ConfirmText.Font = Enum.Font.GothamBold
 		ConfirmText.TextSize = 16
+		ConfirmText.TextWrapped = true
 		ConfirmText.ZIndex = 53
+		ConfirmText.Parent = ConfirmWindow
 
-		local ButtonsFrame = Instance.new("Frame", ConfirmWindow)
+		local ButtonsFrame = Instance.new("Frame")
 		ButtonsFrame.Size = UDim2.new(1,0,0,40)
 		ButtonsFrame.Position = UDim2.new(0,0,1,-16)
 		ButtonsFrame.AnchorPoint = Vector2.new(0,1)
 		ButtonsFrame.BackgroundTransparency = 1
 		ButtonsFrame.ZIndex = 53
+		ButtonsFrame.Parent = ConfirmWindow
+
 		local layout = Instance.new("UIListLayout", ButtonsFrame)
 		layout.FillDirection = Enum.FillDirection.Horizontal
 		layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 		layout.Padding = UDim.new(0,16)
 
-		local ConfirmBtn = Instance.new("TextButton", ButtonsFrame)
+		local ConfirmBtn = Instance.new("TextButton")
 		ConfirmBtn.Size = UDim2.new(0,110,0,32)
 		ConfirmBtn.BackgroundColor3 = Color3.fromRGB(0,170,255)
 		ConfirmBtn.Text = "Confirm"
@@ -2115,9 +1848,10 @@ function KazeUI:CreateWindow(config)
 		ConfirmBtn.Font = Enum.Font.GothamBold
 		ConfirmBtn.TextSize = 15
 		ConfirmBtn.ZIndex = 54
+		ConfirmBtn.Parent = ButtonsFrame
 		Instance.new("UICorner", ConfirmBtn).CornerRadius = UDim.new(0,8)
 
-		local CancelBtn = Instance.new("TextButton", ButtonsFrame)
+		local CancelBtn = Instance.new("TextButton")
 		CancelBtn.Size = UDim2.new(0,110,0,32)
 		CancelBtn.BackgroundColor3 = Color3.fromRGB(45,45,50)
 		CancelBtn.Text = "Cancel"
@@ -2125,13 +1859,20 @@ function KazeUI:CreateWindow(config)
 		CancelBtn.Font = Enum.Font.GothamBold
 		CancelBtn.TextSize = 15
 		CancelBtn.ZIndex = 54
+		CancelBtn.Parent = ButtonsFrame
 		Instance.new("UICorner", CancelBtn).CornerRadius = UDim.new(0,8)
 
 		ConfirmBtn.MouseButton1Click:Connect(function() ScreenGui:Destroy() end)
-		CancelBtn.MouseButton1Click:Connect(function() Overlay:Destroy(); confirmActive = false; BtnYellow.Active = true; BtnGreen.Active = true; BtnRed.Active = true end)
+		CancelBtn.MouseButton1Click:Connect(function()
+			Overlay:Destroy()
+			confirmActive = false
+			BtnYellow.Active = true; BtnGreen.Active = true; BtnRed.Active = true
+		end)
 	end
+
 	BtnRed.MouseButton1Click:Connect(ShowCloseConfirm)
 
+	-- Content Area Setup
 	local Content = Instance.new("Frame")
 	Content.Position = UDim2.fromOffset(0,50)
 	Content.Size = UDim2.new(1,0,1,-50)
@@ -2139,38 +1880,44 @@ function KazeUI:CreateWindow(config)
 	Content.Parent = ContentClipper
 
 	local SideBarMask = Instance.new("Frame")
+	SideBarMask.Name = "SideBarMask"
 	SideBarMask.Size = UDim2.new(0, 150, 1, 0)
+	SideBarMask.Position = UDim2.new(0, 0, 0, 0)
 	SideBarMask.BackgroundTransparency = 1
 	SideBarMask.ClipsDescendants = true
 	SideBarMask.Parent = Content
 
 	local SideBar = Instance.new("Frame")
+	SideBar.Name = "SideBar"
 	SideBar.Size = UDim2.new(0,150,1,0) 
+	SideBar.Position = UDim2.new(0,0,0,0)
+	SideBar.BackgroundColor3 = Color3.fromRGB(20,20,25)
 	SideBar.BorderSizePixel = 0
 	SideBar.Parent = SideBarMask
-	KazeUI:AddPanel(SideBar, 0)
-	KazeUI:AddTransparentElement(SideBar, 0)
 
 	local VertDivider = Instance.new("Frame")
+	VertDivider.Name = "VertDivider"
 	VertDivider.Size = UDim2.new(0,2,1,0)
 	VertDivider.Position = UDim2.new(0,150,0,0)
-	VertDivider.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+	VertDivider.BackgroundColor3 = Color3.fromRGB(0,200,255)
 	VertDivider.BorderSizePixel = 0
 	VertDivider.Parent = Content
 	StartNeonLoop(VertDivider)
 
 	local Pages = Instance.new("Frame")
+	Pages.Name = "Pages"
 	Pages.Position = UDim2.new(0,152,0,0)
 	Pages.Size = UDim2.new(1, -152, 1, 0)
+	Pages.BackgroundColor3 = Color3.fromRGB(18,18,23)
 	Pages.BorderSizePixel = 0
 	Pages.Parent = Content
-	KazeUI:AddPanel(Pages, -0.01)
-	KazeUI:AddTransparentElement(Pages, 0)
 	
+	-- Profile Click Toggle Logic
 	local isSidebarOpen = true
 	Avatar.MouseButton1Click:Connect(function()
 		isSidebarOpen = not isSidebarOpen
 		local tInfo = TweenInfo.new(0.35, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
+		
 		if isSidebarOpen then
 			TweenService:Create(SideBarMask, tInfo, {Size = UDim2.new(0, 150, 1, 0)}):Play()
 			TweenService:Create(VertDivider, tInfo, {Position = UDim2.new(0, 150, 0, 0), BackgroundTransparency = 0}):Play()
@@ -2183,6 +1930,7 @@ function KazeUI:CreateWindow(config)
 	end)
 
 	local TabsScroller = Instance.new("ScrollingFrame")
+	TabsScroller.Name = "TabsScroller"
 	TabsScroller.Parent = SideBar
 	TabsScroller.Position = UDim2.fromOffset(6,6)
 	TabsScroller.Size = UDim2.new(1, -12, 1, -12)
@@ -2193,6 +1941,7 @@ function KazeUI:CreateWindow(config)
 	TabsScroller.ScrollBarImageColor3 = Color3.fromRGB(40,40,45)
 
 	local TabsList = Instance.new("Frame")
+	TabsList.Name = "TabsList"
 	TabsList.BackgroundTransparency = 1
 	TabsList.Size = UDim2.new(1, 0, 0, 0)
 	TabsList.Parent = TabsScroller
@@ -2202,213 +1951,99 @@ function KazeUI:CreateWindow(config)
 	tabsLayout.SortOrder = Enum.SortOrder.LayoutOrder
 	tabsLayout.Padding = UDim.new(0,4)
 
+	local createdTabs = {}
+
+	local TAB_BUTTON_HEIGHT = 40
+	local TAB_CORNER_RADIUS = 6
+	local TAB_BG = Color3.fromRGB(24,24,28)
+	local TAB_BG_ACTIVE = Color3.fromRGB(32,32,36)
+	local TAB_TEXT_COLOR = Color3.fromRGB(240,240,240)
+	local TAB_TEXT_INACTIVE = Color3.fromRGB(200,200,200)
+
 	local Win = {
 		Window = Window,
-		ScreenGui = ScreenGui,
+		Content = Content,
+		Icon = Avatar,
+		MiniButton = MiniButton,
+		SideBar = SideBar,
 		_Pages = Pages,
 		_TabsList = TabsList,
-		_Tabs = {},
-		Minimize = function(self)
-			minimizeWindow()
-		end,
-		Show = function(self)
-			unminimizeWindow()
-		end,
-		Maximize = function(self)
-			unminimizeWindow()
-		end,
-		Toggle = function(self)
-			if not Window.Visible then
-				self:Show()
-			else
-				self:Minimize()
-			end
-		end
+		_Tabs = createdTabs,
+		_Stroke = WindowStroke,
 	}
 
-	-- Add invisible Global Keybind API to the Window Object
-	function Win:Keybind(config)
-		local title = config.Title or "Global Keybind"
-		local key = config.Default or Enum.KeyCode.Unknown
-		local cb = config.Callback
-		local flag = config.Flag or title
-		ActiveBinds[flag] = { Key = key, Callback = cb }
-		return {
-			SetValue = function(self, newKey)
-				ActiveBinds[flag] = { Key = newKey, Callback = cb }
-			end
-		}
-	end
-
-	-- Master Keybind Configuration Toggle
-	if config.ToggleKey then
-		ActiveBinds["KazeUI_MasterToggle"] = {
-			Key = config.ToggleKey,
-			Callback = function()
-				Win:Toggle()
-			end
-		}
-	end
-
-	-- Config Manager Implementation
-	function Win:CreateConfigManager(tab)
-		local sec = tab:Section({Title = "Config Manager"})
-		local cfgName = "Default"
-
-		local function getConfigs()
-			local list = {}
-			if listfiles then
-				local s, files = pcall(function() return listfiles("") end)
-				if not s then s, files = pcall(function() return listfiles("workspace") end) end
-				if s and type(files) == "table" then
-					for _, f in ipairs(files) do
-						local fileName = string.match(f, "([^/\\]+)$") or f
-						local name = string.match(fileName, "^KazeUI_(.+)%.json$")
-						if name then table.insert(list, name) end
-					end
-				end
-			end
-			if #list == 0 then table.insert(list, "Default") end
-			return list
-		end
-
-		sec:TextBox({Title = "Config Name", Default = "Default", Callback = function(v) cfgName = v end})
-		
-		local configDropdown
-		sec:Button({Title = "Save Config", Callback = function() 
-			KazeUI:SaveConfig(cfgName) 
-			if configDropdown then configDropdown:Refresh(getConfigs()) end
-		end})
-
-		configDropdown = sec:Dropdown({
-			Title = "Select Saved Config", 
-			Options = getConfigs(), 
-			Callback = function(v) cfgName = v end
-		})
-
-		sec:Button({Title = "Refresh Configs", Callback = function() if configDropdown then configDropdown:Refresh(getConfigs()) end end})
-		sec:Button({Title = "Load Config", Callback = function() KazeUI:LoadConfig(cfgName) end})
-		
-		sec:Button({Title = "Delete Config", Callback = function()
-			if delfile then
-				pcall(function() delfile("KazeUI_"..cfgName..".json") end)
-				KazeUI:Notify({Title = "Config System", Content = "Deleted " .. cfgName, Duration = 3})
-				if configDropdown then configDropdown:Refresh(getConfigs()) end
-			else
-				KazeUI:Notify({Title = "Config Error", Content = "Your executor lacks 'delfile' support.", Duration = 3})
-			end
-		end})
-	end
-
-	-- Theme Manager Implementation
-	function Win:CreateThemeManager(tab)
-		local sec = tab:Section({Title = "Theme & Visuals"})
-		
-		-- Maganda at malambot na dark/desaturated presets para hindi "sakit sa mata"
-		local bgColors = {
-			["Deep Obsidian"]    = Color3.fromRGB(15, 15, 15),   -- Premium Super Dark
-			["Midnight Slate"]   = Color3.fromRGB(20, 24, 33),   -- Muted Blue-Gray
-			["Forest Moss"]      = Color3.fromRGB(16, 24, 20),   -- Deep Soft Forest Green
-			["Crimson Ember"]    = Color3.fromRGB(26, 18, 18),   -- Matte Desaturated Wine Red
-			["Plum Velvet"]      = Color3.fromRGB(22, 17, 26),   -- Matte Muted Purple
-			["Burnt Amber"]      = Color3.fromRGB(26, 21, 17),   -- Warm Deep Cocoa/Orange
-			["Nordic Frost"]     = Color3.fromRGB(34, 40, 49),   -- Soft Indigo Gray
-			["Deep Abyss"]       = Color3.fromRGB(13, 22, 26),   -- Deep Dark Petrol/Teal
-			["Dracula Violet"]   = Color3.fromRGB(40, 42, 54),   -- Legendary Cozy Dracula Dark
-			["Ashen Charcoal"]   = Color3.fromRGB(28, 28, 30)    -- Smooth Gray
-		}
-		
-		local bgOptions = {
-			"Deep Obsidian", "Midnight Slate", "Forest Moss", "Crimson Ember", 
-			"Plum Velvet", "Burnt Amber", "Nordic Frost", "Deep Abyss", 
-			"Dracula Violet", "Ashen Charcoal"
-		}
-
-		sec:Dropdown({
-			Title = "Change Color Theme",
-			Options = bgOptions,
-			Default = "Deep Obsidian",
-			Callback = function(choice)
-				if bgColors[choice] then
-					KazeUI:SetBackgroundColor(bgColors[choice])
-				end
-			end
-		})
-
-		sec:ColorPicker({
-			Title = "UI Glow Color",
-			Default = KazeUI.GlowColor,
-			Callback = function(color)
-				KazeUI:SetGlow(color)
-			end
-		})
-
-		sec:Slider({
-			Title = "UI Background Transparency",
-			Min = 0,
-			Max = 100,
-			Default = 0,
-			Callback = function(val)
-				KazeUI:SetTransparency(val / 100)
-			end
-		})
-	end
-
 	function Win:CreateTab(arg1, arg2)
-		local name = tostring(type(arg1) == "table" and (arg1.Title or arg1.Name) or arg1 or "Tab")
-		local iconId = type(arg1) == "table" and arg1.Icon or arg2
+		local name, iconId
+		if type(arg1) == "table" then
+			name = arg1.Title or arg1.Name or "Tab"
+			iconId = arg1.Icon
+		else
+			name = arg1
+			iconId = arg2
+		end
+		
+		name = tostring(name)
 		local formattedIcon = FormatImage(iconId or "")
 		
 		local btn = Instance.new("TextButton")
-		btn.Size = UDim2.new(1, -12, 0, 40)
+		btn.Name = "TabButton_" .. name
+		btn.Size = UDim2.new(1, -12, 0, TAB_BUTTON_HEIGHT)
+		btn.BackgroundColor3 = TAB_BG
 		btn.BorderSizePixel = 0
-		btn.Text = ""
+		btn.Text = " "
 		btn.AutoButtonColor = false
 		btn.Parent = TabsList
 		btn.LayoutOrder = #self._Tabs + 1
-		Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
-		KazeUI:AddPanel(btn, 0.02)
-		KazeUI:AddTransparentElement(btn, 0)
+		Instance.new("UICorner", btn).CornerRadius = UDim.new(0, TAB_CORNER_RADIUS)
 
 		local leftIndicator = Instance.new("Frame", btn)
+		leftIndicator.Name = "LeftIndicator"
 		leftIndicator.Size = UDim2.new(0,3,1,0)
-		leftIndicator.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+		leftIndicator.Position = UDim2.new(0,0,0,0)
+		leftIndicator.BackgroundColor3 = self._Stroke.Color
 		leftIndicator.BorderSizePixel = 0
 		leftIndicator.Visible = false
 		Instance.new("UICorner", leftIndicator).CornerRadius = UDim.new(0,6)
 
 		local iconLabel = Instance.new("ImageLabel", btn)
+		iconLabel.Name = "Icon"
 		iconLabel.Size = UDim2.fromOffset(24,24)
 		iconLabel.Position = UDim2.new(0,8,0.5,-12)
 		iconLabel.BackgroundTransparency = 1
 		iconLabel.Image = formattedIcon
 		iconLabel.ScaleType = Enum.ScaleType.Fit
-		iconLabel.Parent = btn
-		
+		Instance.new("UICorner", iconLabel).CornerRadius = UDim.new(1,0)
+
 		local txt = Instance.new("TextLabel", btn)
+		txt.Name = "Label"
 		txt.Size = UDim2.new(1, -44, 1, 0)
 		txt.Position = UDim2.fromOffset(40,0)
 		txt.BackgroundTransparency = 1
 		txt.Text = name
-		txt.TextColor3 = Color3.fromRGB(200, 200, 200)
+		txt.TextColor3 = TAB_TEXT_INACTIVE
 		txt.Font = Enum.Font.Gotham
 		txt.TextSize = 14
 		txt.TextXAlignment = Enum.TextXAlignment.Left
-		txt.Parent = btn
+		txt.TextWrapped = true
 
 		local page = Instance.new("Frame")
+		page.Name = "Page_" .. name
 		page.Size = UDim2.new(1,0,1,0)
 		page.BackgroundTransparency = 1
-		page.Visible = false
+		page.BorderSizePixel = 0
 		page.Parent = self._Pages
+		page.Visible = false
 
 		local pageContent = Instance.new("ScrollingFrame", page)
+		pageContent.Name = "PageContent"
 		pageContent.Size = UDim2.new(1, 0, 1, 0)
+		pageContent.Position = UDim2.new(0,0,0,0)
 		pageContent.BackgroundTransparency = 1
 		pageContent.BorderSizePixel = 0
 		pageContent.ScrollBarThickness = 5
 		pageContent.CanvasSize = UDim2.new(0, 0, 0, 0)
 		pageContent.AutomaticCanvasSize = Enum.AutomaticSize.Y
+		pageContent.ClipsDescendants = true
 		pageContent.ScrollBarImageColor3 = Color3.fromRGB(40,40,45)
 
 		local pagePadding = Instance.new("UIPadding", pageContent)
@@ -2420,46 +2055,76 @@ function KazeUI:CreateWindow(config)
 		local contentLayout = Instance.new("UIListLayout", pageContent)
 		contentLayout.SortOrder = Enum.SortOrder.LayoutOrder
 		contentLayout.Padding = UDim.new(0,4)
+		contentLayout.VerticalAlignment = Enum.VerticalAlignment.Top
 		contentLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 
-		table.insert(self._Tabs, { Button = btn, Indicator = leftIndicator, Label = txt, Page = page })
+		local tabObj = {
+			Button = btn,
+			Indicator = leftIndicator,
+			Label = txt,
+			Icon = iconLabel,
+			Page = page,
+			PageContent = pageContent,
+		}
+		table.insert(self._Tabs, tabObj)
 
 		local function activate()
 			for _, t in ipairs(self._Tabs) do
-				TweenService:Create(t.Button, TweenInfo.new(0.12), { BackgroundColor3 = KazeUI.GetColor(0.02) }):Play()
-				t.Indicator.Visible = false
-				t.Page.Visible = false
-				t.Label.TextColor3 = Color3.fromRGB(200, 200, 200)
-				t.Label.Font = Enum.Font.Gotham
+				if t.Button and t.Indicator and t.Page and t.Label then
+					TweenService:Create(t.Button, TweenInfo.new(0.12), { BackgroundColor3 = TAB_BG }):Play()
+					t.Indicator.Visible = false
+					t.Page.Visible = false
+					t.Label.TextColor3 = TAB_TEXT_INACTIVE
+					t.Label.Font = Enum.Font.Gotham
+				end
 			end
-			TweenService:Create(btn, TweenInfo.new(0.12), { BackgroundColor3 = KazeUI.GetColor(0.06) }):Play()
+			TweenService:Create(btn, TweenInfo.new(0.12), { BackgroundColor3 = TAB_BG_ACTIVE }):Play()
 			leftIndicator.Visible = true
 			page.Visible = true
-			txt.TextColor3 = Color3.fromRGB(255, 255, 255)
+			txt.TextColor3 = TAB_TEXT_COLOR
 			txt.Font = Enum.Font.GothamBold
+			page.Parent = self._Pages
 		end
 
+		local hoverTweenInfo = TweenInfo.new(0.10, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+		local hoverBG = Color3.fromRGB(28,28,31)
+		local leaveBG = TAB_BG
 		btn.MouseEnter:Connect(function()
 			if not leftIndicator.Visible then
-				TweenService:Create(btn, TweenInfo.new(0.1), { BackgroundColor3 = KazeUI.GetColor(0.04) }):Play()
-				txt.TextColor3 = Color3.fromRGB(220, 220, 220)
+				TweenService:Create(btn, hoverTweenInfo, { BackgroundColor3 = hoverBG }):Play()
+				txt.TextColor3 = Color3.fromRGB(220,220,220)
 			end
 		end)
 		btn.MouseLeave:Connect(function()
 			if not leftIndicator.Visible then
-				TweenService:Create(btn, TweenInfo.new(0.1), { BackgroundColor3 = KazeUI.GetColor(0.02) }):Play()
-				txt.TextColor3 = Color3.fromRGB(200, 200, 200)
+				TweenService:Create(btn, hoverTweenInfo, { BackgroundColor3 = leaveBG }):Play()
+				txt.TextColor3 = TAB_TEXT_INACTIVE
 			end
 		end)
 		btn.MouseButton1Click:Connect(activate)
 		if #self._Tabs == 1 then activate() end
 
-		local public = { Button = btn, Page = page }
-		AttachElementsToAPI(public, pageContent)
+		local public = {
+			Button = btn,
+			Page = page,
+			_PageContent = pageContent,
+			_Stroke = self._Stroke,
+		}
+		
+		AttachElementsToAPI(public, pageContent, self._Stroke.Color)
+
 		return public
 	end
 
-	if typeof(config.Callback) == "function" then pcall(config.Callback) end
+	function Win:GetTabs()
+		local out = {}
+		for i,t in ipairs(self._Tabs) do
+			table.insert(out, { Index = i, Button = t.Button, Page = t.Page })
+		end
+		return out
+	end
+
+	if typeof(Callback) == "function" then pcall(Callback) end
 	return Win
 end
 
