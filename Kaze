@@ -1,7 +1,7 @@
-
 --[[
 	Kaze UI Library
 	Optimized: Deep Obsidian Only, Dynamic Tab Text Scaling (No "..." Dots), Wider Sidebar, Safe Close Dialog Margin Padding
+	*Keybinds completely removed as requested*
 --]]
 
 local KazeUI = {}
@@ -21,30 +21,17 @@ KazeUI.BackgroundColor = Color3.fromRGB(10, 10, 12) -- Locked to Deep Obsidian
 KazeUI.Flags = {}
 KazeUI.ActiveWindows = {} -- FIXED: Initialized table to resolve the 'table expected, got nil' crash!
 
--- Keybind & Visual Controllers
+-- Visual Controllers
 KazeUI.GlowElements = {}
 KazeUI.NeonTweens = {}
 KazeUI.PanelElements = {} 
 KazeUI.TransparentElements = {}
-local ActiveBinds = {}
 
 local function RegisterFlag(flag, getFunc, setFunc)
 	if flag then
 		KazeUI.Flags[flag] = { Get = getFunc, Set = setFunc }
 	end
 end
-
--- Global Keybind Input Listener
-UIS.InputBegan:Connect(function(input, gameProcessed)
-	if gameProcessed then return end
-	for _, bind in pairs(ActiveBinds) do
-		if bind.Key ~= Enum.KeyCode.Unknown and input.KeyCode == bind.Key then
-			if typeof(bind.Callback) == "function" then
-				task.spawn(bind.Callback, bind.Key)
-			end
-		end
-	end
-end)
 
 -- ScreenGui Setup (Supports CoreGui & PlayerGui Fallback)
 local ScreenGui = Instance.new("ScreenGui")
@@ -1342,92 +1329,6 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 	return api
 end
 
-local function CreateKeybind(parentFrame, title, defaultKey, callback, flag)
-	title = tostring(title or "Keybind")
-	local key = defaultKey or Enum.KeyCode.Unknown
-	local isListening = false
-	local bindId = flag or title
-	
-	local wrapper = Instance.new("Frame")
-	wrapper.Size = UDim2.new(1, 0, 0, 42)
-	wrapper.BackgroundTransparency = 1
-	wrapper.Parent = parentFrame
-
-	local bindFrame = Instance.new("Frame")
-	bindFrame.AnchorPoint = Vector2.new(0.5, 0)
-	bindFrame.Position = UDim2.new(0.5, 0, 0, 3)
-	bindFrame.Size = UDim2.new(0.95, 0, 0, 36)
-	bindFrame.BorderSizePixel = 0
-	Instance.new("UICorner", bindFrame).CornerRadius = UDim.new(0, 8)
-	bindFrame.Parent = wrapper
-	KazeUI:AddPanel(bindFrame, 0.02)
-	KazeUI:AddTransparentElement(bindFrame, 0)
-
-	local boxStroke = Instance.new("UIStroke", bindFrame)
-	boxStroke.Thickness = 1.5
-	StartNeonLoop(boxStroke)
-
-	local titleLabel = Instance.new("TextLabel", bindFrame)
-	titleLabel.Size = UDim2.new(0.5, 0, 1, 0)
-	titleLabel.Position = UDim2.fromOffset(12, 0)
-	titleLabel.BackgroundTransparency = 1
-	titleLabel.Text = title
-	titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-	titleLabel.Font = Enum.Font.GothamBold
-	titleLabel.TextSize = 14
-	titleLabel.TextXAlignment = Enum.TextXAlignment.Left
-
-	local valBtn = Instance.new("TextButton", bindFrame)
-	valBtn.AnchorPoint = Vector2.new(1, 0.5)
-	valBtn.Position = UDim2.new(1, -12, 0.5, 0)
-	valBtn.Size = UDim2.fromOffset(80, 24)
-	valBtn.Text = key == Enum.KeyCode.Unknown and "None" or key.Name
-	valBtn.TextColor3 = Color3.fromRGB(220, 220, 220)
-	valBtn.Font = Enum.Font.GothamBold
-	valBtn.TextSize = 13
-	Instance.new("UICorner", valBtn).CornerRadius = UDim.new(0, 6)
-	KazeUI:AddPanel(valBtn, 0.06)
-	KazeUI:AddTransparentElement(valBtn, 0)
-
-	local function setKey(newKey)
-		key = newKey
-		valBtn.Text = key == Enum.KeyCode.Unknown and "None" or key.Name
-		ActiveBinds[bindId] = { Key = key, Callback = callback }
-	end
-
-	setKey(key)
-
-	valBtn.MouseButton1Click:Connect(function()
-		isListening = true
-		valBtn.Text = "..."
-		TweenService:Create(valBtn, TweenInfo.new(0.2), {BackgroundColor3 = KazeUI.GetColor(0.1)}):Play()
-	end)
-
-	UIS.InputBegan:Connect(function(input)
-		if not isListening then return end
-		if input.UserInputType == Enum.UserInputType.Keyboard then
-			isListening = false
-			TweenService:Create(valBtn, TweenInfo.new(0.2), {BackgroundColor3 = KazeUI.GetColor(0.06)}):Play()
-			setKey(input.KeyCode)
-		end
-	end)
-
-	wrapper.Destroying:Connect(function() ActiveBinds[bindId] = nil end)
-
-	RegisterFlag(flag, function() return key.Name end, function(val)
-		local s, k = pcall(function() return Enum.KeyCode[val] end)
-		if s and k then setKey(k) end
-	end)
-
-	return { 
-		Wrapper = wrapper, 
-		SetValue = function(self, newKey) setKey(newKey) end,
-		SetText = function(self, newTitle)
-			titleLabel.Text = newTitle
-		end
-	}
-end
-
 local function CreateColorPicker(parentFrame, title, defaultColor, callback, flag)
 	title = tostring(title or "Color Picker")
 	local color = defaultColor or Color3.fromRGB(255, 255, 255)
@@ -1767,16 +1668,6 @@ AttachElementsToAPI = function(apiTable, parentFrame)
 			title, vals, def, callback, multi, flag = arg1, arg2, arg3, arg4, (arg5 or false), arg6
 		end
 		return CreateDropdown(parentFrame, title, vals, def, callback, multi, flag)
-	end
-
-	function apiTable:Keybind(arg1, arg2, arg3, arg4)
-		local title, def, cb, flag
-		if type(arg1) == "table" then
-			title, def, cb, flag = arg1.Title, arg1.Default, arg1.Callback, arg1.Flag
-		else
-			title, def, cb, flag = arg1, arg2, arg3, arg4
-		end
-		return CreateKeybind(parentFrame, title, def, cb, flag)
 	end
 
 	function apiTable:ColorPicker(arg1, arg2, arg3, arg4)
@@ -2290,26 +2181,6 @@ function KazeUI:CreateWindow(config)
 			end
 		end
 	}
-
-	function Win:Keybind(config)
-		local title = config.Title or "Global Keybind"
-		local key = config.Default or Enum.KeyCode.Unknown
-		local cb = config.Callback
-		local flag = config.Flag or title
-		ActiveBinds[flag] = { Key = key, Callback = cb }
-		return {
-			SetValue = function(self, newKey)
-				ActiveBinds[flag] = { Key = newKey, Callback = cb }
-			end
-		}
-	end
-
-	if config.ToggleKey then
-		ActiveBinds["KazeUI_MasterToggle"] = {
-			Key = config.ToggleKey,
-			Callback = function() Win:Toggle() end
-		}
-	end
 
 	function Win:CreateConfigManager(tab)
 		local sec = tab:SectionUI("Config Manager")
