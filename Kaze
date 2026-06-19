@@ -1,7 +1,7 @@
 
 --[[
 	Kaze UI Library
-	Optimized: Deep Obsidian Default, English Only, Tab Text Scaling Fix, Fixed Close Menu Padding
+	Optimized: Deep Obsidian Only, Dynamic Tab Text Scaling (No "..." Dots), Wider Sidebar, Safe Close Dialog Margin Padding
 --]]
 
 local KazeUI = {}
@@ -19,6 +19,7 @@ local LP = Players.LocalPlayer
 KazeUI.GlowColor = Color3.fromRGB(0, 160, 255)
 KazeUI.BackgroundColor = Color3.fromRGB(10, 10, 12) -- Locked to Deep Obsidian
 KazeUI.Flags = {}
+KazeUI.ActiveWindows = {} -- FIXED: Initialized table to resolve the 'table expected, got nil' crash!
 
 -- Keybind & Visual Controllers
 KazeUI.GlowElements = {}
@@ -263,6 +264,7 @@ function KazeUI:SetGlow(color)
 	end
 end
 
+-- Robust Notification Animation Sequence
 function KazeUI:Notify(config)
 	config = config or {}
 	local title = tostring(config.Title or "Notification")
@@ -363,6 +365,7 @@ local function ToggleScrollingAncestors(element, state)
 	end
 end
 
+-- Component factories
 local function CreateDropdown(parentFrame, title, options, defaultOption, callback, isMulti, flag)
 	title = tostring(title or "Dropdown")
 	options = type(options) == "table" and options or {}
@@ -945,7 +948,7 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 	switchIndicator.AnchorPoint = Vector2.new(0, 0.5)
 	switchIndicator.Position = state and UDim2.new(1, -16, 0.5, 0) or UDim2.new(0, 2, 0.5, 0)
 	switchIndicator.Size = UDim2.fromOffset(14, 14)
-	switchIndicator.BackgroundColor3 = Color3.fromRGB(20, 20, 25) -- Interior contrasting color
+	switchIndicator.BackgroundColor3 = Color3.fromRGB(20, 20, 25) -- Interior contrast color
 	switchIndicator.BorderSizePixel = 0
 	Instance.new("UICorner", switchIndicator).CornerRadius = UDim.new(1, 0)
 	switchIndicator.Parent = switchContainer
@@ -1021,7 +1024,14 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 		if typeof(callback) == "function" then task.spawn(callback, state) end
 	end)
 	
-	return { Wrapper = wrapper, SetState = function(self, newState, instant) setToggleState(newState, instant) end }
+	return { 
+		Wrapper = wrapper, 
+		SetState = function(self, newState, instant) setToggleState(newState, instant) end,
+		SetText = function(self, newTitle, newBody)
+			if ptitleLabel and newTitle then ptitleLabel.Text = newTitle end
+			if bodyLabel and newBody then bodyLabel.Text = newBody end
+		end
+	}
 end
 
 local function CreateTextBoxInput(parentFrame, title, placeholder, callback, flag)
@@ -1323,6 +1333,9 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 			fill.Size = UDim2.new(valPercentage, 0, 1, 0)
 			knob.Position = UDim2.new(valPercentage, 0, 0.5, 0)
 			if typeof(callback) == "function" then task.spawn(callback, value) end
+		end,
+		SetText = function(self, newTitle)
+			if ptitleLabel and newTitle then ptitleLabel.Text = newTitle end
 		end
 	}
 	RegisterFlag(flag, function() return value end, function(val) api:SetValue(val) end)
@@ -1788,7 +1801,7 @@ AttachElementsToAPI = function(apiTable, parentFrame)
 end
 
 CreateCollapsibleSection = function(parentFrame, titleArg)
-	local title = type(titleArg) == "table" and titleArg.Title or tostring(titleArg or "Section")
+	local title = type(titleArg) == "table" and titleArg.Title or tostring(titleArg or "Seksyon")
 	local isOpen = false
 
 	local sectionBox = Instance.new("Frame")
@@ -1889,6 +1902,7 @@ CreateCollapsibleSection = function(parentFrame, titleArg)
 	return sectionPublic
 end
 
+-- Create Window Initialization
 function KazeUI:CreateWindow(config)
 	config = config or {}
 	local Title = config.Title or "Kaze UI"
@@ -1897,7 +1911,7 @@ function KazeUI:CreateWindow(config)
 	local MainIcon = FormatImage(config.Icon or "6031763447")
 	local OpenIcon = FormatImage((config.OpenButton and config.OpenButton.Icon) or config.Icon or "6031763447")
 	
-	KazeUI.BackgroundColor = Color3.fromRGB(10, 10, 12) -- Permanent Deep Obsidian
+	KazeUI.BackgroundColor = Color3.fromRGB(10, 10, 12) -- Permanent Deep Obsidian background
 	if config.GlowColor then KazeUI.GlowColor = config.GlowColor end
 
 	local MiniButtonSize = UDim2.fromOffset(46, 46)
@@ -2117,25 +2131,25 @@ function KazeUI:CreateWindow(config)
 		Overlay.ZIndex = 50
 		Instance.new("UICorner", Overlay).CornerRadius = UDim.new(0, 12)
 
-		-- INCREASED CONFIRM WINDOW SIZE FOR PROPER PADDING
+		-- FIXED: Sized larger to provide professional margins and prevent text crowding
 		local ConfirmWindow = Instance.new("Frame", Overlay)
-		ConfirmWindow.Size = UDim2.fromOffset(360, 140) 
+		ConfirmWindow.Size = UDim2.fromOffset(360, 150)
 		ConfirmWindow.AnchorPoint = Vector2.new(0.5,0.5)
 		ConfirmWindow.Position = UDim2.fromScale(0.5,0.5)
-		ConfirmWindow.BackgroundColor3 = Color3.fromRGB(25,25,30)
+		ConfirmWindow.BackgroundColor3 = Color3.fromRGB(20, 20, 24)
 		ConfirmWindow.ZIndex = 52
 		Instance.new("UICorner", ConfirmWindow).CornerRadius = UDim.new(0,12)
 		local confirmStroke = Instance.new("UIStroke", ConfirmWindow)
 		confirmStroke.Thickness = 2.5
 		StartNeonLoop(confirmStroke)
 
-		-- INCREASED TEXT PADDING AND ADDED TEXT WRAP
+		-- FIXED: Generous internal padding (20px off sides, 18px off top) and text wrapping
 		local ConfirmText = Instance.new("TextLabel", ConfirmWindow)
 		ConfirmText.Size = UDim2.new(1, -40, 0, 50)
-		ConfirmText.Position = UDim2.fromOffset(20, 15)
+		ConfirmText.Position = UDim2.fromOffset(20, 18)
 		ConfirmText.BackgroundTransparency = 1
 		ConfirmText.Text = "Are you sure you want to close the UI?"
-		ConfirmText.TextColor3 = Color3.fromRGB(230,230,230)
+		ConfirmText.TextColor3 = Color3.fromRGB(235,235,235)
 		ConfirmText.Font = Enum.Font.GothamBold
 		ConfirmText.TextSize = 15
 		ConfirmText.TextWrapped = true
@@ -2183,31 +2197,31 @@ function KazeUI:CreateWindow(config)
 	Content.BackgroundTransparency = 1
 	Content.Parent = ContentClipper
 
-	-- EXPANDED SIDEBAR WIDTH (From 150 to 170)
+	-- FIXED: Widened sidebar mask to 190 pixels to accommodate very long tab layouts perfectly
 	local SideBarMask = Instance.new("Frame")
-	SideBarMask.Size = UDim2.new(0, 170, 1, 0)
+	SideBarMask.Size = UDim2.new(0, 190, 1, 0)
 	SideBarMask.BackgroundTransparency = 1
 	SideBarMask.ClipsDescendants = true
 	SideBarMask.Parent = Content
 
 	local SideBar = Instance.new("Frame")
-	SideBar.Size = UDim2.new(0, 170, 1, 0) 
+	SideBar.Size = UDim2.new(0, 190, 1, 0) 
 	SideBar.BorderSizePixel = 0
 	SideBar.Parent = SideBarMask
 	KazeUI:AddPanel(SideBar, 0)
 	KazeUI:AddTransparentElement(SideBar, 0)
 
 	local VertDivider = Instance.new("Frame")
-	VertDivider.Size = UDim2.new(0, 2, 1, 0)
-	VertDivider.Position = UDim2.new(0, 170, 0, 0)
+	VertDivider.Size = UDim2.new(0,2,1,0)
+	VertDivider.Position = UDim2.new(0,190,0,0)
 	VertDivider.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
 	VertDivider.BorderSizePixel = 0
 	VertDivider.Parent = Content
 	StartNeonLoop(VertDivider)
 
 	local Pages = Instance.new("Frame")
-	Pages.Position = UDim2.new(0, 172, 0, 0)
-	Pages.Size = UDim2.new(1, -172, 1, 0)
+	Pages.Position = UDim2.new(0,192,0,0)
+	Pages.Size = UDim2.new(1, -192, 1, 0)
 	Pages.BorderSizePixel = 0
 	Pages.Parent = Content
 	KazeUI:AddPanel(Pages, -0.01)
@@ -2218,9 +2232,9 @@ function KazeUI:CreateWindow(config)
 		isSidebarOpen = not isSidebarOpen
 		local tInfo = TweenInfo.new(0.35, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
 		if isSidebarOpen then
-			TweenService:Create(SideBarMask, tInfo, {Size = UDim2.new(0, 170, 1, 0)}):Play()
-			TweenService:Create(VertDivider, tInfo, {Position = UDim2.new(0, 170, 0, 0), BackgroundTransparency = 0}):Play()
-			TweenService:Create(Pages, tInfo, {Position = UDim2.new(0, 172, 0, 0), Size = UDim2.new(1, -172, 1, 0)}):Play()
+			TweenService:Create(SideBarMask, tInfo, {Size = UDim2.new(0, 190, 1, 0)}):Play()
+			TweenService:Create(VertDivider, tInfo, {Position = UDim2.new(0, 190, 0, 0), BackgroundTransparency = 0}):Play()
+			TweenService:Create(Pages, tInfo, {Position = UDim2.new(0, 192, 0, 0), Size = UDim2.new(1, -192, 1, 0)}):Play()
 		else
 			TweenService:Create(SideBarMask, tInfo, {Size = UDim2.new(0, 0, 1, 0)}):Play()
 			TweenService:Create(VertDivider, tInfo, {Position = UDim2.new(0, 0, 0, 0), BackgroundTransparency = 1}):Play()
@@ -2350,7 +2364,7 @@ function KazeUI:CreateWindow(config)
 	function Win:CreateThemeManager(tab)
 		local sec = tab:SectionUI("Theme & Visuals")
 
-		-- Removed Color Theme dropdown completely! Only Deep Obsidian used.
+		-- Completely removed Background selection. Clean deep obsidian aesthetic.
 		
 		sec:ColorPicker({
 			Title = "UI Glow Color",
@@ -2403,7 +2417,7 @@ function KazeUI:CreateWindow(config)
 		iconLabel.ScaleType = Enum.ScaleType.Fit
 		iconLabel.Parent = btn
 		
-		-- FIX: TextScaled logic to handle extra long tab names without overlapping or adding "..."
+		-- FIXED: Removed dots completely by using responsive TextScaled + TextWrapped, keeping text clean and intact!
 		local txt = Instance.new("TextLabel", btn)
 		txt.Size = UDim2.new(1, -44, 1, 0)
 		txt.Position = UDim2.fromOffset(40,0)
@@ -2413,9 +2427,12 @@ function KazeUI:CreateWindow(config)
 		txt.Font = Enum.Font.Gotham
 		txt.TextScaled = true 
 		txt.TextWrapped = true 
+		
+		-- Minimum size threshold to prevent extreme shrinking while avoiding clipping
 		local textConstraint = Instance.new("UITextSizeConstraint", txt)
 		textConstraint.MaxTextSize = 13
-		textConstraint.MinTextSize = 9
+		textConstraint.MinTextSize = 8
+		
 		txt.TextXAlignment = Enum.TextXAlignment.Left
 		txt.Parent = btn
 
