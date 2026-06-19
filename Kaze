@@ -2,6 +2,7 @@
 	Kaze UI Library
 	Optimized: Deep Obsidian Only, Dynamic Tab Text Scaling (No "..." Dots), Wider Sidebar, Safe Close Dialog Margin Padding
 	Added: New Dynamic Keybind Component, Full Config Manager Overhaul, Memory Leak Prevention
+	Fixes: Global Minimize Drag, Keybind Spam Size Inflation, Keybind Auto-Fire, Theme Config Flags
 --]]
 
 local KazeUI = {}
@@ -1733,13 +1734,14 @@ local function CreateKeybindInput(parentFrame, title, defaultKey, callback, flag
 						currentKey = key
 					end
 				end
-				-- If mouse is pressed, simply cancel the binding to prevent freezing
 				
-				isBinding = false
 				bindLabel.Text = currentKey == Enum.KeyCode.Unknown and "None" or currentKey.Name
 				StopNeonLoop(bindStroke)
 				bindStroke.Color = Color3.fromRGB(45, 45, 50)
 				conn:Disconnect()
+
+				-- BUG FIX: Delayed release to stop global event from catching the exact same key press
+				task.delay(0.15, function() isBinding = false end)
 			end
 		end)
 	end)
@@ -2153,11 +2155,13 @@ function KazeUI:CreateWindow(config)
 	MiniStroke.Parent = MiniIcon 
 	StartNeonLoop(MiniStroke)
 
-	MakeDraggable(MiniButton, MiniButton)
-
+	local isMinimized = false
 	local function minimizeWindow()
+		if isMinimized then return end
+		isMinimized = true
+		
+		-- BUG FIX: Don't save size here. Spamming Tween Back Style causes it to overshoot and grow to infinity.
 		if not toggledMaximized then
-			lastNormalSize = Window.Size
 			lastNormalPosition = Window.Position
 			lastNormalAnchor = Window.AnchorPoint
 		end
@@ -2168,7 +2172,9 @@ function KazeUI:CreateWindow(config)
 	end
 
 	local function unminimizeWindow()
-		if Window.Visible then return end
+		if not isMinimized then return end
+		isMinimized = false
+		
 		MiniButton.Visible = false
 		Window.Visible = true
 		Window.Size = UDim2.fromOffset(0,0)
@@ -2185,6 +2191,7 @@ function KazeUI:CreateWindow(config)
 
 	BtnYellow.MouseButton1Click:Connect(minimizeWindow)
 
+	-- BUG FIX: Global Dragging to stop slipping off the Mini Button bounds and triggering clicks
 	local miniDragStart
 	local miniDragMoved = false
 	
@@ -2195,15 +2202,22 @@ function KazeUI:CreateWindow(config)
 		end
 	end)
 	
-	MiniButton.InputChanged:Connect(function(input)
+	UIS.InputChanged:Connect(function(input)
 		if miniDragStart and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
 			if (input.Position - miniDragStart).Magnitude > 8 then
 				miniDragMoved = true
+				-- Update position manually
+				local delta = input.Position - miniDragStart
+				MiniButton.Position = UDim2.new(
+					0, MiniButton.Position.X.Offset + delta.X,
+					0, MiniButton.Position.Y.Offset + delta.Y
+				)
+				miniDragStart = input.Position -- Reset delta step
 			end
 		end
 	end)
 	
-	MiniButton.InputEnded:Connect(function(input)
+	UIS.InputEnded:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 			if miniDragStart and not miniDragMoved then
 				unminimizeWindow()
@@ -2370,8 +2384,6 @@ function KazeUI:CreateWindow(config)
 	tabsLayout.SortOrder = Enum.SortOrder.LayoutOrder
 	tabsLayout.Padding = UDim.new(0,4)
 
-	local isMinimized = false
-
 	local Win = {
 		Window = Window,
 		ScreenGui = ScreenGui,
@@ -2380,15 +2392,12 @@ function KazeUI:CreateWindow(config)
 		_Tabs = {},
 		Minimize = function(self)
 			minimizeWindow()
-			isMinimized = true
 		end,
 		Show = function(self)
 			unminimizeWindow()
-			isMinimized = false
 		end,
 		Maximize = function(self)
 			unminimizeWindow()
-			isMinimized = false
 		end,
 		Toggle = function(self)
 			if isMinimized or not Window.Visible then
@@ -2449,12 +2458,14 @@ function KazeUI:CreateWindow(config)
 		end})
 	end
 
+	-- BUG FIX: Theme UI elements missing Flags to save
 	function Win:CreateThemeManager(tab)
 		local sec = tab:SectionUI("Theme & Visuals")
 		
 		sec:ColorPicker({
 			Title = "UI Glow Color",
 			Default = KazeUI.GlowColor,
+			Flag = "KazeUI_Theme_GlowColor", -- Added flag so Config saves it
 			Callback = function(color)
 				KazeUI:SetGlow(color)
 			end
@@ -2465,6 +2476,7 @@ function KazeUI:CreateWindow(config)
 			Min = 0,
 			Max = 100,
 			Default = 0,
+			Flag = "KazeUI_Theme_BackgroundTransparency", -- Added flag so Config saves it
 			Callback = function(val)
 				KazeUI:SetTransparency(val / 100)
 			end
