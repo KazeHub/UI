@@ -1,7 +1,7 @@
 --[[
 	Kaze UI Library
 	Optimized: Deep Obsidian Only, Dynamic Tab Text Scaling (No "..." Dots), Wider Sidebar, Safe Close Dialog Margin Padding
-	Added: New Dynamic Keybind Component
+	Added: New Dynamic Keybind Component, Full Config Manager Overhaul, Memory Leak Prevention
 --]]
 
 local KazeUI = {}
@@ -176,11 +176,23 @@ function KazeUI:AddPanel(inst, elevation)
 	table.insert(KazeUI.PanelElements, {Inst = inst, Elevation = elevation or 0})
 	if inst and inst:IsA("GuiObject") then
 		inst.BackgroundColor3 = KazeUI.GetColor(elevation or 0)
+		-- Prevent Memory Leak
+		inst.Destroying:Connect(function()
+			for i = #KazeUI.PanelElements, 1, -1 do
+				if KazeUI.PanelElements[i].Inst == inst then table.remove(KazeUI.PanelElements, i) end
+			end
+		end)
 	end
 end
 
 function KazeUI:AddTransparentElement(inst, defaultTrans)
 	table.insert(KazeUI.TransparentElements, {Inst = inst, Default = defaultTrans or inst.BackgroundTransparency})
+	-- Prevent Memory Leak
+	inst.Destroying:Connect(function()
+		for i = #KazeUI.TransparentElements, 1, -1 do
+			if KazeUI.TransparentElements[i].Inst == inst then table.remove(KazeUI.TransparentElements, i) end
+		end
+	end)
 end
 
 function KazeUI:SetBackgroundColor(color)
@@ -289,6 +301,7 @@ function KazeUI:Notify(config)
 	titleLab.Font = Enum.Font.GothamBold
 	titleLab.TextSize = 14
 	titleLab.TextXAlignment = Enum.TextXAlignment.Left
+	titleLab.TextTruncate = Enum.TextTruncate.AtEnd
 
 	local contentLab = Instance.new("TextLabel", notifFrame)
 	contentLab.Size = UDim2.new(1, -20, 0, 20)
@@ -299,6 +312,7 @@ function KazeUI:Notify(config)
 	contentLab.Font = Enum.Font.Gotham
 	contentLab.TextSize = 13
 	contentLab.TextXAlignment = Enum.TextXAlignment.Left
+	contentLab.TextTruncate = Enum.TextTruncate.AtEnd
 
 	TweenService:Create(notifHolder, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Size = UDim2.new(1, 0, 0, 70)}):Play()
 	TweenService:Create(notifFrame, TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Position = UDim2.new(0, 5, 0, 0)}):Play()
@@ -319,13 +333,24 @@ function KazeUI:Notify(config)
 end
 
 function KazeUI:SaveConfig(name)
+	if not name or name == "" then
+		KazeUI:Notify({Title = "Config Error", Content = "Config name cannot be empty.", Duration = 3})
+		return
+	end
+	
 	local data = {}
 	for flag, obj in pairs(KazeUI.Flags) do data[flag] = obj.Get() end
+	
 	if writefile then
-		writefile("KazeUI_"..name..".json", HttpService:JSONEncode(data))
-		KazeUI:Notify({Title = "Config Saved", Content = "Successfully saved " .. name, Duration = 3})
+		local success, encoded = pcall(function() return HttpService:JSONEncode(data) end)
+		if success then
+			writefile("KazeUI_"..name..".json", encoded)
+			KazeUI:Notify({Title = "Config Saved", Content = "Successfully saved " .. name, Duration = 3})
+		else
+			KazeUI:Notify({Title = "Config Error", Content = "Failed to encode settings to JSON.", Duration = 3})
+		end
 	else
-		KazeUI:Notify({Title = "Config Error", Content = "Your executor does not support saving.", Duration = 3})
+		KazeUI:Notify({Title = "Config Error", Content = "Your executor does not support saving files.", Duration = 3})
 	end
 end
 
@@ -333,11 +358,15 @@ function KazeUI:LoadConfig(name)
 	if readfile then
 		local s, res = pcall(function() return readfile("KazeUI_"..name..".json") end)
 		if s then
-			local data = HttpService:JSONDecode(res)
-			for flag, val in pairs(data) do
-				if KazeUI.Flags[flag] then KazeUI.Flags[flag].Set(val) end
+			local s2, data = pcall(function() return HttpService:JSONDecode(res) end)
+			if s2 and type(data) == "table" then
+				for flag, val in pairs(data) do
+					if KazeUI.Flags[flag] then KazeUI.Flags[flag].Set(val) end
+				end
+				KazeUI:Notify({Title = "Config Loaded", Content = "Successfully loaded " .. name, Duration = 3})
+			else
+				KazeUI:Notify({Title = "Config Error", Content = "Invalid or corrupted config format.", Duration = 3})
 			end
-			KazeUI:Notify({Title = "Config Loaded", Content = "Loaded " .. name, Duration = 3})
 		else
 			KazeUI:Notify({Title = "Config Error", Content = "Config " .. name .. " not found.", Duration = 3})
 		end
@@ -633,10 +662,36 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 		end
 	end)
 
-	RegisterFlag(flag, function() return isMulti and selectedMulti or selectedSingle end, function(val)
-		if isMulti then selectedMulti = val else selectedSingle = val end
+	-- Save & Load Registry Hook
+	RegisterFlag(flag, function()
+		if isMulti then
+			local ret = {}
+			for k,v in pairs(selectedMulti) do if v then table.insert(ret, k) end end
+			return ret
+		end
+		return selectedSingle 
+	end, function(val)
+		if isMulti then 
+			selectedMulti = {}
+			if type(val) == "table" then
+				for _, v in ipairs(val) do selectedMulti[tostring(v)] = true end
+			end
+		else 
+			selectedSingle = tostring(val)
+		end
 		UpdateHeaderVisual()
 		Refresh(options)
+		
+		-- Hook properly into config applying state
+		if typeof(callback) == "function" then
+			if isMulti then
+				local ret = {}
+				for k,v in pairs(selectedMulti) do if v then table.insert(ret, k) end end
+				task.spawn(callback, ret)
+			else
+				task.spawn(callback, selectedSingle)
+			end
+		end
 	end)
 
 	return {
@@ -935,7 +990,7 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 	switchIndicator.AnchorPoint = Vector2.new(0, 0.5)
 	switchIndicator.Position = state and UDim2.new(1, -16, 0.5, 0) or UDim2.new(0, 2, 0.5, 0)
 	switchIndicator.Size = UDim2.fromOffset(14, 14)
-	switchIndicator.BackgroundColor3 = Color3.fromRGB(20, 20, 25) -- Interior contrast color
+	switchIndicator.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
 	switchIndicator.BorderSizePixel = 0
 	Instance.new("UICorner", switchIndicator).CornerRadius = UDim.new(1, 0)
 	switchIndicator.Parent = switchContainer
@@ -1021,7 +1076,7 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 	}
 end
 
-local function CreateTextBoxInput(parentFrame, title, placeholder, callback, flag)
+local function CreateTextBoxInput(parentFrame, title, placeholder, defaultVal, callback, flag)
 	title = tostring(title or "Input Text")
 	placeholder = tostring(placeholder or "Type here...")
 	
@@ -1103,7 +1158,7 @@ local function CreateTextBoxInput(parentFrame, title, placeholder, callback, fla
 	textBox.BackgroundTransparency = 1
 	textBox.PlaceholderText = placeholder
 	textBox.PlaceholderColor3 = Color3.fromRGB(120, 120, 125)
-	textBox.Text = ""
+	textBox.Text = defaultVal and tostring(defaultVal) or ""
 	textBox.TextColor3 = Color3.fromRGB(255, 255, 255)
 	textBox.Font = Enum.Font.Gotham
 	textBox.TextSize = 13
@@ -1273,13 +1328,15 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 		value = newVal
 		valueLabel.Text = tostring(value)
 		
-		local visualPercentage = (value - min) / (max - min)
+		local visualPercentage = 0
+		if max > min then visualPercentage = (value - min) / (max - min) end
 		fill.Size = UDim2.new(visualPercentage, 0, 1, 0)
 		knob.Position = UDim2.new(visualPercentage, 0, 0.5, 0)
 		if typeof(callback) == "function" then task.spawn(callback, value) end
 	end
 	
-	local startingPercentage = (value - min) / (max - min)
+	local startingPercentage = 0
+	if max > min then startingPercentage = (value - min) / (max - min) end
 	fill.Size = UDim2.new(startingPercentage, 0, 1, 0)
 	knob.Position = UDim2.new(startingPercentage, 0, 0.5, 0)
 	
@@ -1316,7 +1373,8 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 		SetValue = function(self, newVal)
 			value = math.clamp(tonumber(newVal) or min, min, max)
 			valueLabel.Text = tostring(value)
-			local valPercentage = (value - min) / (max - min)
+			local valPercentage = 0
+			if max > min then valPercentage = (value - min) / (max - min) end
 			fill.Size = UDim2.new(valPercentage, 0, 1, 0)
 			knob.Position = UDim2.new(valPercentage, 0, 0.5, 0)
 			if typeof(callback) == "function" then task.spawn(callback, value) end
@@ -1792,14 +1850,14 @@ AttachElementsToAPI = function(apiTable, parentFrame)
 		return CreateToggleSwitch(parentFrame, title, desc, def, callback, flag)
 	end
 
-	function apiTable:TextBox(arg1, arg2, arg3, arg4)
-		local title, place, callback, flag
+	function apiTable:TextBox(arg1, arg2, arg3, arg4, arg5)
+		local title, place, def, callback, flag
 		if type(arg1) == "table" then
-			title, place, callback, flag = arg1.Title, arg1.Placeholder, arg1.Callback, arg1.Flag
+			title, place, def, callback, flag = arg1.Title, arg1.Placeholder, arg1.Default, arg1.Callback, arg1.Flag
 		else
-			title, place, callback, flag = arg1, arg2, arg3, arg4
+			title, place, def, callback, flag = arg1, arg2, arg3, arg4, arg5
 		end
-		return CreateTextBoxInput(parentFrame, title, place, callback, flag)
+		return CreateTextBoxInput(parentFrame, title, place, def, callback, flag)
 	end
 
 	function apiTable:Slider(arg1, arg2, arg3, arg4, arg5, arg6)
@@ -1854,7 +1912,7 @@ AttachElementsToAPI = function(apiTable, parentFrame)
 end
 
 CreateCollapsibleSection = function(parentFrame, titleArg)
-	local title = type(titleArg) == "table" and titleArg.Title or tostring(titleArg or "Seksyon")
+	local title = type(titleArg) == "table" and titleArg.Title or tostring(titleArg or "Section")
 	local isOpen = false
 
 	local sectionBox = Instance.new("Frame")
