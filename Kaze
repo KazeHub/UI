@@ -1,4 +1,4 @@
--- Kaze UI Library (Fixed: Custom UI Background System, NaN ColorPicker Patch, Window Toggles)
+-- Kaze UI Library (Fixed: Independent Backgrounds, Config Auto-Refresh, Minimize Toggles)
 local KazeUI = {}
 KazeUI.__index = KazeUI
 
@@ -20,7 +20,8 @@ KazeUI.Flags = {}
 KazeUI.ThemeCallbacks = {}
 KazeUI.GlowElements = {}
 KazeUI.NeonTweens = {}
-KazeUI.BackgroundElements = {}
+KazeUI.PanelElements = {} -- For Background Color changes
+KazeUI.TransparentElements = {} -- For Transparency changes
 local ActiveBinds = {}
 
 local function RegisterFlag(flag, getFunc, setFunc)
@@ -159,37 +160,40 @@ local function MakeDraggable(dragPart, targetPart)
 	end)
 end
 
--- Smart Background Color Offset Manager (Supports Light & Dark Modes)
-function KazeUI.GetColor(offset)
+-- ==========================================
+-- Smart Color & Transparency Engines
+-- ==========================================
+function KazeUI.GetColor(elevation)
 	local h, s, v = Color3.toHSV(KazeUI.BackgroundColor)
-	local actualOffset = v > 0.5 and -offset or offset
-	return Color3.fromHSV(h, s, math.clamp(v + actualOffset, 0, 1))
+	-- Automatically invert elevation adjustments if the background is a light color
+	local offset = v > 0.5 and -elevation or elevation
+	return Color3.fromHSV(h, s, math.clamp(v + offset, 0, 1))
 end
 
-function KazeUI:AddBackground(inst, defaultTrans, valOffset)
-	table.insert(KazeUI.BackgroundElements, {
-		Inst = inst, 
-		DefaultTrans = defaultTrans or inst.BackgroundTransparency,
-		ValOffset = valOffset or 0
-	})
+function KazeUI:AddPanel(inst, elevation)
+	table.insert(KazeUI.PanelElements, {Inst = inst, Elevation = elevation or 0})
 	if inst and inst:IsA("GuiObject") then
-		inst.BackgroundColor3 = KazeUI.GetColor(valOffset or 0)
+		inst.BackgroundColor3 = KazeUI.GetColor(elevation or 0)
 	end
+end
+
+function KazeUI:AddTransparentElement(inst, defaultTrans)
+	table.insert(KazeUI.TransparentElements, {Inst = inst, Default = defaultTrans or inst.BackgroundTransparency})
 end
 
 function KazeUI:SetBackgroundColor(color)
 	KazeUI.BackgroundColor = color
-	for _, data in ipairs(KazeUI.BackgroundElements) do
+	for _, data in ipairs(KazeUI.PanelElements) do
 		if data.Inst and data.Inst.Parent and data.Inst:IsA("GuiObject") then
-			data.Inst.BackgroundColor3 = KazeUI.GetColor(data.ValOffset or 0)
+			data.Inst.BackgroundColor3 = KazeUI.GetColor(data.Elevation)
 		end
 	end
 end
 
 function KazeUI:SetTransparency(alpha)
-	for _, data in ipairs(KazeUI.BackgroundElements) do
+	for _, data in ipairs(KazeUI.TransparentElements) do
 		if data.Inst and data.Inst.Parent then
-			data.Inst.BackgroundTransparency = math.clamp(data.DefaultTrans + alpha, 0, 1)
+			data.Inst.BackgroundTransparency = math.clamp(data.Default + alpha, 0, 1)
 		end
 	end
 end
@@ -266,7 +270,8 @@ function KazeUI:Notify(config)
 	notifFrame.BorderSizePixel = 0
 	notifFrame.Parent = notifHolder
 	Instance.new("UICorner", notifFrame).CornerRadius = UDim.new(0, 8)
-	KazeUI:AddBackground(notifFrame, 0, 0.02)
+	KazeUI:AddPanel(notifFrame, 0.02)
+	KazeUI:AddTransparentElement(notifFrame, 0)
 
 	local stroke = Instance.new("UIStroke", notifFrame)
 	stroke.Thickness = 1.5
@@ -379,7 +384,8 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 	dropFrame.AutomaticSize = Enum.AutomaticSize.Y
 	Instance.new("UICorner", dropFrame).CornerRadius = UDim.new(0, 8)
 	dropFrame.Parent = wrapper
-	KazeUI:AddBackground(dropFrame, 0, 0.02)
+	KazeUI:AddPanel(dropFrame, 0.02)
+	KazeUI:AddTransparentElement(dropFrame, 0)
 
 	local padding = Instance.new("UIPadding", dropFrame)
 	padding.PaddingTop = UDim.new(0, 4)
@@ -472,7 +478,8 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 	searchBox.TextXAlignment = Enum.TextXAlignment.Left
 	searchBox.Parent = searchWrapper
 	Instance.new("UICorner", searchBox).CornerRadius = UDim.new(0, 5)
-	KazeUI:AddBackground(searchBox, 0, -0.02)
+	KazeUI:AddPanel(searchBox, -0.02)
+	KazeUI:AddTransparentElement(searchBox, 0)
 
 	local searchStroke = Instance.new("UIStroke", searchBox)
 	searchStroke.Color = Color3.fromRGB(45, 45, 50)
@@ -539,7 +546,8 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 			btn.TextXAlignment = Enum.TextXAlignment.Left
 			btn.Parent = listContainer
 			Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 4)
-			KazeUI:AddBackground(btn, 0, 0.02)
+			KazeUI:AddPanel(btn, 0.02)
+			KazeUI:AddTransparentElement(btn, 0)
 
 			local indicator
 			if isMulti then
@@ -549,7 +557,8 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 				indicator.Size = UDim2.fromOffset(14, 14)
 				Instance.new("UIStroke", indicator).Color = Color3.fromRGB(60, 60, 65)
 				Instance.new("UICorner", indicator).CornerRadius = UDim.new(0, 4)
-				KazeUI:AddBackground(indicator, 0, 0.02)
+				KazeUI:AddPanel(indicator, 0.02)
+				KazeUI:AddTransparentElement(indicator, 0)
 			end
 
 			local function UpdateVisuals()
@@ -673,7 +682,8 @@ local function CreateParagraph(parentFrame, title, body)
 	paraFrame.BorderSizePixel = 0
 	Instance.new("UICorner", paraFrame).CornerRadius = UDim.new(0, 8)
 	paraFrame.Parent = wrapper
-	KazeUI:AddBackground(paraFrame, 0, 0.02)
+	KazeUI:AddPanel(paraFrame, 0.02)
+	KazeUI:AddTransparentElement(paraFrame, 0)
 	
 	local glow = Instance.new("Frame")
 	glow.AnchorPoint = Vector2.new(0.5, 0)
@@ -752,7 +762,8 @@ local function CreateClickableParagraph(parentFrame, title, body, callback)
 	paraFrame.BorderSizePixel = 0
 	Instance.new("UICorner", paraFrame).CornerRadius = UDim.new(0, 8)
 	paraFrame.Parent = wrapper
-	KazeUI:AddBackground(paraFrame, 0, 0.02)
+	KazeUI:AddPanel(paraFrame, 0.02)
+	KazeUI:AddTransparentElement(paraFrame, 0)
 	
 	local glow = Instance.new("Frame")
 	glow.AnchorPoint = Vector2.new(0.5, 0)
@@ -867,7 +878,8 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 	paraFrame.BorderSizePixel = 0
 	Instance.new("UICorner", paraFrame).CornerRadius = UDim.new(0, 8)
 	paraFrame.Parent = wrapper
-	KazeUI:AddBackground(paraFrame, 0, 0.02)
+	KazeUI:AddPanel(paraFrame, 0.02)
+	KazeUI:AddTransparentElement(paraFrame, 0)
 	
 	local glow = Instance.new("Frame")
 	glow.AnchorPoint = Vector2.new(0.5, 0)
@@ -1011,7 +1023,8 @@ local function CreateTextBoxInput(parentFrame, title, placeholder, callback, fla
 	paraFrame.BorderSizePixel = 0
 	Instance.new("UICorner", paraFrame).CornerRadius = UDim.new(0, 8)
 	paraFrame.Parent = wrapper
-	KazeUI:AddBackground(paraFrame, 0, 0.02)
+	KazeUI:AddPanel(paraFrame, 0.02)
+	KazeUI:AddTransparentElement(paraFrame, 0)
 	
 	local glow = Instance.new("Frame")
 	glow.AnchorPoint = Vector2.new(0.5, 0)
@@ -1049,7 +1062,8 @@ local function CreateTextBoxInput(parentFrame, title, placeholder, callback, fla
 	textBoxContainer.BorderSizePixel = 0
 	textBoxContainer.Parent = inner
 	Instance.new("UICorner", textBoxContainer).CornerRadius = UDim.new(0, 5)
-	KazeUI:AddBackground(textBoxContainer, 0, -0.02)
+	KazeUI:AddPanel(textBoxContainer, -0.02)
+	KazeUI:AddTransparentElement(textBoxContainer, 0)
 	
 	local innerStroke = Instance.new("UIStroke", textBoxContainer)
 	innerStroke.Thickness = 1
@@ -1124,7 +1138,8 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 	paraFrame.BorderSizePixel = 0
 	Instance.new("UICorner", paraFrame).CornerRadius = UDim.new(0, 8)
 	paraFrame.Parent = wrapper
-	KazeUI:AddBackground(paraFrame, 0, 0.02)
+	KazeUI:AddPanel(paraFrame, 0.02)
+	KazeUI:AddTransparentElement(paraFrame, 0)
 	
 	local glow = Instance.new("Frame")
 	glow.AnchorPoint = Vector2.new(0.5, 0)
@@ -1172,7 +1187,8 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 	track.BorderSizePixel = 0
 	track.Parent = inner
 	Instance.new("UICorner", track).CornerRadius = UDim.new(1, 0)
-	KazeUI:AddBackground(track, 0, -0.02)
+	KazeUI:AddPanel(track, -0.02)
+	KazeUI:AddTransparentElement(track, 0)
 	
 	local fill = Instance.new("Frame")
 	fill.Size = UDim2.new(0, 0, 1, 0)
@@ -1299,7 +1315,8 @@ local function CreateKeybind(parentFrame, title, defaultKey, callback, flag)
 	bindFrame.BorderSizePixel = 0
 	Instance.new("UICorner", bindFrame).CornerRadius = UDim.new(0, 8)
 	bindFrame.Parent = wrapper
-	KazeUI:AddBackground(bindFrame, 0, 0.02)
+	KazeUI:AddPanel(bindFrame, 0.02)
+	KazeUI:AddTransparentElement(bindFrame, 0)
 
 	local boxStroke = Instance.new("UIStroke", bindFrame)
 	boxStroke.Thickness = 1.5
@@ -1324,7 +1341,8 @@ local function CreateKeybind(parentFrame, title, defaultKey, callback, flag)
 	valBtn.Font = Enum.Font.GothamBold
 	valBtn.TextSize = 13
 	Instance.new("UICorner", valBtn).CornerRadius = UDim.new(0, 6)
-	KazeUI:AddBackground(valBtn, 0, 0.06)
+	KazeUI:AddPanel(valBtn, 0.06)
+	KazeUI:AddTransparentElement(valBtn, 0)
 
 	local function setKey(newKey)
 		key = newKey
@@ -1379,7 +1397,8 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 	dropFrame.AutomaticSize = Enum.AutomaticSize.Y
 	Instance.new("UICorner", dropFrame).CornerRadius = UDim.new(0, 8)
 	dropFrame.Parent = wrapper
-	KazeUI:AddBackground(dropFrame, 0, 0.02)
+	KazeUI:AddPanel(dropFrame, 0.02)
+	KazeUI:AddTransparentElement(dropFrame, 0)
 
 	local padding = Instance.new("UIPadding", dropFrame)
 	padding.PaddingTop = UDim.new(0, 4)
@@ -1507,7 +1526,6 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 
 	local draggingMap, draggingHue = false, false
 
-	-- NaN/Freeze Bug patched using absolute size min thresholds
 	local function updateSV(input)
 		local width = math.max(1, svMap.AbsoluteSize.X)
 		local height = math.max(1, svMap.AbsoluteSize.Y)
@@ -1737,7 +1755,8 @@ CreateCollapsibleSection = function(parentFrame, titleArg)
 	sectionBox.Parent = parentFrame
 	sectionBox.AutomaticSize = Enum.AutomaticSize.Y
 	Instance.new("UICorner", sectionBox).CornerRadius = UDim.new(0, 8)
-	KazeUI:AddBackground(sectionBox, 0, 0.02)
+	KazeUI:AddPanel(sectionBox, 0.02)
+	KazeUI:AddTransparentElement(sectionBox, 0)
 
 	local boxStroke = Instance.new("UIStroke", sectionBox)
 	boxStroke.Thickness = 1.5
@@ -1851,7 +1870,8 @@ function KazeUI:CreateWindow(config)
 	Window.BorderSizePixel = 0
 	Window.Parent = ScreenGui
 	Instance.new("UICorner", Window).CornerRadius = UDim.new(0, 12)
-	KazeUI:AddBackground(Window, 0, 0)
+	KazeUI:AddPanel(Window, 0)
+	KazeUI:AddTransparentElement(Window, 0)
 
 	local WindowStroke = Instance.new("UIStroke")
 	WindowStroke.Thickness = 2
@@ -1870,7 +1890,8 @@ function KazeUI:CreateWindow(config)
 	TopBar.BorderSizePixel = 0
 	TopBar.Parent = ContentClipper
 	MakeDraggable(TopBar, Window)
-	KazeUI:AddBackground(TopBar, 0, -0.02)
+	KazeUI:AddPanel(TopBar, -0.02)
+	KazeUI:AddTransparentElement(TopBar, 0)
 
 	local Avatar = Instance.new("ImageButton")
 	Avatar.Size = UDim2.fromOffset(32,32)
@@ -1962,7 +1983,8 @@ function KazeUI:CreateWindow(config)
 	MiniIcon.Parent = MiniButton
 	MiniIcon.ZIndex = 1000
 	Instance.new("UICorner", MiniIcon).CornerRadius = UDim.new(0, 8)
-	KazeUI:AddBackground(MiniIcon, 0, 0)
+	KazeUI:AddPanel(MiniIcon, 0)
+	KazeUI:AddTransparentElement(MiniIcon, 0)
 
 	local MiniStroke = Instance.new("UIStroke")
 	MiniStroke.Thickness = WindowStroke.Thickness
@@ -2114,7 +2136,8 @@ function KazeUI:CreateWindow(config)
 	SideBar.Size = UDim2.new(0,150,1,0) 
 	SideBar.BorderSizePixel = 0
 	SideBar.Parent = SideBarMask
-	KazeUI:AddBackground(SideBar, 0, 0)
+	KazeUI:AddPanel(SideBar, 0)
+	KazeUI:AddTransparentElement(SideBar, 0)
 
 	local VertDivider = Instance.new("Frame")
 	VertDivider.Size = UDim2.new(0,2,1,0)
@@ -2132,7 +2155,8 @@ function KazeUI:CreateWindow(config)
 	Pages.Size = UDim2.new(1, -152, 1, 0)
 	Pages.BorderSizePixel = 0
 	Pages.Parent = Content
-	KazeUI:AddBackground(Pages, 0, -0.01)
+	KazeUI:AddPanel(Pages, -0.01)
+	KazeUI:AddTransparentElement(Pages, 0)
 	
 	local isSidebarOpen = true
 	Avatar.MouseButton1Click:Connect(function()
@@ -2180,18 +2204,36 @@ function KazeUI:CreateWindow(config)
 			minimizeWindow()
 			isMinimized = true
 		end,
+		Show = function(self)
+			unminimizeWindow()
+			isMinimized = false
+		end,
 		Maximize = function(self)
 			unminimizeWindow()
 			isMinimized = false
 		end,
 		Toggle = function(self)
 			if isMinimized then
-				self:Maximize()
+				self:Show()
 			else
 				self:Minimize()
 			end
 		end
 	}
+
+	-- Add invisible Global Keybind API to the Window Object
+	function Win:Keybind(config)
+		local title = config.Title or "Global Keybind"
+		local key = config.Default or Enum.KeyCode.Unknown
+		local cb = config.Callback
+		local flag = config.Flag or title
+		ActiveBinds[flag] = { Key = key, Callback = cb }
+		return {
+			SetValue = function(self, newKey)
+				ActiveBinds[flag] = { Key = newKey, Callback = cb }
+			end
+		}
+	end
 
 	-- Config Manager Implementation
 	function Win:CreateConfigManager(tab)
@@ -2268,6 +2310,14 @@ function KazeUI:CreateWindow(config)
 		})
 
 		sec:ColorPicker({
+			Title = "Theme Accent Color",
+			Default = KazeUI.ThemeColor,
+			Callback = function(color)
+				KazeUI:SetTheme(color)
+			end
+		})
+
+		sec:ColorPicker({
 			Title = "UI Glow Color",
 			Default = KazeUI.GlowColor,
 			Callback = function(color)
@@ -2275,9 +2325,8 @@ function KazeUI:CreateWindow(config)
 			end
 		})
 
-		-- Added specific UI Background Color Picker logic properly!
 		sec:ColorPicker({
-			Title = "UI Background Color",
+			Title = "UI Background Base Color",
 			Default = KazeUI.BackgroundColor,
 			Callback = function(color)
 				KazeUI:SetBackgroundColor(color)
@@ -2308,7 +2357,8 @@ function KazeUI:CreateWindow(config)
 		btn.Parent = TabsList
 		btn.LayoutOrder = #self._Tabs + 1
 		Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
-		KazeUI:AddBackground(btn, 0, 0.02)
+		KazeUI:AddPanel(btn, 0.02)
+		KazeUI:AddTransparentElement(btn, 0)
 
 		local leftIndicator = Instance.new("Frame", btn)
 		leftIndicator.Size = UDim2.new(0,3,1,0)
