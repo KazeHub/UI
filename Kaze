@@ -1,4 +1,4 @@
--- Kaze UI Library (Optimized: Deep Obsidian Default, Expanded Backgrounds, Fixed Minimize Bug)
+-- Kaze UI Library (Optimized: Deep Obsidian Default, Threshold Minimize Drags, Master Keybind, Preset Color Theme Dropdown)
 local KazeUI = {}
 KazeUI.__index = KazeUI
 
@@ -12,7 +12,7 @@ local LP = Players.LocalPlayer
 
 -- Global State & Managers
 KazeUI.GlowColor = Color3.fromRGB(0, 160, 255)
-KazeUI.BackgroundColor = Color3.fromRGB(10, 10, 12) -- Deep Obsidian Default
+KazeUI.BackgroundColor = Color3.fromRGB(10, 10, 12) -- Default: Deep Obsidian
 KazeUI.Flags = {}
 
 -- Keybind & Visual Controllers
@@ -124,22 +124,33 @@ local function FormatImage(id)
 	return "rbxassetid://" .. clean
 end
 
+-- Modified drag script with motion thresholds to avoid cancelling click triggers
 local function MakeDraggable(dragPart, targetPart)
 	local dragging = false
 	local dragInput, dragStart, startPos
+	local dragActive = false
+	
 	local function update(input)
 		if not dragStart or not startPos then return end
 		local delta = input.Position - dragStart
-		targetPart.Position = UDim2.new(
-			startPos.X.Scale, startPos.X.Offset + delta.X,
-			startPos.Y.Scale, startPos.Y.Offset + delta.Y
-		)
+		
+		-- Require 8-pixel drag threshold before committing movement
+		if dragActive or delta.Magnitude > 8 then
+			dragActive = true
+			targetPart.Position = UDim2.new(
+				startPos.X.Scale, startPos.X.Offset + delta.X,
+				startPos.Y.Scale, startPos.Y.Offset + delta.Y
+			)
+		end
 	end
+	
 	dragPart.InputBegan:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 			dragging = true
+			dragActive = false
 			dragStart = input.Position
 			startPos = targetPart.Position
+			
 			input.Changed:Connect(function()
 				if input.UserInputState == Enum.UserInputState.End then
 					dragging = false
@@ -148,11 +159,13 @@ local function MakeDraggable(dragPart, targetPart)
 			end)
 		end
 	end)
+	
 	dragPart.InputChanged:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
 			dragInput = input
 		end
 	end)
+	
 	UIS.InputChanged:Connect(function(input)
 		if input == dragInput and dragging then update(input) end
 	end)
@@ -1833,6 +1846,7 @@ function KazeUI:CreateWindow(config)
 	local MainIcon = FormatImage(config.Icon or "6031763447")
 	local OpenIcon = FormatImage((config.OpenButton and config.OpenButton.Icon) or config.Icon or "6031763447")
 	
+	-- Backwards compatibility handler for removed ThemeColor
 	if config.GlowColor then 
 		KazeUI.GlowColor = config.GlowColor 
 	elseif config.ThemeColor then 
@@ -2001,7 +2015,7 @@ function KazeUI:CreateWindow(config)
 
 	BtnYellow.MouseButton1Click:Connect(minimizeWindow)
 
-	-- Highly robust custom click & drag detector to prevent accidental lockouts
+	-- Highly robust custom click & drag detector to prevent accidental lockout
 	local miniDragStart
 	local miniDragMoved = false
 	
@@ -2064,7 +2078,7 @@ function KazeUI:CreateWindow(config)
 		ConfirmWindow.Size = UDim2.fromOffset(330,130)
 		ConfirmWindow.AnchorPoint = Vector2.new(0.5,0.5)
 		ConfirmWindow.Position = UDim2.fromScale(0.5,0.5)
-		ConfirmWindow.BackgroundColor3 = Color3.fromRGB(25,25,30)
+		ConfirmWindow.BackgroundColor3 = Color3.fromRGB(255,255,255)
 		ConfirmWindow.ZIndex = 52
 		Instance.new("UICorner", ConfirmWindow).CornerRadius = UDim.new(0,12)
 		local confirmStroke = Instance.new("UIStroke", ConfirmWindow)
@@ -2187,27 +2201,23 @@ function KazeUI:CreateWindow(config)
 	tabsLayout.SortOrder = Enum.SortOrder.LayoutOrder
 	tabsLayout.Padding = UDim.new(0,4)
 
-	local isMinimized = false
-
 	local Win = {
 		Window = Window,
+		ScreenGui = ScreenGui,
 		_Pages = Pages,
 		_TabsList = TabsList,
 		_Tabs = {},
 		Minimize = function(self)
 			minimizeWindow()
-			isMinimized = true
 		end,
 		Show = function(self)
 			unminimizeWindow()
-			isMinimized = false
 		end,
 		Maximize = function(self)
 			unminimizeWindow()
-			isMinimized = false
 		end,
 		Toggle = function(self)
-			if isMinimized or not Window.Visible then
+			if not Window.Visible then
 				self:Show()
 			else
 				self:Minimize()
@@ -2216,11 +2226,11 @@ function KazeUI:CreateWindow(config)
 	}
 
 	-- Add invisible Global Keybind API to the Window Object
-	function Win:Keybind(cfg)
-		local title = cfg.Title or "Global Keybind"
-		local key = cfg.Default or Enum.KeyCode.Unknown
-		local cb = cfg.Callback
-		local flag = cfg.Flag or title
+	function Win:Keybind(config)
+		local title = config.Title or "Global Keybind"
+		local key = config.Default or Enum.KeyCode.Unknown
+		local cb = config.Callback
+		local flag = config.Flag or title
 		ActiveBinds[flag] = { Key = key, Callback = cb }
 		return {
 			SetValue = function(self, newKey)
@@ -2229,11 +2239,13 @@ function KazeUI:CreateWindow(config)
 		}
 	end
 
-	-- Built-in UI Toggle Config handling
+	-- Master Keybind Configuration Toggle
 	if config.ToggleKey then
 		ActiveBinds["KazeUI_MasterToggle"] = {
 			Key = config.ToggleKey,
-			Callback = function() Win:Toggle() end
+			Callback = function()
+				Win:Toggle()
+			end
 		}
 	end
 
@@ -2312,7 +2324,7 @@ function KazeUI:CreateWindow(config)
 		}
 
 		sec:Dropdown({
-			Title = "UI Background Base Theme",
+			Title = "Change Color Theme",
 			Options = bgOptions,
 			Default = "Deep Obsidian",
 			Callback = function(choice)
@@ -2377,7 +2389,7 @@ function KazeUI:CreateWindow(config)
 		txt.Position = UDim2.fromOffset(40,0)
 		txt.BackgroundTransparency = 1
 		txt.Text = name
-		txt.TextColor3 = Color3.fromRGB(200,200,200)
+		txt.TextColor3 = Color3.fromRGB(200, 200, 200)
 		txt.Font = Enum.Font.Gotham
 		txt.TextSize = 14
 		txt.TextXAlignment = Enum.TextXAlignment.Left
