@@ -2,7 +2,7 @@
 	Kaze UI Library
 	Optimized: Deep Obsidian Only, Dynamic Tab Text Scaling (No "..." Dots), Wider Sidebar, Safe Close Dialog Margin Padding
 	Added: New Dynamic Keybind Component, Full Config Manager Overhaul, Memory Leak Prevention
-	Fixes: Global Minimize Drag, Keybind Spam Size Inflation, Keybind Auto-Fire, Theme Config Flags
+	Fixes: Text Clipping/Overflow fixed globally, Multi-Dropdown Color Hover State Fixed
 --]]
 
 local KazeUI = {}
@@ -600,26 +600,49 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 				KazeUI:AddPanel(indicator, 0.02)
 				KazeUI:AddTransparentElement(indicator, 0)
 			end
+            
+			local isHovering = false
 
-			local function UpdateVisuals()
+			local function UpdateVisuals(instant)
 				local active = isMulti and selectedMulti[optStr] or (not isMulti and selectedSingle == optStr)
-				btn.BackgroundColor3 = active and KazeUI.GetColor(0.06) or KazeUI.GetColor(0.02)
-				btn.TextColor3 = active and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(200, 200, 200)
-				if isMulti and indicator then
-					indicator.BackgroundColor3 = active and Color3.fromRGB(255, 255, 255) or KazeUI.GetColor(0.02)
+				
+				local targetBg = active and KazeUI.GetColor(0.06) or KazeUI.GetColor(0.02)
+				local targetTxt = active and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(200, 200, 200)
+				local indTargetBg = active and Color3.fromRGB(255, 255, 255) or KazeUI.GetColor(0.02)
+				
+				if isHovering then
+					targetBg = KazeUI.GetColor(0.08)
+					targetTxt = Color3.fromRGB(255, 255, 255)
+				end
+
+				if instant == true then
+					btn.BackgroundColor3 = targetBg
+					btn.TextColor3 = targetTxt
+					if isMulti and indicator then
+						indicator.BackgroundColor3 = indTargetBg
+					end
+				else
+					TweenService:Create(btn, TweenInfo.new(0.15), {BackgroundColor3 = targetBg, TextColor3 = targetTxt}):Play()
+					if isMulti and indicator then
+						TweenService:Create(indicator, TweenInfo.new(0.15), {BackgroundColor3 = indTargetBg}):Play()
+					end
 				end
 			end
-			UpdateVisuals()
+			UpdateVisuals(true)
 
 			btn.MouseEnter:Connect(function() 
-				TweenService:Create(btn, TweenInfo.new(0.1), {BackgroundColor3 = KazeUI.GetColor(0.08), TextColor3 = Color3.fromRGB(255, 255, 255)}):Play() 
+				isHovering = true
+				UpdateVisuals(false)
 			end)
-			btn.MouseLeave:Connect(UpdateVisuals)
+			btn.MouseLeave:Connect(function()
+				isHovering = false
+				UpdateVisuals(false)
+			end)
 
 			btn.MouseButton1Click:Connect(function()
 				if isMulti then
 					selectedMulti[optStr] = not selectedMulti[optStr]
-					UpdateVisuals()
+					UpdateVisuals(false)
 					UpdateHeaderVisual()
 					if type(callback) == "function" then
 						local ret = {}
@@ -630,12 +653,12 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 					selectedSingle = optStr
 					UpdateHeaderVisual()
 					CloseDropdown()
-					for _, item in ipairs(optionItems) do item.Update() end
+					for _, item in ipairs(optionItems) do item.Update(false) end
 					if type(callback) == "function" then task.spawn(callback, selectedSingle) end
 				end
 			end)
 
-			table.insert(optionItems, { Btn = btn, Text = optStr, Update = UpdateVisuals })
+			table.insert(optionItems, { Btn = btn, Text = optStr, Update = function(instant) UpdateVisuals(instant) end })
 		end
 		CalcHeight()
 	end
@@ -871,6 +894,7 @@ local function CreateClickableParagraph(parentFrame, title, body, callback)
 		ptitleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
 		ptitleLabel.Font = Enum.Font.GothamBold
 		ptitleLabel.TextSize = 15
+		ptitleLabel.TextWrapped = true
 		ptitleLabel.TextXAlignment = Enum.TextXAlignment.Left
 		if body == "" then ptitleLabel.AnchorPoint = Vector2.new(0, 0.5); ptitleLabel.Position = UDim2.new(0, 0, 0.5, 0) end
 	end
@@ -1005,6 +1029,7 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 		ptitleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
 		ptitleLabel.Font = Enum.Font.GothamBold
 		ptitleLabel.TextSize = 15
+		ptitleLabel.TextWrapped = true
 		ptitleLabel.TextXAlignment = Enum.TextXAlignment.Left
 		if body == "" then ptitleLabel.AnchorPoint = Vector2.new(0, 0.5); ptitleLabel.Position = UDim2.new(0, 0, 0.5, 0) end
 	end
@@ -1019,6 +1044,7 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 		bodyLabel.TextColor3 = Color3.fromRGB(220, 220, 220)
 		bodyLabel.Font = Enum.Font.Gotham
 		bodyLabel.TextSize = 13
+		bodyLabel.TextWrapped = true
 		bodyLabel.TextXAlignment = Enum.TextXAlignment.Left
 		bodyLabel.TextYAlignment = Enum.TextYAlignment.Top
 	end
@@ -1137,6 +1163,7 @@ local function CreateTextBoxInput(parentFrame, title, placeholder, defaultVal, c
 		ptitleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
 		ptitleLabel.Font = Enum.Font.GothamBold
 		ptitleLabel.TextSize = 14
+		ptitleLabel.TextWrapped = true
 		ptitleLabel.TextXAlignment = Enum.TextXAlignment.Left
 	end
 	
@@ -1257,6 +1284,7 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 		ptitleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
 		ptitleLabel.Font = Enum.Font.GothamBold
 		ptitleLabel.TextSize = 14
+		ptitleLabel.TextWrapped = true
 		ptitleLabel.TextXAlignment = Enum.TextXAlignment.Left
 	end
 	
@@ -1681,6 +1709,7 @@ local function CreateKeybindInput(parentFrame, title, defaultKey, callback, flag
 		ptitleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
 		ptitleLabel.Font = Enum.Font.GothamBold
 		ptitleLabel.TextSize = 14
+		ptitleLabel.TextWrapped = true
 		ptitleLabel.TextXAlignment = Enum.TextXAlignment.Left
 	end
 	
