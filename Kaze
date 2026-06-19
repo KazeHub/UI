@@ -1,4 +1,4 @@
--- Kaze UI Library (Fixed: Independent Backgrounds, Config Auto-Refresh, Minimize Toggles)
+-- Kaze UI Library (Optimized: Removed Accent Theme, Unified Glow Borders, Preset Dropdown Backgrounds)
 local KazeUI = {}
 KazeUI.__index = KazeUI
 
@@ -11,13 +11,11 @@ local HttpService = game:GetService("HttpService")
 local LP = Players.LocalPlayer
 
 -- Global State & Managers
-KazeUI.ThemeColor = Color3.fromRGB(0, 160, 255)
 KazeUI.GlowColor = Color3.fromRGB(0, 160, 255)
 KazeUI.BackgroundColor = Color3.fromRGB(20, 20, 25)
 KazeUI.Flags = {}
 
--- Theme, Keybind & Visual Controllers
-KazeUI.ThemeCallbacks = {}
+-- Keybind & Visual Controllers
 KazeUI.GlowElements = {}
 KazeUI.NeonTweens = {}
 KazeUI.PanelElements = {} -- For Background Color changes
@@ -165,7 +163,6 @@ end
 -- ==========================================
 function KazeUI.GetColor(elevation)
 	local h, s, v = Color3.toHSV(KazeUI.BackgroundColor)
-	-- Automatically invert elevation adjustments if the background is a light color
 	local offset = v > 0.5 and -elevation or elevation
 	return Color3.fromHSV(h, s, math.clamp(v + offset, 0, 1))
 end
@@ -198,11 +195,6 @@ function KazeUI:SetTransparency(alpha)
 	end
 end
 
-function KazeUI:AddThemeCallback(cb)
-	table.insert(KazeUI.ThemeCallbacks, cb)
-	cb(KazeUI.ThemeColor)
-end
-
 local function StartNeonLoop(target)
 	if not target then return end
 	local propName = pcall(function() return target.Color end) and "Color" or "BackgroundColor3"
@@ -221,10 +213,16 @@ local function StartNeonLoop(target)
 	createTween()
 end
 
-function KazeUI:SetTheme(color)
-	KazeUI.ThemeColor = color
-	for _, cb in ipairs(KazeUI.ThemeCallbacks) do
-		task.spawn(cb, color)
+local function StopNeonLoop(target)
+	if not target then return end
+	if KazeUI.NeonTweens[target] then
+		KazeUI.NeonTweens[target]:Cancel()
+		KazeUI.NeonTweens[target] = nil
+	end
+	for i = #KazeUI.GlowElements, 1, -1 do
+		if KazeUI.GlowElements[i].Target == target then
+			table.remove(KazeUI.GlowElements, i)
+		end
 	end
 end
 
@@ -310,7 +308,7 @@ function KazeUI:Notify(config)
 		shrinkTween:Play()
 		shrinkTween.Completed:Wait()
 
-		if KazeUI.NeonTweens[stroke] then KazeUI.NeonTweens[stroke]:Cancel(); KazeUI.NeonTweens[stroke] = nil end
+		StopNeonLoop(stroke)
 		notifHolder:Destroy()
 	end)
 end
@@ -422,6 +420,7 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 	arrowIcon.Position = UDim2.new(1, 0, 0.5, 0)
 	arrowIcon.Size = UDim2.fromOffset(16, 16)
 	arrowIcon.BackgroundTransparency = 1
+	arrowIcon.ImageColor3 = Color3.fromRGB(255, 255, 255)
 	arrowIcon.Image = "rbxassetid://6031091004"
 	arrowIcon.Rotation = 0
 
@@ -430,6 +429,7 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 	selectedLabel.Position = UDim2.new(0.5, 0, 0, 0)
 	selectedLabel.BackgroundTransparency = 1
 	selectedLabel.Font = Enum.Font.Gotham
+	selectedLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
 	selectedLabel.TextSize = 13
 	selectedLabel.TextXAlignment = Enum.TextXAlignment.Right
 	selectedLabel.TextTruncate = Enum.TextTruncate.AtEnd
@@ -484,6 +484,12 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 	local searchStroke = Instance.new("UIStroke", searchBox)
 	searchStroke.Color = Color3.fromRGB(45, 45, 50)
 	searchStroke.Thickness = 1
+
+	searchBox.Focused:Connect(function() StartNeonLoop(searchStroke) end)
+	searchBox.FocusLost:Connect(function() 
+		StopNeonLoop(searchStroke) 
+		searchStroke.Color = Color3.fromRGB(45, 45, 50) 
+	end)
 	
 	local divider = Instance.new("Frame")
 	divider.Size = UDim2.new(1, -16, 0, 1)
@@ -540,7 +546,6 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 			btn.Size = UDim2.new(1, -8, 0, 30)
 			btn.BorderSizePixel = 0
 			btn.Text = "  " .. optStr
-			btn.TextColor3 = Color3.fromRGB(200, 200, 200)
 			btn.Font = Enum.Font.Gotham
 			btn.TextSize = 13
 			btn.TextXAlignment = Enum.TextXAlignment.Left
@@ -564,15 +569,15 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 			local function UpdateVisuals()
 				local active = isMulti and selectedMulti[optStr] or (not isMulti and selectedSingle == optStr)
 				btn.BackgroundColor3 = active and KazeUI.GetColor(0.06) or KazeUI.GetColor(0.02)
-				btn.TextColor3 = active and KazeUI.ThemeColor or Color3.fromRGB(200, 200, 200)
+				btn.TextColor3 = active and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(200, 200, 200)
 				if isMulti and indicator then
-					indicator.BackgroundColor3 = active and KazeUI.ThemeColor or KazeUI.GetColor(0.02)
+					indicator.BackgroundColor3 = active and Color3.fromRGB(255, 255, 255) or KazeUI.GetColor(0.02)
 				end
 			end
 			UpdateVisuals()
 
 			btn.MouseEnter:Connect(function() 
-				TweenService:Create(btn, TweenInfo.new(0.1), {BackgroundColor3 = KazeUI.GetColor(0.08), TextColor3 = Color3.fromRGB(255,255,255)}):Play() 
+				TweenService:Create(btn, TweenInfo.new(0.1), {BackgroundColor3 = KazeUI.GetColor(0.08), TextColor3 = Color3.fromRGB(255, 255, 255)}):Play() 
 			end)
 			btn.MouseLeave:Connect(UpdateVisuals)
 
@@ -621,14 +626,6 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 		else
 			CloseDropdown()
 		end
-	end)
-
-	KazeUI:AddThemeCallback(function(tc)
-		selectedLabel.TextColor3 = tc
-		arrowIcon.ImageColor3 = tc
-		searchBox.Focused:Connect(function() searchStroke.Color = tc end)
-		searchBox.FocusLost:Connect(function() searchStroke.Color = Color3.fromRGB(45, 45, 50) end)
-		for _, item in ipairs(optionItems) do item.Update() end
 	end)
 
 	RegisterFlag(flag, function() return isMulti and selectedMulti or selectedSingle end, function(val)
@@ -709,7 +706,7 @@ local function CreateParagraph(parentFrame, title, body)
 		ptitleLabel.Size = UDim2.new(1,0,0,titleHeight)
 		ptitleLabel.BackgroundTransparency = 1
 		ptitleLabel.Text = title
-		ptitleLabel.TextColor3 = Color3.fromRGB(255,255,255)
+		ptitleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
 		ptitleLabel.Font = Enum.Font.GothamBold
 		ptitleLabel.TextSize = 15
 		ptitleLabel.TextXAlignment = Enum.TextXAlignment.Left
@@ -721,7 +718,7 @@ local function CreateParagraph(parentFrame, title, body)
 	bodyLabel.Position = UDim2.fromOffset(0, titleHeight + 3)
 	bodyLabel.BackgroundTransparency = 1
 	bodyLabel.Text = body
-	bodyLabel.TextColor3 = Color3.fromRGB(255,255,255)
+	bodyLabel.TextColor3 = Color3.fromRGB(220, 220, 220)
 	bodyLabel.Font = Enum.Font.Gotham
 	bodyLabel.TextSize = 13
 	bodyLabel.TextWrapped = true
@@ -798,7 +795,7 @@ local function CreateClickableParagraph(parentFrame, title, body, callback)
 		ptitleLabel.Size = UDim2.new(1, -38, 0, titleHeight)
 		ptitleLabel.BackgroundTransparency = 1
 		ptitleLabel.Text = title
-		ptitleLabel.TextColor3 = Color3.fromRGB(255,255,255)
+		ptitleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
 		ptitleLabel.Font = Enum.Font.GothamBold
 		ptitleLabel.TextSize = 15
 		ptitleLabel.TextXAlignment = Enum.TextXAlignment.Left
@@ -811,7 +808,7 @@ local function CreateClickableParagraph(parentFrame, title, body, callback)
 		bodyLabel.Position = UDim2.fromOffset(0, titleHeight + 3)
 		bodyLabel.BackgroundTransparency = 1
 		bodyLabel.Text = body
-		bodyLabel.TextColor3 = Color3.fromRGB(180,180,180)
+		bodyLabel.TextColor3 = Color3.fromRGB(220, 220, 220)
 		bodyLabel.Font = Enum.Font.Gotham
 		bodyLabel.TextSize = 13
 		bodyLabel.TextWrapped = true
@@ -904,7 +901,7 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 	switchContainer.AnchorPoint = Vector2.new(1, 0.5)
 	switchContainer.Position = UDim2.new(1, -4, 0.5, 0)
 	switchContainer.Size = UDim2.fromOffset(36, 18)
-	switchContainer.BackgroundColor3 = state and KazeUI.ThemeColor or KazeUI.GetColor(0.08)
+	switchContainer.BackgroundColor3 = state and Color3.fromRGB(255, 255, 255) or KazeUI.GetColor(0.08)
 	switchContainer.BorderSizePixel = 0
 	Instance.new("UICorner", switchContainer).CornerRadius = UDim.new(1, 0)
 	switchContainer.Parent = inner
@@ -913,7 +910,7 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 	switchIndicator.AnchorPoint = Vector2.new(0, 0.5)
 	switchIndicator.Position = state and UDim2.new(1, -16, 0.5, 0) or UDim2.new(0, 2, 0.5, 0)
 	switchIndicator.Size = UDim2.fromOffset(14, 14)
-	switchIndicator.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+	switchIndicator.BackgroundColor3 = Color3.fromRGB(20, 20, 25) -- Interior contrasting color
 	switchIndicator.BorderSizePixel = 0
 	Instance.new("UICorner", switchIndicator).CornerRadius = UDim.new(1, 0)
 	switchIndicator.Parent = switchContainer
@@ -923,7 +920,7 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 		ptitleLabel.Size = UDim2.new(1, -48, 0, titleHeight)
 		ptitleLabel.BackgroundTransparency = 1
 		ptitleLabel.Text = title
-		ptitleLabel.TextColor3 = Color3.fromRGB(255,255,255)
+		ptitleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
 		ptitleLabel.Font = Enum.Font.GothamBold
 		ptitleLabel.TextSize = 15
 		ptitleLabel.TextXAlignment = Enum.TextXAlignment.Left
@@ -936,7 +933,7 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 		bodyLabel.Position = UDim2.fromOffset(0, titleHeight + 3)
 		bodyLabel.BackgroundTransparency = 1
 		bodyLabel.Text = body
-		bodyLabel.TextColor3 = Color3.fromRGB(180,180,180)
+		bodyLabel.TextColor3 = Color3.fromRGB(220, 220, 220)
 		bodyLabel.Font = Enum.Font.Gotham
 		bodyLabel.TextSize = 13
 		bodyLabel.TextXAlignment = Enum.TextXAlignment.Left
@@ -953,7 +950,7 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 	local function setToggleState(newState, instant)
 		state = newState
 		local targetPos = state and UDim2.new(1, -16, 0.5, 0) or UDim2.new(0, 2, 0.5, 0)
-		local targetBg = state and KazeUI.ThemeColor or KazeUI.GetColor(0.08)
+		local targetBg = state and Color3.fromRGB(255, 255, 255) or KazeUI.GetColor(0.08)
 		
 		if instant then
 			switchIndicator.Position = targetPos
@@ -980,10 +977,6 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 		TweenService:Create(paraFrame, TweenInfo.new(0.08), { Size = UDim2.new(0.95, 0, 0, totalHeight), Position = UDim2.new(0.5, 0, 0, 3) }):Play()
 		setToggleState(not state, false)
 		if typeof(callback) == "function" then task.spawn(callback, state) end
-	end)
-
-	KazeUI:AddThemeCallback(function(tc)
-		if state then switchContainer.BackgroundColor3 = tc end
 	end)
 
 	RegisterFlag(flag, function() return state end, function(val)
@@ -1050,7 +1043,7 @@ local function CreateTextBoxInput(parentFrame, title, placeholder, callback, fla
 		ptitleLabel.Size = UDim2.new(1, 0, 0, titleHeight)
 		ptitleLabel.BackgroundTransparency = 1
 		ptitleLabel.Text = title
-		ptitleLabel.TextColor3 = Color3.fromRGB(255,255,255)
+		ptitleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
 		ptitleLabel.Font = Enum.Font.GothamBold
 		ptitleLabel.TextSize = 14
 		ptitleLabel.TextXAlignment = Enum.TextXAlignment.Left
@@ -1083,16 +1076,13 @@ local function CreateTextBoxInput(parentFrame, title, placeholder, callback, fla
 	textBox.ClearTextOnFocus = false
 	textBox.Parent = textBoxContainer
 
-	KazeUI:AddThemeCallback(function(tc)
-		if textBox:IsFocused() then innerStroke.Color = tc end
-	end)
-
 	textBox.Focused:Connect(function()
-		TweenService:Create(innerStroke, TweenInfo.new(0.15), { Color = KazeUI.ThemeColor }):Play()
+		StartNeonLoop(innerStroke)
 		TweenService:Create(paraFrame, TweenInfo.new(0.12), { BackgroundColor3 = KazeUI.GetColor(0.04) }):Play()
 	end)
 
 	textBox.FocusLost:Connect(function(enterPressed)
+		StopNeonLoop(innerStroke)
 		TweenService:Create(innerStroke, TweenInfo.new(0.15), { Color = Color3.fromRGB(45, 45, 50) }):Play()
 		TweenService:Create(paraFrame, TweenInfo.new(0.12), { BackgroundColor3 = KazeUI.GetColor(0.02) }):Play()
 		if typeof(callback) == "function" then task.spawn(callback, textBox.Text, enterPressed) end
@@ -1165,7 +1155,7 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 		ptitleLabel.Size = UDim2.new(1, -80, 0, titleHeight)
 		ptitleLabel.BackgroundTransparency = 1
 		ptitleLabel.Text = title
-		ptitleLabel.TextColor3 = Color3.fromRGB(255,255,255)
+		ptitleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
 		ptitleLabel.Font = Enum.Font.GothamBold
 		ptitleLabel.TextSize = 14
 		ptitleLabel.TextXAlignment = Enum.TextXAlignment.Left
@@ -1176,7 +1166,7 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 	valueLabel.Position = UDim2.new(1, -70, 0, 0)
 	valueLabel.BackgroundTransparency = 1
 	valueLabel.Text = tostring(value)
-	valueLabel.TextColor3 = KazeUI.ThemeColor
+	valueLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
 	valueLabel.Font = Enum.Font.GothamBold
 	valueLabel.TextSize = 13
 	valueLabel.TextXAlignment = Enum.TextXAlignment.Right
@@ -1192,7 +1182,7 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 	
 	local fill = Instance.new("Frame")
 	fill.Size = UDim2.new(0, 0, 1, 0)
-	fill.BackgroundColor3 = KazeUI.ThemeColor
+	fill.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
 	fill.BorderSizePixel = 0
 	fill.Parent = track
 	Instance.new("UICorner", fill).CornerRadius = UDim.new(1, 0)
@@ -1276,10 +1266,6 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 		end
 	end)
 
-	KazeUI:AddThemeCallback(function(tc) 
-		valueLabel.TextColor3 = tc 
-		fill.BackgroundColor3 = tc
-	end)
 	wrapper.Destroying:Connect(function() modalLock:Destroy() end)
 
 	local api = {
@@ -1619,26 +1605,20 @@ local function CreateVisualSectionDivider(parentFrame, titleArg)
 	label.Position = UDim2.fromOffset(12, 0)
 	label.BackgroundTransparency = 1
 	label.Text = title
-	label.TextColor3 = KazeUI.ThemeColor
+	label.TextColor3 = Color3.fromRGB(255, 255, 255)
 	label.Font = Enum.Font.GothamBold
 	label.TextSize = 14
 	label.TextXAlignment = Enum.TextXAlignment.Left
 	label.Parent = wrapper
-	StartNeonLoop(label)
 	
 	local leftLine = Instance.new("Frame")
 	leftLine.Size = UDim2.new(0, 3, 0, 14)
 	leftLine.Position = UDim2.new(0, 0, 0.5, -7)
-	leftLine.BackgroundColor3 = KazeUI.ThemeColor
+	leftLine.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
 	leftLine.BorderSizePixel = 0
 	leftLine.Parent = wrapper
 	Instance.new("UICorner", leftLine).CornerRadius = UDim.new(1, 0)
 	StartNeonLoop(leftLine)
-
-	KazeUI:AddThemeCallback(function(tc)
-		label.TextColor3 = tc
-		leftLine.BackgroundColor3 = tc
-	end)
 end
 
 local CreateCollapsibleSection
@@ -1651,7 +1631,7 @@ AttachElementsToAPI = function(apiTable, parentFrame)
 		label.Size = UDim2.new(1, -8, 0, 20)
 		label.BackgroundTransparency = 1
 		label.Text = tostring(t or " ")
-		label.TextColor3 = Color3.fromRGB(220,220,220)
+		label.TextColor3 = Color3.fromRGB(220, 220, 220)
 		label.Font = Enum.Font.Gotham
 		label.TextSize = 13
 		label.TextXAlignment = Enum.TextXAlignment.Left
@@ -1779,12 +1759,11 @@ CreateCollapsibleSection = function(parentFrame, titleArg)
 	titleLabel.Position = UDim2.fromOffset(12, 0)
 	titleLabel.BackgroundTransparency = 1
 	titleLabel.Text = title
-	titleLabel.TextColor3 = KazeUI.ThemeColor
+	titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
 	titleLabel.Font = Enum.Font.GothamBold
 	titleLabel.TextSize = 14
 	titleLabel.TextXAlignment = Enum.TextXAlignment.Left
 	titleLabel.Parent = headerFrame
-	StartNeonLoop(titleLabel)
 
 	local arrowIcon = Instance.new("ImageLabel")
 	arrowIcon.AnchorPoint = Vector2.new(1, 0.5)
@@ -1840,10 +1819,6 @@ CreateCollapsibleSection = function(parentFrame, titleArg)
 		}):Play()
 	end)
 
-	KazeUI:AddThemeCallback(function(tc)
-		titleLabel.TextColor3 = tc
-	end)
-
 	local sectionPublic = { Frame = sectionBox, ContentFrame = sectionContent, Header = headerFrame }
 	AttachElementsToAPI(sectionPublic, sectionContent)
 	return sectionPublic
@@ -1858,8 +1833,14 @@ function KazeUI:CreateWindow(config)
 	local MainIcon = FormatImage(config.Icon or "6031763447")
 	local OpenIcon = FormatImage((config.OpenButton and config.OpenButton.Icon) or config.Icon or "6031763447")
 	
-	if config.ThemeColor then KazeUI.ThemeColor = config.ThemeColor end
-	if config.GlowColor then KazeUI.GlowColor = config.GlowColor else KazeUI.GlowColor = KazeUI.ThemeColor end
+	-- Backwards compatibility handler for removed ThemeColor
+	if config.GlowColor then 
+		KazeUI.GlowColor = config.GlowColor 
+	elseif config.ThemeColor then 
+		KazeUI.GlowColor = config.ThemeColor
+	else
+		KazeUI.GlowColor = Color3.fromRGB(0, 160, 255)
+	end
 
 	local MiniButtonSize = UDim2.fromOffset(46, 46)
 
@@ -1912,7 +1893,7 @@ function KazeUI:CreateWindow(config)
 	TitleLabel.Position = UDim2.fromOffset(50,6)
 	TitleLabel.BackgroundTransparency = 1
 	TitleLabel.Text = Title
-	TitleLabel.TextColor3 = Color3.fromRGB(235,235,235)
+	TitleLabel.TextColor3 = Color3.fromRGB(235, 235, 235)
 	TitleLabel.Font = Enum.Font.GothamBold
 	TitleLabel.TextSize = 15
 	TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
@@ -1923,7 +1904,7 @@ function KazeUI:CreateWindow(config)
 	SubLabel.Position = UDim2.fromOffset(50,26)
 	SubLabel.BackgroundTransparency = 1
 	SubLabel.Text = Author .. " | v" .. Version
-	SubLabel.TextColor3 = Color3.fromRGB(160,160,160)
+	SubLabel.TextColor3 = Color3.fromRGB(160, 160, 160)
 	SubLabel.Font = Enum.Font.Gotham
 	SubLabel.TextSize = 12
 	SubLabel.TextXAlignment = Enum.TextXAlignment.Left
@@ -1932,14 +1913,11 @@ function KazeUI:CreateWindow(config)
 	local TopDivider = Instance.new("Frame")
 	TopDivider.Size = UDim2.new(1,0,0,2)
 	TopDivider.Position = UDim2.new(0,0,1,-2)
-	TopDivider.BackgroundColor3 = KazeUI.ThemeColor
+	TopDivider.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
 	TopDivider.BorderSizePixel = 0
 	TopDivider.ZIndex = 5
 	TopDivider.Parent = TopBar
-	
-	KazeUI:AddThemeCallback(function(tc)
-		TopDivider.BackgroundColor3 = tc
-	end)
+	StartNeonLoop(TopDivider)
 
 	local defaultWindowSize = UDim2.fromOffset(750, 450)
 	local lastNormalSize = defaultWindowSize
@@ -2142,13 +2120,10 @@ function KazeUI:CreateWindow(config)
 	local VertDivider = Instance.new("Frame")
 	VertDivider.Size = UDim2.new(0,2,1,0)
 	VertDivider.Position = UDim2.new(0,150,0,0)
-	VertDivider.BackgroundColor3 = KazeUI.ThemeColor
+	VertDivider.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
 	VertDivider.BorderSizePixel = 0
 	VertDivider.Parent = Content
-	
-	KazeUI:AddThemeCallback(function(tc)
-		VertDivider.BackgroundColor3 = tc
-	end)
+	StartNeonLoop(VertDivider)
 
 	local Pages = Instance.new("Frame")
 	Pages.Position = UDim2.new(0,152,0,0)
@@ -2289,31 +2264,23 @@ function KazeUI:CreateWindow(config)
 	function Win:CreateThemeManager(tab)
 		local sec = tab:Section({Title = "Theme & Visuals"})
 		
-		local themeColors = {
-			White = Color3.fromRGB(255, 255, 255),
-			Black = Color3.fromRGB(0, 0, 0),
-			Blue = Color3.fromRGB(0, 160, 255),
-			Green = Color3.fromRGB(0, 255, 0),
-			Red = Color3.fromRGB(255, 0, 0),
-			Purple = Color3.fromRGB(150, 0, 255),
-			Yellow = Color3.fromRGB(255, 255, 0),
-			Orange = Color3.fromRGB(255, 128, 0),
-			Pink = Color3.fromRGB(255, 100, 150)
+		local bgColors = {
+			["Dark Charcoal"] = Color3.fromRGB(20, 20, 25),
+			["Midnight Blue"] = Color3.fromRGB(15, 20, 35),
+			["Deep Obsidian"] = Color3.fromRGB(10, 10, 12),
+			["Classic Slate"] = Color3.fromRGB(30, 35, 40)
 		}
 		
-		sec:Dropdown({
-			Title = "Main UI Theme Color",
-			Options = {"White", "Black", "Blue", "Green", "Red", "Purple", "Yellow", "Orange", "Pink"},
-			Callback = function(c)
-				if themeColors[c] then KazeUI:SetTheme(themeColors[c]) end
-			end
-		})
+		local bgOptions = {"Dark Charcoal", "Midnight Blue", "Deep Obsidian", "Classic Slate"}
 
-		sec:ColorPicker({
-			Title = "Theme Accent Color",
-			Default = KazeUI.ThemeColor,
-			Callback = function(color)
-				KazeUI:SetTheme(color)
+		sec:Dropdown({
+			Title = "UI Background Base Theme",
+			Options = bgOptions,
+			Default = "Dark Charcoal",
+			Callback = function(choice)
+				if bgColors[choice] then
+					KazeUI:SetBackgroundColor(bgColors[choice])
+				end
 			end
 		})
 
@@ -2322,14 +2289,6 @@ function KazeUI:CreateWindow(config)
 			Default = KazeUI.GlowColor,
 			Callback = function(color)
 				KazeUI:SetGlow(color)
-			end
-		})
-
-		sec:ColorPicker({
-			Title = "UI Background Base Color",
-			Default = KazeUI.BackgroundColor,
-			Callback = function(color)
-				KazeUI:SetBackgroundColor(color)
 			end
 		})
 
@@ -2362,7 +2321,7 @@ function KazeUI:CreateWindow(config)
 
 		local leftIndicator = Instance.new("Frame", btn)
 		leftIndicator.Size = UDim2.new(0,3,1,0)
-		leftIndicator.BackgroundColor3 = KazeUI.ThemeColor
+		leftIndicator.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
 		leftIndicator.BorderSizePixel = 0
 		leftIndicator.Visible = false
 		Instance.new("UICorner", leftIndicator).CornerRadius = UDim.new(0,6)
@@ -2419,35 +2378,30 @@ function KazeUI:CreateWindow(config)
 				TweenService:Create(t.Button, TweenInfo.new(0.12), { BackgroundColor3 = KazeUI.GetColor(0.02) }):Play()
 				t.Indicator.Visible = false
 				t.Page.Visible = false
-				t.Label.TextColor3 = Color3.fromRGB(200,200,200)
+				t.Label.TextColor3 = Color3.fromRGB(200, 200, 200)
 				t.Label.Font = Enum.Font.Gotham
 			end
 			TweenService:Create(btn, TweenInfo.new(0.12), { BackgroundColor3 = KazeUI.GetColor(0.06) }):Play()
 			leftIndicator.Visible = true
 			page.Visible = true
-			txt.TextColor3 = KazeUI.ThemeColor
+			txt.TextColor3 = Color3.fromRGB(255, 255, 255)
 			txt.Font = Enum.Font.GothamBold
 		end
 
 		btn.MouseEnter:Connect(function()
 			if not leftIndicator.Visible then
 				TweenService:Create(btn, TweenInfo.new(0.1), { BackgroundColor3 = KazeUI.GetColor(0.04) }):Play()
-				txt.TextColor3 = Color3.fromRGB(220,220,220)
+				txt.TextColor3 = Color3.fromRGB(220, 220, 220)
 			end
 		end)
 		btn.MouseLeave:Connect(function()
 			if not leftIndicator.Visible then
 				TweenService:Create(btn, TweenInfo.new(0.1), { BackgroundColor3 = KazeUI.GetColor(0.02) }):Play()
-				txt.TextColor3 = Color3.fromRGB(200,200,200)
+				txt.TextColor3 = Color3.fromRGB(200, 200, 200)
 			end
 		end)
 		btn.MouseButton1Click:Connect(activate)
 		if #self._Tabs == 1 then activate() end
-
-		KazeUI:AddThemeCallback(function(tc)
-			if leftIndicator.Visible then txt.TextColor3 = tc end
-			leftIndicator.BackgroundColor3 = tc
-		end)
 
 		local public = { Button = btn, Page = page }
 		AttachElementsToAPI(public, pageContent)
