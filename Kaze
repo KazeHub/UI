@@ -1,4 +1,4 @@
--- Kaze UI Library (Optimized: Removed Accent Theme, Unified Glow Borders, Preset Dropdown Backgrounds)
+-- Kaze UI Library (Optimized: Deep Obsidian Default, Expanded Backgrounds, Fixed Minimize Bug)
 local KazeUI = {}
 KazeUI.__index = KazeUI
 
@@ -12,7 +12,7 @@ local LP = Players.LocalPlayer
 
 -- Global State & Managers
 KazeUI.GlowColor = Color3.fromRGB(0, 160, 255)
-KazeUI.BackgroundColor = Color3.fromRGB(20, 20, 25)
+KazeUI.BackgroundColor = Color3.fromRGB(10, 10, 12) -- Deep Obsidian Default
 KazeUI.Flags = {}
 
 -- Keybind & Visual Controllers
@@ -1833,7 +1833,6 @@ function KazeUI:CreateWindow(config)
 	local MainIcon = FormatImage(config.Icon or "6031763447")
 	local OpenIcon = FormatImage((config.OpenButton and config.OpenButton.Icon) or config.Icon or "6031763447")
 	
-	-- Backwards compatibility handler for removed ThemeColor
 	if config.GlowColor then 
 		KazeUI.GlowColor = config.GlowColor 
 	elseif config.ThemeColor then 
@@ -2002,13 +2001,33 @@ function KazeUI:CreateWindow(config)
 
 	BtnYellow.MouseButton1Click:Connect(minimizeWindow)
 
+	-- Highly robust custom click & drag detector to prevent accidental lockouts
 	local miniDragStart
+	local miniDragMoved = false
+	
 	MiniButton.InputBegan:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then miniDragStart = input.Position end
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then 
+			miniDragStart = input.Position 
+			miniDragMoved = false
+		end
 	end)
+	
+	MiniButton.InputChanged:Connect(function(input)
+		if miniDragStart and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+			-- Allow 8 pixel threshold before considering it a "drag" instead of a click
+			if (input.Position - miniDragStart).Magnitude > 8 then
+				miniDragMoved = true
+			end
+		end
+	end)
+	
 	MiniButton.InputEnded:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-			if miniDragStart and (input.Position - miniDragStart).Magnitude < 5 then unminimizeWindow() end
+			if miniDragStart and not miniDragMoved then 
+				unminimizeWindow() 
+			end
+			miniDragStart = nil
+			miniDragMoved = false
 		end
 	end)
 
@@ -2188,7 +2207,7 @@ function KazeUI:CreateWindow(config)
 			isMinimized = false
 		end,
 		Toggle = function(self)
-			if isMinimized then
+			if isMinimized or not Window.Visible then
 				self:Show()
 			else
 				self:Minimize()
@@ -2197,16 +2216,24 @@ function KazeUI:CreateWindow(config)
 	}
 
 	-- Add invisible Global Keybind API to the Window Object
-	function Win:Keybind(config)
-		local title = config.Title or "Global Keybind"
-		local key = config.Default or Enum.KeyCode.Unknown
-		local cb = config.Callback
-		local flag = config.Flag or title
+	function Win:Keybind(cfg)
+		local title = cfg.Title or "Global Keybind"
+		local key = cfg.Default or Enum.KeyCode.Unknown
+		local cb = cfg.Callback
+		local flag = cfg.Flag or title
 		ActiveBinds[flag] = { Key = key, Callback = cb }
 		return {
 			SetValue = function(self, newKey)
 				ActiveBinds[flag] = { Key = newKey, Callback = cb }
 			end
+		}
+	end
+
+	-- Built-in UI Toggle Config handling
+	if config.ToggleKey then
+		ActiveBinds["KazeUI_MasterToggle"] = {
+			Key = config.ToggleKey,
+			Callback = function() Win:Toggle() end
 		}
 	end
 
@@ -2265,18 +2292,29 @@ function KazeUI:CreateWindow(config)
 		local sec = tab:Section({Title = "Theme & Visuals"})
 		
 		local bgColors = {
+			["Deep Obsidian"] = Color3.fromRGB(10, 10, 12),
 			["Dark Charcoal"] = Color3.fromRGB(20, 20, 25),
 			["Midnight Blue"] = Color3.fromRGB(15, 20, 35),
-			["Deep Obsidian"] = Color3.fromRGB(10, 10, 12),
-			["Classic Slate"] = Color3.fromRGB(30, 35, 40)
+			["Classic Slate"] = Color3.fromRGB(30, 35, 40),
+			["Ocean Blue"] = Color3.fromRGB(15, 25, 40),
+			["Forest Green"] = Color3.fromRGB(15, 35, 20),
+			["Crimson Red"] = Color3.fromRGB(35, 15, 15),
+			["Golden Yellow"] = Color3.fromRGB(35, 30, 15),
+			["Rose Pink"] = Color3.fromRGB(35, 20, 30),
+			["Royal Purple"] = Color3.fromRGB(30, 15, 40),
+			["Steel Grey"] = Color3.fromRGB(40, 40, 40)
 		}
 		
-		local bgOptions = {"Dark Charcoal", "Midnight Blue", "Deep Obsidian", "Classic Slate"}
+		local bgOptions = {
+			"Deep Obsidian", "Dark Charcoal", "Midnight Blue", "Classic Slate", 
+			"Ocean Blue", "Forest Green", "Crimson Red", "Golden Yellow", 
+			"Rose Pink", "Royal Purple", "Steel Grey"
+		}
 
 		sec:Dropdown({
 			Title = "UI Background Base Theme",
 			Options = bgOptions,
-			Default = "Dark Charcoal",
+			Default = "Deep Obsidian",
 			Callback = function(choice)
 				if bgColors[choice] then
 					KazeUI:SetBackgroundColor(bgColors[choice])
