@@ -1,4 +1,4 @@
--- Kaze UI Library (Fixed: Background Transparency, Dynamic Theme Color Subscriptions, Keybind toggles, Notification Tweens)
+-- Kaze UI Library (Fixed: Custom UI Background System, NaN ColorPicker Patch, Window Toggles)
 local KazeUI = {}
 KazeUI.__index = KazeUI
 
@@ -13,6 +13,7 @@ local LP = Players.LocalPlayer
 -- Global State & Managers
 KazeUI.ThemeColor = Color3.fromRGB(0, 160, 255)
 KazeUI.GlowColor = Color3.fromRGB(0, 160, 255)
+KazeUI.BackgroundColor = Color3.fromRGB(20, 20, 25)
 KazeUI.Flags = {}
 
 -- Theme, Keybind & Visual Controllers
@@ -158,15 +159,37 @@ local function MakeDraggable(dragPart, targetPart)
 	end)
 end
 
--- Core Visual Management Methods
-function KazeUI:AddBackground(inst, defaultTrans)
-	table.insert(KazeUI.BackgroundElements, {Inst = inst, Default = defaultTrans or inst.BackgroundTransparency})
+-- Smart Background Color Offset Manager (Supports Light & Dark Modes)
+function KazeUI.GetColor(offset)
+	local h, s, v = Color3.toHSV(KazeUI.BackgroundColor)
+	local actualOffset = v > 0.5 and -offset or offset
+	return Color3.fromHSV(h, s, math.clamp(v + actualOffset, 0, 1))
+end
+
+function KazeUI:AddBackground(inst, defaultTrans, valOffset)
+	table.insert(KazeUI.BackgroundElements, {
+		Inst = inst, 
+		DefaultTrans = defaultTrans or inst.BackgroundTransparency,
+		ValOffset = valOffset or 0
+	})
+	if inst and inst:IsA("GuiObject") then
+		inst.BackgroundColor3 = KazeUI.GetColor(valOffset or 0)
+	end
+end
+
+function KazeUI:SetBackgroundColor(color)
+	KazeUI.BackgroundColor = color
+	for _, data in ipairs(KazeUI.BackgroundElements) do
+		if data.Inst and data.Inst.Parent and data.Inst:IsA("GuiObject") then
+			data.Inst.BackgroundColor3 = KazeUI.GetColor(data.ValOffset or 0)
+		end
+	end
 end
 
 function KazeUI:SetTransparency(alpha)
 	for _, data in ipairs(KazeUI.BackgroundElements) do
 		if data.Inst and data.Inst.Parent then
-			data.Inst.BackgroundTransparency = math.clamp(data.Default + alpha, 0, 1)
+			data.Inst.BackgroundTransparency = math.clamp(data.DefaultTrans + alpha, 0, 1)
 		end
 	end
 end
@@ -240,10 +263,10 @@ function KazeUI:Notify(config)
 	notifFrame.Name = "NotifFrame"
 	notifFrame.Size = UDim2.new(1, -10, 0, 60)
 	notifFrame.Position = UDim2.new(1.2, 0, 0, 0)
-	notifFrame.BackgroundColor3 = Color3.fromRGB(24, 24, 28)
 	notifFrame.BorderSizePixel = 0
 	notifFrame.Parent = notifHolder
 	Instance.new("UICorner", notifFrame).CornerRadius = UDim.new(0, 8)
+	KazeUI:AddBackground(notifFrame, 0, 0.02)
 
 	local stroke = Instance.new("UIStroke", notifFrame)
 	stroke.Thickness = 1.5
@@ -269,7 +292,6 @@ function KazeUI:Notify(config)
 	contentLab.TextSize = 13
 	contentLab.TextXAlignment = Enum.TextXAlignment.Left
 
-	-- Tween Wrapper scale properties independently to bypass layout constraint
 	TweenService:Create(notifHolder, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Size = UDim2.new(1, 0, 0, 70)}):Play()
 	TweenService:Create(notifFrame, TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Position = UDim2.new(0, 5, 0, 0)}):Play()
 
@@ -353,11 +375,11 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 	dropFrame.AnchorPoint = Vector2.new(0.5, 0)
 	dropFrame.Position = UDim2.new(0.5, 0, 0, 3)
 	dropFrame.Size = UDim2.new(0.95, 0, 0, 0)
-	dropFrame.BackgroundColor3 = Color3.fromRGB(24, 24, 28)
 	dropFrame.BorderSizePixel = 0
 	dropFrame.AutomaticSize = Enum.AutomaticSize.Y
 	Instance.new("UICorner", dropFrame).CornerRadius = UDim.new(0, 8)
 	dropFrame.Parent = wrapper
+	KazeUI:AddBackground(dropFrame, 0, 0.02)
 
 	local padding = Instance.new("UIPadding", dropFrame)
 	padding.PaddingTop = UDim.new(0, 4)
@@ -440,7 +462,6 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 	local searchBox = Instance.new("TextBox")
 	searchBox.Size = UDim2.new(1, 0, 1, -2)
 	searchBox.Position = UDim2.new(0, 0, 0, 1)
-	searchBox.BackgroundColor3 = Color3.fromRGB(16, 16, 20)
 	searchBox.BorderSizePixel = 0
 	searchBox.PlaceholderText = "   Search option..."
 	searchBox.PlaceholderColor3 = Color3.fromRGB(120, 120, 125)
@@ -451,6 +472,7 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 	searchBox.TextXAlignment = Enum.TextXAlignment.Left
 	searchBox.Parent = searchWrapper
 	Instance.new("UICorner", searchBox).CornerRadius = UDim.new(0, 5)
+	KazeUI:AddBackground(searchBox, 0, -0.02)
 
 	local searchStroke = Instance.new("UIStroke", searchBox)
 	searchStroke.Color = Color3.fromRGB(45, 45, 50)
@@ -509,7 +531,6 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 			local optStr = tostring(opt)
 			local btn = Instance.new("TextButton")
 			btn.Size = UDim2.new(1, -8, 0, 30)
-			btn.BackgroundColor3 = Color3.fromRGB(24, 24, 28)
 			btn.BorderSizePixel = 0
 			btn.Text = "  " .. optStr
 			btn.TextColor3 = Color3.fromRGB(200, 200, 200)
@@ -518,6 +539,7 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 			btn.TextXAlignment = Enum.TextXAlignment.Left
 			btn.Parent = listContainer
 			Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 4)
+			KazeUI:AddBackground(btn, 0, 0.02)
 
 			local indicator
 			if isMulti then
@@ -525,22 +547,24 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 				indicator.AnchorPoint = Vector2.new(1, 0.5)
 				indicator.Position = UDim2.new(1, -6, 0.5, 0)
 				indicator.Size = UDim2.fromOffset(14, 14)
-				indicator.BackgroundColor3 = Color3.fromRGB(24, 24, 28)
 				Instance.new("UIStroke", indicator).Color = Color3.fromRGB(60, 60, 65)
 				Instance.new("UICorner", indicator).CornerRadius = UDim.new(0, 4)
+				KazeUI:AddBackground(indicator, 0, 0.02)
 			end
 
 			local function UpdateVisuals()
 				local active = isMulti and selectedMulti[optStr] or (not isMulti and selectedSingle == optStr)
-				btn.BackgroundColor3 = active and Color3.fromRGB(30, 30, 35) or Color3.fromRGB(24, 24, 28)
+				btn.BackgroundColor3 = active and KazeUI.GetColor(0.06) or KazeUI.GetColor(0.02)
 				btn.TextColor3 = active and KazeUI.ThemeColor or Color3.fromRGB(200, 200, 200)
 				if isMulti and indicator then
-					indicator.BackgroundColor3 = active and KazeUI.ThemeColor or Color3.fromRGB(24, 24, 28)
+					indicator.BackgroundColor3 = active and KazeUI.ThemeColor or KazeUI.GetColor(0.02)
 				end
 			end
 			UpdateVisuals()
 
-			btn.MouseEnter:Connect(function() TweenService:Create(btn, TweenInfo.new(0.1), {BackgroundColor3 = Color3.fromRGB(35, 35, 40), TextColor3 = Color3.fromRGB(255,255,255)}):Play() end)
+			btn.MouseEnter:Connect(function() 
+				TweenService:Create(btn, TweenInfo.new(0.1), {BackgroundColor3 = KazeUI.GetColor(0.08), TextColor3 = Color3.fromRGB(255,255,255)}):Play() 
+			end)
 			btn.MouseLeave:Connect(UpdateVisuals)
 
 			btn.MouseButton1Click:Connect(function()
@@ -646,10 +670,10 @@ local function CreateParagraph(parentFrame, title, body)
 	paraFrame.AnchorPoint = Vector2.new(0.5, 0)
 	paraFrame.Position = UDim2.new(0.5, 0, 0, 3)
 	paraFrame.Size = UDim2.new(0.95, 0, 0, totalHeight)
-	paraFrame.BackgroundColor3 = Color3.fromRGB(24,24,28)
 	paraFrame.BorderSizePixel = 0
 	Instance.new("UICorner", paraFrame).CornerRadius = UDim.new(0, 8)
 	paraFrame.Parent = wrapper
+	KazeUI:AddBackground(paraFrame, 0, 0.02)
 	
 	local glow = Instance.new("Frame")
 	glow.AnchorPoint = Vector2.new(0.5, 0)
@@ -725,10 +749,10 @@ local function CreateClickableParagraph(parentFrame, title, body, callback)
 	paraFrame.AnchorPoint = Vector2.new(0.5, 0)
 	paraFrame.Position = UDim2.new(0.5, 0, 0, 3)
 	paraFrame.Size = UDim2.new(0.95, 0, 0, totalHeight)
-	paraFrame.BackgroundColor3 = Color3.fromRGB(24,24,28)
 	paraFrame.BorderSizePixel = 0
 	Instance.new("UICorner", paraFrame).CornerRadius = UDim.new(0, 8)
 	paraFrame.Parent = wrapper
+	KazeUI:AddBackground(paraFrame, 0, 0.02)
 	
 	local glow = Instance.new("Frame")
 	glow.AnchorPoint = Vector2.new(0.5, 0)
@@ -792,11 +816,11 @@ local function CreateClickableParagraph(parentFrame, title, body, callback)
 	clickDetector.Parent = paraFrame
 
 	clickDetector.MouseEnter:Connect(function()
-		TweenService:Create(paraFrame, TweenInfo.new(0.12), { BackgroundColor3 = Color3.fromRGB(32,32,36) }):Play()
+		TweenService:Create(paraFrame, TweenInfo.new(0.12), { BackgroundColor3 = KazeUI.GetColor(0.05) }):Play()
 		TweenService:Create(glow, TweenInfo.new(0.12), { BackgroundTransparency = 0.92 }):Play()
 	end)
 	clickDetector.MouseLeave:Connect(function()
-		TweenService:Create(paraFrame, TweenInfo.new(0.12), { BackgroundColor3 = Color3.fromRGB(24,24,28) }):Play()
+		TweenService:Create(paraFrame, TweenInfo.new(0.12), { BackgroundColor3 = KazeUI.GetColor(0.02) }):Play()
 		TweenService:Create(glow, TweenInfo.new(0.12), { BackgroundTransparency = 0.96 }):Play()
 		TweenService:Create(paraFrame, TweenInfo.new(0.1), { Size = UDim2.new(0.95, 0, 0, totalHeight), Position = UDim2.new(0.5, 0, 0, 3) }):Play()
 	end)
@@ -840,10 +864,10 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 	paraFrame.AnchorPoint = Vector2.new(0.5, 0)
 	paraFrame.Position = UDim2.new(0.5, 0, 0, 3)
 	paraFrame.Size = UDim2.new(0.95, 0, 0, totalHeight)
-	paraFrame.BackgroundColor3 = Color3.fromRGB(24,24,28)
 	paraFrame.BorderSizePixel = 0
 	Instance.new("UICorner", paraFrame).CornerRadius = UDim.new(0, 8)
 	paraFrame.Parent = wrapper
+	KazeUI:AddBackground(paraFrame, 0, 0.02)
 	
 	local glow = Instance.new("Frame")
 	glow.AnchorPoint = Vector2.new(0.5, 0)
@@ -868,7 +892,7 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 	switchContainer.AnchorPoint = Vector2.new(1, 0.5)
 	switchContainer.Position = UDim2.new(1, -4, 0.5, 0)
 	switchContainer.Size = UDim2.fromOffset(36, 18)
-	switchContainer.BackgroundColor3 = state and KazeUI.ThemeColor or Color3.fromRGB(40, 40, 45)
+	switchContainer.BackgroundColor3 = state and KazeUI.ThemeColor or KazeUI.GetColor(0.08)
 	switchContainer.BorderSizePixel = 0
 	Instance.new("UICorner", switchContainer).CornerRadius = UDim.new(1, 0)
 	switchContainer.Parent = inner
@@ -917,7 +941,7 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 	local function setToggleState(newState, instant)
 		state = newState
 		local targetPos = state and UDim2.new(1, -16, 0.5, 0) or UDim2.new(0, 2, 0.5, 0)
-		local targetBg = state and KazeUI.ThemeColor or Color3.fromRGB(40, 40, 45)
+		local targetBg = state and KazeUI.ThemeColor or KazeUI.GetColor(0.08)
 		
 		if instant then
 			switchIndicator.Position = targetPos
@@ -929,11 +953,11 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 	end
 
 	clickDetector.MouseEnter:Connect(function()
-		TweenService:Create(paraFrame, TweenInfo.new(0.12), { BackgroundColor3 = Color3.fromRGB(32,32,36) }):Play()
+		TweenService:Create(paraFrame, TweenInfo.new(0.12), { BackgroundColor3 = KazeUI.GetColor(0.05) }):Play()
 		TweenService:Create(glow, TweenInfo.new(0.12), { BackgroundTransparency = 0.92 }):Play()
 	end)
 	clickDetector.MouseLeave:Connect(function()
-		TweenService:Create(paraFrame, TweenInfo.new(0.12), { BackgroundColor3 = Color3.fromRGB(24,24,28) }):Play()
+		TweenService:Create(paraFrame, TweenInfo.new(0.12), { BackgroundColor3 = KazeUI.GetColor(0.02) }):Play()
 		TweenService:Create(glow, TweenInfo.new(0.12), { BackgroundTransparency = 0.96 }):Play()
 		TweenService:Create(paraFrame, TweenInfo.new(0.1), { Size = UDim2.new(0.95, 0, 0, totalHeight), Position = UDim2.new(0.5, 0, 0, 3) }):Play()
 	end)
@@ -984,10 +1008,10 @@ local function CreateTextBoxInput(parentFrame, title, placeholder, callback, fla
 	paraFrame.AnchorPoint = Vector2.new(0.5, 0)
 	paraFrame.Position = UDim2.new(0.5, 0, 0, 3)
 	paraFrame.Size = UDim2.new(0.95, 0, 0, totalHeight)
-	paraFrame.BackgroundColor3 = Color3.fromRGB(24,24,28)
 	paraFrame.BorderSizePixel = 0
 	Instance.new("UICorner", paraFrame).CornerRadius = UDim.new(0, 8)
 	paraFrame.Parent = wrapper
+	KazeUI:AddBackground(paraFrame, 0, 0.02)
 	
 	local glow = Instance.new("Frame")
 	glow.AnchorPoint = Vector2.new(0.5, 0)
@@ -1022,10 +1046,10 @@ local function CreateTextBoxInput(parentFrame, title, placeholder, callback, fla
 	local textBoxContainer = Instance.new("Frame")
 	textBoxContainer.Size = UDim2.new(1, 0, 0, 30)
 	textBoxContainer.Position = UDim2.new(0, 0, 0, titleHeight + 4)
-	textBoxContainer.BackgroundColor3 = Color3.fromRGB(16, 16, 20)
 	textBoxContainer.BorderSizePixel = 0
 	textBoxContainer.Parent = inner
 	Instance.new("UICorner", textBoxContainer).CornerRadius = UDim.new(0, 5)
+	KazeUI:AddBackground(textBoxContainer, 0, -0.02)
 	
 	local innerStroke = Instance.new("UIStroke", textBoxContainer)
 	innerStroke.Thickness = 1
@@ -1051,12 +1075,12 @@ local function CreateTextBoxInput(parentFrame, title, placeholder, callback, fla
 
 	textBox.Focused:Connect(function()
 		TweenService:Create(innerStroke, TweenInfo.new(0.15), { Color = KazeUI.ThemeColor }):Play()
-		TweenService:Create(paraFrame, TweenInfo.new(0.12), { BackgroundColor3 = Color3.fromRGB(28,28,32) }):Play()
+		TweenService:Create(paraFrame, TweenInfo.new(0.12), { BackgroundColor3 = KazeUI.GetColor(0.04) }):Play()
 	end)
 
 	textBox.FocusLost:Connect(function(enterPressed)
 		TweenService:Create(innerStroke, TweenInfo.new(0.15), { Color = Color3.fromRGB(45, 45, 50) }):Play()
-		TweenService:Create(paraFrame, TweenInfo.new(0.12), { BackgroundColor3 = Color3.fromRGB(24,24,28) }):Play()
+		TweenService:Create(paraFrame, TweenInfo.new(0.12), { BackgroundColor3 = KazeUI.GetColor(0.02) }):Play()
 		if typeof(callback) == "function" then task.spawn(callback, textBox.Text, enterPressed) end
 	end)
 	
@@ -1097,10 +1121,10 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 	paraFrame.AnchorPoint = Vector2.new(0.5, 0)
 	paraFrame.Position = UDim2.new(0.5, 0, 0, 3)
 	paraFrame.Size = UDim2.new(0.95, 0, 0, totalHeight)
-	paraFrame.BackgroundColor3 = Color3.fromRGB(24,24,28)
 	paraFrame.BorderSizePixel = 0
 	Instance.new("UICorner", paraFrame).CornerRadius = UDim.new(0, 8)
 	paraFrame.Parent = wrapper
+	KazeUI:AddBackground(paraFrame, 0, 0.02)
 	
 	local glow = Instance.new("Frame")
 	glow.AnchorPoint = Vector2.new(0.5, 0)
@@ -1145,10 +1169,10 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 	local track = Instance.new("Frame")
 	track.Size = UDim2.new(1, 0, 0, 6)
 	track.Position = UDim2.new(0, 0, 0, titleHeight + 8)
-	track.BackgroundColor3 = Color3.fromRGB(16, 16, 20)
 	track.BorderSizePixel = 0
 	track.Parent = inner
 	Instance.new("UICorner", track).CornerRadius = UDim.new(1, 0)
+	KazeUI:AddBackground(track, 0, -0.02)
 	
 	local fill = Instance.new("Frame")
 	fill.Size = UDim2.new(0, 0, 1, 0)
@@ -1272,10 +1296,10 @@ local function CreateKeybind(parentFrame, title, defaultKey, callback, flag)
 	bindFrame.AnchorPoint = Vector2.new(0.5, 0)
 	bindFrame.Position = UDim2.new(0.5, 0, 0, 3)
 	bindFrame.Size = UDim2.new(0.95, 0, 0, 36)
-	bindFrame.BackgroundColor3 = Color3.fromRGB(24, 24, 28)
 	bindFrame.BorderSizePixel = 0
 	Instance.new("UICorner", bindFrame).CornerRadius = UDim.new(0, 8)
 	bindFrame.Parent = wrapper
+	KazeUI:AddBackground(bindFrame, 0, 0.02)
 
 	local boxStroke = Instance.new("UIStroke", bindFrame)
 	boxStroke.Thickness = 1.5
@@ -1295,12 +1319,12 @@ local function CreateKeybind(parentFrame, title, defaultKey, callback, flag)
 	valBtn.AnchorPoint = Vector2.new(1, 0.5)
 	valBtn.Position = UDim2.new(1, -12, 0.5, 0)
 	valBtn.Size = UDim2.fromOffset(80, 24)
-	valBtn.BackgroundColor3 = Color3.fromRGB(35, 35, 40)
 	valBtn.Text = key == Enum.KeyCode.Unknown and "None" or key.Name
 	valBtn.TextColor3 = Color3.fromRGB(220, 220, 220)
 	valBtn.Font = Enum.Font.GothamBold
 	valBtn.TextSize = 13
 	Instance.new("UICorner", valBtn).CornerRadius = UDim.new(0, 6)
+	KazeUI:AddBackground(valBtn, 0, 0.06)
 
 	local function setKey(newKey)
 		key = newKey
@@ -1313,14 +1337,14 @@ local function CreateKeybind(parentFrame, title, defaultKey, callback, flag)
 	valBtn.MouseButton1Click:Connect(function()
 		isListening = true
 		valBtn.Text = "..."
-		TweenService:Create(valBtn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(45, 45, 50)}):Play()
+		TweenService:Create(valBtn, TweenInfo.new(0.2), {BackgroundColor3 = KazeUI.GetColor(0.1)}):Play()
 	end)
 
 	UIS.InputBegan:Connect(function(input)
 		if not isListening then return end
 		if input.UserInputType == Enum.UserInputType.Keyboard then
 			isListening = false
-			TweenService:Create(valBtn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(35, 35, 40)}):Play()
+			TweenService:Create(valBtn, TweenInfo.new(0.2), {BackgroundColor3 = KazeUI.GetColor(0.06)}):Play()
 			setKey(input.KeyCode)
 		end
 	end)
@@ -1351,11 +1375,11 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 	dropFrame.AnchorPoint = Vector2.new(0.5, 0)
 	dropFrame.Position = UDim2.new(0.5, 0, 0, 3)
 	dropFrame.Size = UDim2.new(0.95, 0, 0, 0)
-	dropFrame.BackgroundColor3 = Color3.fromRGB(24, 24, 28)
 	dropFrame.BorderSizePixel = 0
 	dropFrame.AutomaticSize = Enum.AutomaticSize.Y
 	Instance.new("UICorner", dropFrame).CornerRadius = UDim.new(0, 8)
 	dropFrame.Parent = wrapper
+	KazeUI:AddBackground(dropFrame, 0, 0.02)
 
 	local padding = Instance.new("UIPadding", dropFrame)
 	padding.PaddingTop = UDim.new(0, 4)
@@ -1403,7 +1427,6 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 	arrowIcon.Rotation = 0
 	StartNeonLoop(arrowIcon)
 
-	-- Overlay Click Button (Clean text parameters to avoid overlaps)
 	local clickBtn = Instance.new("TextButton", header)
 	clickBtn.Size = UDim2.fromScale(1, 1)
 	clickBtn.BackgroundTransparency = 1
@@ -1484,18 +1507,22 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 
 	local draggingMap, draggingHue = false, false
 
+	-- NaN/Freeze Bug patched using absolute size min thresholds
 	local function updateSV(input)
+		local width = math.max(1, svMap.AbsoluteSize.X)
+		local height = math.max(1, svMap.AbsoluteSize.Y)
 		local relativeX = input.Position.X - svMap.AbsolutePosition.X
 		local relativeY = input.Position.Y - svMap.AbsolutePosition.Y
-		s = math.clamp(relativeX / svMap.AbsoluteSize.X, 0, 1)
-		v = 1 - math.clamp(relativeY / svMap.AbsoluteSize.Y, 0, 1)
+		s = math.clamp(relativeX / width, 0, 1)
+		v = 1 - math.clamp(relativeY / height, 0, 1)
 		SetCursorPositions()
 		UpdateColor()
 	end
 
 	local function updateHue(input)
+		local width = math.max(1, hueSlider.AbsoluteSize.X)
 		local relativeX = input.Position.X - hueSlider.AbsolutePosition.X
-		h = math.clamp(relativeX / hueSlider.AbsoluteSize.X, 0, 1)
+		h = math.clamp(relativeX / width, 0, 1)
 		SetCursorPositions()
 		UpdateColor()
 	end
@@ -1706,11 +1733,11 @@ CreateCollapsibleSection = function(parentFrame, titleArg)
 
 	local sectionBox = Instance.new("Frame")
 	sectionBox.Size = UDim2.new(0.95, 0, 0, 0)
-	sectionBox.BackgroundColor3 = Color3.fromRGB(24, 24, 28)
 	sectionBox.BorderSizePixel = 0
 	sectionBox.Parent = parentFrame
 	sectionBox.AutomaticSize = Enum.AutomaticSize.Y
 	Instance.new("UICorner", sectionBox).CornerRadius = UDim.new(0, 8)
+	KazeUI:AddBackground(sectionBox, 0, 0.02)
 
 	local boxStroke = Instance.new("UIStroke", sectionBox)
 	boxStroke.Thickness = 1.5
@@ -1821,11 +1848,10 @@ function KazeUI:CreateWindow(config)
 	Window.Size = UDim2.fromOffset(750, 450)
 	Window.Position = UDim2.fromScale(0.5, 0.5)
 	Window.AnchorPoint = Vector2.new(0.5, 0.5)
-	Window.BackgroundColor3 = Color3.fromRGB(20,20,25)
 	Window.BorderSizePixel = 0
 	Window.Parent = ScreenGui
 	Instance.new("UICorner", Window).CornerRadius = UDim.new(0, 12)
-	KazeUI:AddBackground(Window, 0)
+	KazeUI:AddBackground(Window, 0, 0)
 
 	local WindowStroke = Instance.new("UIStroke")
 	WindowStroke.Thickness = 2
@@ -1841,11 +1867,10 @@ function KazeUI:CreateWindow(config)
 
 	local TopBar = Instance.new("Frame")
 	TopBar.Size = UDim2.new(1,0,0,50)
-	TopBar.BackgroundColor3 = Color3.fromRGB(15,15,20)
 	TopBar.BorderSizePixel = 0
 	TopBar.Parent = ContentClipper
 	MakeDraggable(TopBar, Window)
-	KazeUI:AddBackground(TopBar, 0)
+	KazeUI:AddBackground(TopBar, 0, -0.02)
 
 	local Avatar = Instance.new("ImageButton")
 	Avatar.Size = UDim2.fromOffset(32,32)
@@ -1932,13 +1957,12 @@ function KazeUI:CreateWindow(config)
 	MiniIcon.Position = UDim2.fromScale(0.5, 0.5)
 	MiniIcon.AnchorPoint = Vector2.new(0.5, 0.5)
 	MiniIcon.BackgroundTransparency = 0
-	MiniIcon.BackgroundColor3 = Color3.fromRGB(20,20,25)
 	MiniIcon.Image = OpenIcon
 	MiniIcon.ScaleType = Enum.ScaleType.Stretch 
 	MiniIcon.Parent = MiniButton
 	MiniIcon.ZIndex = 1000
 	Instance.new("UICorner", MiniIcon).CornerRadius = UDim.new(0, 8)
-	KazeUI:AddBackground(MiniIcon, 0)
+	KazeUI:AddBackground(MiniIcon, 0, 0)
 
 	local MiniStroke = Instance.new("UIStroke")
 	MiniStroke.Thickness = WindowStroke.Thickness
@@ -2088,10 +2112,9 @@ function KazeUI:CreateWindow(config)
 
 	local SideBar = Instance.new("Frame")
 	SideBar.Size = UDim2.new(0,150,1,0) 
-	SideBar.BackgroundColor3 = Color3.fromRGB(20,20,25)
 	SideBar.BorderSizePixel = 0
 	SideBar.Parent = SideBarMask
-	KazeUI:AddBackground(SideBar, 0)
+	KazeUI:AddBackground(SideBar, 0, 0)
 
 	local VertDivider = Instance.new("Frame")
 	VertDivider.Size = UDim2.new(0,2,1,0)
@@ -2107,10 +2130,9 @@ function KazeUI:CreateWindow(config)
 	local Pages = Instance.new("Frame")
 	Pages.Position = UDim2.new(0,152,0,0)
 	Pages.Size = UDim2.new(1, -152, 1, 0)
-	Pages.BackgroundColor3 = Color3.fromRGB(18,18,23)
 	Pages.BorderSizePixel = 0
 	Pages.Parent = Content
-	KazeUI:AddBackground(Pages, 0)
+	KazeUI:AddBackground(Pages, 0, -0.01)
 	
 	local isSidebarOpen = true
 	Avatar.MouseButton1Click:Connect(function()
@@ -2253,6 +2275,15 @@ function KazeUI:CreateWindow(config)
 			end
 		})
 
+		-- Added specific UI Background Color Picker logic properly!
+		sec:ColorPicker({
+			Title = "UI Background Color",
+			Default = KazeUI.BackgroundColor,
+			Callback = function(color)
+				KazeUI:SetBackgroundColor(color)
+			end
+		})
+
 		sec:Slider({
 			Title = "UI Background Transparency",
 			Min = 0,
@@ -2271,13 +2302,13 @@ function KazeUI:CreateWindow(config)
 		
 		local btn = Instance.new("TextButton")
 		btn.Size = UDim2.new(1, -12, 0, 40)
-		btn.BackgroundColor3 = Color3.fromRGB(24,24,28)
 		btn.BorderSizePixel = 0
 		btn.Text = ""
 		btn.AutoButtonColor = false
 		btn.Parent = TabsList
 		btn.LayoutOrder = #self._Tabs + 1
 		Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
+		KazeUI:AddBackground(btn, 0, 0.02)
 
 		local leftIndicator = Instance.new("Frame", btn)
 		leftIndicator.Size = UDim2.new(0,3,1,0)
@@ -2335,13 +2366,13 @@ function KazeUI:CreateWindow(config)
 
 		local function activate()
 			for _, t in ipairs(self._Tabs) do
-				TweenService:Create(t.Button, TweenInfo.new(0.12), { BackgroundColor3 = Color3.fromRGB(24,24,28) }):Play()
+				TweenService:Create(t.Button, TweenInfo.new(0.12), { BackgroundColor3 = KazeUI.GetColor(0.02) }):Play()
 				t.Indicator.Visible = false
 				t.Page.Visible = false
 				t.Label.TextColor3 = Color3.fromRGB(200,200,200)
 				t.Label.Font = Enum.Font.Gotham
 			end
-			TweenService:Create(btn, TweenInfo.new(0.12), { BackgroundColor3 = Color3.fromRGB(32,32,36) }):Play()
+			TweenService:Create(btn, TweenInfo.new(0.12), { BackgroundColor3 = KazeUI.GetColor(0.06) }):Play()
 			leftIndicator.Visible = true
 			page.Visible = true
 			txt.TextColor3 = KazeUI.ThemeColor
@@ -2350,13 +2381,13 @@ function KazeUI:CreateWindow(config)
 
 		btn.MouseEnter:Connect(function()
 			if not leftIndicator.Visible then
-				TweenService:Create(btn, TweenInfo.new(0.1), { BackgroundColor3 = Color3.fromRGB(28,28,31) }):Play()
+				TweenService:Create(btn, TweenInfo.new(0.1), { BackgroundColor3 = KazeUI.GetColor(0.04) }):Play()
 				txt.TextColor3 = Color3.fromRGB(220,220,220)
 			end
 		end)
 		btn.MouseLeave:Connect(function()
 			if not leftIndicator.Visible then
-				TweenService:Create(btn, TweenInfo.new(0.1), { BackgroundColor3 = Color3.fromRGB(24,24,28) }):Play()
+				TweenService:Create(btn, TweenInfo.new(0.1), { BackgroundColor3 = KazeUI.GetColor(0.02) }):Play()
 				txt.TextColor3 = Color3.fromRGB(200,200,200)
 			end
 		end)
