@@ -1,6 +1,6 @@
 --[[
-	Kaze UI Library (Na-optimize: Deep Obsidian Default, Threshold Minimize Drags, Master Keybind, Static Theme)
-	Paliwanag: Isinalin ang lahat ng komento at display text sa Wikang Filipino.
+	Kaze UI Library (Na-optimize: Deep Obsidian Default, Threshold Drag, Dynamic Localization, Tab Auto-Truncate)
+	Paliwanag: Isinalin ang lahat ng komento at display text sa Wikang Filipino ayon sa patakaran.
 --]]
 
 local KazeUI = {}
@@ -16,8 +16,80 @@ local LP = Players.LocalPlayer
 
 -- Pandaigdigang Estado at mga Tagapamahala
 KazeUI.GlowColor = Color3.fromRGB(0, 160, 255)
-KazeUI.BackgroundColor = Color3.fromRGB(10, 10, 12) -- Naka-lock sa Deep Obsidian
+KazeUI.BackgroundColor = Color3.fromRGB(10, 10, 12) -- Default: Deep Obsidian
 KazeUI.Flags = {}
+KazeUI.ActiveWindows = {}
+KazeUI.Language = "Tagalog" -- Default na Wika
+
+-- Pandaigdigang Diksyunaryo para sa Built-in Components (Config & Theme Managers)
+KazeUI.Locales = {
+	["English"] = {
+		Config_Section = "Config Manager",
+		Config_Name = "Config Name",
+		Config_Save = "Save Config",
+		Config_Select = "Select Saved Config",
+		Config_Refresh = "Refresh Configs",
+		Config_Load = "Load Config",
+		Config_Delete = "Delete Config",
+		Theme_Section = "Theme & Visuals",
+		Theme_Glow = "UI Glow Color",
+		Theme_Trans = "UI Background Transparency",
+		Close_Title = "Are you sure you want to close the UI?",
+		Close_Confirm = "Confirm",
+		Close_Cancel = "Cancel",
+		Default_Config = "Default",
+		Config_Save_Notif = "Successfully saved ",
+		Config_Save_Error_Executor = "Your executor does not support saving.",
+		Config_Load_Notif = "Loaded ",
+		Config_Load_Error_Not_Found = "Config not found.",
+		Config_Delete_Notif = "Deleted ",
+		Config_Delete_Error_Executor = "Your executor lacks 'delfile' support."
+	},
+	["Tagalog"] = {
+		Config_Section = "Tagapamahala ng Config",
+		Config_Name = "Pangalan ng Config",
+		Config_Save = "I-save ang Config",
+		Config_Select = "Pumili ng Naka-save na Config",
+		Config_Refresh = "I-refresh ang Configs",
+		Config_Load = "I-load ang Config",
+		Config_Delete = "I-delete ang Config",
+		Theme_Section = "Tema at Hitsura",
+		Theme_Glow = "Kulay ng Glow ng UI",
+		Theme_Trans = "Transparency ng Background",
+		Close_Title = "Sigurado ka ba na gusto mong isara ang UI?",
+		Close_Confirm = "Kumpirmahin",
+		Close_Cancel = "I-cancel",
+		Default_Config = "Default",
+		Config_Save_Notif = "Matagumpay na na-save ang ",
+		Config_Save_Error_Executor = "Hindi suportado ng iyong executor ang pag-save.",
+		Config_Load_Notif = "Na-load na ang ",
+		Config_Load_Error_Not_Found = "Hindi nahanap ang config.",
+		Config_Delete_Notif = "Nabura ang ",
+		Config_Delete_Error_Executor = "Walang suporta para sa 'delfile' ang iyong executor."
+	},
+	["Japanese"] = {
+		Config_Section = "設定マネージャー",
+		Config_Name = "設定名",
+		Config_Save = "設定を保存",
+		Config_Select = "保存された設定を選択",
+		Config_Refresh = "設定を更新",
+		Config_Load = "設定を読み込む",
+		Config_Delete = "設定を削除",
+		Theme_Section = "テーマと外観",
+		Theme_Glow = "UIグローカラー",
+		Theme_Trans = "背景の不透明度",
+		Close_Title = "本当にUIを閉じますか？",
+		Close_Confirm = "確認",
+		Close_Cancel = "キャンセル",
+		Default_Config = "デフォルト",
+		Config_Save_Notif = "設定が保存されました：",
+		Config_Save_Error_Executor = "エグゼキュータが保存をサポートしていません。",
+		Config_Load_Notif = "読み込みました：",
+		Config_Load_Error_Not_Found = "設定が見つかりません。",
+		Config_Delete_Notif = "削除しました：",
+		Config_Delete_Error_Executor = "エグゼキュータが'delfile'をサポートしていません。"
+	}
+}
 
 -- Mga Controller para sa Keybind at Visuals
 KazeUI.GlowElements = {}
@@ -128,7 +200,7 @@ local function FormatImage(id)
 	return "rbxassetid://" .. clean
 end
 
--- Maayos na Pag-drag na may pixel threshold upang maiwasan ang maling click registers
+-- Maayos na Pag-drag na may pixel threshold upang maiwasan ang maling click registers sa minimize button
 local function MakeDraggable(dragPart, targetPart)
 	local dragging = false
 	local dragInput, dragStart, startPos
@@ -263,6 +335,15 @@ function KazeUI:SetGlow(color)
 	end
 end
 
+-- Pamamahala ng Wika sa Buong UI Core
+function KazeUI:SetLanguage(lang)
+	if not KazeUI.Locales[lang] then return end
+	KazeUI.Language = lang
+	for _, win in ipairs(KazeUI.ActiveWindows) do
+		win:TranslateBuiltIns()
+	end
+end
+
 -- Maayos na Pagpapakita ng Notipikasyon
 function KazeUI:Notify(config)
 	config = config or {}
@@ -333,15 +414,17 @@ end
 function KazeUI:SaveConfig(name)
 	local data = {}
 	for flag, obj in pairs(KazeUI.Flags) do data[flag] = obj.Get() end
+	local t = KazeUI.Locales[KazeUI.Language]
 	if writefile then
 		writefile("KazeUI_"..name..".json", HttpService:JSONEncode(data))
-		KazeUI:Notify({Title = "Na-save ang Config", Content = "Matagumpay na na-save ang " .. name, Duration = 3})
+		KazeUI:Notify({Title = t.Config_Save, Content = t.Config_Save_Notif .. name, Duration = 3})
 	else
-		KazeUI:Notify({Title = "Error sa Config", Content = "Hindi suportado ng iyong executor ang pag-save.", Duration = 3})
+		KazeUI:Notify({Title = "Error", Content = t.Config_Save_Error_Executor, Duration = 3})
 	end
 end
 
 function KazeUI:LoadConfig(name)
+	local t = KazeUI.Locales[KazeUI.Language]
 	if readfile then
 		local s, res = pcall(function() return readfile("KazeUI_"..name..".json") end)
 		if s then
@@ -349,9 +432,9 @@ function KazeUI:LoadConfig(name)
 			for flag, val in pairs(data) do
 				if KazeUI.Flags[flag] then KazeUI.Flags[flag].Set(val) end
 			end
-			KazeUI:Notify({Title = "Na-load ang Config", Content = "Na-load na ang " .. name, Duration = 3})
+			KazeUI:Notify({Title = t.Config_Load, Content = t.Config_Load_Notif .. name, Duration = 3})
 		else
-			KazeUI:Notify({Title = "Error sa Config", Content = "Hindi nahanap ang config na " .. name, Duration = 3})
+			KazeUI:Notify({Title = "Error", Content = t.Config_Load_Error_Not_Found, Duration = 3})
 		end
 	end
 end
@@ -466,9 +549,9 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 					if firstVal == "" then firstVal = k end
 				end
 			end
-			if count == 0 then selectedLabel.Text = "Wala"
+			if count == 0 then selectedLabel.Text = "None"
 			elseif count == 1 then selectedLabel.Text = firstVal
-			else selectedLabel.Text = count .. " Pinili" end
+			else selectedLabel.Text = count .. " Selected" end
 		else
 			selectedLabel.Text = tostring(selectedSingle)
 		end
@@ -486,7 +569,7 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 	searchBox.Size = UDim2.new(1, 0, 1, -2)
 	searchBox.Position = UDim2.new(0, 0, 0, 1)
 	searchBox.BorderSizePixel = 0
-	searchBox.PlaceholderText = "   Maghanap ng opsyon..."
+	searchBox.PlaceholderText = "   Search option..."
 	searchBox.PlaceholderColor3 = Color3.fromRGB(120, 120, 125)
 	searchBox.Text = ""
 	searchBox.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -662,6 +745,9 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 				return ret
 			end
 			return selectedSingle 
+		end,
+		SetText = function(self, newTitle)
+			titleLabel.Text = newTitle
 		end
 	}
 end
@@ -719,8 +805,9 @@ local function CreateParagraph(parentFrame, title, body)
 	inner.Position = UDim2.fromOffset(8, 6)
 	inner.BackgroundTransparency = 1
 	
+	local ptitleLabel
 	if title ~= " " then
-		local ptitleLabel = Instance.new("TextLabel", inner)
+		ptitleLabel = Instance.new("TextLabel", inner)
 		ptitleLabel.Size = UDim2.new(1,0,0,titleHeight)
 		ptitleLabel.BackgroundTransparency = 1
 		ptitleLabel.Text = title
@@ -743,7 +830,14 @@ local function CreateParagraph(parentFrame, title, body)
 	bodyLabel.TextXAlignment = Enum.TextXAlignment.Left
 	bodyLabel.TextYAlignment = Enum.TextYAlignment.Top
 	
-	return { Wrapper = wrapper, Frame = paraFrame }
+	return { 
+		Wrapper = wrapper, 
+		Frame = paraFrame,
+		SetText = function(self, newTitle, newBody)
+			if ptitleLabel and newTitle then ptitleLabel.Text = newTitle end
+			if bodyLabel and newBody then bodyLabel.Text = newBody end
+		end
+	}
 end
 
 -- Gawaan ng Button Component
@@ -809,8 +903,9 @@ local function CreateClickableParagraph(parentFrame, title, body, callback)
 	rightIcon.ScaleType = Enum.ScaleType.Fit
 	rightIcon.Parent = inner
 	
+	local ptitleLabel
 	if title ~= " " and title ~= "" then
-		local ptitleLabel = Instance.new("TextLabel", inner)
+		ptitleLabel = Instance.new("TextLabel", inner)
 		ptitleLabel.Size = UDim2.new(1, -38, 0, titleHeight)
 		ptitleLabel.BackgroundTransparency = 1
 		ptitleLabel.Text = title
@@ -821,8 +916,9 @@ local function CreateClickableParagraph(parentFrame, title, body, callback)
 		if body == "" then ptitleLabel.AnchorPoint = Vector2.new(0, 0.5); ptitleLabel.Position = UDim2.new(0, 0, 0.5, 0) end
 	end
 	
+	local bodyLabel
 	if body ~= "" then
-		local bodyLabel = Instance.new("TextLabel", inner)
+		bodyLabel = Instance.new("TextLabel", inner)
 		bodyLabel.Size = UDim2.new(1, -38, 0, bodyHeight)
 		bodyLabel.Position = UDim2.fromOffset(0, titleHeight + 3)
 		bodyLabel.BackgroundTransparency = 1
@@ -859,7 +955,14 @@ local function CreateClickableParagraph(parentFrame, title, body, callback)
 		if typeof(callback) == "function" then task.spawn(callback) end
 	end)
 	
-	return { Wrapper = wrapper, Frame = paraFrame }
+	return { 
+		Wrapper = wrapper, 
+		Frame = paraFrame,
+		SetText = function(self, newTitle, newBody)
+			if ptitleLabel and newTitle then ptitleLabel.Text = newTitle end
+			if bodyLabel and newBody then bodyLabel.Text = newBody end
+		end
+	}
 end
 
 -- Gawaan ng Toggle Component
@@ -930,13 +1033,14 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 	switchIndicator.AnchorPoint = Vector2.new(0, 0.5)
 	switchIndicator.Position = state and UDim2.new(1, -16, 0.5, 0) or UDim2.new(0, 2, 0.5, 0)
 	switchIndicator.Size = UDim2.fromOffset(14, 14)
-	switchIndicator.BackgroundColor3 = Color3.fromRGB(20, 20, 25) -- Kulay sa loob para magka-contrast
+	switchIndicator.BackgroundColor3 = Color3.fromRGB(20, 20, 25) -- Interior contrast color
 	switchIndicator.BorderSizePixel = 0
 	Instance.new("UICorner", switchIndicator).CornerRadius = UDim.new(1, 0)
 	switchIndicator.Parent = switchContainer
 	
+	local ptitleLabel
 	if title ~= " " then
-		local ptitleLabel = Instance.new("TextLabel", inner)
+		ptitleLabel = Instance.new("TextLabel", inner)
 		ptitleLabel.Size = UDim2.new(1, -48, 0, titleHeight)
 		ptitleLabel.BackgroundTransparency = 1
 		ptitleLabel.Text = title
@@ -947,8 +1051,9 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 		if body == "" then ptitleLabel.AnchorPoint = Vector2.new(0, 0.5); ptitleLabel.Position = UDim2.new(0, 0, 0.5, 0) end
 	end
 	
+	local bodyLabel
 	if body ~= "" then
-		local bodyLabel = Instance.new("TextLabel", inner)
+		bodyLabel = Instance.new("TextLabel", inner)
 		bodyLabel.Size = UDim2.new(1, -48, 0, bodyHeight)
 		bodyLabel.Position = UDim2.fromOffset(0, titleHeight + 3)
 		bodyLabel.BackgroundTransparency = 1
@@ -1004,7 +1109,14 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 		if typeof(callback) == "function" then task.spawn(callback, state) end
 	end)
 	
-	return { Wrapper = wrapper, SetState = function(self, newState, instant) setToggleState(newState, instant) end }
+	return { 
+		Wrapper = wrapper, 
+		SetState = function(self, newState, instant) setToggleState(newState, instant) end,
+		SetText = function(self, newTitle, newBody)
+			if ptitleLabel and newTitle then ptitleLabel.Text = newTitle end
+			if bodyLabel and newBody then bodyLabel.Text = newBody end
+		end
+	}
 end
 
 -- Gawaan ng Textbox Component
@@ -1059,8 +1171,9 @@ local function CreateTextBoxInput(parentFrame, title, placeholder, callback, fla
 	inner.Position = UDim2.fromOffset(8, 6)
 	inner.BackgroundTransparency = 1
 	
+	local ptitleLabel
 	if title ~= " " and title ~= "" then
-		local ptitleLabel = Instance.new("TextLabel", inner)
+		ptitleLabel = Instance.new("TextLabel", inner)
 		ptitleLabel.Size = UDim2.new(1, 0, 0, titleHeight)
 		ptitleLabel.BackgroundTransparency = 1
 		ptitleLabel.Text = title
@@ -1114,7 +1227,14 @@ local function CreateTextBoxInput(parentFrame, title, placeholder, callback, fla
 		if typeof(callback) == "function" then task.spawn(callback, val) end
 	end)
 
-	return { Wrapper = wrapper, SetText = function(self, value) textBox.Text = tostring(value or "") end }
+	return { 
+		Wrapper = wrapper, 
+		SetText = function(self, value) textBox.Text = tostring(value or "") end,
+		SetPlaceholder = function(self, val) textBox.PlaceholderText = val end,
+		SetTitle = function(self, newTitle)
+			if ptitleLabel and newTitle then ptitleLabel.Text = newTitle end
+		end
+	}
 end
 
 -- Gawaan ng Slider Component
@@ -1172,8 +1292,9 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 	inner.Position = UDim2.fromOffset(8, 6)
 	inner.BackgroundTransparency = 1
 	
+	local ptitleLabel
 	if title ~= " " and title ~= "" then
-		local ptitleLabel = Instance.new("TextLabel", inner)
+		ptitleLabel = Instance.new("TextLabel", inner)
 		ptitleLabel.Size = UDim2.new(1, -80, 0, titleHeight)
 		ptitleLabel.BackgroundTransparency = 1
 		ptitleLabel.Text = title
@@ -1299,6 +1420,9 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 			fill.Size = UDim2.new(valPercentage, 0, 1, 0)
 			knob.Position = UDim2.new(valPercentage, 0, 0.5, 0)
 			if typeof(callback) == "function" then task.spawn(callback, value) end
+		end,
+		SetText = function(self, newTitle)
+			if ptitleLabel and newTitle then ptitleLabel.Text = newTitle end
 		end
 	}
 	RegisterFlag(flag, function() return value end, function(val) api:SetValue(val) end)
@@ -1345,7 +1469,7 @@ local function CreateKeybind(parentFrame, title, defaultKey, callback, flag)
 	valBtn.AnchorPoint = Vector2.new(1, 0.5)
 	valBtn.Position = UDim2.new(1, -12, 0.5, 0)
 	valBtn.Size = UDim2.fromOffset(80, 24)
-	valBtn.Text = key == Enum.KeyCode.Unknown and "Wala" or key.Name
+	valBtn.Text = key == Enum.KeyCode.Unknown and "None" or key.Name
 	valBtn.TextColor3 = Color3.fromRGB(220, 220, 220)
 	valBtn.Font = Enum.Font.GothamBold
 	valBtn.TextSize = 13
@@ -1355,7 +1479,7 @@ local function CreateKeybind(parentFrame, title, defaultKey, callback, flag)
 
 	local function setKey(newKey)
 		key = newKey
-		valBtn.Text = key == Enum.KeyCode.Unknown and "Wala" or key.Name
+		valBtn.Text = key == Enum.KeyCode.Unknown and "None" or key.Name
 		ActiveBinds[bindId] = { Key = key, Callback = callback }
 	end
 
@@ -1383,7 +1507,13 @@ local function CreateKeybind(parentFrame, title, defaultKey, callback, flag)
 		if s and k then setKey(k) end
 	end)
 
-	return { Wrapper = wrapper, SetValue = function(self, newKey) setKey(newKey) end }
+	return { 
+		Wrapper = wrapper, 
+		SetValue = function(self, newKey) setKey(newKey) end,
+		SetText = function(self, newTitle)
+			titleLabel.Text = newTitle
+		end
+	}
 end
 
 -- Gawaan ng Color Picker Component
@@ -1612,6 +1742,9 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 			h, s, v = Color3.toHSV(color)
 			SetCursorPositions()
 			UpdateColor()
+		end,
+		SetText = function(self, newTitle)
+			titleLabel.Text = newTitle
 		end
 	}
 end
@@ -1644,6 +1777,14 @@ local function CreateVisualSectionDivider(parentFrame, titleArg)
 	leftLine.Parent = wrapper
 	Instance.new("UICorner", leftLine).CornerRadius = UDim.new(1, 0)
 	StartNeonLoop(leftLine)
+
+	return {
+		Label = label,
+		LeftLine = leftLine,
+		SetText = function(self, t)
+			label.Text = t
+		end
+	}
 end
 
 local CreateCollapsibleSection
@@ -1745,8 +1886,7 @@ AttachElementsToAPI = function(apiTable, parentFrame)
 	
 	function apiTable:Section(arg1)
 		local title = type(arg1) == "table" and arg1.Title or arg1
-		CreateVisualSectionDivider(parentFrame, title)
-		return apiTable 
+		return CreateVisualSectionDivider(parentFrame, title)
 	end
 end
 
@@ -1846,6 +1986,9 @@ CreateCollapsibleSection = function(parentFrame, titleArg)
 
 	local sectionPublic = { Frame = sectionBox, ContentFrame = sectionContent, Header = headerFrame }
 	AttachElementsToAPI(sectionPublic, sectionContent)
+	function sectionPublic:SetText(newText)
+		titleLabel.Text = newText
+	end
 	return sectionPublic
 end
 
@@ -1858,8 +2001,7 @@ function KazeUI:CreateWindow(config)
 	local MainIcon = FormatImage(config.Icon or "6031763447")
 	local OpenIcon = FormatImage((config.OpenButton and config.OpenButton.Icon) or config.Icon or "6031763447")
 	
-	-- Gamitin ang Deep Obsidian bilang panimulang background
-	KazeUI.BackgroundColor = Color3.fromRGB(10, 10, 12)
+	KazeUI.BackgroundColor = Color3.fromRGB(10, 10, 12) -- Permanenteng Deep Obsidian
 	if config.GlowColor then KazeUI.GlowColor = config.GlowColor end
 
 	local MiniButtonSize = UDim2.fromOffset(46, 46)
@@ -1913,7 +2055,7 @@ function KazeUI:CreateWindow(config)
 	TitleLabel.Position = UDim2.fromOffset(50,6)
 	TitleLabel.BackgroundTransparency = 1
 	TitleLabel.Text = Title
-	TitleLabel.TextColor3 = Color3.fromRGB(235,235,235)
+	TitleLabel.TextColor3 = Color3.fromRGB(235, 235, 235)
 	TitleLabel.Font = Enum.Font.GothamBold
 	TitleLabel.TextSize = 15
 	TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
@@ -1924,7 +2066,7 @@ function KazeUI:CreateWindow(config)
 	SubLabel.Position = UDim2.fromOffset(50,26)
 	SubLabel.BackgroundTransparency = 1
 	SubLabel.Text = Author .. " | v" .. Version
-	SubLabel.TextColor3 = Color3.fromRGB(160,160,160)
+	SubLabel.TextColor3 = Color3.fromRGB(160, 160, 160)
 	SubLabel.Font = Enum.Font.Gotham
 	SubLabel.TextSize = 12
 	SubLabel.TextXAlignment = Enum.TextXAlignment.Left
@@ -2022,7 +2164,6 @@ function KazeUI:CreateWindow(config)
 
 	BtnYellow.MouseButton1Click:Connect(minimizeWindow)
 
-	-- Maayos na detektor ng pag-drag upang maiwasan ang maling click registers sa restore button
 	local miniDragStart
 	local miniDragMoved = false
 	
@@ -2070,6 +2211,7 @@ function KazeUI:CreateWindow(config)
 	local confirmActive = false
 	local function ShowCloseConfirm()
 		if confirmActive then return end
+		local t = KazeUI.Locales[KazeUI.Language]
 		confirmActive = true
 		BtnYellow.Active = false; BtnGreen.Active = false; BtnRed.Active = false
 		
@@ -2095,7 +2237,7 @@ function KazeUI:CreateWindow(config)
 		ConfirmText.Size = UDim2.new(1,-32,0,40)
 		ConfirmText.Position = UDim2.fromOffset(16,16)
 		ConfirmText.BackgroundTransparency = 1
-		ConfirmText.Text = "Sigurado ka ba na gusto mong isara ang UI?"
+		ConfirmText.Text = t.Close_Title
 		ConfirmText.TextColor3 = Color3.fromRGB(230,230,230)
 		ConfirmText.Font = Enum.Font.GothamBold
 		ConfirmText.TextSize = 16
@@ -2115,7 +2257,7 @@ function KazeUI:CreateWindow(config)
 		local ConfirmBtn = Instance.new("TextButton", ButtonsFrame)
 		ConfirmBtn.Size = UDim2.new(0,110,0,32)
 		ConfirmBtn.BackgroundColor3 = Color3.fromRGB(0,170,255)
-		ConfirmBtn.Text = "Kumpirmahin"
+		ConfirmBtn.Text = t.Close_Confirm
 		ConfirmBtn.TextColor3 = Color3.fromRGB(230,230,230)
 		ConfirmBtn.Font = Enum.Font.GothamBold
 		ConfirmBtn.TextSize = 15
@@ -2125,7 +2267,7 @@ function KazeUI:CreateWindow(config)
 		local CancelBtn = Instance.new("TextButton", ButtonsFrame)
 		CancelBtn.Size = UDim2.new(0,110,0,32)
 		CancelBtn.BackgroundColor3 = Color3.fromRGB(45,45,50)
-		CancelBtn.Text = "I-cancel"
+		CancelBtn.Text = t.Close_Cancel
 		CancelBtn.TextColor3 = Color3.fromRGB(220,220,220)
 		CancelBtn.Font = Enum.Font.GothamBold
 		CancelBtn.TextSize = 15
@@ -2236,7 +2378,7 @@ function KazeUI:CreateWindow(config)
 		end
 	}
 
-	-- Gawaan ng Keybind sa Window Object
+	-- Add invisible Global Keybind API to the Window Object
 	function Win:Keybind(config)
 		local title = config.Title or "Global Keybind"
 		local key = config.Default or Enum.KeyCode.Unknown
@@ -2250,7 +2392,6 @@ function KazeUI:CreateWindow(config)
 		}
 	end
 
-	-- Suporta sa master keybind ng window
 	if config.ToggleKey then
 		ActiveBinds["KazeUI_MasterToggle"] = {
 			Key = config.ToggleKey,
@@ -2258,9 +2399,12 @@ function KazeUI:CreateWindow(config)
 		}
 	end
 
-	-- Tagapamahala ng Config
+	-- Config Manager Implementation (Exposed for Live Translation)
 	function Win:CreateConfigManager(tab)
-		local sec = tab:Section({Title = "Tagapamahala ng Config"})
+		local t = KazeUI.Locales[KazeUI.Language]
+		local sec = tab:SectionUI(t.Config_Section)
+		self.ConfigSec = sec
+
 		local cfgName = "Default"
 
 		local function getConfigs()
@@ -2280,48 +2424,51 @@ function KazeUI:CreateWindow(config)
 			return list
 		end
 
-		sec:TextBox({Title = "Pangalan ng Config", Default = "Default", Callback = function(v) cfgName = v end})
+		self.ConfigNameBox = sec:TextBox({Title = t.Config_Name, Default = "Default", Callback = function(v) cfgName = v end})
 		
 		local configDropdown
-		sec:Button({Title = "I-save ang Config", Callback = function() 
+		self.ConfigSaveBtn = sec:Button({Title = t.Config_Save, Callback = function() 
 			KazeUI:SaveConfig(cfgName) 
 			if configDropdown then configDropdown:Refresh(getConfigs()) end
 		end})
 
 		configDropdown = sec:Dropdown({
-			Title = "Pumili ng Naka-save na Config", 
+			Title = t.Config_Select, 
 			Options = getConfigs(), 
 			Callback = function(v) cfgName = v end
 		})
+		self.ConfigSelectDropdown = configDropdown
 
-		sec:Button({Title = "I-refresh ang Configs", Callback = function() if configDropdown then configDropdown:Refresh(getConfigs()) end end})
-		sec:Button({Title = "I-load ang Config", Callback = function() KazeUI:LoadConfig(cfgName) end})
+		self.ConfigRefreshBtn = sec:Button({Title = t.Config_Refresh, Callback = function() if configDropdown then configDropdown:Refresh(getConfigs()) end end})
+		self.ConfigLoadBtn = sec:Button({Title = t.Config_Load, Callback = function() KazeUI:LoadConfig(cfgName) end})
 		
-		sec:Button({Title = "I-delete ang Config", Callback = function()
+		self.ConfigDeleteBtn = sec:Button({Title = t.Config_Delete, Callback = function()
 			if delfile then
 				pcall(function() delfile("KazeUI_"..cfgName..".json") end)
-				KazeUI:Notify({Title = "Config System", Content = "Nabura ang " .. cfgName, Duration = 3})
+				KazeUI:Notify({Title = "Config System", Content = t.Config_Delete_Notif .. cfgName, Duration = 3})
 				if configDropdown then configDropdown:Refresh(getConfigs()) end
 			else
-				KazeUI:Notify({Title = "Error sa Config", Content = "Walang suporta para sa 'delfile' ang iyong executor.", Duration = 3})
+				KazeUI:Notify({Title = "Error", Content = t.Config_Delete_Error_Executor, Duration = 3})
 			end
 		end})
 	end
 
-	-- Tagapamahala ng Tema (Nilinis at inayos para sa static Deep Obsidian)
+	-- Theme Manager Implementation (Exposed for Live Translation)
 	function Win:CreateThemeManager(tab)
-		local sec = tab:Section({Title = "Tema at Hitsura"})
+		local t = KazeUI.Locales[KazeUI.Language]
+		local sec = tab:SectionUI(t.Theme_Section)
+		self.ThemeSec = sec
 
-		sec:ColorPicker({
-			Title = "Kulay ng Glow ng UI",
+		self.ThemeGlowPicker = sec:ColorPicker({
+			Title = t.Theme_Glow,
 			Default = KazeUI.GlowColor,
 			Callback = function(color)
 				KazeUI:SetGlow(color)
 			end
 		})
 
-		sec:Slider({
-			Title = "Transparency ng Background",
+		self.ThemeTransSlider = sec:Slider({
+			Title = t.Theme_Trans,
 			Min = 0,
 			Max = 100,
 			Default = 0,
@@ -2329,6 +2476,25 @@ function KazeUI:CreateWindow(config)
 				KazeUI:SetTransparency(val / 100)
 			end
 		})
+	end
+
+	-- Live Translation Method for Built-In components
+	function Win:TranslateBuiltIns()
+		local t = KazeUI.Locales[KazeUI.Language]
+		
+		-- Config Manager Translate
+		if self.ConfigSec then self.ConfigSec:SetText(t.Config_Section) end
+		if self.ConfigNameBox then self.ConfigNameBox:SetTitle(t.Config_Name) end
+		if self.ConfigSaveBtn then self.ConfigSaveBtn:SetText(t.Config_Save) end
+		if self.ConfigSelectDropdown then self.ConfigSelectDropdown:SetText(t.Config_Select) end
+		if self.ConfigRefreshBtn then self.ConfigRefreshBtn:SetText(t.Config_Refresh) end
+		if self.ConfigLoadBtn then self.ConfigLoadBtn:SetText(t.Config_Load) end
+		if self.ConfigDeleteBtn then self.ConfigDeleteBtn:SetText(t.Config_Delete) end
+
+		-- Theme Manager Translate
+		if self.ThemeSec then self.ThemeSec:SetText(t.Theme_Section) end
+		if self.ThemeGlowPicker then self.ThemeGlowPicker:SetText(t.Theme_Glow) end
+		if self.ThemeTransSlider then self.ThemeTransSlider:SetText(t.Theme_Trans) end
 	end
 
 	function Win:CreateTab(arg1, arg2)
@@ -2342,6 +2508,7 @@ function KazeUI:CreateWindow(config)
 		btn.Text = ""
 		btn.AutoButtonColor = false
 		btn.Parent = TabsList
+		btn.ClipsDescendants = true
 		btn.LayoutOrder = #self._Tabs + 1
 		Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
 		KazeUI:AddPanel(btn, 0.02)
@@ -2362,15 +2529,19 @@ function KazeUI:CreateWindow(config)
 		iconLabel.ScaleType = Enum.ScaleType.Fit
 		iconLabel.Parent = btn
 		
+		-- FIX: Ginawang mas maliit (13) at nilagyan ng dynamic TextTruncate para hindi lumagpas ang mahabang pangalan
 		local txt = Instance.new("TextLabel", btn)
-		txt.Size = UDim2.new(1, -44, 1, 0)
+		txt.Size = UDim2.new(1, -48, 1, 0)
 		txt.Position = UDim2.fromOffset(40,0)
+		txt.ClipsDescendants = true
 		txt.BackgroundTransparency = 1
 		txt.Text = name
-		txt.TextColor3 = Color3.fromRGB(200,200,200)
+		txt.TextColor3 = Color3.fromRGB(200, 200, 200)
 		txt.Font = Enum.Font.Gotham
-		txt.TextSize = 14
+		txt.TextSize = 13
 		txt.TextXAlignment = Enum.TextXAlignment.Left
+		txt.TextTruncate = Enum.TextTruncate.AtEnd
+		txt.TextWrapped = false
 		txt.Parent = btn
 
 		local page = Instance.new("Frame")
@@ -2419,13 +2590,13 @@ function KazeUI:CreateWindow(config)
 		btn.MouseEnter:Connect(function()
 			if not leftIndicator.Visible then
 				TweenService:Create(btn, TweenInfo.new(0.1), { BackgroundColor3 = KazeUI.GetColor(0.04) }):Play()
-				txt.TextColor3 = Color3.fromRGB(220,220,220)
+				txt.TextColor3 = Color3.fromRGB(220, 220, 220)
 			end
 		end)
 		btn.MouseLeave:Connect(function()
 			if not leftIndicator.Visible then
 				TweenService:Create(btn, TweenInfo.new(0.1), { BackgroundColor3 = KazeUI.GetColor(0.02) }):Play()
-				txt.TextColor3 = Color3.fromRGB(200,200,200)
+				txt.TextColor3 = Color3.fromRGB(200, 200, 200)
 			end
 		end)
 		btn.MouseButton1Click:Connect(activate)
@@ -2433,9 +2604,13 @@ function KazeUI:CreateWindow(config)
 
 		local public = { Button = btn, Page = page }
 		AttachElementsToAPI(public, pageContent)
+		function public:SetText(newText)
+			txt.Text = newText
+		end
 		return public
 	end
 
+	table.insert(KazeUI.ActiveWindows, Window)
 	if typeof(config.Callback) == "function" then pcall(config.Callback) end
 	return Win
 end
