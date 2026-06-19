@@ -1,4 +1,4 @@
--- Kaze UI Library (Fixed: Color Picker, Separated Glow/Theme, Config Manager, Transparency)
+-- Kaze UI Library (Fixed: Color Picker, Separated Glow/Theme, Config Manager, Transparency, Keybind & Notifications)
 -- Full drop-in replacement + Keybind, ColorPicker, Config Manager, Theme Manager & Notifications.
 local KazeUI = {}
 KazeUI.__index = KazeUI
@@ -16,12 +16,13 @@ KazeUI.ThemeColor = Color3.fromRGB(0, 160, 255)
 KazeUI.GlowColor = Color3.fromRGB(0, 160, 255)
 KazeUI.Flags = {}
 
--- Theme & Visual Controllers
+-- Theme, Keybind & Visual Controllers
 KazeUI.ThemeElements = {}
 KazeUI.ThemeCallbacks = {}
 KazeUI.GlowElements = {}
 KazeUI.NeonTweens = {}
 KazeUI.BackgroundElements = {}
+local ActiveBinds = {}
 
 local function RegisterFlag(flag, getFunc, setFunc)
 	if flag then
@@ -29,21 +30,32 @@ local function RegisterFlag(flag, getFunc, setFunc)
 	end
 end
 
--- ScreenGui Setup
+-- Global Keybind Input Handler
+UIS.InputBegan:Connect(function(input, gameProcessed)
+	if gameProcessed then return end
+	for _, bind in pairs(ActiveBinds) do
+		if bind.Key ~= Enum.KeyCode.Unknown and input.KeyCode == bind.Key then
+			if typeof(bind.Callback) == "function" then
+				task.spawn(bind.Callback, bind.Key)
+			end
+		end
+	end
+end)
+
+-- Robust ScreenGui Setup (Supports CoreGui & PlayerGui Fallback)
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "KazeUI"
 ScreenGui.ResetOnSpawn = false
 ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-ScreenGui.Parent = LP:WaitForChild("PlayerGui")
+
+local success, parent = pcall(function() return game:GetService("CoreGui") end)
+if not success or not parent then
+	parent = LP:WaitForChild("PlayerGui", 15)
+end
+ScreenGui.Parent = parent
 
 -- Notification Container Setup
 local NotifContainer = Instance.new("Frame")
-NotifContainer.Name = "NotifContainer"
-NotifContainer.Size = UDim2.new(0, 300, 1, 0)
-NotifContainer.Position = UDim2.new(1, -320, 0, 0)
-NotifContainer.BackgroundTransparency = 1
-NotifContainer.Parent = ScreenGui
-
 local notifLayout = Instance.new("UIListLayout", NotifContainer)
 notifLayout.SortOrder = Enum.SortOrder.LayoutOrder
 notifLayout.VerticalAlignment = Enum.VerticalAlignment.Bottom
@@ -52,7 +64,13 @@ notifLayout.Padding = UDim.new(0, 10)
 local notifPadding = Instance.new("UIPadding", NotifContainer)
 notifPadding.PaddingBottom = UDim.new(0, 20)
 
--- UIScale para sa responsive scaling sa Mobile at PC
+NotifContainer.Name = "NotifContainer"
+NotifContainer.Size = UDim2.new(0, 300, 1, 0)
+NotifContainer.Position = UDim2.new(1, -320, 0, 0)
+NotifContainer.BackgroundTransparency = 1
+NotifContainer.Parent = ScreenGui
+
+-- Responsive Screen Scale Setup
 local UIScale = Instance.new("UIScale")
 UIScale.Parent = ScreenGui
 
@@ -67,19 +85,19 @@ end
 UpdateScale()
 workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(UpdateScale)
 
--- Auto-Icon Fetcher via game:HttpGet
+-- Auto-Icon Fetcher via HttpGet
 local IconsMap = {}
 pcall(function()
 	if game and game.HttpGet then
 		local rawIcons = game:HttpGet("https://raw.githubusercontent.com/KazeHub/UI/refs/heads/main/Icons.lua.txt")
 		if rawIcons then
-			local success, res = pcall(function()
+			local s, res = pcall(function()
 				local func = loadstring(rawIcons)
 				return func and func()
 			end)
 			
-			if not success or type(res) ~= "table" then
-				success, res = pcall(function() return HttpService:JSONDecode(rawIcons) end)
+			if not s or type(res) ~= "table" then
+				s, res = pcall(function() return HttpService:JSONDecode(rawIcons) end)
 			end
 			
 			if type(res) == "table" then
@@ -142,7 +160,7 @@ local function MakeDraggable(dragPart, targetPart)
 	end)
 end
 
--- Core Visual Management Methods
+-- Core Visual Controllers
 function KazeUI:AddBackground(inst, defaultTrans)
 	table.insert(KazeUI.BackgroundElements, {Inst = inst, Default = defaultTrans or inst.BackgroundTransparency})
 end
@@ -205,17 +223,28 @@ function KazeUI:SetGlow(color)
 	end
 end
 
+-- Robust Notification System with UIListLayout Position Anim Fix
 function KazeUI:Notify(config)
 	config = config or {}
 	local title = tostring(config.Title or "Notification")
 	local content = tostring(config.Content or "")
 	local duration = tonumber(config.Duration) or 3
 
+	local notifHolder = Instance.new("Frame")
+	notifHolder.Name = "NotifHolder"
+	notifHolder.Size = UDim2.new(1, 0, 0, 0)
+	notifHolder.BackgroundTransparency = 1
+	notifHolder.BorderSizePixel = 0
+	notifHolder.ClipsDescendants = true
+	notifHolder.Parent = NotifContainer
+
 	local notifFrame = Instance.new("Frame")
-	notifFrame.Size = UDim2.new(1, 0, 0, 60)
+	notifFrame.Name = "NotifFrame"
+	notifFrame.Size = UDim2.new(1, -10, 0, 60)
+	notifFrame.Position = UDim2.new(1.2, 0, 0, 0)
 	notifFrame.BackgroundColor3 = Color3.fromRGB(24, 24, 28)
-	notifFrame.Position = UDim2.new(1, 50, 0, 0)
-	notifFrame.Parent = NotifContainer
+	notifFrame.BorderSizePixel = 0
+	notifFrame.Parent = notifHolder
 	Instance.new("UICorner", notifFrame).CornerRadius = UDim.new(0, 8)
 
 	local stroke = Instance.new("UIStroke", notifFrame)
@@ -242,15 +271,22 @@ function KazeUI:Notify(config)
 	contentLab.TextSize = 13
 	contentLab.TextXAlignment = Enum.TextXAlignment.Left
 
-	TweenService:Create(notifFrame, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Position = UDim2.new(0, 0, 0, 0)}):Play()
+	-- Dynamic Animations via nested Frame positioning (bypasses Layout controller lock)
+	TweenService:Create(notifHolder, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Size = UDim2.new(1, 0, 0, 70)}):Play()
+	TweenService:Create(notifFrame, TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Position = UDim2.new(0, 5, 0, 0)}):Play()
 
 	task.spawn(function()
 		task.wait(duration)
-		local outTween = TweenService:Create(notifFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {Position = UDim2.new(1, 50, 0, 0)})
+		local outTween = TweenService:Create(notifFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {Position = UDim2.new(1.2, 0, 0, 0)})
 		outTween:Play()
 		outTween.Completed:Wait()
+		
+		local shrinkTween = TweenService:Create(notifHolder, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Size = UDim2.new(1, 0, 0, 0)})
+		shrinkTween:Play()
+		shrinkTween.Completed:Wait()
+
 		if KazeUI.NeonTweens[stroke] then KazeUI.NeonTweens[stroke]:Cancel(); KazeUI.NeonTweens[stroke] = nil end
-		notifFrame:Destroy()
+		notifHolder:Destroy()
 	end)
 end
 
@@ -288,7 +324,7 @@ local function ToggleScrollingAncestors(element, state)
 	end
 end
 
--- UI Component Generators
+-- Component Factories
 local function CreateDropdown(parentFrame, title, options, defaultOption, callback, isMulti, flag)
 	title = tostring(title or "Dropdown")
 	options = type(options) == "table" and options or {}
@@ -1202,7 +1238,10 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 		end
 	end)
 
-	KazeUI:AddThemeCallback(function(tc) valueLabel.TextColor3 = tc end)
+	KazeUI:AddThemeCallback(function(tc) 
+		valueLabel.TextColor3 = tc 
+		fill.BackgroundColor3 = tc
+	end)
 	wrapper.Destroying:Connect(function() modalLock:Destroy() end)
 
 	local api = {
@@ -1224,6 +1263,7 @@ local function CreateKeybind(parentFrame, title, defaultKey, callback, flag)
 	title = tostring(title or "Keybind")
 	local key = defaultKey or Enum.KeyCode.Unknown
 	local isListening = false
+	local bindId = flag or title
 	
 	local wrapper = Instance.new("Frame")
 	wrapper.Size = UDim2.new(1, 0, 0, 42)
@@ -1264,6 +1304,14 @@ local function CreateKeybind(parentFrame, title, defaultKey, callback, flag)
 	valBtn.TextSize = 13
 	Instance.new("UICorner", valBtn).CornerRadius = UDim.new(0, 6)
 
+	local function setKey(newKey)
+		key = newKey
+		valBtn.Text = key == Enum.KeyCode.Unknown and "None" or key.Name
+		ActiveBinds[bindId] = { Key = key, Callback = callback }
+	end
+
+	setKey(key)
+
 	valBtn.MouseButton1Click:Connect(function()
 		isListening = true
 		valBtn.Text = "..."
@@ -1273,20 +1321,20 @@ local function CreateKeybind(parentFrame, title, defaultKey, callback, flag)
 	UIS.InputBegan:Connect(function(input)
 		if not isListening then return end
 		if input.UserInputType == Enum.UserInputType.Keyboard then
-			key = input.KeyCode
-			valBtn.Text = key.Name
 			isListening = false
 			TweenService:Create(valBtn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(35, 35, 40)}):Play()
-			if typeof(callback) == "function" then task.spawn(callback, key) end
+			setKey(input.KeyCode)
 		end
 	end)
 
+	wrapper.Destroying:Connect(function() ActiveBinds[bindId] = nil end)
+
 	RegisterFlag(flag, function() return key.Name end, function(val)
 		local s, k = pcall(function() return Enum.KeyCode[val] end)
-		if s and k then key = k; valBtn.Text = key.Name; if typeof(callback) == "function" then task.spawn(callback, key) end end
+		if s and k then setKey(k) end
 	end)
 
-	return { Wrapper = wrapper, SetValue = function(self, newKey) key = newKey; valBtn.Text = key.Name end }
+	return { Wrapper = wrapper, SetValue = function(self, newKey) setKey(newKey) end }
 end
 
 local function CreateColorPicker(parentFrame, title, defaultColor, callback, flag)
@@ -1357,12 +1405,12 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 	arrowIcon.Rotation = 0
 	StartNeonLoop(arrowIcon)
 
+	-- Clicker overlay button (Strictly cleared default text values to prevent overlapping titles)
 	local clickBtn = Instance.new("TextButton", header)
 	clickBtn.Size = UDim2.fromScale(1, 1)
 	clickBtn.BackgroundTransparency = 1
 	clickBtn.Text = ""
 
-	-- Custom Picker Area Implementation (Fix for Color Picker)
 	local pickerArea = Instance.new("Frame", dropFrame)
 	pickerArea.Size = UDim2.new(1, -16, 0, 150)
 	pickerArea.BackgroundTransparency = 1
@@ -1373,6 +1421,7 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 	svMap.Size = UDim2.new(1, 0, 0, 120)
 	svMap.AutoButtonColor = false
 	svMap.BackgroundColor3 = Color3.fromHSV(h, 1, 1)
+	svMap.Text = ""
 	Instance.new("UICorner", svMap).CornerRadius = UDim.new(0, 4)
 
 	local whiteOverlay = Instance.new("Frame", svMap)
@@ -1402,6 +1451,7 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 	hueSlider.Position = UDim2.new(0, 0, 0, 130)
 	hueSlider.AutoButtonColor = false
 	hueSlider.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+	hueSlider.Text = ""
 	local hg = Instance.new("UIGradient", hueSlider)
 	hg.Color = ColorSequence.new{
 		ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 0, 0)),
@@ -1541,6 +1591,11 @@ local function CreateVisualSectionDivider(parentFrame, titleArg)
 	leftLine.Parent = wrapper
 	Instance.new("UICorner", leftLine).CornerRadius = UDim.new(1, 0)
 	StartNeonLoop(leftLine)
+
+	KazeUI:AddThemeCallback(function(tc)
+		label.TextColor3 = tc
+		leftLine.BackgroundColor3 = tc
+	end)
 end
 
 local CreateCollapsibleSection
@@ -1741,6 +1796,10 @@ CreateCollapsibleSection = function(parentFrame, titleArg)
 		}):Play()
 	end)
 
+	KazeUI:AddThemeCallback(function(tc)
+		titleLabel.TextColor3 = tc
+	end)
+
 	local sectionPublic = { Frame = sectionBox, ContentFrame = sectionContent, Header = headerFrame }
 	AttachElementsToAPI(sectionPublic, sectionContent)
 	return sectionPublic
@@ -1833,7 +1892,10 @@ function KazeUI:CreateWindow(config)
 	TopDivider.BorderSizePixel = 0
 	TopDivider.ZIndex = 5
 	TopDivider.Parent = TopBar
-	StartNeonLoop(TopDivider)
+	
+	KazeUI:AddThemeCallback(function(tc)
+		TopDivider.BackgroundColor3 = tc
+	end)
 
 	local defaultWindowSize = UDim2.fromOffset(750, 450)
 	local lastNormalSize = defaultWindowSize
@@ -2039,7 +2101,10 @@ function KazeUI:CreateWindow(config)
 	VertDivider.BackgroundColor3 = KazeUI.ThemeColor
 	VertDivider.BorderSizePixel = 0
 	VertDivider.Parent = Content
-	StartNeonLoop(VertDivider)
+	
+	KazeUI:AddThemeCallback(function(tc)
+		VertDivider.BackgroundColor3 = tc
+	end)
 
 	local Pages = Instance.new("Frame")
 	Pages.Position = UDim2.new(0,152,0,0)
@@ -2086,7 +2151,7 @@ function KazeUI:CreateWindow(config)
 
 	local Win = { Window = Window, _Pages = Pages, _TabsList = TabsList, _Tabs = {} }
 
-	-- Advanced Config Manager implementation
+	-- Config Manager Implementation
 	function Win:CreateConfigManager(tab)
 		local sec = tab:Section({Title = "Config Manager"})
 		local cfgName = "Default"
@@ -2136,7 +2201,7 @@ function KazeUI:CreateWindow(config)
 		end})
 	end
 
-	-- Advanced Theme Manager implementation
+	-- Theme Manager Implementation
 	function Win:CreateThemeManager(tab)
 		local sec = tab:Section({Title = "Theme & Visuals"})
 		
@@ -2188,7 +2253,7 @@ function KazeUI:CreateWindow(config)
 		btn.Size = UDim2.new(1, -12, 0, 40)
 		btn.BackgroundColor3 = Color3.fromRGB(24,24,28)
 		btn.BorderSizePixel = 0
-		btn.Text = " "
+		btn.Text = ""
 		btn.AutoButtonColor = false
 		btn.Parent = TabsList
 		btn.LayoutOrder = #self._Tabs + 1
@@ -2200,7 +2265,6 @@ function KazeUI:CreateWindow(config)
 		leftIndicator.BorderSizePixel = 0
 		leftIndicator.Visible = false
 		Instance.new("UICorner", leftIndicator).CornerRadius = UDim.new(0,6)
-		StartNeonLoop(leftIndicator)
 
 		local iconLabel = Instance.new("ImageLabel", btn)
 		iconLabel.Size = UDim2.fromOffset(24,24)
@@ -2208,6 +2272,7 @@ function KazeUI:CreateWindow(config)
 		iconLabel.BackgroundTransparency = 1
 		iconLabel.Image = formattedIcon
 		iconLabel.ScaleType = Enum.ScaleType.Fit
+		iconLabel.Parent = btn
 		
 		local txt = Instance.new("TextLabel", btn)
 		txt.Size = UDim2.new(1, -44, 1, 0)
@@ -2218,6 +2283,7 @@ function KazeUI:CreateWindow(config)
 		txt.Font = Enum.Font.Gotham
 		txt.TextSize = 14
 		txt.TextXAlignment = Enum.TextXAlignment.Left
+		txt.Parent = btn
 
 		local page = Instance.new("Frame")
 		page.Size = UDim2.new(1,0,1,0)
@@ -2279,6 +2345,7 @@ function KazeUI:CreateWindow(config)
 
 		KazeUI:AddThemeCallback(function(tc)
 			if leftIndicator.Visible then txt.TextColor3 = tc end
+			leftIndicator.BackgroundColor3 = tc
 		end)
 
 		local public = { Button = btn, Page = page }
