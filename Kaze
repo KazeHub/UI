@@ -1,7 +1,7 @@
 --[[
 	Kaze UI Library
 	Optimized: Deep Obsidian Only, Dynamic Tab Text Scaling (No "..." Dots), Wider Sidebar, Safe Close Dialog Margin Padding
-	Added: New Dynamic Keybind Component, Full Config Manager Overhaul, Memory Leak Prevention
+	Added: Dynamic Window Resizing (Bottom Right Grip), Dynamic Author Config Folders
 	Fixes: Text Clipping/Overflow fixed globally, Multi-Dropdown Color Hover State Fixed
 --]]
 
@@ -19,6 +19,7 @@ local LP = Players.LocalPlayer
 -- Global State & Managers
 KazeUI.GlowColor = Color3.fromRGB(0, 160, 255)
 KazeUI.BackgroundColor = Color3.fromRGB(10, 10, 12) -- Locked to Deep Obsidian
+KazeUI.ConfigFolder = "KazeUI" -- Dynamic, changes based on Author name
 KazeUI.Flags = {}
 KazeUI.ActiveWindows = {} 
 
@@ -345,7 +346,8 @@ function KazeUI:SaveConfig(name)
 	if writefile then
 		local success, encoded = pcall(function() return HttpService:JSONEncode(data) end)
 		if success then
-			writefile("KazeUI_"..name..".json", encoded)
+			if makefolder then pcall(function() makefolder(KazeUI.ConfigFolder) end) end
+			writefile(KazeUI.ConfigFolder .. "/" .. name .. ".json", encoded)
 			KazeUI:Notify({Title = "Config Saved", Content = "Successfully saved " .. name, Duration = 3})
 		else
 			KazeUI:Notify({Title = "Config Error", Content = "Failed to encode settings to JSON.", Duration = 3})
@@ -357,7 +359,7 @@ end
 
 function KazeUI:LoadConfig(name)
 	if readfile then
-		local s, res = pcall(function() return readfile("KazeUI_"..name..".json") end)
+		local s, res = pcall(function() return readfile(KazeUI.ConfigFolder .. "/" .. name .. ".json") end)
 		if s then
 			local s2, data = pcall(function() return HttpService:JSONDecode(res) end)
 			if s2 and type(data) == "table" then
@@ -2053,6 +2055,15 @@ function KazeUI:CreateWindow(config)
 	local MainIcon = FormatImage(config.Icon or "6031763447")
 	local OpenIcon = FormatImage((config.OpenButton and config.OpenButton.Icon) or config.Icon or "6031763447")
 	
+	-- Setup Config Folder Name Based on Author
+	local safeFolderName = string.gsub(tostring(Author), "[^%w%s-_]", "")
+	if safeFolderName == "" then safeFolderName = "KazeUI" end
+	KazeUI.ConfigFolder = safeFolderName
+
+	if makefolder then
+		pcall(function() makefolder(KazeUI.ConfigFolder) end)
+	end
+
 	KazeUI.BackgroundColor = Color3.fromRGB(10, 10, 12) -- Permanent Deep Obsidian background
 	if config.GlowColor then KazeUI.GlowColor = config.GlowColor end
 
@@ -2079,6 +2090,62 @@ function KazeUI:CreateWindow(config)
 	ContentClipper.BorderSizePixel = 0
 	ContentClipper.Parent = Window
 	Instance.new("UICorner", ContentClipper).CornerRadius = UDim.new(0, 12)
+	
+	-- Window Resizer Grip
+	local ResizeHandle = Instance.new("TextButton")
+	ResizeHandle.Size = UDim2.fromOffset(25, 25)
+	ResizeHandle.Position = UDim2.new(1, 0, 1, 0)
+	ResizeHandle.AnchorPoint = Vector2.new(1, 1)
+	ResizeHandle.BackgroundTransparency = 1
+	ResizeHandle.Text = ""
+	ResizeHandle.ZIndex = 100
+	ResizeHandle.Parent = Window
+
+	local gripColors = Color3.fromRGB(120, 120, 125)
+	for i, pos in ipairs({ UDim2.new(1, -8, 1, -8), UDim2.new(1, -14, 1, -8), UDim2.new(1, -8, 1, -14) }) do
+		local dot = Instance.new("Frame", ResizeHandle)
+		dot.Size = UDim2.fromOffset(3, 3)
+		dot.Position = pos
+		dot.AnchorPoint = Vector2.new(1, 1)
+		dot.BackgroundColor3 = gripColors
+		dot.BorderSizePixel = 0
+		Instance.new("UICorner", dot).CornerRadius = UDim.new(1, 0)
+	end
+
+	local isResizing = false
+	local resizeStartMouse
+	local resizeStartSize
+	local resizeStartPos
+
+	ResizeHandle.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			isResizing = true
+			resizeStartMouse = input.Position
+			resizeStartSize = Window.AbsoluteSize
+			resizeStartPos = Window.Position
+		end
+	end)
+
+	UIS.InputChanged:Connect(function(input)
+		if isResizing and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+			local delta = input.Position - resizeStartMouse
+			-- Safe clamping bounds so UI doesn't visually break
+			local newWidth = math.clamp(resizeStartSize.X + delta.X, 600, 1200)
+			local newHeight = math.clamp(resizeStartSize.Y + delta.Y, 400, 800)
+			
+			local sizeDiffX = newWidth - resizeStartSize.X
+			local sizeDiffY = newHeight - resizeStartSize.Y
+			
+			Window.Size = UDim2.fromOffset(newWidth, newHeight)
+			
+			-- Keep the top-left edge exactly where it is while AnchorPoint is 0.5, 0.5
+			Window.Position = UDim2.new(
+				resizeStartPos.X.Scale, resizeStartPos.X.Offset + sizeDiffX / 2,
+				resizeStartPos.Y.Scale, resizeStartPos.Y.Offset + sizeDiffY / 2
+			)
+		end
+	end)
+
 
 	local TopBar = Instance.new("Frame")
 	TopBar.Size = UDim2.new(1,0,0,50)
@@ -2138,6 +2205,17 @@ function KazeUI:CreateWindow(config)
 	local lastNormalPosition = UDim2.fromScale(0.5,0.5)
 	local lastNormalAnchor = Vector2.new(0.5,0.5)
 	local toggledMaximized = false
+	
+	UIS.InputEnded:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			if isResizing then
+				isResizing = false
+				-- Update so maximize toggling stays accurate
+				lastNormalSize = Window.Size
+				lastNormalPosition = Window.Position
+			end
+		end
+	end)
 
 	local function createCircleButton(name, offsetX, color)
 		local btn = Instance.new("TextButton")
@@ -2262,11 +2340,13 @@ function KazeUI:CreateWindow(config)
 			lastNormalPosition = Window.Position
 			lastNormalAnchor = Window.AnchorPoint
 			toggledMaximized = true
+			ResizeHandle.Visible = false
 			Window.AnchorPoint = Vector2.new(0.5,0.5)
 			Window.Position = UDim2.fromScale(0.5,0.5)
 			TweenService:Create(Window, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Size = UDim2.fromScale(0.95,0.9) }):Play()
 		else
 			toggledMaximized = false
+			ResizeHandle.Visible = true
 			TweenService:Create(Window, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Size = lastNormalSize, Position = lastNormalPosition }):Play()
 			task.delay(0.25, function() Window.AnchorPoint = lastNormalAnchor end)
 		end
@@ -2445,12 +2525,11 @@ function KazeUI:CreateWindow(config)
 		local function getConfigs()
 			local list = {}
 			if listfiles then
-				local s, files = pcall(function() return listfiles("") end)
-				if not s then s, files = pcall(function() return listfiles("workspace") end) end
+				local s, files = pcall(function() return listfiles(KazeUI.ConfigFolder) end)
 				if s and type(files) == "table" then
 					for _, f in ipairs(files) do
 						local fileName = string.match(f, "([^/\\]+)$") or f
-						local name = string.match(fileName, "^KazeUI_(.+)%.json$")
+						local name = string.match(fileName, "^(.+)%.json$")
 						if name then table.insert(list, name) end
 					end
 				end
@@ -2478,7 +2557,7 @@ function KazeUI:CreateWindow(config)
 		
 		sec:Button({Title = "Delete Config", Callback = function()
 			if delfile then
-				pcall(function() delfile("KazeUI_"..cfgName..".json") end)
+				pcall(function() delfile(KazeUI.ConfigFolder .. "/" .. cfgName .. ".json") end)
 				KazeUI:Notify({Title = "Config System", Content = "Deleted " .. cfgName, Duration = 3})
 				if configDropdown then configDropdown:Refresh(getConfigs()) end
 			else
