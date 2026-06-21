@@ -1,8 +1,8 @@
 --[[
 	Kaze UI Library
-	Optimized: Deep Obsidian Only, Dynamic Tab Text Scaling (No "..." Dots), Wider Sidebar, Safe Close Dialog Margin Padding
+	Optimized: Deep Obsidian Only, Dynamic Tab Text Scaling, Wider Sidebar, Safe Close Dialog
 	Added: Dynamic Window Resizing (Bottom Right Grip), Dynamic Author Config Folders
-	Fixes: Text Clipping/Overflow fixed globally, Multi-Dropdown Color Hover State Fixed
+	Fixes: Resizing 1:1 Scale Desync Fixed, Resize Deadzone Fixed, Changed Default Size to 600x400
 --]]
 
 local KazeUI = {}
@@ -2070,7 +2070,7 @@ function KazeUI:CreateWindow(config)
 	local MiniButtonSize = UDim2.fromOffset(46, 46)
 
 	local Window = Instance.new("Frame")
-	Window.Size = UDim2.fromOffset(750, 450)
+	Window.Size = UDim2.fromOffset(600, 400) -- CHANGED DEFAULT TO 600x400
 	Window.Position = UDim2.fromScale(0.5, 0.5)
 	Window.AnchorPoint = Vector2.new(0.5, 0.5)
 	Window.BorderSizePixel = 0
@@ -2121,17 +2121,19 @@ function KazeUI:CreateWindow(config)
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 			isResizing = true
 			resizeStartMouse = input.Position
-			resizeStartSize = Window.AbsoluteSize
+			resizeStartSize = Vector2.new(Window.Size.X.Offset, Window.Size.Y.Offset)
 			resizeStartPos = Window.Position
 		end
 	end)
 
 	UIS.InputChanged:Connect(function(input)
 		if isResizing and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-			local delta = input.Position - resizeStartMouse
-			-- Safe clamping bounds so UI doesn't visually break
-			local newWidth = math.clamp(resizeStartSize.X + delta.X, 600, 1200)
-			local newHeight = math.clamp(resizeStartSize.Y + delta.Y, 400, 800)
+			-- Divide delta by UIScale so the mouse perfectly tracks the handle regardless of screen scale!
+			local deltaX = (input.Position.X - resizeStartMouse.X) / UIScale.Scale
+			local deltaY = (input.Position.Y - resizeStartMouse.Y) / UIScale.Scale
+			
+			local newWidth = math.clamp(resizeStartSize.X + deltaX, 600, 1200)
+			local newHeight = math.clamp(resizeStartSize.Y + deltaY, 400, 800)
 			
 			local sizeDiffX = newWidth - resizeStartSize.X
 			local sizeDiffY = newHeight - resizeStartSize.Y
@@ -2143,9 +2145,19 @@ function KazeUI:CreateWindow(config)
 				resizeStartPos.X.Scale, resizeStartPos.X.Offset + sizeDiffX / 2,
 				resizeStartPos.Y.Scale, resizeStartPos.Y.Offset + sizeDiffY / 2
 			)
+			
+			-- Deadzone prevention: if we clamped, pull the start mouse anchor forward so it immediately responds when moving back.
+			local actualDeltaX = newWidth - resizeStartSize.X
+			local actualDeltaY = newHeight - resizeStartSize.Y
+			
+			if deltaX ~= actualDeltaX then
+				resizeStartMouse = Vector3.new(input.Position.X - (actualDeltaX * UIScale.Scale), resizeStartMouse.Y, 0)
+			end
+			if deltaY ~= actualDeltaY then
+				resizeStartMouse = Vector3.new(resizeStartMouse.X, input.Position.Y - (actualDeltaY * UIScale.Scale), 0)
+			end
 		end
 	end)
-
 
 	local TopBar = Instance.new("Frame")
 	TopBar.Size = UDim2.new(1,0,0,50)
@@ -2200,22 +2212,11 @@ function KazeUI:CreateWindow(config)
 	TopDivider.Parent = TopBar
 	StartNeonLoop(TopDivider)
 
-	local defaultWindowSize = UDim2.fromOffset(750, 450)
+	local defaultWindowSize = UDim2.fromOffset(600, 400) -- CHANGED DEFAULT
 	local lastNormalSize = defaultWindowSize
 	local lastNormalPosition = UDim2.fromScale(0.5,0.5)
 	local lastNormalAnchor = Vector2.new(0.5,0.5)
 	local toggledMaximized = false
-	
-	UIS.InputEnded:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-			if isResizing then
-				isResizing = false
-				-- Update so maximize toggling stays accurate
-				lastNormalSize = Window.Size
-				lastNormalPosition = Window.Position
-			end
-		end
-	end)
 
 	local function createCircleButton(name, offsetX, color)
 		local btn = Instance.new("TextButton")
@@ -2326,6 +2327,12 @@ function KazeUI:CreateWindow(config)
 	
 	UIS.InputEnded:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			if isResizing then
+				isResizing = false
+				-- Update so maximize toggling stays accurate
+				lastNormalSize = Window.Size
+				lastNormalPosition = Window.Position
+			end
 			if miniDragStart and not miniDragMoved then
 				unminimizeWindow()
 			end
