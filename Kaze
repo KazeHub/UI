@@ -1,8 +1,8 @@
 --[[
 	Kaze UI Library
 	Optimized: Deep Obsidian Only, Dynamic Tab Text Scaling, Wider Sidebar, Safe Close Dialog
-	Added: Dynamic Window Resizing (Bottom Right Grip), Dynamic Author Config Folders
-	Fixes: Dynamic Window Resizing Layout Drifts, Sliders Desync on Resize Fixed, Changed Default Size to 600x400
+	Added: Dynamic Window Resizing (Bottom, Right, Corner), Dynamic Author Config Folders
+	Fixes: Draggable & Resizing Layout Drifts Fixed, Slider Smoothness & Desync Fixed
 --]]
 
 local KazeUI = {}
@@ -19,7 +19,7 @@ local LP = Players.LocalPlayer
 -- Global State & Managers
 KazeUI.GlowColor = Color3.fromRGB(0, 160, 255)
 KazeUI.BackgroundColor = Color3.fromRGB(10, 10, 12) -- Locked to Deep Obsidian
-KazeUI.ConfigFolder = "KazeUI" -- Dynamic, changes based on Author name
+KazeUI.ConfigFolder = "KazeUI"
 KazeUI.Flags = {}
 KazeUI.ActiveWindows = {} 
 
@@ -69,8 +69,8 @@ UIScale.Parent = ScreenGui
 
 local function UpdateScale()
 	local size = workspace.CurrentCamera.ViewportSize
-	local scaleX = math.clamp(size.X / 800, 0.35, 1)
-	local scaleY = math.clamp(size.Y / 500, 0.35, 1)
+	local scaleX = math.clamp(size.X / 1000, 0.4, 1)
+	local scaleY = math.clamp(size.Y / 700, 0.4, 1)
 	UIScale.Scale = math.min(scaleX, scaleY)
 	ScreenGui.IgnoreGuiInset = true
 end
@@ -119,49 +119,36 @@ local function FormatImage(id)
 	return "rbxassetid://" .. clean
 end
 
--- Threshold dragging to prevent minimize misclicks
-local function MakeDraggable(dragPart, targetPart)
+-- Premium Dragging (Fixes scaling and drift)
+local function MakeDraggable(dragPart, targetPart, conditionFunc)
 	local dragging = false
-	local dragInput, dragStart, startPos
-	local dragActive = false
-	
-	local function update(input)
-		if not dragStart or not startPos then return end
-		local delta = input.Position - dragStart
-		
-		if dragActive or delta.Magnitude > 8 then
-			dragActive = true
-			targetPart.Position = UDim2.new(
-				startPos.X.Scale, startPos.X.Offset + delta.X,
-				startPos.Y.Scale, startPos.Y.Offset + delta.Y
-			)
-		end
-	end
-	
+	local dragStartMouse, dragStartPos
+
 	dragPart.InputBegan:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			if conditionFunc and not conditionFunc() then return end
 			dragging = true
-			dragActive = false
-			dragStart = input.Position
-			startPos = targetPart.Position
-			
-			input.Changed:Connect(function()
+			dragStartMouse = input.Position
+			dragStartPos = targetPart.Position
+
+			local con
+			con = input.Changed:Connect(function()
 				if input.UserInputState == Enum.UserInputState.End then
 					dragging = false
-					dragInput = nil
+					con:Disconnect()
 				end
 			end)
 		end
 	end)
-	
-	dragPart.InputChanged:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
-			dragInput = input
-		end
-	end)
-	
+
 	UIS.InputChanged:Connect(function(input)
-		if input == dragInput and dragging then update(input) end
+		if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+			local delta = (input.Position - dragStartMouse) / UIScale.Scale
+			targetPart.Position = UDim2.new(
+				dragStartPos.X.Scale, dragStartPos.X.Offset + delta.X,
+				dragStartPos.Y.Scale, dragStartPos.Y.Offset + delta.Y
+			)
+		end
 	end)
 end
 
@@ -178,7 +165,6 @@ function KazeUI:AddPanel(inst, elevation)
 	table.insert(KazeUI.PanelElements, {Inst = inst, Elevation = elevation or 0})
 	if inst and inst:IsA("GuiObject") then
 		inst.BackgroundColor3 = KazeUI.GetColor(elevation or 0)
-		-- Prevent Memory Leak
 		inst.Destroying:Connect(function()
 			for i = #KazeUI.PanelElements, 1, -1 do
 				if KazeUI.PanelElements[i].Inst == inst then table.remove(KazeUI.PanelElements, i) end
@@ -189,7 +175,6 @@ end
 
 function KazeUI:AddTransparentElement(inst, defaultTrans)
 	table.insert(KazeUI.TransparentElements, {Inst = inst, Default = defaultTrans or inst.BackgroundTransparency})
-	-- Prevent Memory Leak
 	inst.Destroying:Connect(function()
 		for i = #KazeUI.TransparentElements, 1, -1 do
 			if KazeUI.TransparentElements[i].Inst == inst then table.remove(KazeUI.TransparentElements, i) end
@@ -688,7 +673,6 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 		end
 	end)
 
-	-- Save & Load Registry Hook
 	RegisterFlag(flag, function()
 		if isMulti then
 			local ret = {}
@@ -708,7 +692,6 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 		UpdateHeaderVisual()
 		Refresh(options)
 		
-		-- Hook properly into config applying state
 		if typeof(callback) == "function" then
 			if isMulti then
 				local ret = {}
@@ -1223,6 +1206,7 @@ local function CreateTextBoxInput(parentFrame, title, placeholder, defaultVal, c
 	}
 end
 
+-- Premium Slider Logic (Fixes Desync/Jittering completely)
 local function CreateSliderInput(parentFrame, title, min, max, default, callback, flag)
 	title = tostring(title or "Slider")
 	min = tonumber(min) or 0
@@ -1329,15 +1313,6 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 	local knobStroke = Instance.new("UIStroke", knob)
 	knobStroke.Thickness = 1.5
 	StartNeonLoop(knobStroke)
-	
-	local modalLock = Instance.new("TextButton")
-	modalLock.Size = UDim2.fromScale(1, 1)
-	modalLock.BackgroundTransparency = 1
-	modalLock.Text = ""
-	modalLock.Visible = false
-	modalLock.Modal = false
-	modalLock.ZIndex = 9999
-	modalLock.Parent = ScreenGui
 
 	local clickDetector = Instance.new("TextButton")
 	clickDetector.Size = UDim2.new(1, 0, 1, 14)
@@ -1354,16 +1329,23 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 		if trackWidth <= 0 then return end
 		local relativeX = input.Position.X - track.AbsolutePosition.X
 		local percentage = math.clamp(relativeX / trackWidth, 0, 1)
+		
 		local newVal = min + (max - min) * percentage
 		newVal = math.clamp(math.floor(newVal + 0.5), min, max)
-		value = newVal
-		valueLabel.Text = tostring(value)
 		
-		local visualPercentage = 0
-		if max > min then visualPercentage = (value - min) / (max - min) end
-		fill.Size = UDim2.new(visualPercentage, 0, 1, 0)
-		knob.Position = UDim2.new(visualPercentage, 0, 0.5, 0)
-		if typeof(callback) == "function" then task.spawn(callback, value) end
+		if value ~= newVal then
+			value = newVal
+			valueLabel.Text = tostring(value)
+			
+			local visualPercentage = 0
+			if max > min then visualPercentage = (value - min) / (max - min) end
+			
+			-- Smooth Tween to prevent visual jitter
+			TweenService:Create(fill, TweenInfo.new(0.05, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Size = UDim2.new(visualPercentage, 0, 1, 0)}):Play()
+			TweenService:Create(knob, TweenInfo.new(0.05, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Position = UDim2.new(visualPercentage, 0, 0.5, 0)}):Play()
+			
+			if typeof(callback) == "function" then task.spawn(callback, value) end
+		end
 	end
 	
 	local startingPercentage = 0
@@ -1375,29 +1357,25 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 			isDragging = true
 			ToggleScrollingAncestors(track, false)
-			modalLock.Visible = true
-			modalLock.Modal = true
 			UpdateValueFromInput(input)
+			
 			local moveCon, endCon
 			moveCon = UIS.InputChanged:Connect(function(moveInput)
 				if isDragging and (moveInput.UserInputType == Enum.UserInputType.MouseMovement or moveInput.UserInputType == Enum.UserInputType.Touch) then
 					UpdateValueFromInput(moveInput)
 				end
 			end)
+			
 			endCon = UIS.InputEnded:Connect(function(endInput)
 				if endInput.UserInputType == Enum.UserInputType.MouseButton1 or endInput.UserInputType == Enum.UserInputType.Touch then
 					isDragging = false
 					ToggleScrollingAncestors(track, true)
-					modalLock.Visible = false
-					modalLock.Modal = false
 					if moveCon then moveCon:Disconnect() end
 					if endCon then endCon:Disconnect() end
 				end
 			end)
 		end
 	end)
-
-	wrapper.Destroying:Connect(function() modalLock:Destroy() end)
 
 	local api = {
 		Wrapper = wrapper,
@@ -1406,8 +1384,8 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 			valueLabel.Text = tostring(value)
 			local valPercentage = 0
 			if max > min then valPercentage = (value - min) / (max - min) end
-			fill.Size = UDim2.new(valPercentage, 0, 1, 0)
-			knob.Position = UDim2.new(valPercentage, 0, 0.5, 0)
+			TweenService:Create(fill, TweenInfo.new(0.05), {Size = UDim2.new(valPercentage, 0, 1, 0)}):Play()
+			TweenService:Create(knob, TweenInfo.new(0.05), {Position = UDim2.new(valPercentage, 0, 0.5, 0)}):Play()
 			if typeof(callback) == "function" then task.spawn(callback, value) end
 		end,
 		SetText = function(self, newTitle)
@@ -1770,8 +1748,6 @@ local function CreateKeybindInput(parentFrame, title, defaultKey, callback, flag
 				StopNeonLoop(bindStroke)
 				bindStroke.Color = Color3.fromRGB(45, 45, 50)
 				conn:Disconnect()
-
-				-- BUG FIX: Delayed release to stop global event from catching the exact same key press
 				task.delay(0.15, function() isBinding = false end)
 			end
 		end)
@@ -2064,15 +2040,23 @@ function KazeUI:CreateWindow(config)
 		pcall(function() makefolder(KazeUI.ConfigFolder) end)
 	end
 
-	KazeUI.BackgroundColor = Color3.fromRGB(10, 10, 12) -- Permanent Deep Obsidian background
+	KazeUI.BackgroundColor = Color3.fromRGB(10, 10, 12)
 	if config.GlowColor then KazeUI.GlowColor = config.GlowColor end
 
 	local MiniButtonSize = UDim2.fromOffset(46, 46)
 
+	-- Window Setup natively using AnchorPoint 0.5 to center seamlessly, 
+	-- but perfectly manipulated for drift-less resizing math
 	local Window = Instance.new("Frame")
-	Window.Size = UDim2.fromOffset(600, 400) -- CHANGED DEFAULT
-	Window.Position = UDim2.fromScale(0.5, 0.5)
+	local startW, startH = 600, 400
+	Window.Size = UDim2.fromOffset(startW, startH)
+	
+	-- Centered to screen properly applying UIScale correction natively
+	local vpSize = workspace.CurrentCamera.ViewportSize
+	local uis = UIScale.Scale
 	Window.AnchorPoint = Vector2.new(0.5, 0.5)
+	Window.Position = UDim2.fromScale(0.5, 0.5)
+	
 	Window.BorderSizePixel = 0
 	Window.Parent = ScreenGui
 	Instance.new("UICorner", Window).CornerRadius = UDim.new(0, 12)
@@ -2091,19 +2075,78 @@ function KazeUI:CreateWindow(config)
 	ContentClipper.Parent = Window
 	Instance.new("UICorner", ContentClipper).CornerRadius = UDim.new(0, 12)
 	
-	-- Window Resizer Grip
-	local ResizeHandle = Instance.new("TextButton")
-	ResizeHandle.Size = UDim2.fromOffset(25, 25)
-	ResizeHandle.Position = UDim2.new(1, 0, 1, 0)
-	ResizeHandle.AnchorPoint = Vector2.new(1, 1)
-	ResizeHandle.BackgroundTransparency = 1
-	ResizeHandle.Text = ""
-	ResizeHandle.ZIndex = 100
-	ResizeHandle.Parent = Window
+	-- === Premium Multi-Axis Resizing System ===
+	local toggledMaximized = false
+	
+	local function CreateResizeGrip(name, size, pos, anchor, axis)
+		local grip = Instance.new("TextButton")
+		grip.Name = name
+		grip.Size = size
+		grip.Position = pos
+		grip.AnchorPoint = anchor
+		grip.BackgroundTransparency = 1
+		grip.Text = ""
+		grip.ZIndex = 100
+		grip.Parent = Window
 
+		local isResizing = false
+		local startMouse, startSize, startPos
+
+		grip.InputBegan:Connect(function(input)
+			if toggledMaximized then return end
+			if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+				isResizing = true
+				startMouse = input.Position
+				startSize = Vector2.new(Window.Size.X.Offset, Window.Size.Y.Offset)
+				startPos = Window.Position
+				
+				local con
+				con = input.Changed:Connect(function()
+					if input.UserInputState == Enum.UserInputState.End then
+						isResizing = false
+						con:Disconnect()
+					end
+				end)
+			end
+		end)
+
+		UIS.InputChanged:Connect(function(input)
+			if isResizing and not toggledMaximized and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+				local delta = (input.Position - startMouse) / UIScale.Scale
+				
+				local newW = startSize.X
+				local newH = startSize.Y
+				
+				if axis == "X" or axis == "XY" then
+					newW = math.clamp(startSize.X + delta.X, 500, 1200)
+				end
+				if axis == "Y" or axis == "XY" then
+					newH = math.clamp(startSize.Y + delta.Y, 350, 800)
+				end
+				
+				local actualDeltaX = newW - startSize.X
+				local actualDeltaY = newH - startSize.Y
+				
+				Window.Size = UDim2.fromOffset(newW, newH)
+				-- Offset position by half the delta to keep top-left locked perfectly in place!
+				Window.Position = UDim2.new(
+					startPos.X.Scale, startPos.X.Offset + (actualDeltaX / 2),
+					startPos.Y.Scale, startPos.Y.Offset + (actualDeltaY / 2)
+				)
+			end
+		end)
+		return grip
+	end
+
+	-- Create 3 Invisible Seamless Resize Grips
+	local GripBR = CreateResizeGrip("GripBR", UDim2.fromOffset(25, 25), UDim2.new(1, 0, 1, 0), Vector2.new(1, 1), "XY")
+	local GripR = CreateResizeGrip("GripR", UDim2.new(0, 15, 1, -25), UDim2.new(1, 0, 0, 0), Vector2.new(1, 0), "X")
+	local GripB = CreateResizeGrip("GripB", UDim2.new(1, -25, 0, 15), UDim2.new(0, 0, 1, 0), Vector2.new(0, 1), "Y")
+
+	-- Add dots solely to GripBR to visualize the bottom right
 	local gripColors = Color3.fromRGB(120, 120, 125)
-	for i, pos in ipairs({ UDim2.new(1, -8, 1, -8), UDim2.new(1, -14, 1, -8), UDim2.new(1, -8, 1, -14) }) do
-		local dot = Instance.new("Frame", ResizeHandle)
+	for _, pos in ipairs({ UDim2.new(1, -6, 1, -6), UDim2.new(1, -12, 1, -6), UDim2.new(1, -6, 1, -12) }) do
+		local dot = Instance.new("Frame", GripBR)
 		dot.Size = UDim2.fromOffset(3, 3)
 		dot.Position = pos
 		dot.AnchorPoint = Vector2.new(1, 1)
@@ -2112,59 +2155,12 @@ function KazeUI:CreateWindow(config)
 		Instance.new("UICorner", dot).CornerRadius = UDim.new(1, 0)
 	end
 
-	local isResizing = false
-	local resizeStartMouse
-	local resizeStartSize
-	local resizeStartPos
-
-	ResizeHandle.InputBegan:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-			isResizing = true
-			resizeStartMouse = input.Position
-			resizeStartSize = Vector2.new(Window.Size.X.Offset, Window.Size.Y.Offset)
-			resizeStartPos = Window.Position
-		end
-	end)
-
-	UIS.InputChanged:Connect(function(input)
-		if isResizing and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-			-- Divide delta by UIScale so the mouse perfectly tracks the handle regardless of screen scale!
-			local deltaX = (input.Position.X - resizeStartMouse.X) / UIScale.Scale
-			local deltaY = (input.Position.Y - resizeStartMouse.Y) / UIScale.Scale
-			
-			local newWidth = math.clamp(resizeStartSize.X + deltaX, 600, 1200)
-			local newHeight = math.clamp(resizeStartSize.Y + deltaY, 400, 800)
-			
-			local sizeDiffX = newWidth - resizeStartSize.X
-			local sizeDiffY = newHeight - resizeStartSize.Y
-			
-			Window.Size = UDim2.fromOffset(newWidth, newHeight)
-			
-			-- Keep the top-left edge exactly where it is while AnchorPoint is 0.5, 0.5
-			Window.Position = UDim2.new(
-				resizeStartPos.X.Scale, resizeStartPos.X.Offset + sizeDiffX / 2,
-				resizeStartPos.Y.Scale, resizeStartPos.Y.Offset + sizeDiffY / 2
-			)
-			
-			-- Deadzone prevention: if we clamped, pull the start mouse anchor forward so it immediately responds when moving back.
-			local actualDeltaX = newWidth - resizeStartSize.X
-			local actualDeltaY = newHeight - resizeStartSize.Y
-			
-			if deltaX ~= actualDeltaX then
-				resizeStartMouse = Vector3.new(input.Position.X - (actualDeltaX * UIScale.Scale), resizeStartMouse.Y, 0)
-			end
-			if deltaY ~= actualDeltaY then
-				resizeStartMouse = Vector3.new(resizeStartMouse.X, input.Position.Y - (actualDeltaY * UIScale.Scale), 0)
-			end
-		end
-	end)
-
 
 	local TopBar = Instance.new("Frame")
 	TopBar.Size = UDim2.new(1,0,0,50)
 	TopBar.BorderSizePixel = 0
 	TopBar.Parent = ContentClipper
-	MakeDraggable(TopBar, Window)
+	MakeDraggable(TopBar, Window, function() return not toggledMaximized end)
 	KazeUI:AddPanel(TopBar, -0.02)
 	KazeUI:AddTransparentElement(TopBar, 0)
 
@@ -2213,22 +2209,8 @@ function KazeUI:CreateWindow(config)
 	TopDivider.Parent = TopBar
 	StartNeonLoop(TopDivider)
 
-	local defaultWindowSize = UDim2.fromOffset(600, 400) -- CHANGED DEFAULT
-	local lastNormalSize = defaultWindowSize
-	local lastNormalPosition = UDim2.fromScale(0.5,0.5)
-	local lastNormalAnchor = Vector2.new(0.5,0.5)
-	local toggledMaximized = false
-	
-	UIS.InputEnded:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-			if isResizing then
-				isResizing = false
-				-- Update so maximize toggling stays accurate
-				lastNormalSize = Window.Size
-				lastNormalPosition = Window.Position
-			end
-		end
-	end)
+	local lastNormalSize = Window.Size
+	local lastNormalPosition = Window.Position
 
 	local function createCircleButton(name, offsetX, color)
 		local btn = Instance.new("TextButton")
@@ -2280,10 +2262,9 @@ function KazeUI:CreateWindow(config)
 		if isMinimized then return end
 		isMinimized = true
 		
-		-- BUG FIX: Don't save size here. Spamming Tween Back Style causes it to overshoot and grow to infinity.
 		if not toggledMaximized then
 			lastNormalPosition = Window.Position
-			lastNormalAnchor = Window.AnchorPoint
+			lastNormalSize = Window.Size
 		end
 		Window.Visible = false
 		MiniButton.Visible = true
@@ -2298,20 +2279,22 @@ function KazeUI:CreateWindow(config)
 		MiniButton.Visible = false
 		Window.Visible = true
 		Window.Size = UDim2.fromOffset(0,0)
+		
+		local targetSize, targetPos
 		if toggledMaximized then
-			Window.AnchorPoint = Vector2.new(0.5,0.5)
-			Window.Position = UDim2.fromScale(0.5,0.5)
-			TweenService:Create(Window, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Size = UDim2.fromScale(0.95,0.9) }):Play()
+			local vSize = workspace.CurrentCamera.ViewportSize
+			targetSize = UDim2.fromOffset((vSize.X / UIScale.Scale) * 0.95, (vSize.Y / UIScale.Scale) * 0.95)
+			targetPos = UDim2.fromScale(0.5, 0.5)
 		else
-			Window.AnchorPoint = lastNormalAnchor
-			Window.Position = lastNormalPosition
-			TweenService:Create(Window, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Size = lastNormalSize, Position = lastNormalPosition }):Play()
+			targetSize = lastNormalSize
+			targetPos = lastNormalPosition
 		end
+		
+		TweenService:Create(Window, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Size = targetSize, Position = targetPos }):Play()
 	end
 
 	BtnYellow.MouseButton1Click:Connect(minimizeWindow)
 
-	-- BUG FIX: Global Dragging to stop slipping off the Mini Button bounds and triggering clicks
 	local miniDragStart
 	local miniDragMoved = false
 	
@@ -2326,25 +2309,18 @@ function KazeUI:CreateWindow(config)
 		if miniDragStart and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
 			if (input.Position - miniDragStart).Magnitude > 8 then
 				miniDragMoved = true
-				-- Update position manually
 				local delta = input.Position - miniDragStart
 				MiniButton.Position = UDim2.new(
 					0, MiniButton.Position.X.Offset + delta.X,
 					0, MiniButton.Position.Y.Offset + delta.Y
 				)
-				miniDragStart = input.Position -- Reset delta step
+				miniDragStart = input.Position
 			end
 		end
 	end)
 	
 	UIS.InputEnded:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-			if isResizing then
-				isResizing = false
-				-- Update so maximize toggling stays accurate
-				lastNormalSize = Window.Size
-				lastNormalPosition = Window.Position
-			end
 			if miniDragStart and not miniDragMoved then
 				unminimizeWindow()
 			end
@@ -2357,17 +2333,21 @@ function KazeUI:CreateWindow(config)
 		if not toggledMaximized then
 			lastNormalSize = Window.Size
 			lastNormalPosition = Window.Position
-			lastNormalAnchor = Window.AnchorPoint
 			toggledMaximized = true
-			ResizeHandle.Visible = false
-			Window.AnchorPoint = Vector2.new(0.5,0.5)
-			Window.Position = UDim2.fromScale(0.5,0.5)
-			TweenService:Create(Window, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Size = UDim2.fromScale(0.95,0.9) }):Play()
+			GripBR.Visible = false; GripR.Visible = false; GripB.Visible = false
+			
+			local vSize = workspace.CurrentCamera.ViewportSize
+			local targetW = (vSize.X / UIScale.Scale) * 0.95
+			local targetH = (vSize.Y / UIScale.Scale) * 0.95
+			
+			TweenService:Create(Window, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { 
+				Size = UDim2.fromOffset(targetW, targetH),
+				Position = UDim2.fromScale(0.5, 0.5)
+			}):Play()
 		else
 			toggledMaximized = false
-			ResizeHandle.Visible = true
+			GripBR.Visible = true; GripR.Visible = true; GripB.Visible = true
 			TweenService:Create(Window, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Size = lastNormalSize, Position = lastNormalPosition }):Play()
-			task.delay(0.25, function() Window.AnchorPoint = lastNormalAnchor end)
 		end
 	end)
 
@@ -2471,7 +2451,7 @@ function KazeUI:CreateWindow(config)
 
 	local Pages = Instance.new("Frame")
 	Pages.Position = UDim2.new(0,192,0,0)
-	Pages.Size = UDim2.new(1, -192, 1, 0) -- Responsive Scale layout
+	Pages.Size = UDim2.new(1, -192, 1, 0) -- Responsive Scale layout perfectly stretches!
 	Pages.BorderSizePixel = 0
 	Pages.Parent = Content
 	KazeUI:AddPanel(Pages, -0.01)
@@ -2585,14 +2565,13 @@ function KazeUI:CreateWindow(config)
 		end})
 	end
 
-	-- BUG FIX: Theme UI elements missing Flags to save
 	function Win:CreateThemeManager(tab)
 		local sec = tab:SectionUI("Theme & Visuals")
 		
 		sec:ColorPicker({
 			Title = "UI Glow Color",
 			Default = KazeUI.GlowColor,
-			Flag = "KazeUI_Theme_GlowColor", -- Added flag so Config saves it
+			Flag = "KazeUI_Theme_GlowColor",
 			Callback = function(color)
 				KazeUI:SetGlow(color)
 			end
@@ -2603,7 +2582,7 @@ function KazeUI:CreateWindow(config)
 			Min = 0,
 			Max = 100,
 			Default = 0,
-			Flag = "KazeUI_Theme_BackgroundTransparency", -- Added flag so Config saves it
+			Flag = "KazeUI_Theme_BackgroundTransparency",
 			Callback = function(val)
 				KazeUI:SetTransparency(val / 100)
 			end
