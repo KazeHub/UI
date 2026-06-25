@@ -2,7 +2,7 @@
 	Kaze UI Library v2.0
 	Added: Performance Widget, Search System, Window Resizing, Theme Manager 2.0
 	Added: Thumbnail Component, Prompt System, Config Manager Overhaul
-	Fixed: Search Ordering, Smooth Window Resizing constraints, and Scrolling bypass.
+	Fixed: UIScale-compensated fluid resizing, stable Theme Resetting & Glass Transparency recovery.
 --]]
 
 local KazeUI = {}
@@ -127,7 +127,7 @@ local function MakeDraggable(dragPart, targetPart)
 	
 	local function update(input)
 		if not dragStart or not startPos then return end
-		local delta = input.Position - dragStart
+		local delta = (input.Position - dragStart) / UIScale.Scale -- Factor in Scale
 		
 		if dragActive or delta.Magnitude > 8 then
 			dragActive = true
@@ -2445,7 +2445,7 @@ function KazeUI:CreateWindow(config)
 		if miniDragStart and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
 			if (input.Position - miniDragStart).Magnitude > 8 then
 				miniDragMoved = true
-				local delta = input.Position - miniDragStart
+				local delta = (input.Position - miniDragStart) / UIScale.Scale -- Scale adjustment
 				MiniButton.Position = UDim2.new(0, MiniButton.Position.X.Offset + delta.X, 0, MiniButton.Position.Y.Offset + delta.Y)
 				miniDragStart = input.Position
 			end
@@ -2547,7 +2547,7 @@ function KazeUI:CreateWindow(config)
 	end
 	BtnRed.MouseButton1Click:Connect(ShowCloseConfirm)
 
-	-- WINDOW RESIZING FIX
+	-- WINDOW RESIZING FIX (Includes UIScale compensation)
 	if config.Resizable then
 		local ResizeHandle = Instance.new("TextButton", Window)
 		ResizeHandle.Size = UDim2.fromOffset(25, 25)
@@ -2602,7 +2602,7 @@ function KazeUI:CreateWindow(config)
 		
 		UIS.InputChanged:Connect(function(input)
 			if resizing and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-				local delta = input.Position - resizeStartMouse
+				local delta = (input.Position - resizeStartMouse) / UIScale.Scale -- Scale Offset correction allows smooth expansion
 				local newX = math.clamp(resizeStartSize.X + delta.X, 500, 750)
 				local newY = math.clamp(resizeStartSize.Y + delta.Y, 350, 540)
 				Window.Size = UDim2.fromOffset(newX, newY)
@@ -2924,12 +2924,15 @@ function KazeUI:CreateWindow(config)
 		end
 	end
 
-	-- THEME MANAGER 2.0
+	-- THEME SYSTEM FIX
 	function Win:SetTheme(themeConfig)
 		if type(themeConfig) == "string" and BuiltInThemes[themeConfig] then
 			themeConfig = BuiltInThemes[themeConfig]
 		end
 		
+		-- Always reset transparency defaults first so old Glass/Solid values do not get mixed up
+		KazeUI:SetTransparency(0)
+
 		if themeConfig.Color then
 			KazeUI:SetBackgroundColor(themeConfig.Color)
 		end
