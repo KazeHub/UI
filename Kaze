@@ -1,7 +1,8 @@
+
 --[[
 	Kaze UI Library
-	Optimized: Deep Obsidian Only, Dynamic Tab Text Scaling (No "..." Dots), Wider Sidebar, Safe Close Dialog Margin Padding
-	Added: New Dynamic Keybind Component, Full Config Manager Overhaul, Memory Leak Prevention
+	Optimized: Deep Obsidian Only, Dynamic Tab Text Scaling, Wider Sidebar
+	Added: Author Config Folders, Tab Dividers, String-based Glow Colors, 600x400 Default Size
 	Fixes: Text Clipping/Overflow fixed globally, Multi-Dropdown Color Hover State Fixed
 --]]
 
@@ -21,6 +22,7 @@ KazeUI.GlowColor = Color3.fromRGB(0, 160, 255)
 KazeUI.BackgroundColor = Color3.fromRGB(10, 10, 12) -- Locked to Deep Obsidian
 KazeUI.Flags = {}
 KazeUI.ActiveWindows = {} 
+KazeUI.AuthorFolder = "KazeUI" -- Default config folder
 
 -- Visual Controllers
 KazeUI.GlowElements = {}
@@ -32,6 +34,28 @@ local function RegisterFlag(flag, getFunc, setFunc)
 	if flag then
 		KazeUI.Flags[flag] = { Get = getFunc, Set = setFunc }
 	end
+end
+
+local function ParseColor(input)
+	if typeof(input) == "Color3" then return input end
+	if type(input) == "string" then
+		local str = string.lower(input)
+		local colors = {
+			red = Color3.fromRGB(255, 65, 65),
+			green = Color3.fromRGB(65, 255, 65),
+			blue = Color3.fromRGB(0, 160, 255),
+			yellow = Color3.fromRGB(255, 205, 50),
+			orange = Color3.fromRGB(255, 125, 0),
+			purple = Color3.fromRGB(150, 80, 255),
+			pink = Color3.fromRGB(255, 100, 200),
+			white = Color3.fromRGB(255, 255, 255),
+			black = Color3.fromRGB(30, 30, 30),
+			cyan = Color3.fromRGB(0, 255, 255),
+			magenta = Color3.fromRGB(255, 0, 255),
+		}
+		return colors[str] or Color3.fromRGB(0, 160, 255)
+	end
+	return Color3.fromRGB(0, 160, 255)
 end
 
 -- ScreenGui Setup (Supports CoreGui & PlayerGui Fallback)
@@ -177,7 +201,6 @@ function KazeUI:AddPanel(inst, elevation)
 	table.insert(KazeUI.PanelElements, {Inst = inst, Elevation = elevation or 0})
 	if inst and inst:IsA("GuiObject") then
 		inst.BackgroundColor3 = KazeUI.GetColor(elevation or 0)
-		-- Prevent Memory Leak
 		inst.Destroying:Connect(function()
 			for i = #KazeUI.PanelElements, 1, -1 do
 				if KazeUI.PanelElements[i].Inst == inst then table.remove(KazeUI.PanelElements, i) end
@@ -188,7 +211,6 @@ end
 
 function KazeUI:AddTransparentElement(inst, defaultTrans)
 	table.insert(KazeUI.TransparentElements, {Inst = inst, Default = defaultTrans or inst.BackgroundTransparency})
-	-- Prevent Memory Leak
 	inst.Destroying:Connect(function()
 		for i = #KazeUI.TransparentElements, 1, -1 do
 			if KazeUI.TransparentElements[i].Inst == inst then table.remove(KazeUI.TransparentElements, i) end
@@ -264,7 +286,6 @@ function KazeUI:SetGlow(color)
 	end
 end
 
--- Robust Notification Animation Sequence
 function KazeUI:Notify(config)
 	config = config or {}
 	local title = tostring(config.Title or "Notification")
@@ -345,8 +366,9 @@ function KazeUI:SaveConfig(name)
 	if writefile then
 		local success, encoded = pcall(function() return HttpService:JSONEncode(data) end)
 		if success then
-			writefile("KazeUI_"..name..".json", encoded)
-			KazeUI:Notify({Title = "Config Saved", Content = "Successfully saved " .. name, Duration = 3})
+			if makefolder then pcall(makefolder, KazeUI.AuthorFolder) end
+			writefile(KazeUI.AuthorFolder .. "/" .. name .. ".json", encoded)
+			KazeUI:Notify({Title = "Config Saved", Content = "Saved " .. name .. " to " .. KazeUI.AuthorFolder, Duration = 3})
 		else
 			KazeUI:Notify({Title = "Config Error", Content = "Failed to encode settings to JSON.", Duration = 3})
 		end
@@ -357,7 +379,8 @@ end
 
 function KazeUI:LoadConfig(name)
 	if readfile then
-		local s, res = pcall(function() return readfile("KazeUI_"..name..".json") end)
+		local path = KazeUI.AuthorFolder .. "/" .. name .. ".json"
+		local s, res = pcall(function() return readfile(path) end)
 		if s then
 			local s2, data = pcall(function() return HttpService:JSONDecode(res) end)
 			if s2 and type(data) == "table" then
@@ -686,7 +709,6 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 		end
 	end)
 
-	-- Save & Load Registry Hook
 	RegisterFlag(flag, function()
 		if isMulti then
 			local ret = {}
@@ -706,7 +728,6 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 		UpdateHeaderVisual()
 		Refresh(options)
 		
-		-- Hook properly into config applying state
 		if typeof(callback) == "function" then
 			if isMulti then
 				local ret = {}
@@ -1768,8 +1789,6 @@ local function CreateKeybindInput(parentFrame, title, defaultKey, callback, flag
 				StopNeonLoop(bindStroke)
 				bindStroke.Color = Color3.fromRGB(45, 45, 50)
 				conn:Disconnect()
-
-				-- BUG FIX: Delayed release to stop global event from catching the exact same key press
 				task.delay(0.15, function() isBinding = false end)
 			end
 		end)
@@ -2053,13 +2072,20 @@ function KazeUI:CreateWindow(config)
 	local MainIcon = FormatImage(config.Icon or "6031763447")
 	local OpenIcon = FormatImage((config.OpenButton and config.OpenButton.Icon) or config.Icon or "6031763447")
 	
+	-- Automatically setup a folder for this Author to hold configs
+	local cleanAuthor = Author:gsub("[^%w%s]", ""):gsub(" ", "_")
+	KazeUI.AuthorFolder = cleanAuthor ~= "" and cleanAuthor or "KazeUI"
+	if makefolder then pcall(makefolder, KazeUI.AuthorFolder) end
+
 	KazeUI.BackgroundColor = Color3.fromRGB(10, 10, 12) -- Permanent Deep Obsidian background
-	if config.GlowColor then KazeUI.GlowColor = config.GlowColor end
+	
+	local glowSet = config.GlowColor or config.Glow
+	if glowSet then KazeUI.GlowColor = ParseColor(glowSet) end
 
 	local MiniButtonSize = UDim2.fromOffset(46, 46)
 
 	local Window = Instance.new("Frame")
-	Window.Size = UDim2.fromOffset(750, 450)
+	Window.Size = UDim2.fromOffset(600, 400)
 	Window.Position = UDim2.fromScale(0.5, 0.5)
 	Window.AnchorPoint = Vector2.new(0.5, 0.5)
 	Window.BorderSizePixel = 0
@@ -2133,7 +2159,7 @@ function KazeUI:CreateWindow(config)
 	TopDivider.Parent = TopBar
 	StartNeonLoop(TopDivider)
 
-	local defaultWindowSize = UDim2.fromOffset(750, 450)
+	local defaultWindowSize = UDim2.fromOffset(600, 400)
 	local lastNormalSize = defaultWindowSize
 	local lastNormalPosition = UDim2.fromScale(0.5,0.5)
 	local lastNormalAnchor = Vector2.new(0.5,0.5)
@@ -2189,7 +2215,6 @@ function KazeUI:CreateWindow(config)
 		if isMinimized then return end
 		isMinimized = true
 		
-		-- BUG FIX: Don't save size here. Spamming Tween Back Style causes it to overshoot and grow to infinity.
 		if not toggledMaximized then
 			lastNormalPosition = Window.Position
 			lastNormalAnchor = Window.AnchorPoint
@@ -2220,7 +2245,6 @@ function KazeUI:CreateWindow(config)
 
 	BtnYellow.MouseButton1Click:Connect(minimizeWindow)
 
-	-- BUG FIX: Global Dragging to stop slipping off the Mini Button bounds and triggering clicks
 	local miniDragStart
 	local miniDragMoved = false
 	
@@ -2235,13 +2259,12 @@ function KazeUI:CreateWindow(config)
 		if miniDragStart and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
 			if (input.Position - miniDragStart).Magnitude > 8 then
 				miniDragMoved = true
-				-- Update position manually
 				local delta = input.Position - miniDragStart
 				MiniButton.Position = UDim2.new(
 					0, MiniButton.Position.X.Offset + delta.X,
 					0, MiniButton.Position.Y.Offset + delta.Y
 				)
-				miniDragStart = input.Position -- Reset delta step
+				miniDragStart = input.Position 
 			end
 		end
 	end)
@@ -2419,6 +2442,7 @@ function KazeUI:CreateWindow(config)
 		_Pages = Pages,
 		_TabsList = TabsList,
 		_Tabs = {},
+		_TabElementsCount = 0,
 		Minimize = function(self)
 			minimizeWindow()
 		end,
@@ -2445,12 +2469,14 @@ function KazeUI:CreateWindow(config)
 		local function getConfigs()
 			local list = {}
 			if listfiles then
-				local s, files = pcall(function() return listfiles("") end)
-				if not s then s, files = pcall(function() return listfiles("workspace") end) end
+				local folderPath = KazeUI.AuthorFolder
+				if isfolder and not isfolder(folderPath) then pcall(makefolder, folderPath) end
+				
+				local s, files = pcall(function() return listfiles(folderPath) end)
 				if s and type(files) == "table" then
 					for _, f in ipairs(files) do
 						local fileName = string.match(f, "([^/\\]+)$") or f
-						local name = string.match(fileName, "^KazeUI_(.+)%.json$")
+						local name = string.match(fileName, "^(.+)%.json$")
 						if name then table.insert(list, name) end
 					end
 				end
@@ -2478,7 +2504,7 @@ function KazeUI:CreateWindow(config)
 		
 		sec:Button({Title = "Delete Config", Callback = function()
 			if delfile then
-				pcall(function() delfile("KazeUI_"..cfgName..".json") end)
+				pcall(function() delfile(KazeUI.AuthorFolder .. "/" .. cfgName .. ".json") end)
 				KazeUI:Notify({Title = "Config System", Content = "Deleted " .. cfgName, Duration = 3})
 				if configDropdown then configDropdown:Refresh(getConfigs()) end
 			else
@@ -2487,14 +2513,13 @@ function KazeUI:CreateWindow(config)
 		end})
 	end
 
-	-- BUG FIX: Theme UI elements missing Flags to save
 	function Win:CreateThemeManager(tab)
 		local sec = tab:SectionUI("Theme & Visuals")
 		
 		sec:ColorPicker({
 			Title = "UI Glow Color",
 			Default = KazeUI.GlowColor,
-			Flag = "KazeUI_Theme_GlowColor", -- Added flag so Config saves it
+			Flag = "KazeUI_Theme_GlowColor",
 			Callback = function(color)
 				KazeUI:SetGlow(color)
 			end
@@ -2505,17 +2530,52 @@ function KazeUI:CreateWindow(config)
 			Min = 0,
 			Max = 100,
 			Default = 0,
-			Flag = "KazeUI_Theme_BackgroundTransparency", -- Added flag so Config saves it
+			Flag = "KazeUI_Theme_BackgroundTransparency",
 			Callback = function(val)
 				KazeUI:SetTransparency(val / 100)
 			end
 		})
+	end
+	
+	function Win:CreateTabDivider(titleArg)
+		local divName = tostring(type(titleArg) == "table" and titleArg.Title or titleArg or "Category")
+		
+		self._TabElementsCount = self._TabElementsCount + 1
+		
+		local divFrame = Instance.new("Frame")
+		divFrame.Size = UDim2.new(1, -12, 0, 24)
+		divFrame.BackgroundTransparency = 1
+		divFrame.LayoutOrder = self._TabElementsCount
+		divFrame.Parent = TabsList
+		
+		local txt = Instance.new("TextLabel", divFrame)
+		txt.Size = UDim2.new(1, -8, 1, -4)
+		txt.Position = UDim2.fromOffset(8, 0)
+		txt.BackgroundTransparency = 1
+		txt.Text = divName
+		txt.TextColor3 = Color3.fromRGB(150, 150, 150)
+		txt.Font = Enum.Font.GothamBold
+		txt.TextSize = 11
+		txt.TextXAlignment = Enum.TextXAlignment.Left
+		
+		local line = Instance.new("Frame", divFrame)
+		line.Size = UDim2.new(1, -16, 0, 1)
+		line.Position = UDim2.new(0, 8, 1, -2)
+		line.BorderSizePixel = 0
+		line.BackgroundColor3 = KazeUI.GlowColor
+		StartNeonLoop(line)
+		
+		return {
+			SetText = function(self, newText) txt.Text = newText end
+		}
 	end
 
 	function Win:CreateTab(arg1, arg2)
 		local name = tostring(type(arg1) == "table" and (arg1.Title or arg1.Name) or arg1 or "Tab")
 		local iconId = type(arg1) == "table" and arg1.Icon or arg2
 		local formattedIcon = FormatImage(iconId or "")
+		
+		self._TabElementsCount = self._TabElementsCount + 1
 		
 		local btn = Instance.new("TextButton")
 		btn.Size = UDim2.new(1, -12, 0, 40)
@@ -2524,7 +2584,7 @@ function KazeUI:CreateWindow(config)
 		btn.AutoButtonColor = false
 		btn.Parent = TabsList
 		btn.ClipsDescendants = true
-		btn.LayoutOrder = #self._Tabs + 1
+		btn.LayoutOrder = self._TabElementsCount
 		Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
 		KazeUI:AddPanel(btn, 0.02)
 		KazeUI:AddTransparentElement(btn, 0)
