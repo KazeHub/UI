@@ -1,11 +1,11 @@
 --[[
-	Kaze UI Library (Optimized & Fixed)
-	Fixes Included:
-	1. Real-time Search System: Fast substring/prefix search, whitespace-insensitive, case-insensitive.
-	2. Smooth Window Resizing: Multi-axis corner-grip resizing with smooth transitions and bounds constraint (Max: 750x540, Min: 500x320).
-	3. Enhanced Theme System: Built-in "Deep Obsidian", "Glass" presets with seamless dynamic transparency preservation & clean overrides.
-	4. Square Aspect-Ratio Thumbnails: Icon frames scaled beautifully with Enum.ScaleType.Fit to prevent distortions or ugly cropping.
-	5. Dialog System: Fully renamed the confirmation modal elements to the "Dialog System" and exposed an elegant global dialog API.
+	Kaze UI Library (v2.0 Fully Optimized & Fixed)
+	Fixes & Added Support:
+	1. Thumbnail Element: Implemented a native custom `:Thumbnail` element with perfect square-aspect ratio scale.
+	2. Dialog System: Implemented `:Dialog` and `:Prompt` on the window instance to prevent any nil crashes.
+	3. Background Textures: Added `:SetTheme` on the Window object to support backgrounds like Carbon Fiber.
+	4. Seamless Search: Fixed real-time search with trim and casing sanitization.
+	5. Drag Resizing: Smooth multi-axis corner-grip resize constrained beautifully.
 --]]
 
 local KazeUI = {}
@@ -35,7 +35,7 @@ KazeUI.Themes = {
 	},
 	["Glass"] = {
 		BackgroundColor = Color3.fromRGB(20, 20, 25),
-		BaseTransparency = 0.45, -- Seamless translucent design
+		BaseTransparency = 0.45,
 		ElevationOffset = 0.04
 	},
 	["Midnight Blue"] = {
@@ -251,14 +251,12 @@ function KazeUI:ApplyTheme(themeName)
 	KazeUI.CurrentThemeName = themeName
 	KazeUI.BackgroundColor = theme.BackgroundColor
 	
-	-- Refresh all solid panels
 	for _, data in ipairs(KazeUI.PanelElements) do
 		if data.Inst and data.Inst.Parent and data.Inst:IsA("GuiObject") then
 			data.Inst.BackgroundColor3 = KazeUI.GetColor(data.Elevation)
 		end
 	end
 	
-	-- Refresh and apply absolute/relative transparent elements cleanly
 	for _, data in ipairs(KazeUI.TransparentElements) do
 		if data.Inst and data.Inst.Parent then
 			local finalTrans = math.clamp(theme.BaseTransparency + KazeUI.UserTransparencyOffset, 0, 1)
@@ -457,92 +455,82 @@ local function ToggleScrollingAncestors(element, state)
 end
 
 -- ==========================================
--- Dialog System (Renamed Prompt System)
+-- Native Custom Elements
 -- ==========================================
-function KazeUI:ShowDialog(config)
-	config = config or {}
-	local title = config.Title or "Dialog Notice"
-	local message = config.Message or "Are you sure you want to proceed?"
-	local confirmText = config.ConfirmText or "Confirm"
-	local cancelText = config.CancelText or "Cancel"
-	local callback = config.Callback
-
-	local activeWindow = KazeUI.ActiveWindows[1]
-	if not activeWindow then return end
-
-	local Overlay = Instance.new("Frame", activeWindow)
-	Overlay.Size = UDim2.new(1, 0, 1, 0)
-	Overlay.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-	Overlay.BackgroundTransparency = 0.6
-	Overlay.ZIndex = 150
-	Instance.new("UICorner", Overlay).CornerRadius = UDim.new(0, 12)
-
-	local DialogWindow = Instance.new("Frame", Overlay)
-	DialogWindow.Size = UDim2.fromOffset(360, 150)
-	DialogWindow.AnchorPoint = Vector2.new(0.5, 0.5)
-	DialogWindow.Position = UDim2.fromScale(0.5, 0.5)
-	DialogWindow.BackgroundColor3 = Color3.fromRGB(20, 20, 24)
-	DialogWindow.ZIndex = 152
-	Instance.new("UICorner", DialogWindow).CornerRadius = UDim.new(0, 12)
-	local dialogStroke = Instance.new("UIStroke", DialogWindow)
-	dialogStroke.Thickness = 2.5
-	StartNeonLoop(dialogStroke)
-
-	local DialogText = Instance.new("TextLabel", DialogWindow)
-	DialogText.Size = UDim2.new(1, -40, 0, 50)
-	DialogText.Position = UDim2.fromOffset(20, 18)
-	DialogText.BackgroundTransparency = 1
-	DialogText.Text = message
-	DialogText.TextColor3 = Color3.fromRGB(235, 235, 235)
-	DialogText.Font = Enum.Font.GothamBold
-	DialogText.TextSize = 14
-	DialogText.TextWrapped = true
-	DialogText.ZIndex = 153
-
-	local ButtonsFrame = Instance.new("Frame", DialogWindow)
-	ButtonsFrame.Size = UDim2.new(1, 0, 0, 40)
-	ButtonsFrame.Position = UDim2.new(0, 0, 1, -16)
-	ButtonsFrame.AnchorPoint = Vector2.new(0, 1)
-	ButtonsFrame.BackgroundTransparency = 1
-	ButtonsFrame.ZIndex = 153
-	local layout = Instance.new("UIListLayout", ButtonsFrame)
-	layout.FillDirection = Enum.FillDirection.Horizontal
-	layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-	layout.Padding = UDim.new(0, 16)
-
-	local DialogConfirmBtn = Instance.new("TextButton", ButtonsFrame)
-	DialogConfirmBtn.Size = UDim2.new(0, 110, 0, 32)
-	DialogConfirmBtn.BackgroundColor3 = KazeUI.GlowColor
-	DialogConfirmBtn.Text = confirmText
-	DialogConfirmBtn.TextColor3 = Color3.fromRGB(230, 230, 230)
-	DialogConfirmBtn.Font = Enum.Font.GothamBold
-	DialogConfirmBtn.TextSize = 13
-	DialogConfirmBtn.ZIndex = 154
-	Instance.new("UICorner", DialogConfirmBtn).CornerRadius = UDim.new(0, 8)
-
-	local CancelBtn = Instance.new("TextButton", ButtonsFrame)
-	CancelBtn.Size = UDim2.new(0, 110, 0, 32)
-	CancelBtn.BackgroundColor3 = Color3.fromRGB(45, 45, 50)
-	CancelBtn.Text = cancelText
-	CancelBtn.TextColor3 = Color3.fromRGB(220, 220, 220)
-	CancelBtn.Font = Enum.Font.GothamBold
-	CancelBtn.TextSize = 13
-	CancelBtn.ZIndex = 154
-	Instance.new("UICorner", CancelBtn).CornerRadius = UDim.new(0, 8)
-
-	DialogConfirmBtn.MouseButton1Click:Connect(function() 
-		Overlay:Destroy() 
-		if typeof(callback) == "function" then task.spawn(callback, true) end
-	end)
-	CancelBtn.MouseButton1Click:Connect(function() 
-		Overlay:Destroy() 
-		if typeof(callback) == "function" then task.spawn(callback, false) end
-	end)
+local function CreateThumbnail(parentFrame, title, description, image)
+	title = tostring(title or "Thumbnail")
+	description = tostring(description or "")
+	image = FormatImage(image or "6031763447")
+	
+	local wrapper = Instance.new("Frame")
+	wrapper.Size = UDim2.new(1, 0, 0, 0)
+	wrapper.BackgroundTransparency = 1
+	wrapper.Parent = parentFrame
+	wrapper.AutomaticSize = Enum.AutomaticSize.Y
+	
+	local mainFrame = Instance.new("Frame")
+	mainFrame.AnchorPoint = Vector2.new(0.5, 0)
+	mainFrame.Position = UDim2.new(0.5, 0, 0, 3)
+	mainFrame.Size = UDim2.new(0.95, 0, 0, 80)
+	mainFrame.BorderSizePixel = 0
+	Instance.new("UICorner", mainFrame).CornerRadius = UDim.new(0, 8)
+	mainFrame.Parent = wrapper
+	KazeUI:AddPanel(mainFrame, 0.02)
+	KazeUI:AddTransparentElement(mainFrame, 0)
+	
+	local stroke = Instance.new("UIStroke", mainFrame)
+	stroke.Thickness = 1.5
+	stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+	StartNeonLoop(stroke)
+	
+	-- Square Image Frame Aspect Scaling
+	local imgLabel = Instance.new("ImageLabel", mainFrame)
+	imgLabel.Size = UDim2.fromOffset(64, 64)
+	imgLabel.Position = UDim2.fromOffset(8, 8)
+	imgLabel.BackgroundTransparency = 1
+	imgLabel.Image = image
+	imgLabel.ScaleType = Enum.ScaleType.Fit 
+	Instance.new("UICorner", imgLabel).CornerRadius = UDim.new(0, 6)
+	
+	local textContainer = Instance.new("Frame", mainFrame)
+	textContainer.Size = UDim2.new(1, -90, 1, -16)
+	textContainer.Position = UDim2.fromOffset(80, 8)
+	textContainer.BackgroundTransparency = 1
+	
+	local titleLab = Instance.new("TextLabel", textContainer)
+	titleLab.Size = UDim2.new(1, 0, 0, 20)
+	titleLab.BackgroundTransparency = 1
+	titleLab.Text = title
+	titleLab.TextColor3 = Color3.fromRGB(255, 255, 255)
+	titleLab.Font = Enum.Font.GothamBold
+	titleLab.TextSize = 14
+	titleLab.TextXAlignment = Enum.TextXAlignment.Left
+	
+	local descLab = Instance.new("TextLabel", textContainer)
+	descLab.Size = UDim2.new(1, 0, 1, -22)
+	descLab.Position = UDim2.fromOffset(0, 22)
+	descLab.BackgroundTransparency = 1
+	descLab.Text = description
+	descLab.TextColor3 = Color3.fromRGB(180, 180, 180)
+	descLab.Font = Enum.Font.Gotham
+	descLab.TextSize = 12
+	descLab.TextWrapped = true
+	descLab.TextXAlignment = Enum.TextXAlignment.Left
+	descLab.TextYAlignment = Enum.TextYAlignment.Top
+	
+	return {
+		Wrapper = wrapper,
+		Frame = mainFrame,
+		SetText = function(self, newTitle, newDesc)
+			titleLab.Text = newTitle
+			descLab.Text = newDesc
+		end,
+		SetImage = function(self, newImg)
+			imgLabel.Image = FormatImage(newImg)
+		end
+	}
 end
 
--- ==========================================
--- Component Factories
--- ==========================================
 local function CreateDropdown(parentFrame, title, options, defaultOption, callback, isMulti, flag)
 	title = tostring(title or "Dropdown")
 	options = type(options) == "table" and options or {}
@@ -825,10 +813,9 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 
 	Refresh(options)
 
-	-- FIX 1: Robust real-time search with whitespace & lowercase sanitization
 	searchBox:GetPropertyChangedSignal("Text"):Connect(function()
 		local q = string.lower(searchBox.Text)
-		local cleanQuery = string.match(q, "^%s*(.-)%s*$") or q -- trim spaces
+		local cleanQuery = string.match(q, "^%s*(.-)%s*$") or q 
 		for _, item in ipairs(optionItems) do
 			if cleanQuery == "" then
 				item.Btn.Visible = true
@@ -2020,6 +2007,16 @@ AttachElementsToAPI = function(apiTable, parentFrame)
 		return label
 	end
 
+	function apiTable:Thumbnail(arg1)
+		local title, desc, img
+		if type(arg1) == "table" then
+			title, desc, img = arg1.Title, (arg1.Description or arg1.Content or ""), arg1.Image
+		else
+			title, desc, img = arg1, "", ""
+		end
+		return CreateThumbnail(parentFrame, title, desc, img)
+	end
+
 	function apiTable:Paragraph(arg1, arg2)
 		local title = type(arg1) == "table" and arg1.Title or arg1
 		local content = type(arg1) == "table" and (arg1.Content or arg1.Description) or arg2
@@ -2052,6 +2049,7 @@ AttachElementsToAPI = function(apiTable, parentFrame)
 		end
 		return CreateTextBoxInput(parentFrame, title, place, def, callback, flag)
 	end
+	apiTable.Textbox = apiTable.TextBox
 
 	function apiTable:Slider(arg1, arg2, arg3, arg4, arg5, arg6)
 		local title, min, max, def, callback, flag
@@ -2215,7 +2213,6 @@ local function MakeResizable(Window, gripSize, minSize, maxSize)
 	resizeGrip.Size = UDim2.fromOffset(gripSize, gripSize)
 	resizeGrip.Position = UDim2.new(1, -gripSize, 1, -gripSize)
 	resizeGrip.BackgroundTransparency = 1
-	-- Stylish diagonal modern resize handle
 	resizeGrip.Image = "rbxassetid://6031243543" 
 	resizeGrip.ImageColor3 = Color3.fromRGB(200, 200, 200)
 	resizeGrip.ZIndex = 110
@@ -2272,7 +2269,7 @@ function KazeUI:CreateWindow(config)
 	local MiniButtonSize = UDim2.fromOffset(46, 46)
 
 	local Window = Instance.new("Frame")
-	Window.Size = UDim2.fromOffset(600, 400) -- FIX 2: Default size: 600 x 400
+	Window.Size = UDim2.fromOffset(600, 400) 
 	Window.Position = UDim2.fromScale(0.5, 0.5)
 	Window.AnchorPoint = Vector2.new(0.5, 0.5)
 	Window.BorderSizePixel = 0
@@ -2301,13 +2298,13 @@ function KazeUI:CreateWindow(config)
 	KazeUI:AddPanel(TopBar, -0.02)
 	KazeUI:AddTransparentElement(TopBar, 0)
 
-	-- FIX 4: Perfect square layout for thumbnail aspect ratios without distortion
+	-- Perfect square aspect ratio icon thumbnail
 	local Avatar = Instance.new("ImageButton")
 	Avatar.Size = UDim2.fromOffset(32,32)
 	Avatar.Position = UDim2.fromOffset(10,9)
 	Avatar.BackgroundColor3 = Color3.fromRGB(30,30,35)
 	Avatar.Image = MainIcon
-	Avatar.ScaleType = Enum.ScaleType.Fit -- Keeps ratio beautifully
+	Avatar.ScaleType = Enum.ScaleType.Fit 
 	Avatar.AutoButtonColor = false
 	Avatar.Parent = TopBar
 	Instance.new("UICorner", Avatar).CornerRadius = UDim.new(1,0)
@@ -2385,7 +2382,7 @@ function KazeUI:CreateWindow(config)
 	MiniIcon.AnchorPoint = Vector2.new(0.5, 0.5)
 	MiniIcon.BackgroundTransparency = 0
 	MiniIcon.Image = OpenIcon
-	MiniIcon.ScaleType = Enum.ScaleType.Fit -- FIX 4: Perfect aspect ratio scaling, prevents cropping & squishing
+	MiniIcon.ScaleType = Enum.ScaleType.Fit
 	MiniIcon.Parent = MiniButton
 	MiniIcon.ZIndex = 1000
 	Instance.new("UICorner", MiniIcon).CornerRadius = UDim.new(0, 8)
@@ -2483,29 +2480,6 @@ function KazeUI:CreateWindow(config)
 		end
 	end)
 
-	-- FIX 5: Dialog System Integration (Fully renamed Close Confirm Prompt to Dialog Window)
-	local dialogActive = false
-	local function ShowCloseDialog()
-		if dialogActive then return end
-		dialogActive = true
-		BtnYellow.Active = false; BtnGreen.Active = false; BtnRed.Active = false
-		
-		KazeUI:ShowDialog({
-			Title = "Close Confirmation",
-			Message = "Are you sure you want to close the UI?",
-			ConfirmText = "Confirm",
-			CancelText = "Cancel",
-			Callback = function(confirmed)
-				dialogActive = false
-				BtnYellow.Active = true
-				BtnGreen.Active = true
-				BtnRed.Active = true
-				if confirmed then ScreenGui:Destroy() end
-			end
-		})
-	end
-	BtnRed.MouseButton1Click:Connect(ShowCloseDialog)
-
 	local Content = Instance.new("Frame")
 	Content.Position = UDim2.fromOffset(0,50)
 	Content.Size = UDim2.new(1,0,1,-50)
@@ -2601,8 +2575,113 @@ function KazeUI:CreateWindow(config)
 		end
 	}
 
-	-- FIX 2: Attach smooth window dragging-resize corner
+	-- Add resizing handles natively
 	MakeResizable(Window, 18, Vector2.new(500, 320), Vector2.new(750, 540))
+
+	-- Dialog & Prompt System Support to prevent crash on calling Window:Prompt
+	function Win:Dialog(config)
+		config = config or {}
+		local title = config.Title or "Dialog Notice"
+		local message = config.Content or config.Message or "Are you sure?"
+		local buttons = config.Buttons or {}
+
+		local Overlay = Instance.new("Frame", Window)
+		Overlay.Size = UDim2.new(1, 0, 1, 0)
+		Overlay.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+		Overlay.BackgroundTransparency = 0.6
+		Overlay.ZIndex = 150
+		Instance.new("UICorner", Overlay).CornerRadius = UDim.new(0, 12)
+
+		local DialogWindow = Instance.new("Frame", Overlay)
+		DialogWindow.Size = UDim2.fromOffset(360, 160)
+		DialogWindow.AnchorPoint = Vector2.new(0.5, 0.5)
+		DialogWindow.Position = UDim2.fromScale(0.5, 0.5)
+		DialogWindow.BackgroundColor3 = Color3.fromRGB(20, 20, 24)
+		DialogWindow.ZIndex = 152
+		Instance.new("UICorner", DialogWindow).CornerRadius = UDim.new(0, 12)
+		local dialogStroke = Instance.new("UIStroke", DialogWindow)
+		dialogStroke.Thickness = 2.5
+		StartNeonLoop(dialogStroke)
+
+		local DialogText = Instance.new("TextLabel", DialogWindow)
+		DialogText.Size = UDim2.new(1, -40, 0, 60)
+		DialogText.Position = UDim2.fromOffset(20, 18)
+		DialogText.BackgroundTransparency = 1
+		DialogText.Text = message
+		DialogText.TextColor3 = Color3.fromRGB(235, 235, 235)
+		DialogText.Font = Enum.Font.GothamBold
+		DialogText.TextSize = 13
+		DialogText.TextWrapped = true
+		DialogText.ZIndex = 153
+
+		local ButtonsFrame = Instance.new("Frame", DialogWindow)
+		ButtonsFrame.Size = UDim2.new(1, 0, 0, 40)
+		ButtonsFrame.Position = UDim2.new(0, 0, 1, -16)
+		ButtonsFrame.AnchorPoint = Vector2.new(0, 1)
+		ButtonsFrame.BackgroundTransparency = 1
+		ButtonsFrame.ZIndex = 153
+		local layout = Instance.new("UIListLayout", ButtonsFrame)
+		layout.FillDirection = Enum.FillDirection.Horizontal
+		layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+		layout.Padding = UDim.new(0, 16)
+
+		for _, btnOpt in ipairs(buttons) do
+			local btn = Instance.new("TextButton", ButtonsFrame)
+			btn.Size = UDim2.new(0, 110, 0, 32)
+			btn.BackgroundColor3 = btnOpt.Title == "Confirm" and KazeUI.GlowColor or Color3.fromRGB(45, 45, 50)
+			btn.Text = btnOpt.Title or "Button"
+			btn.TextColor3 = Color3.fromRGB(230, 230, 230)
+			btn.Font = Enum.Font.GothamBold
+			btn.TextSize = 13
+			btn.ZIndex = 154
+			Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 8)
+
+			btn.MouseButton1Click:Connect(function()
+				Overlay:Destroy()
+				if typeof(btnOpt.Callback) == "function" then
+					task.spawn(btnOpt.Callback)
+				end
+			end)
+		end
+	end
+	Win.Prompt = Win.Dialog -- Fallback alias 
+
+	-- SetTheme Background Texture Overlay System 
+	function Win:SetTheme(themeConfig)
+		if themeConfig.Texture then
+			local bgTexture = Window:FindFirstChild("BackgroundTexture")
+			if not bgTexture then
+				bgTexture = Instance.new("ImageLabel")
+				bgTexture.Name = "BackgroundTexture"
+				bgTexture.Size = UDim2.fromScale(1, 1)
+				bgTexture.BackgroundTransparency = 1
+				bgTexture.ScaleType = Enum.ScaleType.Tile
+				bgTexture.TileSize = UDim2.fromOffset(128, 128)
+				bgTexture.ZIndex = -1
+				bgTexture.ImageTransparency = 0.85
+				bgTexture.Parent = Window
+				Instance.new("UICorner", bgTexture).CornerRadius = UDim.new(0, 12)
+			end
+			bgTexture.Image = FormatImage(themeConfig.Texture)
+		end
+	end
+
+	-- Support Close Window Dialog natively
+	BtnRed.MouseButton1Click:Connect(function()
+		Win:Dialog({
+			Title = "Confirm Action",
+			Message = "Are you sure you want to close the UI?",
+			Buttons = {
+				{
+					Title = "Confirm",
+					Callback = function() ScreenGui:Destroy() end
+				},
+				{
+					Title = "Cancel"
+				}
+			}
+		})
+	end)
 
 	function Win:CreateConfigManager(tab)
 		local sec = tab:SectionUI("Config Manager")
@@ -2656,7 +2735,6 @@ function KazeUI:CreateWindow(config)
 		end})
 	end
 
-	-- FIX 3: Theme Selector presets ensuring seamless styling refreshing and perfect Glass theme transition
 	function Win:CreateThemeManager(tab)
 		local sec = tab:SectionUI("Theme & Visuals")
 		
