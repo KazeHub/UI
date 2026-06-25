@@ -1,9 +1,8 @@
-
 --[[
 	Kaze UI Library v2.0
 	Added: Performance Widget, Search System, Window Resizing, Theme Manager 2.0
 	Added: Thumbnail Component, Prompt System, Config Manager Overhaul
-	Fixed: Search System (Global Search Result Page Reparenting)
+	Fixed: Search Ordering, Smooth Window Resizing constraints, and Scrolling bypass.
 --]]
 
 local KazeUI = {}
@@ -1944,8 +1943,12 @@ local CreateCollapsibleSection
 local AttachElementsToAPI
 
 AttachElementsToAPI = function(apiTable, parentFrame, winRef)
-	-- MODIFIED: Added OriginalParent to correctly restore items when searching
+	local elementCount = 0 -- Fix: Search Ordering Fix
 	local function registerElement(wrapper, textContent)
+		elementCount = elementCount + 1
+		if wrapper:IsA("GuiObject") then
+			wrapper.LayoutOrder = elementCount -- Explicitly assigns order to prevent random swapping on Search exit
+		end
 		if winRef and winRef._SearchableElements then
 			table.insert(winRef._SearchableElements, { 
 				Inst = wrapper, 
@@ -2215,7 +2218,7 @@ function KazeUI:CreateWindow(config)
 	local MiniButtonSize = UDim2.fromOffset(46, 46)
 
 	local Window = Instance.new("Frame")
-	Window.Size = UDim2.fromOffset(750, 450)
+	Window.Size = UDim2.fromOffset(600, 400) -- Fix: Default Size 600x400
 	Window.Position = UDim2.fromScale(0.5, 0.5)
 	Window.AnchorPoint = Vector2.new(0.5, 0.5)
 	Window.BorderSizePixel = 0
@@ -2345,8 +2348,7 @@ function KazeUI:CreateWindow(config)
 		end)
 	end
 
-	local defaultWindowSize = UDim2.fromOffset(750, 450)
-	local lastNormalSize = defaultWindowSize
+	local lastNormalSize = UDim2.fromOffset(600, 400) -- Fix: Keeps resizing saved
 	local lastNormalPosition = UDim2.fromScale(0.5,0.5)
 	local lastNormalAnchor = Vector2.new(0.5,0.5)
 	local toggledMaximized = false
@@ -2545,40 +2547,77 @@ function KazeUI:CreateWindow(config)
 	end
 	BtnRed.MouseButton1Click:Connect(ShowCloseConfirm)
 
-	-- WINDOW RESIZING
+	-- WINDOW RESIZING FIX
 	if config.Resizable then
-		local ResizeHandle = Instance.new("ImageButton", Window)
-		ResizeHandle.Size = UDim2.fromOffset(20, 20)
-		ResizeHandle.Position = UDim2.new(1, -20, 1, -20)
+		local ResizeHandle = Instance.new("TextButton", Window)
+		ResizeHandle.Size = UDim2.fromOffset(25, 25)
+		ResizeHandle.Position = UDim2.new(1, -25, 1, -25)
 		ResizeHandle.BackgroundTransparency = 1
-		ResizeHandle.Image = "rbxassetid://11680572859" -- Handle icon
-		ResizeHandle.ImageColor3 = Color3.fromRGB(150, 150, 150)
+		ResizeHandle.Text = ""
+		ResizeHandle.AutoButtonColor = false
 		ResizeHandle.ZIndex = 100
+		
+		-- 3 Dots Visual Identifier
+		local dot1 = Instance.new("Frame", ResizeHandle)
+		dot1.Size = UDim2.fromOffset(4, 4)
+		dot1.Position = UDim2.new(1, -6, 1, -6)
+		dot1.BackgroundColor3 = Color3.fromRGB(150, 150, 150)
+		dot1.BorderSizePixel = 0
+		Instance.new("UICorner", dot1).CornerRadius = UDim.new(1, 0)
+		
+		local dot2 = Instance.new("Frame", ResizeHandle)
+		dot2.Size = UDim2.fromOffset(4, 4)
+		dot2.Position = UDim2.new(1, -14, 1, -6)
+		dot2.BackgroundColor3 = Color3.fromRGB(150, 150, 150)
+		dot2.BorderSizePixel = 0
+		Instance.new("UICorner", dot2).CornerRadius = UDim.new(1, 0)
+		
+		local dot3 = Instance.new("Frame", ResizeHandle)
+		dot3.Size = UDim2.fromOffset(4, 4)
+		dot3.Position = UDim2.new(1, -6, 1, -14)
+		dot3.BackgroundColor3 = Color3.fromRGB(150, 150, 150)
+		dot3.BorderSizePixel = 0
+		Instance.new("UICorner", dot3).CornerRadius = UDim.new(1, 0)
 		
 		local resizing = false
 		local resizeStartMouse, resizeStartSize
 		
+		local function SetWindowScrolling(enabled)
+			for _, v in ipairs(Window:GetDescendants()) do
+				if v:IsA("ScrollingFrame") then
+					v.ScrollingEnabled = enabled
+				end
+			end
+		end
+		
 		ResizeHandle.InputBegan:Connect(function(input)
+			if toggledMaximized then return end
 			if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 				resizing = true
 				resizeStartMouse = input.Position
 				resizeStartSize = Window.AbsoluteSize
+				SetWindowScrolling(false) -- Disable scrolling during resize so they don't scroll with resize
 			end
 		end)
 		
 		UIS.InputChanged:Connect(function(input)
 			if resizing and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
 				local delta = input.Position - resizeStartMouse
-				local newX = math.clamp(resizeStartSize.X + delta.X, 500, 1200)
-				local newY = math.clamp(resizeStartSize.Y + delta.Y, 350, 800)
+				local newX = math.clamp(resizeStartSize.X + delta.X, 500, 750)
+				local newY = math.clamp(resizeStartSize.Y + delta.Y, 350, 540)
 				Window.Size = UDim2.fromOffset(newX, newY)
 			end
 		end)
 		
 		UIS.InputEnded:Connect(function(input)
 			if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-				resizing = false
-				if not toggledMaximized then lastNormalSize = Window.Size end
+				if resizing then
+					resizing = false
+					SetWindowScrolling(true) -- Re-enable scrolling frame logic
+					if not toggledMaximized then 
+						lastNormalSize = Window.Size -- Save Size state so minimization respects changes
+					end
+				end
 			end
 		end)
 	end
@@ -2644,7 +2683,7 @@ function KazeUI:CreateWindow(config)
 		_SearchableElements = {}
 	}
 
-	-- SEARCH SYSTEM FIX: Global Search Page & Live Reparenting
+	-- SEARCH SYSTEM
 	if config.SearchBar then
 		TabsTopPadding = 42
 		local SearchContainer = Instance.new("Frame", SideBar)
