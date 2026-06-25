@@ -1,7 +1,9 @@
+
 --[[
 	Kaze UI Library v2.0
 	Added: Performance Widget, Search System, Window Resizing, Theme Manager 2.0
 	Added: Thumbnail Component, Prompt System, Config Manager Overhaul
+	Fixed: Search System (Global Search Result Page Reparenting)
 --]]
 
 local KazeUI = {}
@@ -1942,9 +1944,14 @@ local CreateCollapsibleSection
 local AttachElementsToAPI
 
 AttachElementsToAPI = function(apiTable, parentFrame, winRef)
+	-- MODIFIED: Added OriginalParent to correctly restore items when searching
 	local function registerElement(wrapper, textContent)
 		if winRef and winRef._SearchableElements then
-			table.insert(winRef._SearchableElements, { Inst = wrapper, Text = string.lower(textContent) })
+			table.insert(winRef._SearchableElements, { 
+				Inst = wrapper, 
+				Text = string.lower(textContent),
+				OriginalParent = wrapper.Parent 
+			})
 		end
 	end
 
@@ -2637,7 +2644,7 @@ function KazeUI:CreateWindow(config)
 		_SearchableElements = {}
 	}
 
-	-- SEARCH SYSTEM
+	-- SEARCH SYSTEM FIX: Global Search Page & Live Reparenting
 	if config.SearchBar then
 		TabsTopPadding = 42
 		local SearchContainer = Instance.new("Frame", SideBar)
@@ -2669,16 +2676,81 @@ function KazeUI:CreateWindow(config)
 		SearchBox.TextSize = 13
 		SearchBox.TextXAlignment = Enum.TextXAlignment.Left
 
+		Win._SearchBox = SearchBox
+
+		local SearchPage = Instance.new("ScrollingFrame")
+		SearchPage.Name = "SearchPage"
+		SearchPage.Size = UDim2.new(1, 0, 1, 0)
+		SearchPage.BackgroundTransparency = 1
+		SearchPage.BorderSizePixel = 0
+		SearchPage.ScrollBarThickness = 5
+		SearchPage.CanvasSize = UDim2.new(0, 0, 0, 0)
+		SearchPage.AutomaticCanvasSize = Enum.AutomaticSize.Y
+		SearchPage.ScrollBarImageColor3 = Color3.fromRGB(40,40,45)
+		SearchPage.Visible = false
+		SearchPage.Parent = Pages
+
+		local searchPagePadding = Instance.new("UIPadding", SearchPage)
+		searchPagePadding.PaddingTop = UDim.new(0, 8)
+		searchPagePadding.PaddingBottom = UDim.new(0, 8)
+		searchPagePadding.PaddingLeft = UDim.new(0, 8)
+		searchPagePadding.PaddingRight = UDim.new(0, 8)
+
+		local searchLayout = Instance.new("UIListLayout", SearchPage)
+		searchLayout.SortOrder = Enum.SortOrder.LayoutOrder
+		searchLayout.Padding = UDim.new(0,4)
+		searchLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+
+		Win._SearchPage = SearchPage
+
 		SearchBox.Focused:Connect(function() StartNeonLoop(searchStroke) end)
 		SearchBox.FocusLost:Connect(function() StopNeonLoop(searchStroke); searchStroke.Color = Color3.fromRGB(45, 45, 50) end)
 
 		SearchBox:GetPropertyChangedSignal("Text"):Connect(function()
 			local query = string.lower(SearchBox.Text)
-			for _, item in ipairs(Win._SearchableElements) do
-				if query == "" or string.find(item.Text, query, 1, true) then
-					item.Inst.Visible = true
-				else
-					item.Inst.Visible = false
+			
+			if query == "" then
+				-- Hide search overlay, restore layout
+				SearchPage.Visible = false
+				
+				for _, item in ipairs(Win._SearchableElements) do
+					if item.Inst and item.OriginalParent then
+						if item.Inst.Parent ~= item.OriginalParent then
+							item.Inst.Parent = item.OriginalParent
+						end
+						item.Inst.Visible = true
+					end
+				end
+				
+				-- Ensure proper tab visibility
+				for _, t in ipairs(Win._Tabs) do
+					if t.Indicator.Visible then
+						t.Page.Visible = true
+					end
+				end
+			else
+				-- Hide normal tabs so elements do not overlap with search
+				for _, t in ipairs(Win._Tabs) do
+					t.Page.Visible = false
+				end
+				SearchPage.Visible = true
+				
+				for _, item in ipairs(Win._SearchableElements) do
+					if item.Inst and item.OriginalParent then
+						if string.find(item.Text, query, 1, true) then
+							-- Move match safely into Search Results page
+							if item.Inst.Parent ~= SearchPage then
+								item.Inst.Parent = SearchPage
+							end
+							item.Inst.Visible = true
+						else
+							-- Push non-matches back to original homes and hide them so they don't break layout
+							if item.Inst.Parent ~= item.OriginalParent then
+								item.Inst.Parent = item.OriginalParent
+							end
+							item.Inst.Visible = false
+						end
+					end
 				end
 			end
 		end)
@@ -3011,6 +3083,11 @@ function KazeUI:CreateWindow(config)
 		table.insert(self._Tabs, { Button = btn, Indicator = leftIndicator, Label = txt, Page = page })
 
 		local function activate()
+			-- Automatically clear the search if a user decides to browse tabs instead
+			if self._SearchBox and self._SearchBox.Text ~= "" then
+				self._SearchBox.Text = "" 
+			end
+
 			for _, t in ipairs(self._Tabs) do
 				TweenService:Create(t.Button, TweenInfo.new(0.12), { BackgroundColor3 = KazeUI.GetColor(0.02) }):Play()
 				t.Indicator.Visible = false
