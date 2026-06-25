@@ -2,7 +2,7 @@
 	Kaze UI Library v2.0
 	Added: Performance Widget, Search System, Window Resizing, Theme Manager 2.0
 	Added: Thumbnail Component, Prompt System, Config Manager Overhaul
-	Fixed: UIScale-compensated fluid resizing, stable Theme Resetting & Glass Transparency recovery.
+	Fixed: UIScale-compensated fluid resizing, stable Theme Resetting, Glass Transparency recovery & Perfect Square Thumbnails.
 --]]
 
 local KazeUI = {}
@@ -127,7 +127,7 @@ local function MakeDraggable(dragPart, targetPart)
 	
 	local function update(input)
 		if not dragStart or not startPos then return end
-		local delta = (input.Position - dragStart) / UIScale.Scale -- Factor in Scale
+		local delta = (input.Position - dragStart) / UIScale.Scale -- Scale Offset correction
 		
 		if dragActive or delta.Magnitude > 8 then
 			dragActive = true
@@ -819,25 +819,11 @@ local function CreateParagraph(parentFrame, title, body)
 	}
 end
 
+-- Re-engineered Thumbnail: Perfect Square, auto-scalable, Fit AspectRatio and no cutting off.
 local function CreateThumbnail(parentFrame, title, body, imageId)
 	title = tostring(title or "")
 	body = tostring(body or "")
 	local formattedImage = FormatImage(imageId or "")
-	
-	local measuredWidth = 598 * 0.92
-	if parentFrame and parentFrame.AbsoluteSize and parentFrame.AbsoluteSize.X > 0 then measuredWidth = parentFrame.AbsoluteSize.X * 0.95 end
-	
-	local titleHeight = 0
-	if title ~= " " then
-		local ts = TextService:GetTextSize(title, 16, Enum.Font.GothamBold, Vector2.new(measuredWidth - 24, 1000))
-		titleHeight = math.max(18, math.ceil(ts.Y))
-	end
-	
-	local bodySize = TextService:GetTextSize(body, 14, Enum.Font.Gotham, Vector2.new(measuredWidth - 24, 2000))
-	local bodyHeight = math.ceil(bodySize.Y)
-	local imageHeight = 150
-	
-	local totalHeight = 6 + imageHeight + 6 + titleHeight + 3 + bodyHeight + 6
 	
 	local wrapper = Instance.new("Frame")
 	wrapper.Size = UDim2.new(1, 0, 0, 0)
@@ -848,47 +834,69 @@ local function CreateThumbnail(parentFrame, title, body, imageId)
 	local paraFrame = Instance.new("Frame")
 	paraFrame.AnchorPoint = Vector2.new(0.5, 0)
 	paraFrame.Position = UDim2.new(0.5, 0, 0, 3)
-	paraFrame.Size = UDim2.new(0.95, 0, 0, totalHeight)
+	paraFrame.Size = UDim2.new(0.95, 0, 0, 0)
 	paraFrame.BorderSizePixel = 0
+	paraFrame.AutomaticSize = Enum.AutomaticSize.Y
 	Instance.new("UICorner", paraFrame).CornerRadius = UDim.new(0, 8)
 	paraFrame.Parent = wrapper
 	KazeUI:AddPanel(paraFrame, 0.02)
 	KazeUI:AddTransparentElement(paraFrame, 0)
 	
+	local paraLayout = Instance.new("UIListLayout", paraFrame)
+	paraLayout.SortOrder = Enum.SortOrder.LayoutOrder
+	paraLayout.Padding = UDim.new(0, 6)
+	paraLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+	
+	local paraPadding = Instance.new("UIPadding", paraFrame)
+	paraPadding.PaddingTop = UDim.new(0, 10)
+	paraPadding.PaddingBottom = UDim.new(0, 10)
+	paraPadding.PaddingLeft = UDim.new(0, 12)
+	paraPadding.PaddingRight = UDim.new(0, 12)
+	
+	-- Backing neon glow
 	local glow = Instance.new("Frame")
 	glow.AnchorPoint = Vector2.new(0.5, 0)
 	glow.Position = UDim2.new(0.5, 0, 0, 1)
-	glow.Size = UDim2.new(0.96, 0, 0, totalHeight + 6)
+	glow.Size = UDim2.new(0.96, 0, 1, 6)
 	glow.BackgroundTransparency = 0.96
 	Instance.new("UICorner", glow).CornerRadius = UDim.new(0, 10)
 	glow.Parent = wrapper
 	StartNeonLoop(glow)
+	
+	-- Continuously scale glow relative to responsive automatic height adjustments
+	paraFrame:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+		glow.Size = UDim2.new(0.96, 0, 0, paraFrame.AbsoluteSize.Y + 6)
+	end)
 	
 	local paraStroke = Instance.new("UIStroke", paraFrame)
 	paraStroke.Thickness = 1.5
 	paraStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 	StartNeonLoop(paraStroke)
 	
-	local inner = Instance.new("Frame", paraFrame)
-	inner.Size = UDim2.new(1, -16, 1, -12)
-	inner.Position = UDim2.fromOffset(8, 6)
-	inner.BackgroundTransparency = 1
+	-- Frame container for Square aspect control (WidthControlsHeight)
+	local imgContainer = Instance.new("Frame", paraFrame)
+	imgContainer.Size = UDim2.new(0.9, 0, 0, 0) -- Scaled up to be big, filling 90% of available card layout
+	imgContainer.BackgroundTransparency = 1
+	imgContainer.LayoutOrder = 1
 	
-	local imgLabel = Instance.new("ImageLabel", inner)
-	imgLabel.Size = UDim2.new(1, 0, 0, imageHeight)
-	imgLabel.Position = UDim2.new(0, 0, 0, 0)
+	local aspect = Instance.new("UIAspectRatioConstraint", imgContainer)
+	aspect.AspectRatio = 1 -- 1:1 Aspect ratio
+	aspect.AspectType = Enum.AspectType.WidthControlsHeight
+	
+	local imgLabel = Instance.new("ImageLabel", imgContainer)
+	imgLabel.Size = UDim2.new(1, 0, 1, 0)
 	imgLabel.BackgroundTransparency = 0
 	imgLabel.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
 	imgLabel.Image = formattedImage
-	imgLabel.ScaleType = Enum.ScaleType.Crop
+	imgLabel.ScaleType = Enum.ScaleType.Fit -- Scale properly inside a square frame (does not cut off or distort aspect ratio)
 	Instance.new("UICorner", imgLabel).CornerRadius = UDim.new(0, 6)
 	KazeUI:AddPanel(imgLabel, -0.01)
 	
 	local ptitleLabel
-	if title ~= " " then
-		ptitleLabel = Instance.new("TextLabel", inner)
-		ptitleLabel.Size = UDim2.new(1,0,0,titleHeight)
-		ptitleLabel.Position = UDim2.fromOffset(0, imageHeight + 6)
+	if title ~= " " and title ~= "" then
+		ptitleLabel = Instance.new("TextLabel", paraFrame)
+		ptitleLabel.Size = UDim2.new(1, 0, 0, 0)
+		ptitleLabel.AutomaticSize = Enum.AutomaticSize.Y
 		ptitleLabel.BackgroundTransparency = 1
 		ptitleLabel.Text = title
 		ptitleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -896,11 +904,12 @@ local function CreateThumbnail(parentFrame, title, body, imageId)
 		ptitleLabel.TextSize = 15
 		ptitleLabel.TextXAlignment = Enum.TextXAlignment.Left
 		ptitleLabel.TextWrapped = true
+		ptitleLabel.LayoutOrder = 2
 	end
 	
-	local bodyLabel = Instance.new("TextLabel", inner)
-	bodyLabel.Size = UDim2.new(1,0,0,bodyHeight)
-	bodyLabel.Position = UDim2.fromOffset(0, imageHeight + 6 + titleHeight + 3)
+	local bodyLabel = Instance.new("TextLabel", paraFrame)
+	bodyLabel.Size = UDim2.new(1, 0, 0, 0)
+	bodyLabel.AutomaticSize = Enum.AutomaticSize.Y
 	bodyLabel.BackgroundTransparency = 1
 	bodyLabel.Text = body
 	bodyLabel.TextColor3 = Color3.fromRGB(220, 220, 220)
@@ -909,6 +918,7 @@ local function CreateThumbnail(parentFrame, title, body, imageId)
 	bodyLabel.TextWrapped = true
 	bodyLabel.TextXAlignment = Enum.TextXAlignment.Left
 	bodyLabel.TextYAlignment = Enum.TextYAlignment.Top
+	bodyLabel.LayoutOrder = 3
 	
 	return { 
 		Wrapper = wrapper, 
@@ -1829,7 +1839,7 @@ local function CreateKeybindInput(parentFrame, title, defaultKey, callback, flag
 	local bindLabel = Instance.new("TextLabel", bindContainer)
 	bindLabel.Size = UDim2.new(1, 0, 1, 0)
 	bindLabel.BackgroundTransparency = 1
-	bindLabel.Text = currentKey == Enum.KeyCode.Unknown and "None" or currentKey.Name
+	bindLabel.Text = currentKey == Enum.KeyCode.Unknown perks "None" or currentKey.Name
 	bindLabel.TextColor3 = Color3.fromRGB(220, 220, 220)
 	bindLabel.Font = Enum.Font.GothamBold
 	bindLabel.TextSize = 13
@@ -1943,11 +1953,11 @@ local CreateCollapsibleSection
 local AttachElementsToAPI
 
 AttachElementsToAPI = function(apiTable, parentFrame, winRef)
-	local elementCount = 0 -- Fix: Search Ordering Fix
+	local elementCount = 0 -- Fix: Search Layout Swapping order tracking
 	local function registerElement(wrapper, textContent)
 		elementCount = elementCount + 1
 		if wrapper:IsA("GuiObject") then
-			wrapper.LayoutOrder = elementCount -- Explicitly assigns order to prevent random swapping on Search exit
+			wrapper.LayoutOrder = elementCount -- Retain precise sequence on Search collapse/restore
 		end
 		if winRef and winRef._SearchableElements then
 			table.insert(winRef._SearchableElements, { 
@@ -2348,7 +2358,7 @@ function KazeUI:CreateWindow(config)
 		end)
 	end
 
-	local lastNormalSize = UDim2.fromOffset(600, 400) -- Fix: Keeps resizing saved
+	local lastNormalSize = UDim2.fromOffset(600, 400) -- Keeps custom size on minimization
 	local lastNormalPosition = UDim2.fromScale(0.5,0.5)
 	local lastNormalAnchor = Vector2.new(0.5,0.5)
 	local toggledMaximized = false
@@ -2547,7 +2557,7 @@ function KazeUI:CreateWindow(config)
 	end
 	BtnRed.MouseButton1Click:Connect(ShowCloseConfirm)
 
-	-- WINDOW RESIZING FIX (Includes UIScale compensation)
+	-- WINDOW RESIZING FIX (Employs absolute unscaled offsets & scales delta vector symmetrically)
 	if config.Resizable then
 		local ResizeHandle = Instance.new("TextButton", Window)
 		ResizeHandle.Size = UDim2.fromOffset(25, 25)
@@ -2595,16 +2605,17 @@ function KazeUI:CreateWindow(config)
 			if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 				resizing = true
 				resizeStartMouse = input.Position
-				resizeStartSize = Window.AbsoluteSize
+				-- Capture unscaled raw offsets directly from the scale object vector
+				resizeStartSize = Vector2.new(Window.Size.X.Offset, Window.Size.Y.Offset)
 				SetWindowScrolling(false) -- Disable scrolling during resize so they don't scroll with resize
 			end
 		end)
 		
 		UIS.InputChanged:Connect(function(input)
 			if resizing and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-				local delta = (input.Position - resizeStartMouse) / UIScale.Scale -- Scale Offset correction allows smooth expansion
-				local newX = math.clamp(resizeStartSize.X + delta.X, 500, 750)
-				local newY = math.clamp(resizeStartSize.Y + delta.Y, 350, 540)
+				local delta = (input.Position - resizeStartMouse) / UIScale.Scale -- Scale adjustment factors viewport scaling
+				local newX = math.clamp(resizeStartSize.X + delta.X, 500, 750) -- Constraints: Min 500, Max 750
+				local newY = math.clamp(resizeStartSize.Y + delta.Y, 350, 540) -- Constraints: Min 350, Max 540
 				Window.Size = UDim2.fromOffset(newX, newY)
 			end
 		end)
@@ -2615,7 +2626,7 @@ function KazeUI:CreateWindow(config)
 					resizing = false
 					SetWindowScrolling(true) -- Re-enable scrolling frame logic
 					if not toggledMaximized then 
-						lastNormalSize = Window.Size -- Save Size state so minimization respects changes
+						lastNormalSize = Window.Size -- Save state size
 					end
 				end
 			end
@@ -2924,7 +2935,7 @@ function KazeUI:CreateWindow(config)
 		end
 	end
 
-	-- THEME SYSTEM FIX
+	-- THEME SYSTEM FIX (Resets element properties cleanly with no remnants)
 	function Win:SetTheme(themeConfig)
 		if type(themeConfig) == "string" and BuiltInThemes[themeConfig] then
 			themeConfig = BuiltInThemes[themeConfig]
