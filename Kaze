@@ -4,7 +4,7 @@
 	Added: New Dynamic Keybind Component, Full Config Manager Overhaul, Memory Leak Prevention
 	Fixes: Text Clipping/Overflow fixed globally, Multi-Dropdown Color Hover State Fixed
 	Critical Fix: Rendered Notifications on a separate ScreenGui with DisplayOrder = 999999 to prevent them from drawing behind the main Window
-	Safe Area Patch: Dynamically clamps window dragging, floating buttons, and notification offsets based on notch/island/status bar configurations.
+	Added: Smooth & Responsive Continuous Window Resizing with UIScale correction, PC Hover Cursor (↘), and Multi-Touch Protection
 --]]
 
 local KazeUI = {}
@@ -16,8 +16,8 @@ local TweenService = game:GetService("TweenService")
 local UIS = game:GetService("UserInputService")
 local TextService = game:GetService("TextService")
 local HttpService = game:GetService("HttpService")
-local GuiService = game:GetService("GuiService")
 local LP = Players.LocalPlayer
+local Mouse = LP:GetMouse()
 
 -- Global State & Managers
 KazeUI.GlowColor = Color3.fromRGB(0, 160, 255)
@@ -84,16 +84,10 @@ local function UpdateScale()
 	local scaleY = math.clamp(size.Y / 500, 0.35, 1)
 	UIScale.Scale = math.min(scaleX, scaleY)
 	ScreenGui.IgnoreGuiInset = true
-	NotifScreenGui.IgnoreGuiInset = true
-	
-	-- Dynamically offset notifications relative to Status Bar/Notch/Dynamic Island heights
-	local topInset, _ = GuiService:GetGuiInset()
-	notifPadding.PaddingTop = UDim.new(0, math.max(topInset.Y, 20))
 end
 
 UpdateScale()
 workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(UpdateScale)
-GuiService:GetPropertyChangedSignal("TopbarInset"):Connect(UpdateScale)
 
 -- Auto-Icon Fetcher via HttpGet
 local IconsMap = {}
@@ -136,7 +130,7 @@ local function FormatImage(id)
 	return "rbxassetid://" .. clean
 end
 
--- Notch-safe boundaries drag clamping
+-- Threshold dragging to prevent minimize misclicks (Scale-adjusted for fluid dragging)
 local function MakeDraggable(dragPart, targetPart)
 	local dragging = false
 	local dragInput, dragStart, startPos
@@ -145,38 +139,13 @@ local function MakeDraggable(dragPart, targetPart)
 	local function update(input)
 		if not dragStart or not startPos then return end
 		local delta = input.Position - dragStart
+		local scale = UIScale.Scale
 		
 		if dragActive or delta.Magnitude > 8 then
 			dragActive = true
-			
-			-- Calculated un-clamped coordinates
-			local newX = startPos.X.Offset + delta.X
-			local newY = startPos.Y.Offset + delta.Y
-			
-			-- Enforce device safe boundaries (Notches, Islands, Status Bars)
-			local cameraSize = workspace.CurrentCamera.ViewportSize
-			local topInset, bottomInset = GuiService:GetGuiInset()
-			
-			local absSize = targetPart.AbsoluteSize
-			local ap = targetPart.AnchorPoint
-			
-			-- Absolute limits
-			local minX = 10
-			local maxX = cameraSize.X - absSize.X - 10
-			local minY = topInset.Y + 10 -- Always remain safely visible below status bars & camera cutouts
-			local maxY = cameraSize.Y - bottomInset.Y - absSize.Y - 10
-			
-			-- Translate anchor-point configuration details to absolute alignment space
-			local absX = (startPos.X.Scale * cameraSize.X) + newX - (absSize.X * ap.X)
-			local absY = (startPos.Y.Scale * cameraSize.Y) + newY - (absSize.Y * ap.Y)
-			
-			-- Apply restrictions
-			local clampedX = math.clamp(absX, minX, maxX) + (absSize.X * ap.X)
-			local clampedY = math.clamp(absY, minY, maxY) + (absSize.Y * ap.Y)
-			
 			targetPart.Position = UDim2.new(
-				startPos.X.Scale, clampedX - (startPos.X.Scale * cameraSize.X),
-				startPos.Y.Scale, clampedY - (startPos.Y.Scale * cameraSize.Y)
+				startPos.X.Scale, startPos.X.Offset + (delta.X / scale),
+				startPos.Y.Scale, startPos.Y.Offset + (delta.Y / scale)
 			)
 		end
 	end
@@ -2097,6 +2066,12 @@ function KazeUI:CreateWindow(config)
 	local MainIcon = FormatImage(config.Icon or "6031763447")
 	local OpenIcon = FormatImage((config.OpenButton and config.OpenButton.Icon) or config.Icon or "6031763447")
 	
+	-- Configurable resizing settings with fallback defaults
+	local minWidth = config.MinWidth or 350
+	local minHeight = config.MinHeight or 250
+	local maxWidth = config.MaxWidth or 900
+	local maxHeight = config.MaxHeight or 700
+
 	KazeUI.BackgroundColor = Color3.fromRGB(10, 10, 12) -- Permanent Deep Obsidian background
 	if config.GlowColor then KazeUI.GlowColor = config.GlowColor end
 
@@ -2264,7 +2239,7 @@ function KazeUI:CreateWindow(config)
 
 	BtnYellow.MouseButton1Click:Connect(minimizeWindow)
 
-	-- BUG FIX & SAFE AREA PATCh: Global Dragging to stop slipping off the Mini Button bounds and triggering clicks + Dynamic Notch Protection
+	-- BUG FIX: Global Dragging to stop slipping off the Mini Button bounds and triggering clicks
 	local miniDragStart
 	local miniDragMoved = false
 	
@@ -2279,25 +2254,13 @@ function KazeUI:CreateWindow(config)
 		if miniDragStart and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
 			if (input.Position - miniDragStart).Magnitude > 8 then
 				miniDragMoved = true
+				-- Update position manually
 				local delta = input.Position - miniDragStart
-				
-				local newX = MiniButton.Position.X.Offset + delta.X
-				local newY = MiniButton.Position.Y.Offset + delta.Y
-				
-				-- Clamp floating menu open button within screen bounds minus hardware obstructions
-				local cameraSize = workspace.CurrentCamera.ViewportSize
-				local topInset, bottomInset = GuiService:GetGuiInset()
-				
-				local minX = 10
-				local maxX = cameraSize.X - MiniButton.AbsoluteSize.X - 10
-				local minY = topInset.Y + 10 -- Offset from camera bar status area
-				local maxY = cameraSize.Y - bottomInset.Y - MiniButton.AbsoluteSize.Y - 10
-				
-				local clampedX = math.clamp(newX, minX, maxX)
-				local clampedY = math.clamp(newY, minY, maxY)
-				
-				MiniButton.Position = UDim2.new(0, clampedX, 0, clampedY)
-				miniDragStart = input.Position -- Reset relative progression
+				MiniButton.Position = UDim2.new(
+					0, MiniButton.Position.X.Offset + delta.X,
+					0, MiniButton.Position.Y.Offset + delta.Y
+				)
+				miniDragStart = input.Position -- Reset delta step
 			end
 		end
 	end)
@@ -2468,6 +2431,97 @@ function KazeUI:CreateWindow(config)
 	local tabsLayout = Instance.new("UIListLayout", TabsList)
 	tabsLayout.SortOrder = Enum.SortOrder.LayoutOrder
 	tabsLayout.Padding = UDim.new(0,4)
+
+	-- ==========================================
+	-- SMOOTH & ACCURATE CONTINUOUS WINDOW RESIZING
+	-- ==========================================
+	local ResizeHandle = Instance.new("ImageLabel")
+	ResizeHandle.Name = "ResizeHandle"
+	ResizeHandle.Size = UDim2.fromOffset(18, 18)
+	ResizeHandle.Position = UDim2.new(1, -18, 1, -18)
+	ResizeHandle.BackgroundTransparency = 1
+	ResizeHandle.Image = "rbxassetid://10747373117" -- Diagonal resize design mark (↘)
+	ResizeHandle.ImageColor3 = Color3.fromRGB(150, 150, 150)
+	ResizeHandle.ZIndex = 99
+	ResizeHandle.Parent = Window
+
+	local isResizing = false
+	local resizeStartSize = Vector2.new(0, 0)
+	local resizeStartInput = Vector3.new(0, 0, 0)
+	local resizeTouchInput = nil -- Multi-touch protector
+
+	-- PC Hover State Change
+	local hoverCursor = "rbxassetid://10747373117" -- Resize diagonal cursor asset ID
+	ResizeHandle.MouseEnter:Connect(function()
+		if not isResizing and not toggledMaximized then
+			Mouse.Icon = hoverCursor
+			TweenService:Create(ResizeHandle, TweenInfo.new(0.12), {ImageColor3 = KazeUI.GlowColor}):Play()
+		end
+	end)
+
+	ResizeHandle.MouseLeave:Connect(function()
+		if not isResizing then
+			Mouse.Icon = ""
+			TweenService:Create(ResizeHandle, TweenInfo.new(0.12), {ImageColor3 = Color3.fromRGB(150, 150, 150)}):Play()
+		end
+	end)
+
+	local function UpdateResize(input)
+		if not isResizing then return end
+		local delta = input.Position - resizeStartInput
+		local scale = UIScale.Scale
+
+		-- UIScale.Scale correct delta division to avoid dragging lag on scaled screens
+		local newWidth = math.clamp(resizeStartSize.X + (delta.X / scale), minWidth, maxWidth)
+		local newHeight = math.clamp(resizeStartSize.Y + (delta.Y / scale), minHeight, maxHeight)
+
+		Window.Size = UDim2.fromOffset(newWidth, newHeight)
+		lastNormalSize = Window.Size
+	end
+
+	ResizeHandle.InputBegan:Connect(function(input)
+		if toggledMaximized then return end -- Block resizing if currently maximized
+
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			-- Save reference to the primary single finger touch or mouse
+			if input.UserInputType == Enum.UserInputType.Touch and resizeTouchInput == nil then
+				resizeTouchInput = input
+			end
+
+			isResizing = true
+			resizeStartSize = Vector2.new(Window.AbsoluteSize.X / UIScale.Scale, Window.AbsoluteSize.Y / UIScale.Scale)
+			resizeStartInput = input.Position
+
+			-- Disable active scrollable ancestors to prevent drag conflicts
+			ToggleScrollingAncestors(ResizeHandle, false)
+			Mouse.Icon = hoverCursor
+		end
+	end)
+
+	UIS.InputChanged:Connect(function(input)
+		if isResizing then
+			-- Multi-touch protection: Ignore other finger touches
+			if input.UserInputType == Enum.UserInputType.Touch and input ~= resizeTouchInput then
+				return
+			end
+			if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+				UpdateResize(input)
+			end
+		end
+	end)
+
+	UIS.InputEnded:Connect(function(input)
+		if isResizing then
+			if input.UserInputType == Enum.UserInputType.Touch and input ~= resizeTouchInput then
+				return
+			end
+			isResizing = false
+			resizeTouchInput = nil
+			ToggleScrollingAncestors(ResizeHandle, true)
+			Mouse.Icon = ""
+			TweenService:Create(ResizeHandle, TweenInfo.new(0.12), {ImageColor3 = Color3.fromRGB(150, 150, 150)}):Play()
+		end
+	end)
 
 	local Win = {
 		Window = Window,
