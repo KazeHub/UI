@@ -2,10 +2,7 @@
 	Kaze UI Library v2.0
 	Added: Performance Widget, Search System, Window Resizing, Theme Manager 2.0
 	Added: Thumbnail Component, Prompt System, Config Manager Overhaul
-	Fixed: UIScale-compensated fluid resizing, stable Theme Resetting, Glass Transparency recovery.
-	Fixed: Dynamic Thumbnail aspect sizing that scales perfectly during window resize without layout engine bugs.
-	Fixed: Outlines and UIStrokes render instantly on startup by replacing CanvasGroup clipper with Frame clipper.
-	Fixed: UIStroke alignment and rendering bugs on components using AutomaticSize (Roblox Engine Bug).
+	Fixed: UIStroke bug on AutomaticSize containers (Roblox Engine Bug Patch)
 --]]
 
 local KazeUI = {}
@@ -130,7 +127,7 @@ local function MakeDraggable(dragPart, targetPart)
 	
 	local function update(input)
 		if not dragStart or not startPos then return end
-		local delta = (input.Position - dragStart) / UIScale.Scale -- Scale Offset correction
+		local delta = input.Position - dragStart
 		
 		if dragActive or delta.Magnitude > 8 then
 			dragActive = true
@@ -169,12 +166,13 @@ local function MakeDraggable(dragPart, targetPart)
 end
 
 -- ==========================================
--- Utility: Fix UIStroke bug on AutomaticSize
+-- Utility: Tagabuo ng UIStroke na umaangkop (Fix for AutomaticSize bug)
 -- ==========================================
 local function FixStroke(frame, stroke)
 	frame:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
 		task.defer(function()
 			if stroke and stroke.Parent then
+				-- Ire-refresh nito ang UIStroke kapag nagbago ang size
 				stroke.Enabled = false
 				stroke.Enabled = true
 			end
@@ -348,6 +346,47 @@ function KazeUI:Notify(config)
 	end)
 end
 
+function KazeUI:SaveConfig(name)
+	if not name or name == "" then
+		KazeUI:Notify({Title = "Config Error", Content = "Config name cannot be empty.", Duration = 3})
+		return
+	end
+	
+	local data = {}
+	for flag, obj in pairs(KazeUI.Flags) do data[flag] = obj.Get() end
+	
+	if writefile then
+		local success, encoded = pcall(function() return HttpService:JSONEncode(data) end)
+		if success then
+			writefile("KazeUI_"..name..".json", encoded)
+			KazeUI:Notify({Title = "Config Saved", Content = "Successfully saved " .. name, Duration = 3})
+		else
+			KazeUI:Notify({Title = "Config Error", Content = "Failed to encode settings to JSON.", Duration = 3})
+		end
+	else
+		KazeUI:Notify({Title = "Config Error", Content = "Your executor does not support saving files.", Duration = 3})
+	end
+end
+
+function KazeUI:LoadConfig(name)
+	if readfile then
+		local s, res = pcall(function() return readfile("KazeUI_"..name..".json") end)
+		if s then
+			local s2, data = pcall(function() return HttpService:JSONDecode(res) end)
+			if s2 and type(data) == "table" then
+				for flag, val in pairs(data) do
+					if KazeUI.Flags[flag] then KazeUI.Flags[flag].Set(val) end
+				end
+				KazeUI:Notify({Title = "Config Loaded", Content = "Successfully loaded " .. name, Duration = 3})
+			else
+				KazeUI:Notify({Title = "Config Error", Content = "Invalid or corrupted config format.", Duration = 3})
+			end
+		else
+			KazeUI:Notify({Title = "Config Error", Content = "Config " .. name .. " not found.", Duration = 3})
+		end
+	end
+end
+
 local function ToggleScrollingAncestors(element, state)
 	local current = element.Parent
 	while current do
@@ -402,7 +441,7 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 	boxStroke.Thickness = 1.5
 	boxStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 	StartNeonLoop(boxStroke)
-	FixStroke(dropFrame, boxStroke) -- Applied FIX here
+	FixStroke(dropFrame, boxStroke) -- Ini-apply ang stroke fix
 
 	local layout = Instance.new("UIListLayout", dropFrame)
 	layout.SortOrder = Enum.SortOrder.LayoutOrder
@@ -796,11 +835,25 @@ local function CreateParagraph(parentFrame, title, body)
 	}
 end
 
--- Re-engineered: Completely bug-free adaptive sizing that calculates proportions dynamically
 local function CreateThumbnail(parentFrame, title, body, imageId)
 	title = tostring(title or "")
 	body = tostring(body or "")
 	local formattedImage = FormatImage(imageId or "")
+	
+	local measuredWidth = 598 * 0.92
+	if parentFrame and parentFrame.AbsoluteSize and parentFrame.AbsoluteSize.X > 0 then measuredWidth = parentFrame.AbsoluteSize.X * 0.95 end
+	
+	local titleHeight = 0
+	if title ~= " " then
+		local ts = TextService:GetTextSize(title, 16, Enum.Font.GothamBold, Vector2.new(measuredWidth - 24, 1000))
+		titleHeight = math.max(18, math.ceil(ts.Y))
+	end
+	
+	local bodySize = TextService:GetTextSize(body, 14, Enum.Font.Gotham, Vector2.new(measuredWidth - 24, 2000))
+	local bodyHeight = math.ceil(bodySize.Y)
+	local imageHeight = 150
+	
+	local totalHeight = 6 + imageHeight + 6 + titleHeight + 3 + bodyHeight + 6
 	
 	local wrapper = Instance.new("Frame")
 	wrapper.Size = UDim2.new(1, 0, 0, 0)
@@ -811,64 +864,48 @@ local function CreateThumbnail(parentFrame, title, body, imageId)
 	local paraFrame = Instance.new("Frame")
 	paraFrame.AnchorPoint = Vector2.new(0.5, 0)
 	paraFrame.Position = UDim2.new(0.5, 0, 0, 3)
-	paraFrame.Size = UDim2.new(0.95, 0, 0, 0)
+	paraFrame.Size = UDim2.new(0.95, 0, 0, totalHeight)
 	paraFrame.BorderSizePixel = 0
-	paraFrame.AutomaticSize = Enum.AutomaticSize.Y
 	Instance.new("UICorner", paraFrame).CornerRadius = UDim.new(0, 8)
 	paraFrame.Parent = wrapper
 	KazeUI:AddPanel(paraFrame, 0.02)
 	KazeUI:AddTransparentElement(paraFrame, 0)
 	
-	local paraLayout = Instance.new("UIListLayout", paraFrame)
-	paraLayout.SortOrder = Enum.SortOrder.LayoutOrder
-	paraLayout.Padding = UDim.new(0, 6)
-	paraLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-	
-	local paraPadding = Instance.new("UIPadding", paraFrame)
-	paraPadding.PaddingTop = UDim.new(0, 10)
-	paraPadding.PaddingBottom = UDim.new(0, 10)
-	paraPadding.PaddingLeft = UDim.new(0, 12)
-	paraPadding.PaddingRight = UDim.new(0, 12)
-	
-	-- Backing neon glow
 	local glow = Instance.new("Frame")
 	glow.AnchorPoint = Vector2.new(0.5, 0)
 	glow.Position = UDim2.new(0.5, 0, 0, 1)
-	glow.Size = UDim2.new(0.96, 0, 1, 6)
+	glow.Size = UDim2.new(0.96, 0, 0, totalHeight + 6)
 	glow.BackgroundTransparency = 0.96
 	Instance.new("UICorner", glow).CornerRadius = UDim.new(0, 10)
 	glow.Parent = wrapper
 	StartNeonLoop(glow)
 	
-	-- Continuously scale glow relative to responsive automatic height adjustments
-	paraFrame:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
-		glow.Size = UDim2.new(0.96, 0, 0, paraFrame.AbsoluteSize.Y + 6)
-	end)
-	
 	local paraStroke = Instance.new("UIStroke", paraFrame)
 	paraStroke.Thickness = 1.5
 	paraStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 	StartNeonLoop(paraStroke)
-	FixStroke(paraFrame, paraStroke) -- Applied FIX here
+	FixStroke(paraFrame, paraStroke) -- Ini-apply ang stroke fix
+
+	local inner = Instance.new("Frame", paraFrame)
+	inner.Size = UDim2.new(1, -16, 1, -12)
+	inner.Position = UDim2.fromOffset(8, 6)
+	inner.BackgroundTransparency = 1
 	
-	-- Perfect adaptive container mapping to bypass Roblox's layout bugs entirely
-	local imgContainer = Instance.new("Frame", paraFrame)
-	imgContainer.Size = UDim2.new(1, 0, 0, 260) -- High quality starting height
-	imgContainer.BackgroundTransparency = 1
-	imgContainer.LayoutOrder = 1
-	
-	local imgLabel = Instance.new("ImageLabel", imgContainer)
-	imgLabel.Size = UDim2.new(1, 0, 1, 0)
-	imgLabel.BackgroundTransparency = 1
+	local imgLabel = Instance.new("ImageLabel", inner)
+	imgLabel.Size = UDim2.new(1, 0, 0, imageHeight)
+	imgLabel.Position = UDim2.new(0, 0, 0, 0)
+	imgLabel.BackgroundTransparency = 0
+	imgLabel.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
 	imgLabel.Image = formattedImage
-	imgLabel.ScaleType = Enum.ScaleType.Fit
+	imgLabel.ScaleType = Enum.ScaleType.Crop
 	Instance.new("UICorner", imgLabel).CornerRadius = UDim.new(0, 6)
+	KazeUI:AddPanel(imgLabel, -0.01)
 	
 	local ptitleLabel
-	if title ~= " " and title ~= "" then
-		ptitleLabel = Instance.new("TextLabel", paraFrame)
-		ptitleLabel.Size = UDim2.new(1, 0, 0, 0)
-		ptitleLabel.AutomaticSize = Enum.AutomaticSize.Y
+	if title ~= " " then
+		ptitleLabel = Instance.new("TextLabel", inner)
+		ptitleLabel.Size = UDim2.new(1,0,0,titleHeight)
+		ptitleLabel.Position = UDim2.fromOffset(0, imageHeight + 6)
 		ptitleLabel.BackgroundTransparency = 1
 		ptitleLabel.Text = title
 		ptitleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -876,12 +913,11 @@ local function CreateThumbnail(parentFrame, title, body, imageId)
 		ptitleLabel.TextSize = 15
 		ptitleLabel.TextXAlignment = Enum.TextXAlignment.Left
 		ptitleLabel.TextWrapped = true
-		ptitleLabel.LayoutOrder = 2
 	end
 	
-	local bodyLabel = Instance.new("TextLabel", paraFrame)
-	bodyLabel.Size = UDim2.new(1, 0, 0, 0)
-	bodyLabel.AutomaticSize = Enum.AutomaticSize.Y
+	local bodyLabel = Instance.new("TextLabel", inner)
+	bodyLabel.Size = UDim2.new(1,0,0,bodyHeight)
+	bodyLabel.Position = UDim2.fromOffset(0, imageHeight + 6 + titleHeight + 3)
 	bodyLabel.BackgroundTransparency = 1
 	bodyLabel.Text = body
 	bodyLabel.TextColor3 = Color3.fromRGB(220, 220, 220)
@@ -890,23 +926,6 @@ local function CreateThumbnail(parentFrame, title, body, imageId)
 	bodyLabel.TextWrapped = true
 	bodyLabel.TextXAlignment = Enum.TextXAlignment.Left
 	bodyLabel.TextYAlignment = Enum.TextYAlignment.Top
-	bodyLabel.LayoutOrder = 3
-	
-	-- Robust Dynamic Size Solver: Adapts to real-time window resizing seamlessly
-	local function updateImageSize()
-		local width = paraFrame.AbsoluteSize.X - 24
-		if width > 0 then
-			-- Uses a large proportion to keep the image beautiful and large while respecting bounds
-			local targetHeight = math.clamp(width / 1.15, 180, 360)
-			imgContainer.Size = UDim2.new(1, 0, 0, targetHeight)
-		end
-	end
-	
-	paraFrame:GetPropertyChangedSignal("AbsoluteSize"):Connect(updateImageSize)
-	task.spawn(function()
-		task.wait(0.05)
-		updateImageSize()
-	end)
 	
 	return { 
 		Wrapper = wrapper, 
@@ -914,11 +933,9 @@ local function CreateThumbnail(parentFrame, title, body, imageId)
 		SetText = function(self, newTitle, newBody)
 			if ptitleLabel and newTitle then ptitleLabel.Text = newTitle end
 			if bodyLabel and newBody then bodyLabel.Text = newBody end
-			updateImageSize()
 		end,
 		SetImage = function(self, newImageId)
 			imgLabel.Image = FormatImage(newImageId)
-			updateImageSize()
 		end
 	}
 end
@@ -1546,7 +1563,6 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 	local boxStroke = Instance.new("UIStroke", dropFrame)
 	boxStroke.Thickness = 1.5
 	StartNeonLoop(boxStroke)
-	FixStroke(dropFrame, boxStroke) -- Applied FIX here
 
 	local layout = Instance.new("UIListLayout", dropFrame)
 	layout.SortOrder = Enum.SortOrder.LayoutOrder
@@ -1559,7 +1575,7 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 	header.LayoutOrder = 1
 	header.Parent = dropFrame
 
-	local titleLabel = Instance.new("TextLabel")
+	local titleLabel = Instance.new("TextLabel", header)
 	titleLabel.Size = UDim2.new(0.5, 0, 1, 0)
 	titleLabel.BackgroundTransparency = 1
 	titleLabel.Text = title
@@ -1944,18 +1960,9 @@ local CreateCollapsibleSection
 local AttachElementsToAPI
 
 AttachElementsToAPI = function(apiTable, parentFrame, winRef)
-	local elementCount = 0 -- Fix: Search Layout Swapping order tracking
 	local function registerElement(wrapper, textContent)
-		elementCount = elementCount + 1
-		if wrapper:IsA("GuiObject") then
-			wrapper.LayoutOrder = elementCount -- Retain precise sequence on Search collapse/restore
-		end
 		if winRef and winRef._SearchableElements then
-			table.insert(winRef._SearchableElements, { 
-				Inst = wrapper, 
-				Text = string.lower(textContent),
-				OriginalParent = wrapper.Parent 
-			})
+			table.insert(winRef._SearchableElements, { Inst = wrapper, Text = string.lower(textContent) })
 		end
 	end
 
@@ -2107,9 +2114,8 @@ CreateCollapsibleSection = function(parentFrame, titleArg, winRef)
 	local boxStroke = Instance.new("UIStroke", sectionBox)
 	boxStroke.Thickness = 1.5
 	boxStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-	boxStroke.ZIndex = 10 -- Ensure it renders above background elements
 	StartNeonLoop(boxStroke)
-	FixStroke(sectionBox, boxStroke) -- Applied FIX here
+	FixStroke(sectionBox, boxStroke) -- Ini-apply ang stroke fix
 
 	local boxLayout = Instance.new("UIListLayout", sectionBox)
 	boxLayout.SortOrder = Enum.SortOrder.LayoutOrder
@@ -2221,7 +2227,7 @@ function KazeUI:CreateWindow(config)
 	local MiniButtonSize = UDim2.fromOffset(46, 46)
 
 	local Window = Instance.new("Frame")
-	Window.Size = UDim2.fromOffset(600, 400) -- Default Size 600x400
+	Window.Size = UDim2.fromOffset(750, 450)
 	Window.Position = UDim2.fromScale(0.5, 0.5)
 	Window.AnchorPoint = Vector2.new(0.5, 0.5)
 	Window.BorderSizePixel = 0
@@ -2244,13 +2250,10 @@ function KazeUI:CreateWindow(config)
 	WindowStroke.Parent = Window
 	StartNeonLoop(WindowStroke)
 
-	-- FIX: Replaced CanvasGroup with standard Frame clipper to ensure seamless rendering of UIStrokes on mobile executors
-	local ContentClipper = Instance.new("Frame")
-	ContentClipper.Name = "ContentClipper"
+	local ContentClipper = Instance.new("CanvasGroup")
 	ContentClipper.Size = UDim2.fromScale(1, 1)
 	ContentClipper.BackgroundTransparency = 1
 	ContentClipper.BorderSizePixel = 0
-	ContentClipper.ClipsDescendants = true
 	ContentClipper.Parent = Window
 	Instance.new("UICorner", ContentClipper).CornerRadius = UDim.new(0, 12)
 
@@ -2354,7 +2357,8 @@ function KazeUI:CreateWindow(config)
 		end)
 	end
 
-	local lastNormalSize = UDim2.fromOffset(600, 400) -- Keeps custom size on minimization
+	local defaultWindowSize = UDim2.fromOffset(750, 450)
+	local lastNormalSize = defaultWindowSize
 	local lastNormalPosition = UDim2.fromScale(0.5,0.5)
 	local lastNormalAnchor = Vector2.new(0.5,0.5)
 	local toggledMaximized = false
@@ -2451,7 +2455,7 @@ function KazeUI:CreateWindow(config)
 		if miniDragStart and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
 			if (input.Position - miniDragStart).Magnitude > 8 then
 				miniDragMoved = true
-				local delta = (input.Position - miniDragStart) / UIScale.Scale -- Scale adjustment
+				local delta = input.Position - miniDragStart
 				MiniButton.Position = UDim2.new(0, MiniButton.Position.X.Offset + delta.X, 0, MiniButton.Position.Y.Offset + delta.Y)
 				miniDragStart = input.Position
 			end
@@ -2553,78 +2557,40 @@ function KazeUI:CreateWindow(config)
 	end
 	BtnRed.MouseButton1Click:Connect(ShowCloseConfirm)
 
-	-- WINDOW RESIZING (Kept exactly how you loved it, using absolute offsets)
+	-- WINDOW RESIZING
 	if config.Resizable then
-		local ResizeHandle = Instance.new("TextButton", Window)
-		ResizeHandle.Size = UDim2.fromOffset(25, 25)
-		ResizeHandle.Position = UDim2.new(1, -25, 1, -25)
+		local ResizeHandle = Instance.new("ImageButton", Window)
+		ResizeHandle.Size = UDim2.fromOffset(20, 20)
+		ResizeHandle.Position = UDim2.new(1, -20, 1, -20)
 		ResizeHandle.BackgroundTransparency = 1
-		ResizeHandle.Text = ""
-		ResizeHandle.AutoButtonColor = false
+		ResizeHandle.Image = "rbxassetid://11680572859" -- Handle icon
+		ResizeHandle.ImageColor3 = Color3.fromRGB(150, 150, 150)
 		ResizeHandle.ZIndex = 100
-		
-		-- 3 Dots Visual Identifier
-		local dot1 = Instance.new("Frame", ResizeHandle)
-		dot1.Size = UDim2.fromOffset(4, 4)
-		dot1.Position = UDim2.new(1, -6, 1, -6)
-		dot1.BackgroundColor3 = Color3.fromRGB(150, 150, 150)
-		dot1.BorderSizePixel = 0
-		Instance.new("UICorner", dot1).CornerRadius = UDim.new(1, 0)
-		
-		local dot2 = Instance.new("Frame", ResizeHandle)
-		dot2.Size = UDim2.fromOffset(4, 4)
-		dot2.Position = UDim2.new(1, -14, 1, -6)
-		dot2.BackgroundColor3 = Color3.fromRGB(150, 150, 150)
-		dot2.BorderSizePixel = 0
-		Instance.new("UICorner", dot2).CornerRadius = UDim.new(1, 0)
-		
-		local dot3 = Instance.new("Frame", ResizeHandle)
-		dot3.Size = UDim2.fromOffset(4, 4)
-		dot3.Position = UDim2.new(1, -6, 1, -14)
-		dot3.BackgroundColor3 = Color3.fromRGB(150, 150, 150)
-		dot3.BorderSizePixel = 0
-		Instance.new("UICorner", dot3).CornerRadius = UDim.new(1, 0)
 		
 		local resizing = false
 		local resizeStartMouse, resizeStartSize
 		
-		local function SetWindowScrolling(enabled)
-			for _, v in ipairs(Window:GetDescendants()) do
-				if v:IsA("ScrollingFrame") then
-					v.ScrollingEnabled = enabled
-				end
-			end
-		end
-		
 		ResizeHandle.InputBegan:Connect(function(input)
-			if toggledMaximized then return end
 			if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 				resizing = true
 				resizeStartMouse = input.Position
-				-- Capture unscaled raw offsets directly from the scale object vector
-				resizeStartSize = Vector2.new(Window.Size.X.Offset, Window.Size.Y.Offset)
-				SetWindowScrolling(false) -- Disable scrolling during resize so they don't scroll with resize
+				resizeStartSize = Window.AbsoluteSize
 			end
 		end)
 		
 		UIS.InputChanged:Connect(function(input)
 			if resizing and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-				local delta = (input.Position - resizeStartMouse) / UIScale.Scale -- Scale adjustment factors viewport scaling
-				local newX = math.clamp(resizeStartSize.X + delta.X, 500, 750) -- Constraints: Min 500, Max 750
-				local newY = math.clamp(resizeStartSize.Y + delta.Y, 350, 540) -- Constraints: Min 350, Max 540
+				local delta = input.Position - resizeStartMouse
+				local newX = math.clamp(resizeStartSize.X + delta.X, 500, 1200)
+				local newY = math.clamp(resizeStartSize.Y + delta.Y, 350, 800)
 				Window.Size = UDim2.fromOffset(newX, newY)
 			end
 		end)
 		
 		UIS.InputEnded:Connect(function(input)
 			if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-				if resizing then
-					resizing = false
-					SetWindowScrolling(true) -- Re-enable scrolling frame logic
-					if not toggledMaximized then 
-						lastNormalSize = Window.Size -- Save state size
-					end
-				end
+				resizing = false
+				if not toggledMaximized then lastNormalSize = Window.Size end
 			end
 		end)
 	end
@@ -2722,81 +2688,16 @@ function KazeUI:CreateWindow(config)
 		SearchBox.TextSize = 13
 		SearchBox.TextXAlignment = Enum.TextXAlignment.Left
 
-		Win._SearchBox = SearchBox
-
-		local SearchPage = Instance.new("ScrollingFrame")
-		SearchPage.Name = "SearchPage"
-		SearchPage.Size = UDim2.new(1, 0, 1, 0)
-		SearchPage.BackgroundTransparency = 1
-		SearchPage.BorderSizePixel = 0
-		SearchPage.ScrollBarThickness = 5
-		SearchPage.CanvasSize = UDim2.new(0, 0, 0, 0)
-		SearchPage.AutomaticCanvasSize = Enum.AutomaticSize.Y
-		SearchPage.ScrollBarImageColor3 = Color3.fromRGB(40,40,45)
-		SearchPage.Visible = false
-		SearchPage.Parent = Pages
-
-		local searchPagePadding = Instance.new("UIPadding", SearchPage)
-		searchPagePadding.PaddingTop = UDim.new(0, 8)
-		searchPagePadding.PaddingBottom = UDim.new(0, 8)
-		searchPagePadding.PaddingLeft = UDim.new(0, 8)
-		searchPagePadding.PaddingRight = UDim.new(0, 8)
-
-		local searchLayout = Instance.new("UIListLayout", SearchPage)
-		searchLayout.SortOrder = Enum.SortOrder.LayoutOrder
-		searchLayout.Padding = UDim.new(0,4)
-		searchLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-
-		Win._SearchPage = SearchPage
-
 		SearchBox.Focused:Connect(function() StartNeonLoop(searchStroke) end)
 		SearchBox.FocusLost:Connect(function() StopNeonLoop(searchStroke); searchStroke.Color = Color3.fromRGB(45, 45, 50) end)
 
 		SearchBox:GetPropertyChangedSignal("Text"):Connect(function()
 			local query = string.lower(SearchBox.Text)
-			
-			if query == "" then
-				-- Hide search overlay, restore layout
-				SearchPage.Visible = false
-				
-				for _, item in ipairs(Win._SearchableElements) do
-					if item.Inst and item.OriginalParent then
-						if item.Inst.Parent ~= item.OriginalParent then
-							item.Inst.Parent = item.OriginalParent
-						end
-						item.Inst.Visible = true
-					end
-				end
-				
-				-- Ensure proper tab visibility
-				for _, t in ipairs(Win._Tabs) do
-					if t.Indicator.Visible then
-						t.Page.Visible = true
-					end
-				end
-			else
-				-- Hide normal tabs so elements do not overlap with search
-				for _, t in ipairs(Win._Tabs) do
-					t.Page.Visible = false
-				end
-				SearchPage.Visible = true
-				
-				for _, item in ipairs(Win._SearchableElements) do
-					if item.Inst and item.OriginalParent then
-						if string.find(item.Text, query, 1, true) then
-							-- Move match safely into Search Results page
-							if item.Inst.Parent ~= SearchPage then
-								item.Inst.Parent = SearchPage
-							end
-							item.Inst.Visible = true
-						else
-							-- Push non-matches back to original homes and hide them so they don't break layout
-							if item.Inst.Parent ~= item.OriginalParent then
-								item.Inst.Parent = item.OriginalParent
-							end
-							item.Inst.Visible = false
-						end
-					end
+			for _, item in ipairs(Win._SearchableElements) do
+				if query == "" or string.find(item.Text, query, 1, true) then
+					item.Inst.Visible = true
+				else
+					item.Inst.Visible = false
 				end
 			end
 		end)
@@ -2931,15 +2832,12 @@ function KazeUI:CreateWindow(config)
 		end
 	end
 
-	-- THEME SYSTEM FIX (Resets element properties cleanly with no remnants)
+	-- THEME MANAGER 2.0
 	function Win:SetTheme(themeConfig)
 		if type(themeConfig) == "string" and BuiltInThemes[themeConfig] then
 			themeConfig = BuiltInThemes[themeConfig]
 		end
 		
-		-- Always reset transparency defaults first so old Glass/Solid values do not get mixed up
-		KazeUI:SetTransparency(0)
-
 		if themeConfig.Color then
 			KazeUI:SetBackgroundColor(themeConfig.Color)
 		end
@@ -3132,11 +3030,6 @@ function KazeUI:CreateWindow(config)
 		table.insert(self._Tabs, { Button = btn, Indicator = leftIndicator, Label = txt, Page = page })
 
 		local function activate()
-			-- Automatically clear the search if a user decides to browse tabs instead
-			if self._SearchBox and self._SearchBox.Text ~= "" then
-				self._SearchBox.Text = "" 
-			end
-
 			for _, t in ipairs(self._Tabs) do
 				TweenService:Create(t.Button, TweenInfo.new(0.12), { BackgroundColor3 = KazeUI.GetColor(0.02) }):Play()
 				t.Indicator.Visible = false
