@@ -1,3 +1,4 @@
+
 --[[
 	Kaze UI Library
 	Optimized: Deep Obsidian Only, Dynamic Tab Text Scaling (No "..." Dots), Wider Sidebar, Safe Close Dialog Margin Padding
@@ -8,6 +9,7 @@
 	Updated: Adaptive Device & Monitor Scale Protection Engine (0.85x Mobile / 1.0x Tablet / 1.15x Desktop Wide)
 	Updated: Adjusted Default Window Size to 600x400
 	MOBILE OPTIMIZED: Centralized 0x0 Modal Camera Locker to fix camera rotating on mobile touch dragging/resizing/sliders/color pickers.
+	PREMIUM UPGRADE: Added Smooth Scale & Fade Transitions (95% -> 100% Open, 100% -> 95% Close) with Easing Control.
 --]]
 
 local KazeUI = {}
@@ -2148,6 +2150,19 @@ function KazeUI:CreateWindow(config)
 	ContentClipper.Parent = Window
 	Instance.new("UICorner", ContentClipper).CornerRadius = UDim.new(0, 12)
 
+	-- PREMIUM ANIMATION STATE CONTROLLERS
+	local WindowScale = Instance.new("UIScale")
+	WindowScale.Scale = 0.95
+	WindowScale.Parent = Window
+
+	local defaultBgTrans = Window.BackgroundTransparency
+	local defaultStrokeTrans = WindowStroke.Transparency
+
+	-- Initial transparent state for premium fade-in sequence
+	Window.BackgroundTransparency = 1
+	WindowStroke.Transparency = 1
+	ContentClipper.GroupTransparency = 1
+
 	local TopBar = Instance.new("Frame")
 	TopBar.Size = UDim2.new(1,0,0,50)
 	TopBar.BorderSizePixel = 0
@@ -2407,8 +2422,34 @@ function KazeUI:CreateWindow(config)
 		CancelBtn.ZIndex = 54
 		Instance.new("UICorner", CancelBtn).CornerRadius = UDim.new(0,8)
 
-		ConfirmBtn.MouseButton1Click:Connect(function() ScreenGui:Destroy() end)
-		CancelBtn.MouseButton1Click:Connect(function() Overlay:Destroy(); confirmActive = false; BtnYellow.Active = true; BtnGreen.Active = true; BtnRed.Active = true end)
+		ConfirmBtn.MouseButton1Click:Connect(function()
+			ConfirmBtn.Active = false
+			CancelBtn.Active = false
+			
+			-- PREMIUM TRANSITION: Scale 100% -> 95%, Fade Out
+			local closeTweenInfo = TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+			local t1 = TweenService:Create(WindowScale, closeTweenInfo, { Scale = 0.95 })
+			local t2 = TweenService:Create(Window, closeTweenInfo, { BackgroundTransparency = 1 })
+			local t3 = TweenService:Create(WindowStroke, closeTweenInfo, { Transparency = 1 })
+			local t4 = TweenService:Create(ContentClipper, closeTweenInfo, { GroupTransparency = 1 })
+			
+			t1:Play()
+			t2:Play()
+			t3:Play()
+			t4:Play()
+			
+			t1.Completed:Connect(function()
+				ScreenGui:Destroy()
+			end)
+		end)
+		
+		CancelBtn.MouseButton1Click:Connect(function() 
+			Overlay:Destroy() 
+			confirmActive = false 
+			BtnYellow.Active = true 
+			BtnGreen.Active = true 
+			BtnRed.Active = true 
+		end)
 	end
 	BtnRed.MouseButton1Click:Connect(ShowCloseConfirm)
 
@@ -2794,6 +2835,14 @@ function KazeUI:CreateWindow(config)
 	end
 
 	table.insert(KazeUI.ActiveWindows, Window)
+	
+	-- PREMIUM OPENING TRANSITION SEQUENCE (Scale 95% -> 100%, Glow & Content Fade-in)
+	local openTweenInfo = TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+	TweenService:Create(WindowScale, openTweenInfo, { Scale = 1 }):Play()
+	TweenService:Create(Window, openTweenInfo, { BackgroundTransparency = defaultBgTrans }):Play()
+	TweenService:Create(WindowStroke, openTweenInfo, { Transparency = defaultStrokeTrans }):Play()
+	TweenService:Create(ContentClipper, openTweenInfo, { GroupTransparency = 0 }):Play()
+
 	if typeof(config.Callback) == "function" then pcall(config.Callback) end
 	return Win
 end
