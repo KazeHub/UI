@@ -1,14 +1,17 @@
 --[[
 	Kaze UI Library v2.0
-	Added: Performance Widget, Search System, Window Resizing, Theme Manager 2.0
-	Added: Thumbnail Component, Prompt System, Config Manager Overhaul
-	Fixed: UIStroke bug on AutomaticSize containers (Roblox Engine Bug Patch)
+	Idinagdag: Performance Widget, Search System, Window Resizing, Theme Manager 2.0
+	Idinagdag: Thumbnail Component, Prompt System, Config Manager Overhaul
+	Inayos: UIScale-compensated fluid resizing, stable Theme Resetting, Glass Transparency recovery.
+	Inayos: Dynamic Thumbnail aspect sizing na perpektong umaangkop habang nag-re-resize ang window nang walang bugs sa layout.
+	Inayos: Outlines at UIStrokes na nag-re-render agad sa startup sa pamamagitan ng pagpapalit ng CanvasGroup clipper gamit ang Frame clipper.
+	Inayos: UIStroke alignment bug sa startup partikular na sa unang aktibong tab (Roblox Engine Bug Patch).
 --]]
 
 local KazeUI = {}
 KazeUI.__index = KazeUI
 
--- Roblox Services
+-- Mga Serbisyo ng Roblox
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local UIS = game:GetService("UserInputService")
@@ -18,13 +21,13 @@ local RunService = game:GetService("RunService")
 local Stats = game:GetService("Stats")
 local LP = Players.LocalPlayer
 
--- Global State & Managers
+-- Pandaigdigang Estado at Tagapamahala
 KazeUI.GlowColor = Color3.fromRGB(0, 160, 255)
 KazeUI.BackgroundColor = Color3.fromRGB(10, 10, 12)
 KazeUI.Flags = {}
 KazeUI.ActiveWindows = {} 
 
--- Visual Controllers
+-- Mga Visual na Controller
 KazeUI.GlowElements = {}
 KazeUI.NeonTweens = {}
 KazeUI.PanelElements = {} 
@@ -36,7 +39,7 @@ local function RegisterFlag(flag, getFunc, setFunc)
 	end
 end
 
--- ScreenGui Setup (Supports CoreGui & PlayerGui Fallback)
+-- Pag-setup ng ScreenGui (May suporta para sa CoreGui at PlayerGui Fallback)
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "KazeUI"
 ScreenGui.ResetOnSpawn = false
@@ -48,7 +51,7 @@ if not success or not parent then
 end
 ScreenGui.Parent = parent
 
--- Notification Container Setup
+-- Pag-setup ng Notipikasyon Container
 local NotifContainer = Instance.new("Frame")
 local notifLayout = Instance.new("UIListLayout", NotifContainer)
 notifLayout.SortOrder = Enum.SortOrder.LayoutOrder
@@ -79,7 +82,7 @@ end
 UpdateScale()
 workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(UpdateScale)
 
--- Auto-Icon Fetcher via HttpGet
+-- Kusang Pagkuha ng mga Icon gamit ang HttpGet
 local IconsMap = {}
 pcall(function()
 	if game and game.HttpGet then
@@ -127,7 +130,7 @@ local function MakeDraggable(dragPart, targetPart)
 	
 	local function update(input)
 		if not dragStart or not startPos then return end
-		local delta = input.Position - dragStart
+		local delta = (input.Position - dragStart) / UIScale.Scale -- Scale Offset correction
 		
 		if dragActive or delta.Magnitude > 8 then
 			dragActive = true
@@ -166,13 +169,12 @@ local function MakeDraggable(dragPart, targetPart)
 end
 
 -- ==========================================
--- Utility: Tagabuo ng UIStroke na umaangkop (Fix for AutomaticSize bug)
+-- Utility: Solusyon sa UIStroke bug sa AutomaticSize
 -- ==========================================
 local function FixStroke(frame, stroke)
 	frame:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
 		task.defer(function()
 			if stroke and stroke.Parent then
-				-- Ire-refresh nito ang UIStroke kapag nagbago ang size
 				stroke.Enabled = false
 				stroke.Enabled = true
 			end
@@ -181,7 +183,7 @@ local function FixStroke(frame, stroke)
 end
 
 -- ==========================================
--- Smart Color & Transparency Engines
+-- Matalinong Kulay at Transparency Engines
 -- ==========================================
 function KazeUI.GetColor(elevation)
 	local h, s, v = Color3.toHSV(KazeUI.BackgroundColor)
@@ -280,7 +282,7 @@ end
 
 function KazeUI:Notify(config)
 	config = config or {}
-	local title = tostring(config.Title or "Notification")
+	local title = tostring(config.Title or "Notipikasyon")
 	local content = tostring(config.Content or "")
 	local duration = tonumber(config.Duration) or 3
 
@@ -348,7 +350,7 @@ end
 
 function KazeUI:SaveConfig(name)
 	if not name or name == "" then
-		KazeUI:Notify({Title = "Config Error", Content = "Config name cannot be empty.", Duration = 3})
+		KazeUI:Notify({Title = "Error sa Config", Content = "Hindi pwedeng walang pangalan ang Config.", Duration = 3})
 		return
 	end
 	
@@ -359,12 +361,12 @@ function KazeUI:SaveConfig(name)
 		local success, encoded = pcall(function() return HttpService:JSONEncode(data) end)
 		if success then
 			writefile("KazeUI_"..name..".json", encoded)
-			KazeUI:Notify({Title = "Config Saved", Content = "Successfully saved " .. name, Duration = 3})
+			KazeUI:Notify({Title = "Nailigtas na ang Config", Content = "Matagumpay na nailigtas ang " .. name, Duration = 3})
 		else
-			KazeUI:Notify({Title = "Config Error", Content = "Failed to encode settings to JSON.", Duration = 3})
+			KazeUI:Notify({Title = "Error sa Config", Content = "Bigo sa pag-encode ng mga setting sa JSON.", Duration = 3})
 		end
 	else
-		KazeUI:Notify({Title = "Config Error", Content = "Your executor does not support saving files.", Duration = 3})
+		KazeUI:Notify({Title = "Error sa Config", Content = "Hindi suportado ng iyong executor ang pagliligtas ng files.", Duration = 3})
 	end
 end
 
@@ -377,12 +379,12 @@ function KazeUI:LoadConfig(name)
 				for flag, val in pairs(data) do
 					if KazeUI.Flags[flag] then KazeUI.Flags[flag].Set(val) end
 				end
-				KazeUI:Notify({Title = "Config Loaded", Content = "Successfully loaded " .. name, Duration = 3})
+				KazeUI:Notify({Title = "Na-load na ang Config", Content = "Matagumpay na na-load ang " .. name, Duration = 3})
 			else
-				KazeUI:Notify({Title = "Config Error", Content = "Invalid or corrupted config format.", Duration = 3})
+				KazeUI:Notify({Title = "Error sa Config", Content = "Sirang format ng config file.", Duration = 3})
 			end
 		else
-			KazeUI:Notify({Title = "Config Error", Content = "Config " .. name .. " not found.", Duration = 3})
+			KazeUI:Notify({Title = "Error sa Config", Content = "Hindi nahanap ang config na: " .. name, Duration = 3})
 		end
 	end
 end
@@ -395,7 +397,7 @@ local function ToggleScrollingAncestors(element, state)
 	end
 end
 
--- Component factories
+-- Mga Pabrika ng Bahagi (Component Factories)
 local function CreateDropdown(parentFrame, title, options, defaultOption, callback, isMulti, flag)
 	title = tostring(title or "Dropdown")
 	options = type(options) == "table" and options or {}
@@ -441,7 +443,7 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 	boxStroke.Thickness = 1.5
 	boxStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 	StartNeonLoop(boxStroke)
-	FixStroke(dropFrame, boxStroke) -- Ini-apply ang stroke fix
+	FixStroke(dropFrame, boxStroke) -- Nilagyan ng stroke fix para sa automatic resizing
 
 	local layout = Instance.new("UIListLayout", dropFrame)
 	layout.SortOrder = Enum.SortOrder.LayoutOrder
@@ -518,7 +520,7 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 	searchBox.Size = UDim2.new(1, 0, 1, -2)
 	searchBox.Position = UDim2.new(0, 0, 0, 1)
 	searchBox.BorderSizePixel = 0
-	searchBox.PlaceholderText = "   Search option..."
+	searchBox.PlaceholderText = "   Maghanap ng opsyon..."
 	searchBox.PlaceholderColor3 = Color3.fromRGB(120, 120, 125)
 	searchBox.Text = ""
 	searchBox.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -835,25 +837,11 @@ local function CreateParagraph(parentFrame, title, body)
 	}
 end
 
+-- Dinisenyo muli: Walang-bug na adaptive thumbnail sizing na nagkakalkula ng sukat nang mabilis
 local function CreateThumbnail(parentFrame, title, body, imageId)
 	title = tostring(title or "")
 	body = tostring(body or "")
 	local formattedImage = FormatImage(imageId or "")
-	
-	local measuredWidth = 598 * 0.92
-	if parentFrame and parentFrame.AbsoluteSize and parentFrame.AbsoluteSize.X > 0 then measuredWidth = parentFrame.AbsoluteSize.X * 0.95 end
-	
-	local titleHeight = 0
-	if title ~= " " then
-		local ts = TextService:GetTextSize(title, 16, Enum.Font.GothamBold, Vector2.new(measuredWidth - 24, 1000))
-		titleHeight = math.max(18, math.ceil(ts.Y))
-	end
-	
-	local bodySize = TextService:GetTextSize(body, 14, Enum.Font.Gotham, Vector2.new(measuredWidth - 24, 2000))
-	local bodyHeight = math.ceil(bodySize.Y)
-	local imageHeight = 150
-	
-	local totalHeight = 6 + imageHeight + 6 + titleHeight + 3 + bodyHeight + 6
 	
 	local wrapper = Instance.new("Frame")
 	wrapper.Size = UDim2.new(1, 0, 0, 0)
@@ -864,48 +852,64 @@ local function CreateThumbnail(parentFrame, title, body, imageId)
 	local paraFrame = Instance.new("Frame")
 	paraFrame.AnchorPoint = Vector2.new(0.5, 0)
 	paraFrame.Position = UDim2.new(0.5, 0, 0, 3)
-	paraFrame.Size = UDim2.new(0.95, 0, 0, totalHeight)
+	paraFrame.Size = UDim2.new(0.95, 0, 0, 0)
 	paraFrame.BorderSizePixel = 0
+	paraFrame.AutomaticSize = Enum.AutomaticSize.Y
 	Instance.new("UICorner", paraFrame).CornerRadius = UDim.new(0, 8)
 	paraFrame.Parent = wrapper
 	KazeUI:AddPanel(paraFrame, 0.02)
 	KazeUI:AddTransparentElement(paraFrame, 0)
 	
+	local paraLayout = Instance.new("UIListLayout", paraFrame)
+	paraLayout.SortOrder = Enum.SortOrder.LayoutOrder
+	paraLayout.Padding = UDim.new(0, 6)
+	paraLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+	
+	local paraPadding = Instance.new("UIPadding", paraFrame)
+	paraPadding.PaddingTop = UDim.new(0, 10)
+	paraPadding.PaddingBottom = UDim.new(0, 10)
+	paraPadding.PaddingLeft = UDim.new(0, 12)
+	paraPadding.PaddingRight = UDim.new(0, 12)
+	
+	-- Backing neon glow
 	local glow = Instance.new("Frame")
 	glow.AnchorPoint = Vector2.new(0.5, 0)
 	glow.Position = UDim2.new(0.5, 0, 0, 1)
-	glow.Size = UDim2.new(0.96, 0, 0, totalHeight + 6)
+	glow.Size = UDim2.new(0.96, 0, 1, 6)
 	glow.BackgroundTransparency = 0.96
 	Instance.new("UICorner", glow).CornerRadius = UDim.new(0, 10)
 	glow.Parent = wrapper
 	StartNeonLoop(glow)
 	
+	-- Patuloy na pagbabago ng laki ng neon glow kumpara sa awtomatikong sukat ng taas nito
+	paraFrame:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+		glow.Size = UDim2.new(0.96, 0, 0, paraFrame.AbsoluteSize.Y + 6)
+	end)
+	
 	local paraStroke = Instance.new("UIStroke", paraFrame)
 	paraStroke.Thickness = 1.5
 	paraStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 	StartNeonLoop(paraStroke)
-	FixStroke(paraFrame, paraStroke) -- Ini-apply ang stroke fix
-
-	local inner = Instance.new("Frame", paraFrame)
-	inner.Size = UDim2.new(1, -16, 1, -12)
-	inner.Position = UDim2.fromOffset(8, 6)
-	inner.BackgroundTransparency = 1
+	FixStroke(paraFrame, paraStroke) -- Nilagyan ng stroke fix para hindi maiwan ang balangkas habang nag-re-resize
 	
-	local imgLabel = Instance.new("ImageLabel", inner)
-	imgLabel.Size = UDim2.new(1, 0, 0, imageHeight)
-	imgLabel.Position = UDim2.new(0, 0, 0, 0)
-	imgLabel.BackgroundTransparency = 0
-	imgLabel.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
+	-- Perpektong lalagyan ng larawan na nagpapakita nang walang kahit anong bug sa Roblox rendering
+	local imgContainer = Instance.new("Frame", paraFrame)
+	imgContainer.Size = UDim2.new(1, 0, 0, 260)
+	imgContainer.BackgroundTransparency = 1
+	imgContainer.LayoutOrder = 1
+	
+	local imgLabel = Instance.new("ImageLabel", imgContainer)
+	imgLabel.Size = UDim2.new(1, 0, 1, 0)
+	imgLabel.BackgroundTransparency = 1
 	imgLabel.Image = formattedImage
-	imgLabel.ScaleType = Enum.ScaleType.Crop
+	imgLabel.ScaleType = Enum.ScaleType.Fit
 	Instance.new("UICorner", imgLabel).CornerRadius = UDim.new(0, 6)
-	KazeUI:AddPanel(imgLabel, -0.01)
 	
 	local ptitleLabel
-	if title ~= " " then
-		ptitleLabel = Instance.new("TextLabel", inner)
-		ptitleLabel.Size = UDim2.new(1,0,0,titleHeight)
-		ptitleLabel.Position = UDim2.fromOffset(0, imageHeight + 6)
+	if title ~= " " and title ~= "" then
+		ptitleLabel = Instance.new("TextLabel", paraFrame)
+		ptitleLabel.Size = UDim2.new(1, 0, 0, 0)
+		ptitleLabel.AutomaticSize = Enum.AutomaticSize.Y
 		ptitleLabel.BackgroundTransparency = 1
 		ptitleLabel.Text = title
 		ptitleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -913,11 +917,12 @@ local function CreateThumbnail(parentFrame, title, body, imageId)
 		ptitleLabel.TextSize = 15
 		ptitleLabel.TextXAlignment = Enum.TextXAlignment.Left
 		ptitleLabel.TextWrapped = true
+		ptitleLabel.LayoutOrder = 2
 	end
 	
-	local bodyLabel = Instance.new("TextLabel", inner)
-	bodyLabel.Size = UDim2.new(1,0,0,bodyHeight)
-	bodyLabel.Position = UDim2.fromOffset(0, imageHeight + 6 + titleHeight + 3)
+	local bodyLabel = Instance.new("TextLabel", paraFrame)
+	bodyLabel.Size = UDim2.new(1, 0, 0, 0)
+	bodyLabel.AutomaticSize = Enum.AutomaticSize.Y
 	bodyLabel.BackgroundTransparency = 1
 	bodyLabel.Text = body
 	bodyLabel.TextColor3 = Color3.fromRGB(220, 220, 220)
@@ -926,6 +931,22 @@ local function CreateThumbnail(parentFrame, title, body, imageId)
 	bodyLabel.TextWrapped = true
 	bodyLabel.TextXAlignment = Enum.TextXAlignment.Left
 	bodyLabel.TextYAlignment = Enum.TextYAlignment.Top
+	bodyLabel.LayoutOrder = 3
+	
+	-- Robust Dynamic Size Solver: Maayos na umaakma sa pagbabago ng sukat ng screen
+	local function updateImageSize()
+		local width = paraFrame.AbsoluteSize.X - 24
+		if width > 0 then
+			local targetHeight = math.clamp(width / 1.15, 180, 360)
+			imgContainer.Size = UDim2.new(1, 0, 0, targetHeight)
+		end
+	end
+	
+	paraFrame:GetPropertyChangedSignal("AbsoluteSize"):Connect(updateImageSize)
+	task.spawn(function()
+		task.wait(0.05)
+		updateImageSize()
+	end)
 	
 	return { 
 		Wrapper = wrapper, 
@@ -933,9 +954,11 @@ local function CreateThumbnail(parentFrame, title, body, imageId)
 		SetText = function(self, newTitle, newBody)
 			if ptitleLabel and newTitle then ptitleLabel.Text = newTitle end
 			if bodyLabel and newBody then bodyLabel.Text = newBody end
+			updateImageSize()
 		end,
 		SetImage = function(self, newImageId)
 			imgLabel.Image = FormatImage(newImageId)
+			updateImageSize()
 		end
 	}
 end
@@ -1563,6 +1586,7 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 	local boxStroke = Instance.new("UIStroke", dropFrame)
 	boxStroke.Thickness = 1.5
 	StartNeonLoop(boxStroke)
+	FixStroke(dropFrame, boxStroke) -- Nilagyan ng stroke fix para sa automatic resizing
 
 	local layout = Instance.new("UIListLayout", dropFrame)
 	layout.SortOrder = Enum.SortOrder.LayoutOrder
@@ -1575,7 +1599,7 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 	header.LayoutOrder = 1
 	header.Parent = dropFrame
 
-	local titleLabel = Instance.new("TextLabel", header)
+	local titleLabel = Instance.new("TextLabel")
 	titleLabel.Size = UDim2.new(0.5, 0, 1, 0)
 	titleLabel.BackgroundTransparency = 1
 	titleLabel.Text = title
@@ -1873,7 +1897,7 @@ local function CreateKeybindInput(parentFrame, title, defaultKey, callback, flag
 				if isKey then
 					local key = input.KeyCode
 					if key == Enum.KeyCode.Escape then
-						-- Cancel bindings, preserve old key
+						-- Kinansela ang bindings, panatilihin ang lumang bind
 					elseif key == Enum.KeyCode.Backspace or key == Enum.KeyCode.Delete then
 						currentKey = Enum.KeyCode.Unknown
 					else
@@ -1960,9 +1984,18 @@ local CreateCollapsibleSection
 local AttachElementsToAPI
 
 AttachElementsToAPI = function(apiTable, parentFrame, winRef)
+	local elementCount = 0 -- Swapping Order Tracking para sa layout ng Paghahanap
 	local function registerElement(wrapper, textContent)
+		elementCount = elementCount + 1
+		if wrapper:IsA("GuiObject") then
+			wrapper.LayoutOrder = elementCount -- Pagpapanatili ng tamang sunod-sunod sa Search collapse/restore
+		end
 		if winRef and winRef._SearchableElements then
-			table.insert(winRef._SearchableElements, { Inst = wrapper, Text = string.lower(textContent) })
+			table.insert(winRef._SearchableElements, { 
+				Inst = wrapper, 
+				Text = string.lower(textContent),
+				OriginalParent = wrapper.Parent 
+			})
 		end
 	end
 
@@ -2114,8 +2147,9 @@ CreateCollapsibleSection = function(parentFrame, titleArg, winRef)
 	local boxStroke = Instance.new("UIStroke", sectionBox)
 	boxStroke.Thickness = 1.5
 	boxStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+	boxStroke.ZIndex = 10 -- Tiyaking nasa ibabaw ito ng background elements
 	StartNeonLoop(boxStroke)
-	FixStroke(sectionBox, boxStroke) -- Ini-apply ang stroke fix
+	FixStroke(sectionBox, boxStroke) -- Nilagyan ng stroke fix para hindi maiwan ang balangkas habang nag-re-resize
 
 	local boxLayout = Instance.new("UIListLayout", sectionBox)
 	boxLayout.SortOrder = Enum.SortOrder.LayoutOrder
@@ -2201,7 +2235,7 @@ CreateCollapsibleSection = function(parentFrame, titleArg, winRef)
 	return sectionPublic
 end
 
--- Built-in Themes Map
+-- Nakapaloob na mga Tema (Built-in Themes)
 local BuiltInThemes = {
 	Obsidian = { Color = Color3.fromRGB(10, 10, 12), GlowColor = Color3.fromRGB(0, 160, 255) },
 	CarbonFiber = { Color = Color3.fromRGB(15, 15, 15), GlowColor = Color3.fromRGB(200, 200, 200), Texture = "rbxassetid://4303492582" },
@@ -2212,7 +2246,7 @@ local BuiltInThemes = {
 	Space = { Color = Color3.fromRGB(5, 5, 15), GlowColor = Color3.fromRGB(0, 200, 255), Texture = "rbxassetid://161614763" }
 }
 
--- Create Window Initialization
+-- Paggawa ng Window
 function KazeUI:CreateWindow(config)
 	config = config or {}
 	local Title = config.Title or "Kaze UI"
@@ -2227,7 +2261,7 @@ function KazeUI:CreateWindow(config)
 	local MiniButtonSize = UDim2.fromOffset(46, 46)
 
 	local Window = Instance.new("Frame")
-	Window.Size = UDim2.fromOffset(750, 450)
+	Window.Size = UDim2.fromOffset(600, 400) -- Default na sukat: 600x400
 	Window.Position = UDim2.fromScale(0.5, 0.5)
 	Window.AnchorPoint = Vector2.new(0.5, 0.5)
 	Window.BorderSizePixel = 0
@@ -2250,10 +2284,13 @@ function KazeUI:CreateWindow(config)
 	WindowStroke.Parent = Window
 	StartNeonLoop(WindowStroke)
 
-	local ContentClipper = Instance.new("CanvasGroup")
+	-- PANALANGING PAGPAPALIT: Pinalitan ang CanvasGroup ng standard na Frame clipper para sa maayos na pag-render ng UIStrokes
+	local ContentClipper = Instance.new("Frame")
+	ContentClipper.Name = "ContentClipper"
 	ContentClipper.Size = UDim2.fromScale(1, 1)
 	ContentClipper.BackgroundTransparency = 1
 	ContentClipper.BorderSizePixel = 0
+	ContentClipper.ClipsDescendants = true
 	ContentClipper.Parent = Window
 	Instance.new("UICorner", ContentClipper).CornerRadius = UDim.new(0, 12)
 
@@ -2310,7 +2347,7 @@ function KazeUI:CreateWindow(config)
 	TopDivider.Parent = TopBar
 	StartNeonLoop(TopDivider)
 
-	-- PERFORMANCE WIDGET
+	-- PANUKAT NG PERFORMANCE
 	if config.PerformanceWidget then
 		local PerfFrame = Instance.new("Frame", TopBar)
 		PerfFrame.AnchorPoint = Vector2.new(1, 0.5)
@@ -2357,8 +2394,7 @@ function KazeUI:CreateWindow(config)
 		end)
 	end
 
-	local defaultWindowSize = UDim2.fromOffset(750, 450)
-	local lastNormalSize = defaultWindowSize
+	local lastNormalSize = UDim2.fromOffset(600, 400) -- Pinapanatili ang laki kapag nag-minimize
 	local lastNormalPosition = UDim2.fromScale(0.5,0.5)
 	local lastNormalAnchor = Vector2.new(0.5,0.5)
 	local toggledMaximized = false
@@ -2455,7 +2491,7 @@ function KazeUI:CreateWindow(config)
 		if miniDragStart and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
 			if (input.Position - miniDragStart).Magnitude > 8 then
 				miniDragMoved = true
-				local delta = input.Position - miniDragStart
+				local delta = (input.Position - miniDragStart) / UIScale.Scale -- Scale adjustment
 				MiniButton.Position = UDim2.new(0, MiniButton.Position.X.Offset + delta.X, 0, MiniButton.Position.Y.Offset + delta.Y)
 				miniDragStart = input.Position
 			end
@@ -2514,7 +2550,7 @@ function KazeUI:CreateWindow(config)
 		ConfirmText.Size = UDim2.new(1, -40, 0, 50)
 		ConfirmText.Position = UDim2.fromOffset(20, 18)
 		ConfirmText.BackgroundTransparency = 1
-		ConfirmText.Text = "Are you sure you want to close the UI?"
+		ConfirmText.Text = "Sigurado ka ba na gusto mong isara ang UI?"
 		ConfirmText.TextColor3 = Color3.fromRGB(235,235,235)
 		ConfirmText.Font = Enum.Font.GothamBold
 		ConfirmText.TextSize = 15
@@ -2535,7 +2571,7 @@ function KazeUI:CreateWindow(config)
 		local ConfirmBtn = Instance.new("TextButton", ButtonsFrame)
 		ConfirmBtn.Size = UDim2.new(0,110,0,32)
 		ConfirmBtn.BackgroundColor3 = Color3.fromRGB(0,170,255)
-		ConfirmBtn.Text = "Confirm"
+		ConfirmBtn.Text = "Kumpirmahin"
 		ConfirmBtn.TextColor3 = Color3.fromRGB(230,230,230)
 		ConfirmBtn.Font = Enum.Font.GothamBold
 		ConfirmBtn.TextSize = 15
@@ -2545,7 +2581,7 @@ function KazeUI:CreateWindow(config)
 		local CancelBtn = Instance.new("TextButton", ButtonsFrame)
 		CancelBtn.Size = UDim2.new(0,110,0,32)
 		CancelBtn.BackgroundColor3 = Color3.fromRGB(45,45,50)
-		CancelBtn.Text = "Cancel"
+		CancelBtn.Text = "Kanselahin"
 		CancelBtn.TextColor3 = Color3.fromRGB(220,220,220)
 		CancelBtn.Font = Enum.Font.GothamBold
 		CancelBtn.TextSize = 15
@@ -2557,40 +2593,77 @@ function KazeUI:CreateWindow(config)
 	end
 	BtnRed.MouseButton1Click:Connect(ShowCloseConfirm)
 
-	-- WINDOW RESIZING
+	-- PAG-RESIZE NG WINDOW
 	if config.Resizable then
-		local ResizeHandle = Instance.new("ImageButton", Window)
-		ResizeHandle.Size = UDim2.fromOffset(20, 20)
-		ResizeHandle.Position = UDim2.new(1, -20, 1, -20)
+		local ResizeHandle = Instance.new("TextButton", Window)
+		ResizeHandle.Size = UDim2.fromOffset(25, 25)
+		ResizeHandle.Position = UDim2.new(1, -25, 1, -25)
 		ResizeHandle.BackgroundTransparency = 1
-		ResizeHandle.Image = "rbxassetid://11680572859" -- Handle icon
-		ResizeHandle.ImageColor3 = Color3.fromRGB(150, 150, 150)
+		ResizeHandle.Text = ""
+		ResizeHandle.AutoButtonColor = false
 		ResizeHandle.ZIndex = 100
+		
+		-- Tatlong Tuldok na Pananda ng Pagpapalaki
+		local dot1 = Instance.new("Frame", ResizeHandle)
+		dot1.Size = UDim2.fromOffset(4, 4)
+		dot1.Position = UDim2.new(1, -6, 1, -6)
+		dot1.BackgroundColor3 = Color3.fromRGB(150, 150, 150)
+		dot1.BorderSizePixel = 0
+		Instance.new("UICorner", dot1).CornerRadius = UDim.new(1, 0)
+		
+		local dot2 = Instance.new("Frame", ResizeHandle)
+		dot2.Size = UDim2.fromOffset(4, 4)
+		dot2.Position = UDim2.new(1, -14, 1, -6)
+		dot2.BackgroundColor3 = Color3.fromRGB(150, 150, 150)
+		dot2.BorderSizePixel = 0
+		Instance.new("UICorner", dot2).CornerRadius = UDim.new(1, 0)
+		
+		local dot3 = Instance.new("Frame", ResizeHandle)
+		dot3.Size = UDim2.fromOffset(4, 4)
+		dot3.Position = UDim2.new(1, -6, 1, -14)
+		dot3.BackgroundColor3 = Color3.fromRGB(150, 150, 150)
+		dot3.BorderSizePixel = 0
+		Instance.new("UICorner", dot3).CornerRadius = UDim.new(1, 0)
 		
 		local resizing = false
 		local resizeStartMouse, resizeStartSize
 		
+		local function SetWindowScrolling(enabled)
+			for _, v in ipairs(Window:GetDescendants()) do
+				if v:IsA("ScrollingFrame") then
+					v.ScrollingEnabled = enabled
+				end
+			end
+		end
+		
 		ResizeHandle.InputBegan:Connect(function(input)
+			if toggledMaximized then return end
 			if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 				resizing = true
 				resizeStartMouse = input.Position
-				resizeStartSize = Window.AbsoluteSize
+				resizeStartSize = Vector2.new(Window.Size.X.Offset, Window.Size.Y.Offset)
+				SetWindowScrolling(false) -- I-disable ang scrollbar habang nag-re-resize
 			end
 		end)
 		
 		UIS.InputChanged:Connect(function(input)
 			if resizing and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-				local delta = input.Position - resizeStartMouse
-				local newX = math.clamp(resizeStartSize.X + delta.X, 500, 1200)
-				local newY = math.clamp(resizeStartSize.Y + delta.Y, 350, 800)
+				local delta = (input.Position - resizeStartMouse) / UIScale.Scale -- Scale adjustment factors
+				local newX = math.clamp(resizeStartSize.X + delta.X, 500, 750) -- Hangganan: Min 500, Max 750
+				local newY = math.clamp(resizeStartSize.Y + delta.Y, 350, 540) -- Hangganan: Min 350, Max 540
 				Window.Size = UDim2.fromOffset(newX, newY)
 			end
 		end)
 		
 		UIS.InputEnded:Connect(function(input)
 			if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-				resizing = false
-				if not toggledMaximized then lastNormalSize = Window.Size end
+				if resizing then
+					resizing = false
+					SetWindowScrolling(true) -- Ibalik ang scrolling frame logic
+					if not toggledMaximized then 
+						lastNormalSize = Window.Size
+					end
+				end
 			end
 		end)
 	end
@@ -2651,12 +2724,12 @@ function KazeUI:CreateWindow(config)
 		Window = Window,
 		ScreenGui = ScreenGui,
 		_Pages = Pages,
-		_TabsList = nil, -- Set below
+		_TabsList = nil,
 		_Tabs = {},
 		_SearchableElements = {}
 	}
 
-	-- SEARCH SYSTEM
+	-- SISTEMA NG PAGHAHANAP (Search System)
 	if config.SearchBar then
 		TabsTopPadding = 42
 		local SearchContainer = Instance.new("Frame", SideBar)
@@ -2682,22 +2755,82 @@ function KazeUI:CreateWindow(config)
 		SearchBox.Position = UDim2.fromOffset(30, 0)
 		SearchBox.BackgroundTransparency = 1
 		SearchBox.Text = ""
-		SearchBox.PlaceholderText = "Search elements..."
+		SearchBox.PlaceholderText = "Maghanap ng mga elemento..."
 		SearchBox.TextColor3 = Color3.fromRGB(220, 220, 220)
 		SearchBox.Font = Enum.Font.Gotham
 		SearchBox.TextSize = 13
 		SearchBox.TextXAlignment = Enum.TextXAlignment.Left
+
+		Win._SearchBox = SearchBox
+
+		local SearchPage = Instance.new("ScrollingFrame")
+		SearchPage.Name = "SearchPage"
+		SearchPage.Size = UDim2.new(1, 0, 1, 0)
+		SearchPage.BackgroundTransparency = 1
+		SearchPage.BorderSizePixel = 0
+		SearchPage.ScrollBarThickness = 5
+		SearchPage.CanvasSize = UDim2.new(0, 0, 0, 0)
+		SearchPage.AutomaticCanvasSize = Enum.AutomaticSize.Y
+		SearchPage.ScrollBarImageColor3 = Color3.fromRGB(40,40,45)
+		SearchPage.Visible = false
+		SearchPage.Parent = Pages
+
+		local searchPagePadding = Instance.new("UIPadding", SearchPage)
+		searchPagePadding.PaddingTop = UDim.new(0, 8)
+		searchPagePadding.PaddingBottom = UDim.new(0, 8)
+		searchPagePadding.PaddingLeft = UDim.new(0, 8)
+		searchPagePadding.PaddingRight = UDim.new(0, 8)
+
+		local searchLayout = Instance.new("UIListLayout", SearchPage)
+		searchLayout.SortOrder = Enum.SortOrder.LayoutOrder
+		searchLayout.Padding = UDim.new(0,4)
+		searchLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+
+		Win._SearchPage = SearchPage
 
 		SearchBox.Focused:Connect(function() StartNeonLoop(searchStroke) end)
 		SearchBox.FocusLost:Connect(function() StopNeonLoop(searchStroke); searchStroke.Color = Color3.fromRGB(45, 45, 50) end)
 
 		SearchBox:GetPropertyChangedSignal("Text"):Connect(function()
 			local query = string.lower(SearchBox.Text)
-			for _, item in ipairs(Win._SearchableElements) do
-				if query == "" or string.find(item.Text, query, 1, true) then
-					item.Inst.Visible = true
-				else
-					item.Inst.Visible = false
+			
+			if query == "" then
+				SearchPage.Visible = false
+				
+				for _, item in ipairs(Win._SearchableElements) do
+					if item.Inst and item.OriginalParent then
+						if item.Inst.Parent ~= item.OriginalParent then
+							item.Inst.Parent = item.OriginalParent
+						end
+						item.Inst.Visible = true
+					end
+				end
+				
+				for _, t in ipairs(Win._Tabs) do
+					if t.Indicator.Visible then
+						t.Page.Visible = true
+					end
+				end
+			else
+				for _, t in ipairs(Win._Tabs) do
+					t.Page.Visible = false
+				end
+				SearchPage.Visible = true
+				
+				for _, item in ipairs(Win._SearchableElements) do
+					if item.Inst and item.OriginalParent then
+						if string.find(item.Text, query, 1, true) then
+							if item.Inst.Parent ~= SearchPage then
+								item.Inst.Parent = SearchPage
+							end
+							item.Inst.Visible = true
+						else
+							if item.Inst.Parent ~= item.OriginalParent then
+								item.Inst.Parent = item.OriginalParent
+							end
+							item.Inst.Visible = false
+						end
+					end
 				end
 			end
 		end)
@@ -2740,7 +2873,7 @@ function KazeUI:CreateWindow(config)
 		end
 	end
 
-	-- PROMPT SYSTEM
+	-- SISTEMA NG PROMPT (Prompt System)
 	function Win:Prompt(promptConfig)
 		local title = promptConfig.Title or "Prompt"
 		local content = promptConfig.Content or ""
@@ -2755,7 +2888,7 @@ function KazeUI:CreateWindow(config)
 		TweenService:Create(Overlay, TweenInfo.new(0.2), {BackgroundTransparency = 0.6}):Play()
 
 		local ModalFrame = Instance.new("Frame", Overlay)
-		ModalFrame.Size = UDim2.fromOffset(0, 0) -- For tween
+		ModalFrame.Size = UDim2.fromOffset(0, 0)
 		ModalFrame.AnchorPoint = Vector2.new(0.5, 0.5)
 		ModalFrame.Position = UDim2.fromScale(0.5, 0.5)
 		ModalFrame.BorderSizePixel = 0
@@ -2832,12 +2965,14 @@ function KazeUI:CreateWindow(config)
 		end
 	end
 
-	-- THEME MANAGER 2.0
+	-- PAG-AYOS NG SISTEMA NG TEMA (Theme System Fix)
 	function Win:SetTheme(themeConfig)
 		if type(themeConfig) == "string" and BuiltInThemes[themeConfig] then
 			themeConfig = BuiltInThemes[themeConfig]
 		end
 		
+		KazeUI:SetTransparency(0)
+
 		if themeConfig.Color then
 			KazeUI:SetBackgroundColor(themeConfig.Color)
 		end
@@ -2889,7 +3024,7 @@ function KazeUI:CreateWindow(config)
 		})
 	end
 
-	-- CONFIG MANAGER OVERHAUL
+	-- PAGSASAAYOS NG CONFIG MANAGER
 	function Win:CreateConfigManager(tab)
 		local sec = tab:SectionUI("Config Manager")
 		local cfgName = "Default"
@@ -2931,22 +3066,22 @@ function KazeUI:CreateWindow(config)
 		
 		sec:Button({Title = "Delete Config", Callback = function()
 			self:Prompt({
-				Title = "Delete Config",
-				Content = "Are you sure you want to delete '" .. cfgName .. "'?",
+				Title = "Burahin ang Config",
+				Content = "Sigurado ka ba na gusto mong burahin ang '" .. cfgName .. "'?",
 				Buttons = {
 					{
-						Title = "Delete",
+						Title = "Burahin",
 						Callback = function()
 							if delfile then
 								pcall(function() delfile("KazeUI_"..cfgName..".json") end)
-								KazeUI:Notify({Title = "Config System", Content = "Deleted " .. cfgName, Duration = 3})
+								KazeUI:Notify({Title = "Config System", Content = "Nabura na ang " .. cfgName, Duration = 3})
 								if configDropdown then configDropdown:Refresh(getConfigs()) end
 							else
-								KazeUI:Notify({Title = "Error", Content = "Your executor lacks 'delfile' support.", Duration = 3})
+								KazeUI:Notify({Title = "Error", Content = "Walang suportang 'delfile' ang executor mo.", Duration = 3})
 							end
 						end
 					},
-					{ Title = "Cancel" }
+					{ Title = "Kanselahin" }
 				}
 			})
 		end})
@@ -3030,6 +3165,10 @@ function KazeUI:CreateWindow(config)
 		table.insert(self._Tabs, { Button = btn, Indicator = leftIndicator, Label = txt, Page = page })
 
 		local function activate()
+			if self._SearchBox and self._SearchBox.Text ~= "" then
+				self._SearchBox.Text = "" 
+			end
+
 			for _, t in ipairs(self._Tabs) do
 				TweenService:Create(t.Button, TweenInfo.new(0.12), { BackgroundColor3 = KazeUI.GetColor(0.02) }):Play()
 				t.Indicator.Visible = false
@@ -3042,6 +3181,16 @@ function KazeUI:CreateWindow(config)
 			page.Visible = true
 			txt.TextColor3 = Color3.fromRGB(255, 255, 255)
 			txt.Font = Enum.Font.GothamBold
+
+			-- LUNAS SA STARTUP BUG: Sapilitang ire-refresh ang lahat ng UIStroke sa pahinang ito kapag binuksan
+			task.defer(function()
+				for _, desc in ipairs(page:GetDescendants()) do
+					if desc:IsA("UIStroke") then
+						desc.Enabled = false
+						desc.Enabled = true
+					end
+				end
+			end)
 		end
 
 		btn.MouseEnter:Connect(function()
