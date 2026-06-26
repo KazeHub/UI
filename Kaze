@@ -1,4 +1,3 @@
-
 --[[
 	Kaze UI Library
 	Optimized: Deep Obsidian Only, Dynamic Tab Text Scaling (No "..." Dots), Wider Sidebar, Safe Close Dialog Margin Padding
@@ -8,7 +7,7 @@
 	Added: Smooth & Responsive Continuous Window Resizing with UIScale correction, PC Hover Cursor (↘), and Multi-Touch Protection
 	Updated: Adaptive Device & Monitor Scale Protection Engine (0.85x Mobile / 1.0x Tablet / 1.15x Desktop Wide)
 	Updated: Adjusted Default Window Size to 600x400
-	Fixed: Mobile camera rotation / player movement blocked globally during UI drags (Window, Resize, Sliders, Pickers)
+	FIX: Integrated High-Priority Touch/Camera Input Sinking to prevent camera panning while dragging UI elements on Mobile/PC.
 --]]
 
 local KazeUI = {}
@@ -20,7 +19,7 @@ local TweenService = game:GetService("TweenService")
 local UIS = game:GetService("UserInputService")
 local TextService = game:GetService("TextService")
 local HttpService = game:GetService("HttpService")
-local CAS = game:GetService("ContextActionService") -- Added ContextActionService
+local CAS = game:GetService("ContextActionService")
 local LP = Players.LocalPlayer
 local Mouse = LP:GetMouse()
 
@@ -35,6 +34,25 @@ KazeUI.GlowElements = {}
 KazeUI.NeonTweens = {}
 KazeUI.PanelElements = {} 
 KazeUI.TransparentElements = {}
+
+-- Camera Sinking Helper to prevent Mobile Camera Pan while Dragging UI
+local function SinkCamera(state)
+	if state then
+		-- Binds a high-priority action to consume Touch and Mouse Movement inputs before they propagate to the Camera Module
+		CAS:BindActionAtPriority(
+			"KazeUICameraSink",
+			function()
+				return Enum.ContextActionResult.Sink
+			end,
+			false,
+			Enum.ContextActionPriority.High.Value + 1000, -- Overrides default camera control bindings
+			Enum.UserInputType.Touch,
+			Enum.UserInputType.MouseMovement
+		)
+	else
+		CAS:UnbindAction("KazeUICameraSink")
+	end
+end
 
 local function RegisterFlag(flag, getFunc, setFunc)
 	if flag then
@@ -54,6 +72,11 @@ if not success or not parent then
 	parent = LP:WaitForChild("PlayerGui", 15)
 end
 ScreenGui.Parent = parent
+
+-- Safe Unbinding on ScreenGui Destruction
+ScreenGui.Destroying:Connect(function()
+	SinkCamera(false)
+end)
 
 -- SEPARATE NOTIFICATION SCREEN GUI (CRITICAL BUG FIX)
 local NotifScreenGui = Instance.new("ScreenGui")
@@ -163,24 +186,6 @@ local function FormatImage(id)
 	return "rbxassetid://" .. clean
 end
 
--- Global Drag / Camera Interaction Lock to prevent Camera Rotations during GUI interaction
-local activeDragLocks = 0
-local function SetDragLock(state)
-	if state then
-		activeDragLocks = activeDragLocks + 1
-		if activeDragLocks == 1 then
-			CAS:BindActionAtPriority("KazeUIDragSink", function()
-				return Enum.ContextActionResult.Sink
-			end, false, Enum.ContextActionPriority.High.Value + 1000, Enum.UserInputType.MouseMovement, Enum.UserInputType.Touch)
-		end
-	else
-		activeDragLocks = math.max(0, activeDragLocks - 1)
-		if activeDragLocks == 0 then
-			CAS:UnbindAction("KazeUIDragSink")
-		end
-	end
-end
-
 -- Threshold dragging to prevent minimize misclicks (Scale-adjusted for fluid dragging)
 local function MakeDraggable(dragPart, targetPart)
 	local dragging = false
@@ -204,18 +209,16 @@ local function MakeDraggable(dragPart, targetPart)
 	dragPart.InputBegan:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 			dragging = true
-			SetDragLock(true)
 			dragActive = false
 			dragStart = input.Position
 			startPos = targetPart.Position
+			SinkCamera(true) -- Stop camera movement during dragging
 			
 			input.Changed:Connect(function()
 				if input.UserInputState == Enum.UserInputState.End then
-					if dragging then
-						dragging = false
-						SetDragLock(false)
-					end
+					dragging = false
 					dragInput = nil
+					SinkCamera(false) -- Allow camera movement once dragging ends
 				end
 			end)
 		end
@@ -241,7 +244,6 @@ function KazeUI.GetColor(elevation)
 	return Color3.fromHSV(h, s, math.clamp(v + offset, 0, 1))
 end
 
--- Elements Registry
 function KazeUI:AddPanel(inst, elevation)
 	table.insert(KazeUI.PanelElements, {Inst = inst, Elevation = elevation or 0})
 	if inst and inst:IsA("GuiObject") then
@@ -1441,11 +1443,11 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 	clickDetector.InputBegan:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 			isDragging = true
-			SetDragLock(true)
 			ToggleScrollingAncestors(track, false)
 			modalLock.Visible = true
 			modalLock.Modal = true
 			UpdateValueFromInput(input)
+			SinkCamera(true) -- Lock camera on Slider Dragging
 			local moveCon, endCon
 			moveCon = UIS.InputChanged:Connect(function(moveInput)
 				if isDragging and (moveInput.UserInputType == Enum.UserInputType.MouseMovement or moveInput.UserInputType == Enum.UserInputType.Touch) then
@@ -1454,15 +1456,13 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 			end)
 			endCon = UIS.InputEnded:Connect(function(endInput)
 				if endInput.UserInputType == Enum.UserInputType.MouseButton1 or endInput.UserInputType == Enum.UserInputType.Touch then
-					if isDragging then
-						isDragging = false
-						SetDragLock(false)
-					end
+					isDragging = false
 					ToggleScrollingAncestors(track, true)
 					modalLock.Visible = false
 					modalLock.Modal = false
 					if moveCon then moveCon:Disconnect() end
 					if endCon then endCon:Disconnect() end
+					SinkCamera(false) -- Release camera
 				end
 			end)
 		end
@@ -1660,18 +1660,18 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 	svMap.InputBegan:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 			draggingMap = true
-			SetDragLock(true)
 			ToggleScrollingAncestors(svMap, false)
 			updateSV(input)
+			SinkCamera(true) -- Lock camera on Map Interaction
 		end
 	end)
 
 	hueSlider.InputBegan:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 			draggingHue = true
-			SetDragLock(true)
 			ToggleScrollingAncestors(hueSlider, false)
 			updateHue(input)
+			SinkCamera(true) -- Lock camera on Hue Interaction
 		end
 	end)
 
@@ -1688,7 +1688,7 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 	UIS.InputEnded:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 			if draggingMap or draggingHue then
-				SetDragLock(false)
+				SinkCamera(false) -- Release camera once touch/drag is lifted
 			end
 			draggingMap = false
 			draggingHue = false
@@ -1732,7 +1732,7 @@ local function CreateKeybindInput(parentFrame, title, defaultKey, callback, flag
 	local isBinding = false
 	
 	local measuredWidth = 598 * 0.92
-	if parentFrame fund parentFrame.AbsoluteSize and parentFrame.AbsoluteSize.X > 0 then measuredWidth = parentFrame.AbsoluteSize.X * 0.95 end
+	if parentFrame and parentFrame.AbsoluteSize and parentFrame.AbsoluteSize.X > 0 then measuredWidth = parentFrame.AbsoluteSize.X * 0.95 end
 	local textContainerWidth = measuredWidth - 24 - 90
 	
 	local titleHeight = 0
@@ -1980,7 +1980,7 @@ AttachElementsToAPI = function(apiTable, parentFrame)
 	end
 
 	function apiTable:Dropdown(arg1, arg2, arg3, arg4, arg5, arg6)
-		local title, vals, def, callback, multi, flag
+		local title, vals, def, multi, callback, flag
 		if type(arg1) == "table" then
 			title, vals, def, multi, callback, flag = arg1.Title, (arg1.Values or arg1.Options), arg1.Default, (arg1.Multi or false), arg1.Callback, arg1.Flag
 		else
@@ -2307,14 +2307,12 @@ function KazeUI:CreateWindow(config)
 	-- BUG FIX: Global Dragging to stop slipping off the Mini Button bounds and triggering clicks
 	local miniDragStart
 	local miniDragMoved = false
-	local miniDragging = false
 	
 	MiniButton.InputBegan:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 			miniDragStart = input.Position
 			miniDragMoved = false
-			miniDragging = true
-			SetDragLock(true)
+			SinkCamera(true) -- Lock camera on MiniButton drag
 		end
 	end)
 	
@@ -2335,9 +2333,8 @@ function KazeUI:CreateWindow(config)
 	
 	UIS.InputEnded:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-			if miniDragging then
-				SetDragLock(false)
-				miniDragging = false
+			if miniDragStart then
+				SinkCamera(false) -- Release camera once touch is finished
 			end
 			if miniDragStart and not miniDragMoved then
 				unminimizeWindow()
@@ -2561,13 +2558,13 @@ function KazeUI:CreateWindow(config)
 			end
 
 			isResizing = true
-			SetDragLock(true)
 			resizeStartSize = Vector2.new(Window.AbsoluteSize.X / UIScale.Scale, Window.AbsoluteSize.Y / UIScale.Scale)
 			resizeStartInput = input.Position
 
 			-- Disable active scrollable ancestors to prevent drag conflicts
 			ToggleScrollingAncestors(ResizeHandle, false)
 			Mouse.Icon = hoverCursor
+			SinkCamera(true) -- Stop camera rotation during window resizing
 		end
 	end)
 
@@ -2589,11 +2586,11 @@ function KazeUI:CreateWindow(config)
 				return
 			end
 			isResizing = false
-			SetDragLock(false)
 			resizeTouchInput = nil
 			ToggleScrollingAncestors(ResizeHandle, true)
 			Mouse.Icon = ""
 			TweenService:Create(ResizeHandle, TweenInfo.new(0.12), {ImageColor3 = Color3.fromRGB(150, 150, 150)}):Play()
+			SinkCamera(false) -- Release camera once resizing touch ends
 		end
 	end)
 
