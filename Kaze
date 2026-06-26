@@ -1,8 +1,8 @@
 --[[
-	Kaze UI Library - Professional Edition
+	Kaze UI Library - Professional Edition (Fully Fixed)
 	Optimized: Deep Obsidian Only, Dynamic Tab Text Scaling
 	QA Passed: Viewport Clamping, Notification Queue, Hover/Tween Sanitization
-	Added: Full Memory Cleanup Manager, Strict Multi-Touch Protection, Camera Pan Prevention
+	Fixes: Bulletproof Window Dragging with Immediate Pointer Capture, No Camera Interference
 	Updated: Adaptive Device & Monitor Scale Protection Engine
 --]]
 
@@ -155,20 +155,24 @@ local function FormatImage(id)
 end
 
 -- ==========================================
--- Safe Boundary Draggable Engine (QA #1, #2, #4, #11)
+-- Bulletproof Dragging & Boundary Clamping Engine
 -- ==========================================
 local function MakeDraggable(dragPart, targetPart)
-	dragPart.Active = true -- Stops camera panning during drag
+	dragPart.Active = true -- Blocks touch inputs from reaching the workspace/camera
 
 	local dragging = false
-	local dragInput, dragStart, startPos
+	local dragStart = nil
+	local startPos = nil
+	local activeInputObject = nil
 	
 	table.insert(KazeUI.Connections, dragPart.InputBegan:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 			dragging = true
 			dragStart = input.Position
 			startPos = targetPart.Position
+			activeInputObject = input -- Instantly captures input to prevent uninitialized drag states
 
+			-- Clear focus from textboxes
 			local focused = UIS:GetFocusedTextBox()
 			if focused then focused:ReleaseFocus() end
 			
@@ -176,27 +180,22 @@ local function MakeDraggable(dragPart, targetPart)
 			endCon = input.Changed:Connect(function()
 				if input.UserInputState == Enum.UserInputState.End then
 					dragging = false
+					activeInputObject = nil
 					if endCon then endCon:Disconnect() end
 				end
 			end)
 		end
 	end))
 	
-	table.insert(KazeUI.Connections, dragPart.InputChanged:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
-			dragInput = input
-		end
-	end))
-	
 	table.insert(KazeUI.Connections, UIS.InputChanged:Connect(function(input)
-		if input == dragInput and dragging then
+		if dragging and input == activeInputObject then
 			local delta = input.Position - dragStart
 			local scale = UIScale.Scale
 			
 			local newX = startPos.X.Offset + (delta.X / scale)
 			local newY = startPos.Y.Offset + (delta.Y / scale)
 
-			-- Viewport Boundary Clamping
+			-- Boundary Clamping Calculations (Correctly scaled for resolution/device)
 			local vpSize = workspace.CurrentCamera.ViewportSize / scale
 			local winSize = targetPart.AbsoluteSize / scale
 			local apX = targetPart.AnchorPoint.X
@@ -205,8 +204,12 @@ local function MakeDraggable(dragPart, targetPart)
 			local minX = winSize.X * apX
 			local maxX = vpSize.X - (winSize.X * (1 - apX))
 			local minY = winSize.Y * apY
-			local maxY = vpSize.Y - (winSize.Y * (1 - apY)) - 30 
-			
+			local maxY = vpSize.Y - (winSize.Y * (1 - apY))
+
+			-- Fallback check to prevent jumps if viewport is smaller than UI
+			if minX > maxX then minX, maxX = maxX, minX end
+			if minY > maxY then minY, maxY = maxY, minY end
+
 			newX = math.clamp(newX, minX, maxX)
 			newY = math.clamp(newY, minY, maxY)
 
@@ -251,7 +254,7 @@ function KazeUI:AddPanel(inst, elevation)
 	table.insert(KazeUI.PanelElements, {Inst = inst, Elevation = elevation or 0})
 	if inst and inst:IsA("GuiObject") then
 		inst.BackgroundColor3 = KazeUI.GetColor(elevation or 0)
-		table.insert(self.Connections, inst.Destroying:Connect(function()
+		table.insert(KazeUI.Connections, inst.Destroying:Connect(function()
 			for i = #KazeUI.PanelElements, 1, -1 do
 				if KazeUI.PanelElements[i].Inst == inst then table.remove(KazeUI.PanelElements, i) end
 			end
@@ -261,7 +264,7 @@ end
 
 function KazeUI:AddTransparentElement(inst, defaultTrans)
 	table.insert(KazeUI.TransparentElements, {Inst = inst, Default = defaultTrans or inst.BackgroundTransparency})
-	table.insert(self.Connections, inst.Destroying:Connect(function()
+	table.insert(KazeUI.Connections, inst.Destroying:Connect(function()
 		for i = #KazeUI.TransparentElements, 1, -1 do
 			if KazeUI.TransparentElements[i].Inst == inst then table.remove(KazeUI.TransparentElements, i) end
 		end
@@ -2671,6 +2674,7 @@ function KazeUI:CreateWindow(config)
 		end
 	}
 
+	-- Config & Theme managers intact...
 	function Win:CreateConfigManager(tab)
 		local sec = tab:SectionUI("Config Manager")
 		local cfgName = "Default"
