@@ -1,11 +1,10 @@
-
 --[[
 	Kaze UI Library
 	Optimized: Deep Obsidian Only, Dynamic Tab Text Scaling (No "..." Dots), Wider Sidebar, Safe Close Dialog Margin Padding
 	Added: New Dynamic Keybind Component, Full Config Manager Overhaul, Memory Leak Prevention
 	Fixes: Text Clipping/Overflow fixed globally, Multi-Dropdown Color Hover State Fixed
 	Critical Bug Fix: Dedicated Notification ScreenGui with Highest DisplayOrder (Always on Top)
-	New Feature: Interactive Page Search Bar (Always on Top of Page Content, Glowing Neon Outline, Filters All Component Types)
+	New Feature: Interactive Page Search Bar (Always on Top of Sidebar, Glowing Neon Outline, Filters All Component Types while keeping Section headers visible)
 --]]
 
 local KazeUI = {}
@@ -2032,7 +2031,8 @@ AttachElementsToAPI = function(apiTable, parentFrame, registeredList)
 				Instance = element.Frame,
 				TextToSearch = tostring(title or ""),
 				IsSection = true,
-				SubElements = element.SubItemsList
+				SubElements = element.SubItemsList,
+				ForceOpen = element.ForceOpen
 			})
 		end
 		return element
@@ -2137,24 +2137,31 @@ CreateCollapsibleSection = function(parentFrame, titleArg, registeredList)
 	toggleDetector.ZIndex = 10
 	toggleDetector.Parent = headerFrame
 
-	toggleDetector.MouseButton1Click:Connect(function()
-		isOpen = not isOpen
+	local function setSectionOpen(state)
+		isOpen = state
 		sectionContent.Visible = isOpen
 		divider.Visible = isOpen
 		TweenService:Create(arrowIcon, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
 			Rotation = isOpen and 0 or -90
 		}):Play()
+	end
+
+	toggleDetector.MouseButton1Click:Connect(function()
+		setSectionOpen(not isOpen)
 	end)
 
 	local subItemsList = {}
-	local sectionPublic = { Frame = sectionBox, ContentFrame = sectionContent, Header = headerFrame, SubItemsList = subItemsList, ForceOpen = function()
-		if not isOpen then
-			isOpen = true
-			sectionContent.Visible = true
-			divider.Visible = true
-			arrowIcon.Rotation = 0
-		end
-	end }
+	local sectionPublic = { 
+		Frame = sectionBox, 
+		ContentFrame = sectionContent, 
+		Header = headerFrame, 
+		SubItemsList = subItemsList, 
+		ForceOpen = function()
+			if not isOpen then
+				setSectionOpen(true)
+			end
+		end 
+	}
 	
 	AttachElementsToAPI(sectionPublic, sectionContent, subItemsList)
 	function sectionPublic:SetText(newText)
@@ -2308,7 +2315,6 @@ function KazeUI:CreateWindow(config)
 		if isMinimized then return end
 		isMinimized = true
 		
-		-- BUG FIX: Huwag i-save ang size dito. Kapag pinindot nang mabilis ang Back Style tween, baka lumaki ang size nang walang katapusan.
 		if not toggledMaximized then
 			lastNormalPosition = Window.Position
 			lastNormalAnchor = Window.AnchorPoint
@@ -2339,7 +2345,6 @@ function KazeUI:CreateWindow(config)
 
 	BtnYellow.MouseButton1Click:Connect(minimizeWindow)
 
-	-- BUG FIX: Global Dragging para hindi matanggal sa bounds ng Mini Button habang hinihila
 	local miniDragStart
 	local miniDragMoved = false
 	
@@ -2354,13 +2359,12 @@ function KazeUI:CreateWindow(config)
 		if miniDragStart and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
 			if (input.Position - miniDragStart).Magnitude > 8 then
 				miniDragMoved = true
-				-- Manu-manong i-update ang posisyon
 				local delta = input.Position - miniDragStart
 				MiniButton.Position = UDim2.new(
 					0, MiniButton.Position.X.Offset + delta.X,
 					0, MiniButton.Position.Y.Offset + delta.Y
 				)
-				miniDragStart = input.Position -- Reset delta step
+				miniDragStart = input.Position 
 			end
 		end
 	end)
@@ -2459,7 +2463,7 @@ function KazeUI:CreateWindow(config)
 
 		ConfirmBtn.MouseButton1Click:Connect(function() 
 			ScreenGui:Destroy() 
-			NotifScreenGui:Destroy() -- Linisin din ang notifications GUI kapag pinatay ang UI
+			NotifScreenGui:Destroy() 
 		end)
 		CancelBtn.MouseButton1Click:Connect(function() Overlay:Destroy(); confirmActive = false; BtnYellow.Active = true; BtnGreen.Active = true; BtnRed.Active = true end)
 	end
@@ -2499,6 +2503,52 @@ function KazeUI:CreateWindow(config)
 	Pages.Parent = Content
 	KazeUI:AddPanel(Pages, -0.01)
 	KazeUI:AddTransparentElement(Pages, 0)
+
+	-- ===================================================
+	-- GLOBAL SIDEBAR SEARCH BAR (ALWAYS ON TOP OF TABS)
+	-- ===================================================
+	local SidebarSearchFrame = Instance.new("Frame")
+	SidebarSearchFrame.Name = "SidebarSearchFrame"
+	SidebarSearchFrame.Size = UDim2.new(1, -12, 0, 32)
+	SidebarSearchFrame.Position = UDim2.fromOffset(6, 6)
+	SidebarSearchFrame.BackgroundTransparency = 1
+	SidebarSearchFrame.Parent = SideBar
+
+	local SearchInputContainer = Instance.new("Frame")
+	SearchInputContainer.Name = "SearchInputContainer"
+	SearchInputContainer.Size = UDim2.new(1, 0, 1, 0)
+	SearchInputContainer.Parent = SidebarSearchFrame
+	Instance.new("UICorner", SearchInputContainer).CornerRadius = UDim.new(0, 6)
+	KazeUI:AddPanel(SearchInputContainer, 0.02)
+	KazeUI:AddTransparentElement(SearchInputContainer, 0)
+
+	local searchBarStroke = Instance.new("UIStroke", SearchInputContainer)
+	searchBarStroke.Thickness = 1.5
+	searchBarStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+	StartNeonLoop(searchBarStroke) -- Outline is always glowing/pulsing
+
+	local searchIcon = Instance.new("ImageLabel")
+	searchIcon.Name = "SearchIcon"
+	searchIcon.Size = UDim2.fromOffset(14, 14)
+	searchIcon.Position = UDim2.new(0, 8, 0.5, -7)
+	searchIcon.BackgroundTransparency = 1
+	searchIcon.Image = FormatImage("9882298751") 
+	searchIcon.ImageColor3 = Color3.fromRGB(160, 160, 165)
+	searchIcon.Parent = SearchInputContainer
+
+	local SearchBoxInput = Instance.new("TextBox")
+	SearchBoxInput.Name = "SearchBoxInput"
+	SearchBoxInput.Size = UDim2.new(1, -34, 1, 0)
+	SearchBoxInput.Position = UDim2.new(0, 28, 0, 0)
+	SearchBoxInput.BackgroundTransparency = 1
+	SearchBoxInput.PlaceholderText = "Search..."
+	SearchBoxInput.PlaceholderColor3 = Color3.fromRGB(120, 120, 125)
+	SearchBoxInput.Text = ""
+	SearchBoxInput.TextColor3 = Color3.fromRGB(255, 255, 255)
+	SearchBoxInput.Font = Enum.Font.Gotham
+	SearchBoxInput.TextSize = 12
+	SearchBoxInput.TextXAlignment = Enum.TextXAlignment.Left
+	SearchBoxInput.Parent = SearchInputContainer
 	
 	local isSidebarOpen = true
 	Avatar.MouseButton1Click:Connect(function()
@@ -2517,8 +2567,8 @@ function KazeUI:CreateWindow(config)
 
 	local TabsScroller = Instance.new("ScrollingFrame")
 	TabsScroller.Parent = SideBar
-	TabsScroller.Position = UDim2.fromOffset(6,6)
-	TabsScroller.Size = UDim2.new(1, -12, 1, -12)
+	TabsScroller.Position = UDim2.fromOffset(6, 44) -- Safe spacing below search bar (6 + 32 + 6 = 44)
+	TabsScroller.Size = UDim2.new(1, -12, 1, -50)
 	TabsScroller.BackgroundTransparency = 1
 	TabsScroller.ScrollBarThickness = 4
 	TabsScroller.CanvasSize = UDim2.new(0, 0, 0, 0)
@@ -2539,6 +2589,7 @@ function KazeUI:CreateWindow(config)
 		Window = Window,
 		ScreenGui = ScreenGui,
 		NotifScreenGui = NotifScreenGui,
+		ActiveTab = nil,
 		_Pages = Pages,
 		_TabsList = TabsList,
 		_Tabs = {},
@@ -2559,6 +2610,13 @@ function KazeUI:CreateWindow(config)
 			end
 		end
 	}
+
+	-- Dynamic Search filtering updates when typing
+	SearchBoxInput:GetPropertyChangedSignal("Text"):Connect(function()
+		if Win.ActiveTab and Win.ActiveTab.SearchFilter then
+			Win.ActiveTab.SearchFilter(SearchBoxInput.Text)
+		end
+	end)
 
 	function Win:CreateConfigManager(tab)
 		local sec = tab:SectionUI("Config Manager")
@@ -2617,7 +2675,7 @@ function KazeUI:CreateWindow(config)
 		sec:ColorPicker({
 			Title = "UI Glow Color",
 			Default = KazeUI.GlowColor,
-			Flag = "KazeUI_Theme_GlowColor", -- Added flag para i-save ng Config
+			Flag = "KazeUI_Theme_GlowColor", 
 			Callback = function(color)
 				KazeUI:SetGlow(color)
 			end
@@ -2628,7 +2686,7 @@ function KazeUI:CreateWindow(config)
 			Min = 0,
 			Max = 100,
 			Default = 0,
-			Flag = "KazeUI_Theme_BackgroundTransparency", -- Added flag para i-save ng Config
+			Flag = "KazeUI_Theme_BackgroundTransparency", 
 			Callback = function(val)
 				KazeUI:SetTransparency(val / 100)
 			end
@@ -2690,66 +2748,10 @@ function KazeUI:CreateWindow(config)
 		page.Visible = false
 		page.Parent = self._Pages
 
-		-- ==========================================
-		-- PAGE SEARCH SYSTEM (ALWAYS ON TOP)
-		-- ==========================================
-		local SearchBarFrame = Instance.new("Frame")
-		SearchBarFrame.Name = "SearchBarFrame"
-		SearchBarFrame.Size = UDim2.new(1, 0, 0, 42)
-		SearchBarFrame.Position = UDim2.new(0, 0, 0, 0)
-		SearchBarFrame.BackgroundTransparency = 1
-		SearchBarFrame.Parent = page
-
-		local SearchInputContainer = Instance.new("Frame")
-		SearchInputContainer.Name = "SearchInputContainer"
-		SearchInputContainer.Size = UDim2.new(0.95, 0, 0, 32)
-		SearchInputContainer.Position = UDim2.new(0.025, 0, 0, 4)
-		SearchInputContainer.Parent = SearchBarFrame
-		Instance.new("UICorner", SearchInputContainer).CornerRadius = UDim.new(0, 6)
-		KazeUI:AddPanel(SearchInputContainer, 0.02)
-		KazeUI:AddTransparentElement(SearchInputContainer, 0)
-
-		local searchBarStroke = Instance.new("UIStroke", SearchInputContainer)
-		searchBarStroke.Thickness = 1.5
-		searchBarStroke.Color = Color3.fromRGB(45, 45, 50)
-		searchBarStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-
-		local searchIcon = Instance.new("ImageLabel")
-		searchIcon.Name = "SearchIcon"
-		searchIcon.Size = UDim2.fromOffset(16, 16)
-		searchIcon.Position = UDim2.new(0, 10, 0.5, -8)
-		searchIcon.BackgroundTransparency = 1
-		searchIcon.Image = FormatImage("9882298751") -- Roblox search glass icon ID or general search icon
-		searchIcon.ImageColor3 = Color3.fromRGB(160, 160, 165)
-		searchIcon.Parent = SearchInputContainer
-
-		local SearchBoxInput = Instance.new("TextBox")
-		SearchBoxInput.Name = "SearchBoxInput"
-		SearchBoxInput.Size = UDim2.new(1, -42, 1, 0)
-		SearchBoxInput.Position = UDim2.new(0, 32, 0, 0)
-		SearchBoxInput.BackgroundTransparency = 1
-		SearchBoxInput.PlaceholderText = "Search features here..."
-		SearchBoxInput.PlaceholderColor3 = Color3.fromRGB(120, 120, 125)
-		SearchBoxInput.Text = ""
-		SearchBoxInput.TextColor3 = Color3.fromRGB(255, 255, 255)
-		SearchBoxInput.Font = Enum.Font.Gotham
-		SearchBoxInput.TextSize = 13
-		SearchBoxInput.TextXAlignment = Enum.TextXAlignment.Left
-		SearchBoxInput.Parent = SearchInputContainer
-
-		-- Ang Glowing Neon effect ng Search Bar
-		SearchBoxInput.Focused:Connect(function()
-			StartNeonLoop(searchBarStroke)
-		end)
-		SearchBoxInput.FocusLost:Connect(function()
-			StopNeonLoop(searchBarStroke)
-			searchBarStroke.Color = Color3.fromRGB(45, 45, 50)
-		end)
-
-		-- Content Area (Nasa ilalim ng Search Bar, ito lang ang mag-scroscroll)
+		-- Content Area (Nasa pinakataas dahil wala nang search bar sa page frame)
 		local pageContent = Instance.new("ScrollingFrame", page)
-		pageContent.Size = UDim2.new(1, 0, 1, -44)
-		pageContent.Position = UDim2.new(0, 0, 0, 44)
+		pageContent.Size = UDim2.new(1, 0, 1, 0)
+		pageContent.Position = UDim2.new(0, 0, 0, 0)
 		pageContent.BackgroundTransparency = 1
 		pageContent.BorderSizePixel = 0
 		pageContent.ScrollBarThickness = 5
@@ -2758,7 +2760,7 @@ function KazeUI:CreateWindow(config)
 		pageContent.ScrollBarImageColor3 = Color3.fromRGB(40,40,45)
 
 		local pagePadding = Instance.new("UIPadding", pageContent)
-		pagePadding.PaddingTop = UDim.new(0, 4)
+		pagePadding.PaddingTop = UDim.new(0, 8)
 		pagePadding.PaddingBottom = UDim.new(0, 8)
 		pagePadding.PaddingLeft = UDim.new(0, 8)
 		pagePadding.PaddingRight = UDim.new(0, 8)
@@ -2770,9 +2772,9 @@ function KazeUI:CreateWindow(config)
 
 		local registeredPageElements = {}
 
-		-- Search Filtering Logic
-		SearchBoxInput:GetPropertyChangedSignal("Text"):Connect(function()
-			local query = string.lower(SearchBoxInput.Text)
+		-- Optimized Search Filtering Logic (SectionUI always visible, filters subelements only)
+		local function applySearch(query)
+			query = string.lower(query)
 			
 			for _, elementData in ipairs(registeredPageElements) do
 				local inst = elementData.Instance
@@ -2786,37 +2788,41 @@ function KazeUI:CreateWindow(config)
 						end
 					end
 				else
-					local lowerText = string.lower(elementData.TextToSearch)
-					local matchFound = string.find(lowerText, query, 1, true) ~= nil
-					
 					if isSection then
-						-- Filter para sa mga Sub-items ng Section
-						local subMatchFound = false
+						-- Ang SectionUI framework mismo ay laging nakabukas/visible
+						inst.Visible = true 
+						
+						local anySubMatch = false
 						for _, subData in ipairs(elementData.SubElements) do
 							local subLowerText = string.lower(subData.TextToSearch)
 							local subMatch = string.find(subLowerText, query, 1, true) ~= nil
 							subData.Instance.Visible = subMatch
 							if subMatch then
-								subMatchFound = true
+								anySubMatch = true
 							end
 						end
 						
-						-- Kapag nag-match ang Section name mismo o alinman sa sub-items nito
-						if matchFound or subMatchFound then
-							inst.Visible = true
-							elementData.Instance:FindFirstAncestorOfClass("Frame"):ForceOpen()
-						else
-							inst.Visible = false
+						-- Force open section kung may nakitang katugmang elements sa loob
+						if anySubMatch and elementData.ForceOpen then
+							elementData.ForceOpen()
 						end
 					else
-						-- Para sa regular na components (Buttons, Toggles, Keybinds, Sliders, atbp.)
-						inst.Visible = matchFound
+						-- Para sa regular na components (Buttons, Toggles, Sliders, atbp.) na wala sa loob ng Sections
+						local lowerText = string.lower(elementData.TextToSearch)
+						inst.Visible = string.find(lowerText, query, 1, true) ~= nil
 					end
 				end
 			end
-		end)
+		end
 
-		table.insert(self._Tabs, { Button = btn, Indicator = leftIndicator, Label = txt, Page = page })
+		local tabData = { 
+			Button = btn, 
+			Indicator = leftIndicator, 
+			Label = txt, 
+			Page = page,
+			SearchFilter = applySearch
+		}
+		table.insert(self._Tabs, tabData)
 
 		local function activate()
 			for _, t in ipairs(self._Tabs) do
@@ -2831,6 +2837,11 @@ function KazeUI:CreateWindow(config)
 			page.Visible = true
 			txt.TextColor3 = Color3.fromRGB(255, 255, 255)
 			txt.Font = Enum.Font.GothamBold
+			
+			-- Itakda bilang active tab para gumana ang global search filtering
+			Win.ActiveTab = tabData
+			-- Ilapat agad ang kasalukuyang nakasulat sa global search box
+			applySearch(SearchBoxInput.Text)
 		end
 
 		btn.MouseEnter:Connect(function()
@@ -2860,5 +2871,195 @@ function KazeUI:CreateWindow(config)
 	if typeof(config.Callback) == "function" then pcall(config.Callback) end
 	return Win
 end
+
+
+-- ===================================================
+-- SHOWCASE SCRIPT (LOADS LOCAL LIBRARY INSTANTLY)
+-- ===================================================
+
+local Window = KazeUI:CreateWindow({
+    Title = "KazeUI Showcase",
+    Author = "Justine",
+    Version = "1.0",
+    SearchBar = true,
+    Icon = "101379130906456"
+})
+
+----------------------------------------------------
+-- Tabs
+----------------------------------------------------
+
+local HomeTab = Window:CreateTab({
+    Title = "Home",
+    Icon = "house"
+})
+
+local ThemesTab = Window:CreateTab({
+    Title = "Themes",
+    Icon = "palette"
+})
+
+local ConfigTab = Window:CreateTab({
+    Title = "Configs",
+    Icon = "settings"
+})
+
+----------------------------------------------------
+-- Labels & Paragraphs
+----------------------------------------------------
+
+local Labels = HomeTab:SectionUI("Labels & Paragraphs")
+
+Labels:AddLabel("Default Label")
+
+Labels:Paragraph({
+    Title = "Paragraph",
+    Content = "This is a paragraph component used to display information."
+})
+
+----------------------------------------------------
+-- Buttons
+----------------------------------------------------
+
+local Buttons = HomeTab:SectionUI("Buttons")
+
+Buttons:Button({
+    Title = "Simple Button",
+    Description = "Prints Hello World",
+    Callback = function()
+        print("Hello World")
+    end
+})
+
+Buttons:Button({
+    Title = "Notification",
+    Description = "Show Notification",
+    Callback = function()
+        KazeUI:Notify({
+            Title = "KazeUI",
+            Content = "Notification works!",
+            Duration = 5
+        })
+    end
+})
+
+----------------------------------------------------
+-- Toggles
+----------------------------------------------------
+
+local Toggles = HomeTab:SectionUI("Toggles")
+
+Toggles:Toggle({
+    Title = "Toggle",
+    Description = "Basic Toggle",
+    Default = false,
+    Callback = function(Value)
+        print("Toggle:", Value)
+    end
+})
+
+----------------------------------------------------
+-- Sliders
+----------------------------------------------------
+
+local Sliders = HomeTab:SectionUI("Sliders")
+
+Sliders:Slider({
+    Title = "WalkSpeed",
+    Description = "0 - 100",
+    Min = 0,
+    Max = 100,
+    Default = 16,
+    Callback = function(Value)
+        print(Value)
+    end
+})
+
+----------------------------------------------------
+-- Textboxes
+----------------------------------------------------
+
+local Inputs = HomeTab:SectionUI("Textboxes")
+
+Inputs:TextBox({
+    Title = "Username",
+    Placeholder = "Type here...",
+    Callback = function(Text)
+        print(Text)
+    end
+})
+
+----------------------------------------------------
+-- Dropdowns
+----------------------------------------------------
+
+local Drops = HomeTab:SectionUI("Dropdowns")
+
+Drops:Dropdown({
+    Title = "Single Dropdown",
+    Description = "Choose one",
+    Options = {
+        "Apple",
+        "Banana",
+        "Orange",
+        "Grape",
+        "Watermelon"
+    },
+    Default = "Apple",
+    Callback = function(Value)
+        print(Value)
+    end
+})
+
+Drops:Dropdown({
+    Title = "Multi Dropdown",
+    Description = "Choose multiple",
+    Multi = true,
+    Options = {
+        "ESP",
+        "Aimbot",
+        "Fly",
+        "Noclip",
+        "Speed"
+    },
+    Default = {"ESP","Fly"},
+    Callback = function(Value)
+        print(table.concat(Value,", "))
+    end
+})
+
+----------------------------------------------------
+-- Keybinds
+----------------------------------------------------
+
+local Keys = HomeTab:SectionUI("Keybinds")
+
+Keys:Keybind({
+    Title = "Toggle UI",
+    Description = "Press RightShift",
+    Default = Enum.KeyCode.RightShift,
+    Callback = function()
+        print("Pressed")
+    end
+})
+
+
+----------------------------------------------------
+-- Managers
+----------------------------------------------------
+
+Window:CreateThemeManager(ThemesTab)
+
+Window:CreateConfigManager(ConfigTab)
+
+----------------------------------------------------
+-- Welcome Notification
+----------------------------------------------------
+
+KazeUI:Notify({
+    Title = "Loaded",
+    Content = "Welcome to the KazeUI Showcase!",
+    Duration = 5
+})
 
 return KazeUI
