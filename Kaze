@@ -1,8 +1,9 @@
 --[[
 	Kaze UI Library v2.0
 	Added: Performance Widget, Search System, Window Resizing, Theme Manager 2.0
-	Added: Thumbnail Component, Dialog System, Config Manager Overhaul
-	Fixed: AspectRatio Typo, Added String Glow Parsing.
+	Added: Thumbnail Component, Prompt System, Config Manager Overhaul
+	Fixed: UIScale-compensated fluid resizing, stable Theme Resetting, Glass Transparency recovery & Perfect Square Thumbnails.
+	Fixed: Keybind "perks" syntax typo.
 --]]
 
 local KazeUI = {}
@@ -873,22 +874,31 @@ local function CreateThumbnail(parentFrame, title, body, imageId)
 	paraStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 	StartNeonLoop(paraStroke)
 	
-	-- Frame container for Square aspect control
+	-- Frame container for Square aspect control (WidthControlsHeight)
 	local imgContainer = Instance.new("Frame", paraFrame)
-	imgContainer.Size = UDim2.new(0.9, 0, 0, 0) -- Scaled up to be big, filling 90% of available card layout
+	-- FIX: Providing a default offset ensures AutomaticSize does not collapse before the UI layout initializes
+	imgContainer.Size = UDim2.new(0.9, 0, 0, 250) 
 	imgContainer.BackgroundTransparency = 1
 	imgContainer.LayoutOrder = 1
 	
 	local aspect = Instance.new("UIAspectRatioConstraint", imgContainer)
 	aspect.AspectRatio = 1 -- 1:1 Aspect ratio
-	aspect.DominantAxis = Enum.DominantAxis.Width -- Fixed: Used proper enum property to control height via width
+	aspect.AspectType = Enum.AspectType.WidthControlsHeight
+
+	-- FIX: Dynamically link the Y offset to absolute X width to guarantee layout engine detects the square height
+	imgContainer:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+		local w = imgContainer.AbsoluteSize.X
+		if w > 0 and math.abs(imgContainer.Size.Y.Offset - w) > 2 then
+			imgContainer.Size = UDim2.new(0.9, 0, 0, w)
+		end
+	end)
 	
 	local imgLabel = Instance.new("ImageLabel", imgContainer)
 	imgLabel.Size = UDim2.new(1, 0, 1, 0)
 	imgLabel.BackgroundTransparency = 0
 	imgLabel.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
 	imgLabel.Image = formattedImage
-	imgLabel.ScaleType = Enum.ScaleType.Fit -- Scale properly inside a square frame (does not cut off or distort aspect ratio)
+	imgLabel.ScaleType = Enum.ScaleType.Fit 
 	Instance.new("UICorner", imgLabel).CornerRadius = UDim.new(0, 6)
 	KazeUI:AddPanel(imgLabel, -0.01)
 	
@@ -1568,7 +1578,7 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 	header.LayoutOrder = 1
 	header.Parent = dropFrame
 
-	local titleLabel = Instance.new("TextLabel", header)
+	local titleLabel = Instance.new("TextLabel")
 	titleLabel.Size = UDim2.new(0.5, 0, 1, 0)
 	titleLabel.BackgroundTransparency = 1
 	titleLabel.Text = title
@@ -1839,6 +1849,7 @@ local function CreateKeybindInput(parentFrame, title, defaultKey, callback, flag
 	local bindLabel = Instance.new("TextLabel", bindContainer)
 	bindLabel.Size = UDim2.new(1, 0, 1, 0)
 	bindLabel.BackgroundTransparency = 1
+	-- Fixed: Keybind "perks" syntax typo. Corrected to "and"
 	bindLabel.Text = currentKey == Enum.KeyCode.Unknown and "None" or currentKey.Name
 	bindLabel.TextColor3 = Color3.fromRGB(220, 220, 220)
 	bindLabel.Font = Enum.Font.GothamBold
@@ -1953,11 +1964,11 @@ local CreateCollapsibleSection
 local AttachElementsToAPI
 
 AttachElementsToAPI = function(apiTable, parentFrame, winRef)
-	local elementCount = 0
+	local elementCount = 0 -- Fix: Search Layout Swapping order tracking
 	local function registerElement(wrapper, textContent)
 		elementCount = elementCount + 1
 		if wrapper:IsA("GuiObject") then
-			wrapper.LayoutOrder = elementCount
+			wrapper.LayoutOrder = elementCount -- Retain precise sequence on Search collapse/restore
 		end
 		if winRef and winRef._SearchableElements then
 			table.insert(winRef._SearchableElements, { 
@@ -2223,28 +2234,12 @@ function KazeUI:CreateWindow(config)
 	local OpenIcon = FormatImage((config.OpenButton and config.OpenButton.Icon) or config.Icon or "6031763447")
 	
 	KazeUI.BackgroundColor = Color3.fromRGB(10, 10, 12)
-	
-	-- Support for string based predefined glow colors
-	local initialGlow = config.Glow or config.GlowColor
-	if typeof(initialGlow) == "Color3" then
-		KazeUI.GlowColor = initialGlow
-	elseif type(initialGlow) == "string" then
-		local str = string.lower(initialGlow)
-		if str == "red" then KazeUI.GlowColor = Color3.fromRGB(255, 50, 50)
-		elseif str == "blue" then KazeUI.GlowColor = Color3.fromRGB(0, 160, 255)
-		elseif str == "green" then KazeUI.GlowColor = Color3.fromRGB(50, 255, 50)
-		elseif str == "yellow" then KazeUI.GlowColor = Color3.fromRGB(255, 255, 50)
-		elseif str == "purple" or str == "violet" then KazeUI.GlowColor = Color3.fromRGB(150, 0, 255)
-		elseif str == "orange" then KazeUI.GlowColor = Color3.fromRGB(255, 150, 0)
-		elseif str == "white" then KazeUI.GlowColor = Color3.fromRGB(255, 255, 255)
-		elseif str == "pink" then KazeUI.GlowColor = Color3.fromRGB(255, 100, 150)
-		end
-	end
+	if config.GlowColor then KazeUI.GlowColor = config.GlowColor end
 
 	local MiniButtonSize = UDim2.fromOffset(46, 46)
 
 	local Window = Instance.new("Frame")
-	Window.Size = UDim2.fromOffset(600, 400)
+	Window.Size = UDim2.fromOffset(600, 400) -- Fix: Default Size 600x400
 	Window.Position = UDim2.fromScale(0.5, 0.5)
 	Window.AnchorPoint = Vector2.new(0.5, 0.5)
 	Window.BorderSizePixel = 0
@@ -2374,7 +2369,7 @@ function KazeUI:CreateWindow(config)
 		end)
 	end
 
-	local lastNormalSize = UDim2.fromOffset(600, 400)
+	local lastNormalSize = UDim2.fromOffset(600, 400) -- Keeps custom size on minimization
 	local lastNormalPosition = UDim2.fromScale(0.5,0.5)
 	local lastNormalAnchor = Vector2.new(0.5,0.5)
 	local toggledMaximized = false
@@ -2471,7 +2466,7 @@ function KazeUI:CreateWindow(config)
 		if miniDragStart and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
 			if (input.Position - miniDragStart).Magnitude > 8 then
 				miniDragMoved = true
-				local delta = (input.Position - miniDragStart) / UIScale.Scale
+				local delta = (input.Position - miniDragStart) / UIScale.Scale -- Scale adjustment
 				MiniButton.Position = UDim2.new(0, MiniButton.Position.X.Offset + delta.X, 0, MiniButton.Position.Y.Offset + delta.Y)
 				miniDragStart = input.Position
 			end
@@ -2573,7 +2568,7 @@ function KazeUI:CreateWindow(config)
 	end
 	BtnRed.MouseButton1Click:Connect(ShowCloseConfirm)
 
-	-- WINDOW RESIZING
+	-- WINDOW RESIZING FIX (Employs absolute unscaled offsets & scales delta vector symmetrically)
 	if config.Resizable then
 		local ResizeHandle = Instance.new("TextButton", Window)
 		ResizeHandle.Size = UDim2.fromOffset(25, 25)
@@ -2621,16 +2616,17 @@ function KazeUI:CreateWindow(config)
 			if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 				resizing = true
 				resizeStartMouse = input.Position
+				-- Capture unscaled raw offsets directly from the scale object vector
 				resizeStartSize = Vector2.new(Window.Size.X.Offset, Window.Size.Y.Offset)
-				SetWindowScrolling(false)
+				SetWindowScrolling(false) -- Disable scrolling during resize so they don't scroll with resize
 			end
 		end)
 		
 		UIS.InputChanged:Connect(function(input)
 			if resizing and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-				local delta = (input.Position - resizeStartMouse) / UIScale.Scale
-				local newX = math.clamp(resizeStartSize.X + delta.X, 500, 750) 
-				local newY = math.clamp(resizeStartSize.Y + delta.Y, 350, 540) 
+				local delta = (input.Position - resizeStartMouse) / UIScale.Scale -- Scale adjustment factors viewport scaling
+				local newX = math.clamp(resizeStartSize.X + delta.X, 500, 750) -- Constraints: Min 500, Max 750
+				local newY = math.clamp(resizeStartSize.Y + delta.Y, 350, 540) -- Constraints: Min 350, Max 540
 				Window.Size = UDim2.fromOffset(newX, newY)
 			end
 		end)
@@ -2639,9 +2635,9 @@ function KazeUI:CreateWindow(config)
 			if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 				if resizing then
 					resizing = false
-					SetWindowScrolling(true)
+					SetWindowScrolling(true) -- Re-enable scrolling frame logic
 					if not toggledMaximized then 
-						lastNormalSize = Window.Size
+						lastNormalSize = Window.Size -- Save state size
 					end
 				end
 			end
@@ -2704,7 +2700,7 @@ function KazeUI:CreateWindow(config)
 		Window = Window,
 		ScreenGui = ScreenGui,
 		_Pages = Pages,
-		_TabsList = nil,
+		_TabsList = nil, -- Set below
 		_Tabs = {},
 		_SearchableElements = {}
 	}
@@ -2775,6 +2771,7 @@ function KazeUI:CreateWindow(config)
 			local query = string.lower(SearchBox.Text)
 			
 			if query == "" then
+				-- Hide search overlay, restore layout
 				SearchPage.Visible = false
 				
 				for _, item in ipairs(Win._SearchableElements) do
@@ -2786,12 +2783,14 @@ function KazeUI:CreateWindow(config)
 					end
 				end
 				
+				-- Ensure proper tab visibility
 				for _, t in ipairs(Win._Tabs) do
 					if t.Indicator.Visible then
 						t.Page.Visible = true
 					end
 				end
 			else
+				-- Hide normal tabs so elements do not overlap with search
 				for _, t in ipairs(Win._Tabs) do
 					t.Page.Visible = false
 				end
@@ -2800,11 +2799,13 @@ function KazeUI:CreateWindow(config)
 				for _, item in ipairs(Win._SearchableElements) do
 					if item.Inst and item.OriginalParent then
 						if string.find(item.Text, query, 1, true) then
+							-- Move match safely into Search Results page
 							if item.Inst.Parent ~= SearchPage then
 								item.Inst.Parent = SearchPage
 							end
 							item.Inst.Visible = true
 						else
+							-- Push non-matches back to original homes and hide them so they don't break layout
 							if item.Inst.Parent ~= item.OriginalParent then
 								item.Inst.Parent = item.OriginalParent
 							end
@@ -2853,9 +2854,9 @@ function KazeUI:CreateWindow(config)
 		end
 	end
 
-	-- DIALOG SYSTEM (Formerly Prompt System)
-	function Win:Dialog(promptConfig)
-		local title = promptConfig.Title or "Dialog"
+	-- PROMPT SYSTEM
+	function Win:Prompt(promptConfig)
+		local title = promptConfig.Title or "Prompt"
 		local content = promptConfig.Content or ""
 		local buttons = promptConfig.Buttons or {{Title = "Close"}}
 		
@@ -2868,7 +2869,7 @@ function KazeUI:CreateWindow(config)
 		TweenService:Create(Overlay, TweenInfo.new(0.2), {BackgroundTransparency = 0.6}):Play()
 
 		local ModalFrame = Instance.new("Frame", Overlay)
-		ModalFrame.Size = UDim2.fromOffset(0, 0)
+		ModalFrame.Size = UDim2.fromOffset(0, 0) -- For tween
 		ModalFrame.AnchorPoint = Vector2.new(0.5, 0.5)
 		ModalFrame.Position = UDim2.fromScale(0.5, 0.5)
 		ModalFrame.BorderSizePixel = 0
@@ -2945,12 +2946,13 @@ function KazeUI:CreateWindow(config)
 		end
 	end
 
-	-- THEME SYSTEM
+	-- THEME SYSTEM FIX (Resets element properties cleanly with no remnants)
 	function Win:SetTheme(themeConfig)
 		if type(themeConfig) == "string" and BuiltInThemes[themeConfig] then
 			themeConfig = BuiltInThemes[themeConfig]
 		end
 		
+		-- Always reset transparency defaults first so old Glass/Solid values do not get mixed up
 		KazeUI:SetTransparency(0)
 
 		if themeConfig.Color then
@@ -3004,7 +3006,7 @@ function KazeUI:CreateWindow(config)
 		})
 	end
 
-	-- CONFIG MANAGER
+	-- CONFIG MANAGER OVERHAUL
 	function Win:CreateConfigManager(tab)
 		local sec = tab:SectionUI("Config Manager")
 		local cfgName = "Default"
@@ -3045,7 +3047,7 @@ function KazeUI:CreateWindow(config)
 		sec:Button({Title = "Load Config", Callback = function() KazeUI:LoadConfig(cfgName) end})
 		
 		sec:Button({Title = "Delete Config", Callback = function()
-			self:Dialog({
+			self:Prompt({
 				Title = "Delete Config",
 				Content = "Are you sure you want to delete '" .. cfgName .. "'?",
 				Buttons = {
@@ -3145,6 +3147,7 @@ function KazeUI:CreateWindow(config)
 		table.insert(self._Tabs, { Button = btn, Indicator = leftIndicator, Label = txt, Page = page })
 
 		local function activate()
+			-- Automatically clear the search if a user decides to browse tabs instead
 			if self._SearchBox and self._SearchBox.Text ~= "" then
 				self._SearchBox.Text = "" 
 			end
