@@ -1,6 +1,5 @@
-
 --[[
-	Kaze UI Library
+	Kaze UI Library (Sunk Touch Drag Fix)
 	Optimized: Deep Obsidian Only, Dynamic Tab Text Scaling (No "..." Dots), Wider Sidebar, Safe Close Dialog Margin Padding
 	Added: New Dynamic Keybind Component, Full Config Manager Overhaul, Memory Leak Prevention
 	Fixes: Text Clipping/Overflow fixed globally, Multi-Dropdown Color Hover State Fixed
@@ -8,6 +7,7 @@
 	Added: Smooth & Responsive Continuous Window Resizing with UIScale correction, PC Hover Cursor (↘), and Multi-Touch Protection
 	Updated: Adaptive Device & Monitor Scale Protection Engine (0.85x Mobile / 1.0x Tablet / 1.15x Desktop Wide)
 	Updated: Adjusted Default Window Size to 600x400
+	Resolved: Touch / Mouse drag interference with game world camera movement and character rotation
 --]]
 
 local KazeUI = {}
@@ -19,6 +19,7 @@ local TweenService = game:GetService("TweenService")
 local UIS = game:GetService("UserInputService")
 local TextService = game:GetService("TextService")
 local HttpService = game:GetService("HttpService")
+local CAS = game:GetService("ContextActionService")
 local LP = Players.LocalPlayer
 local Mouse = LP:GetMouse()
 
@@ -120,6 +121,35 @@ end
 UpdateScale()
 workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(UpdateScale)
 
+-- Camera / Touch Sinking Helpers to prevent touch passing to the workspace
+local isInputLocked = false
+local function LockInputs()
+	if isInputLocked then return end
+	isInputLocked = true
+	-- Intercept camera rotation inputs at a higher priority than Roblox's PlayerScripts
+	CAS:BindActionAtPriority(
+		"KazeUIDragSink",
+		function()
+			return Enum.ContextActionResult.Sink
+		end,
+		false,
+		Enum.ContextActionPriority.High.Value + 1500,
+		Enum.UserInputType.Touch,
+		Enum.UserInputType.MouseMovement
+	)
+end
+
+local function UnlockInputs()
+	if not isInputLocked then return end
+	isInputLocked = false
+	CAS:UnbindAction("KazeUIDragSink")
+end
+
+-- Ensure inputs are unlocked if GUI gets destroyed unexpectedly
+ScreenGui.Destroying:Connect(function()
+	UnlockInputs()
+end)
+
 -- Auto-Icon Fetcher via HttpGet
 local IconsMap = {}
 pcall(function()
@@ -173,7 +203,10 @@ local function MakeDraggable(dragPart, targetPart)
 		local scale = UIScale.Scale
 		
 		if dragActive or delta.Magnitude > 8 then
-			dragActive = true
+			if not dragActive then
+				dragActive = true
+				LockInputs() -- Intercept game touch inputs when active movement threshold is met
+			end
 			targetPart.Position = UDim2.new(
 				startPos.X.Scale, startPos.X.Offset + (delta.X / scale),
 				startPos.Y.Scale, startPos.Y.Offset + (delta.Y / scale)
@@ -192,6 +225,10 @@ local function MakeDraggable(dragPart, targetPart)
 				if input.UserInputState == Enum.UserInputState.End then
 					dragging = false
 					dragInput = nil
+					if dragActive then
+						UnlockInputs() -- Release camera locks on drag release
+					end
+					dragActive = false
 				end
 			end)
 		end
@@ -1416,6 +1453,7 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 	clickDetector.InputBegan:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 			isDragging = true
+			LockInputs() -- Intercept camera inputs
 			ToggleScrollingAncestors(track, false)
 			modalLock.Visible = true
 			modalLock.Modal = true
@@ -1429,6 +1467,7 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 			endCon = UIS.InputEnded:Connect(function(endInput)
 				if endInput.UserInputType == Enum.UserInputType.MouseButton1 or endInput.UserInputType == Enum.UserInputType.Touch then
 					isDragging = false
+					UnlockInputs() -- Release camera locks on slider release
 					ToggleScrollingAncestors(track, true)
 					modalLock.Visible = false
 					modalLock.Modal = false
@@ -1439,7 +1478,12 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 		end
 	end)
 
-	wrapper.Destroying:Connect(function() modalLock:Destroy() end)
+	wrapper.Destroying:Connect(function() 
+		modalLock:Destroy() 
+		if isDragging then
+			UnlockInputs()
+		end
+	end)
 
 	local api = {
 		Wrapper = wrapper,
@@ -1631,6 +1675,7 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 	svMap.InputBegan:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 			draggingMap = true
+			LockInputs() -- Intercept camera inputs during canvas adjustments
 			ToggleScrollingAncestors(svMap, false)
 			updateSV(input)
 		end
@@ -1639,6 +1684,7 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 	hueSlider.InputBegan:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 			draggingHue = true
+			LockInputs() -- Intercept camera inputs during slider adjustments
 			ToggleScrollingAncestors(hueSlider, false)
 			updateHue(input)
 		end
@@ -1656,9 +1702,18 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 
 	UIS.InputEnded:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			if draggingMap or draggingHue then
+				UnlockInputs() -- Release camera locks
+			end
 			draggingMap = false
 			draggingHue = false
 			ToggleScrollingAncestors(svMap, true)
+		end
+	end)
+
+	wrapper.Destroying:Connect(function()
+		if draggingMap or draggingHue then
+			UnlockInputs()
 		end
 	end)
 
@@ -1698,7 +1753,7 @@ local function CreateKeybindInput(parentFrame, title, defaultKey, callback, flag
 	local isBinding = false
 	
 	local measuredWidth = 598 * 0.92
-	if parentFrame and parentFrame.AbsoluteSize and parentFrame.AbsoluteSize.X > 0 then measuredWidth = parentFrame.AbsoluteSize.X * 0.95 end
+	if parentFrame and parentFrame.AbsoluteSize/parentFrame.AbsoluteSize.X > 0 then measuredWidth = parentFrame.AbsoluteSize.X * 0.95 end
 	local textContainerWidth = measuredWidth - 24 - 90
 	
 	local titleHeight = 0
@@ -2284,7 +2339,10 @@ function KazeUI:CreateWindow(config)
 	UIS.InputChanged:Connect(function(input)
 		if miniDragStart and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
 			if (input.Position - miniDragStart).Magnitude > 8 then
-				miniDragMoved = true
+				if not miniDragMoved then
+					miniDragMoved = true
+					LockInputs() -- Intercept camera input during mini-button dragging
+				end
 				-- Update position manually
 				local delta = input.Position - miniDragStart
 				MiniButton.Position = UDim2.new(
@@ -2300,6 +2358,9 @@ function KazeUI:CreateWindow(config)
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 			if miniDragStart and not miniDragMoved then
 				unminimizeWindow()
+			end
+			if miniDragMoved then
+				UnlockInputs() -- Release camera lock
 			end
 			miniDragStart = nil
 			miniDragMoved = false
@@ -2520,6 +2581,7 @@ function KazeUI:CreateWindow(config)
 			end
 
 			isResizing = true
+			LockInputs() -- Intercept camera inputs during resize drag operations
 			resizeStartSize = Vector2.new(Window.AbsoluteSize.X / UIScale.Scale, Window.AbsoluteSize.Y / UIScale.Scale)
 			resizeStartInput = input.Position
 
@@ -2548,6 +2610,7 @@ function KazeUI:CreateWindow(config)
 			end
 			isResizing = false
 			resizeTouchInput = nil
+			UnlockInputs() -- Release camera lock
 			ToggleScrollingAncestors(ResizeHandle, true)
 			Mouse.Icon = ""
 			TweenService:Create(ResizeHandle, TweenInfo.new(0.12), {ImageColor3 = Color3.fromRGB(150, 150, 150)}):Play()
