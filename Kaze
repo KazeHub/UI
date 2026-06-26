@@ -45,7 +45,7 @@ local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "KazeUI"
 ScreenGui.ResetOnSpawn = false
 ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-ScreenGui.IgnoreGuiInset = false -- Dynamic Safe Area & Notch respect enabled
+ScreenGui.IgnoreGuiInset = true -- True so we can handle custom safe zones manually!
 
 local success, parent = pcall(function() return game:GetService("CoreGui") end)
 if not success or not parent then
@@ -108,10 +108,12 @@ local function ApplySafeArea()
 		safePadding.Name = "SafeAreaPadding"
 		safePadding.Parent = ScreenGui
 	end
-	safePadding.PaddingTop = UDim.new(0, top > 0 and top or 10)
-	safePadding.PaddingBottom = UDim.new(0, bottom > 0 and bottom or 10)
-	safePadding.PaddingLeft = UDim.new(0, 10)
-	safePadding.PaddingRight = UDim.new(0, 10)
+	
+	-- Safely apply padding to compensate for top/bottom margins
+	safePadding.PaddingTop = UDim.new(0, top > 0 and top or 12)
+	safePadding.PaddingBottom = UDim.new(0, bottom > 0 and bottom or 12)
+	safePadding.PaddingLeft = UDim.new(0, 12)
+	safePadding.PaddingRight = UDim.new(0, 12)
 end
 
 ApplySafeArea()
@@ -391,6 +393,15 @@ function KazeUI:SaveConfig(name)
 	end
 end
 
+-- Safely toggles scrollbars in scrolling frames when dragging UI widgets
+local function ToggleScrollingAncestors(element, state)
+	local current = element.Parent
+	while current do
+		if current:IsA("ScrollingFrame") then current.ScrollingEnabled = state end
+		current = current.Parent
+	end
+end
+
 function KazeUI:LoadConfig(name)
 	if readfile then
 		local s, res = pcall(function() return readfile("KazeUI_"..name..".json") end)
@@ -410,15 +421,10 @@ function KazeUI:LoadConfig(name)
 	end
 end
 
-local function ToggleScrollingAncestors(element, state)
-	local current = element.Parent
-	while current do
-		if current:IsA("ScrollingFrame") then current.ScrollingEnabled = state end
-		current = current.Parent
-	end
-end
+-- =========================================================================
+-- COMPONENT FACTORIES
+-- =========================================================================
 
--- Component factories
 local function CreateDropdown(parentFrame, title, options, defaultOption, callback, isMulti, flag)
 	title = tostring(title or "Dropdown")
 	options = type(options) == "table" and options or {}
@@ -1190,6 +1196,13 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 	bodyLabel.TextWrapped = true
 	bodyLabel.TextXAlignment = Enum.TextXAlignment.Left
 	bodyLabel.TextYAlignment = Enum.TextYAlignment.Top
+	
+	local clickDetector = Instance.new("TextButton")
+	clickDetector.Size = UDim2.fromScale(1, 1)
+	clickDetector.BackgroundTransparency = 1
+	clickDetector.Text = ""
+	clickDetector.ZIndex = 10
+	clickDetector.Parent = paraFrame
 	
 	local function setToggleState(newState, instant)
 		state = newState
