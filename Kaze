@@ -1,11 +1,10 @@
-
---[[
-	Kaze UI Library
+-- [[
+	Kaze UI Library (Enhanced Edition)
 	Optimized: Deep Obsidian Only, Dynamic Tab Text Scaling (No "..." Dots), Wider Sidebar, Safe Close Dialog Margin Padding
 	Added: New Dynamic Keybind Component, Full Config Manager Overhaul, Memory Leak Prevention
+	Added: Built-in Sidebar Tab & Element Search, Custom Page Search Bar Component
 	Fixes: Text Clipping/Overflow fixed globally, Multi-Dropdown Color Hover State Fixed
 	Critical Fix: Rendered Notifications on a separate ScreenGui with DisplayOrder = 999999 to prevent them from drawing behind the main Window
-	New Feature: Integrated Dynamic SearchBar component with automated SearchText routing across all components.
 --]]
 
 local KazeUI = {}
@@ -394,9 +393,110 @@ local function ToggleScrollingAncestors(element, state)
 	end
 end
 
--- ==========================================
--- Core Components Factories
--- ==========================================
+-- Component factories
+local function CreateSearchBarInput(parentPage, titleText, placeholderText, callback)
+	titleText = tostring(titleText or "Search")
+	placeholderText = tostring(placeholderText or "Type to filter...")
+
+	local wrapper = Instance.new("Frame")
+	wrapper.Name = "SearchBarWrapper"
+	wrapper.Size = UDim2.new(1, 0, 0, 45)
+	wrapper.BackgroundTransparency = 1
+	wrapper.Parent = parentPage
+	wrapper:SetAttribute("SearchText", "sc_ignore_searchbar")
+
+	local searchFrame = Instance.new("Frame")
+	searchFrame.Name = "SearchBarFrame"
+	searchFrame.AnchorPoint = Vector2.new(0.5, 0.5)
+	searchFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
+	searchFrame.Size = UDim2.new(0.95, 0, 0, 38)
+	searchFrame.BorderSizePixel = 0
+	Instance.new("UICorner", searchFrame).CornerRadius = UDim.new(0, 6)
+	searchFrame.Parent = wrapper
+	
+	KazeUI:AddPanel(searchFrame, 0.02)
+	KazeUI:AddTransparentElement(searchFrame, 0)
+
+	local frameStroke = Instance.new("UIStroke", searchFrame)
+	frameStroke.Thickness = 1.5
+	frameStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+	frameStroke.Color = Color3.fromRGB(45, 45, 50)
+
+	local label = Instance.new("TextLabel", searchFrame)
+	label.Size = UDim2.new(0.3, 0, 1, 0)
+	label.Position = UDim2.fromOffset(12, 0)
+	label.BackgroundTransparency = 1
+	label.Text = titleText
+	label.TextColor3 = Color3.fromRGB(255, 255, 255)
+	label.Font = Enum.Font.GothamBold
+	label.TextSize = 14
+	label.TextXAlignment = Enum.TextXAlignment.Left
+
+	local textBox = Instance.new("TextBox", searchFrame)
+	textBox.Size = UDim2.new(0.65, -16, 0, 28)
+	textBox.Position = UDim2.new(0.35, 4, 0.5, -14)
+	textBox.BorderSizePixel = 0
+	textBox.PlaceholderText = placeholderText
+	textBox.PlaceholderColor3 = Color3.fromRGB(120, 120, 125)
+	textBox.Text = ""
+	textBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+	textBox.Font = Enum.Font.Gotham
+	textBox.TextSize = 13
+	textBox.TextXAlignment = Enum.TextXAlignment.Left
+	textBox.ClearTextOnFocus = false
+	
+	Instance.new("UICorner", textBox).CornerRadius = UDim.new(0, 5)
+	KazeUI:AddPanel(textBox, -0.02)
+	KazeUI:AddTransparentElement(textBox, 0)
+
+	local inputPadding = Instance.new("UIPadding", textBox)
+	inputPadding.PaddingLeft = UDim.new(0, 8)
+
+	textBox.Focused:Connect(function() StartNeonLoop(frameStroke) end)
+	textBox.FocusLost:Connect(function() 
+		StopNeonLoop(frameStroke) 
+		frameStroke.Color = Color3.fromRGB(45, 45, 50) 
+	end)
+
+	textBox:GetPropertyChangedSignal("Text"):Connect(function()
+		local query = string.lower(textBox.Text)
+		
+		for _, child in ipairs(parentPage:GetChildren()) do
+			if child ~= wrapper and not child:IsA("UIListLayout") and not child:IsA("UIPadding") then
+				local searchTag = child:GetAttribute("SearchText")
+				if not searchTag then
+					local foundLabel = child:FindFirstChild("Title", true) or child:FindFirstChildOfClass("TextLabel", true)
+					searchTag = foundLabel and string.lower(foundLabel.Text) or ""
+				end
+
+				-- Critical Fix: Prevent searchbar from hiding itself
+				if searchTag == "sc_ignore_searchbar" then
+					child.Visible = true
+				elseif query == "" or string.find(string.lower(searchTag), query, 1, true) then
+					child.Visible = true
+				else
+					child.Visible = false
+				end
+			end
+		end
+
+		if type(callback) == "function" then
+			task.spawn(callback, textBox.Text)
+		end
+	end)
+
+	return {
+		Wrapper = wrapper,
+		Frame = searchFrame,
+		Clear = function()
+			textBox.Text = ""
+		end,
+		GetText = function()
+			return textBox.Text
+		end
+	}
+end
+
 local function CreateDropdown(parentFrame, title, options, defaultOption, callback, isMulti, flag)
 	title = tostring(title or "Dropdown")
 	options = type(options) == "table" and options or {}
@@ -747,7 +847,6 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 		end,
 		SetText = function(self, newTitle)
 			titleLabel.Text = newTitle
-			wrapper:SetAttribute("SearchText", newTitle)
 		end
 	}
 end
@@ -774,7 +873,7 @@ local function CreateParagraph(parentFrame, title, body)
 	wrapper.BackgroundTransparency = 1
 	wrapper.Parent = parentFrame
 	wrapper.AutomaticSize = Enum.AutomaticSize.Y
-	wrapper:SetAttribute("SearchText", title .. " " .. body)
+	wrapper:SetAttribute("SearchText", title)
 	
 	local paraFrame = Instance.new("Frame")
 	paraFrame.AnchorPoint = Vector2.new(0.5, 0)
@@ -836,7 +935,6 @@ local function CreateParagraph(parentFrame, title, body)
 		SetText = function(self, newTitle, newBody)
 			if ptitleLabel and newTitle then ptitleLabel.Text = newTitle end
 			if bodyLabel and newBody then bodyLabel.Text = newBody end
-			wrapper:SetAttribute("SearchText", (newTitle or title) .. " " .. (newBody or body))
 		end
 	}
 end
@@ -864,7 +962,7 @@ local function CreateClickableParagraph(parentFrame, title, body, callback)
 	wrapper.BackgroundTransparency = 1
 	wrapper.Parent = parentFrame
 	wrapper.AutomaticSize = Enum.AutomaticSize.Y
-	wrapper:SetAttribute("SearchText", title .. " " .. body)
+	wrapper:SetAttribute("SearchText", title)
 	
 	local paraFrame = Instance.new("Frame")
 	paraFrame.AnchorPoint = Vector2.new(0.5, 0)
@@ -963,7 +1061,6 @@ local function CreateClickableParagraph(parentFrame, title, body, callback)
 		SetText = function(self, newTitle, newBody)
 			if ptitleLabel and newTitle then ptitleLabel.Text = newTitle end
 			if bodyLabel and newBody then bodyLabel.Text = newBody end
-			wrapper:SetAttribute("SearchText", (newTitle or title) .. " " .. (newBody or body))
 		end
 	}
 end
@@ -992,7 +1089,7 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 	wrapper.BackgroundTransparency = 1
 	wrapper.Parent = parentFrame
 	wrapper.AutomaticSize = Enum.AutomaticSize.Y
-	wrapper:SetAttribute("SearchText", title .. " " .. body)
+	wrapper:SetAttribute("SearchText", title)
 	
 	local paraFrame = Instance.new("Frame")
 	paraFrame.AnchorPoint = Vector2.new(0.5, 0)
@@ -1120,7 +1217,6 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 		SetText = function(self, newTitle, newBody)
 			if ptitleLabel and newTitle then ptitleLabel.Text = newTitle end
 			if bodyLabel and newBody then bodyLabel.Text = newBody end
-			wrapper:SetAttribute("SearchText", (newTitle or title) .. " " .. (newBody or body))
 		end
 	}
 end
@@ -1240,7 +1336,6 @@ local function CreateTextBoxInput(parentFrame, title, placeholder, defaultVal, c
 		SetPlaceholder = function(self, val) textBox.PlaceholderText = val end,
 		SetTitle = function(self, newTitle)
 			if ptitleLabel and newTitle then ptitleLabel.Text = newTitle end
-			wrapper:SetAttribute("SearchText", newTitle)
 		end
 	}
 end
@@ -1435,7 +1530,6 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 		end,
 		SetText = function(self, newTitle)
 			if ptitleLabel and newTitle then ptitleLabel.Text = newTitle end
-			wrapper:SetAttribute("SearchText", newTitle)
 		end
 	}
 	RegisterFlag(flag, function() return value end, function(val) api:SetValue(val) end)
@@ -1671,7 +1765,6 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 		end,
 		SetText = function(self, newTitle)
 			titleLabel.Text = newTitle
-			wrapper:SetAttribute("SearchText", newTitle)
 		end
 	}
 end
@@ -1823,125 +1916,12 @@ local function CreateKeybindInput(parentFrame, title, defaultKey, callback, flag
 		Wrapper = wrapper,
 		SetText = function(self, newTitle)
 			if ptitleLabel and newTitle then ptitleLabel.Text = newTitle end
-			wrapper:SetAttribute("SearchText", newTitle)
 		end,
 		SetKey = function(self, newKey)
 			currentKey = newKey
 			bindLabel.Text = currentKey == Enum.KeyCode.Unknown and "None" or currentKey.Name
 		end
 	}
-end
-
-local function CreateSearchBarInput(parentPage, titleText, placeholderText, callback)
-    titleText = tostring(titleText or "Search")
-    placeholderText = tostring(placeholderText or "Type to filter...")
-
-    -- 1. Create Wrapper Layout (Standard for Kaze UI structure)
-    local wrapper = Instance.new("Frame")
-    wrapper.Name = "SearchBarWrapper"
-    wrapper.Size = UDim2.new(1, 0, 0, 45)
-    wrapper.BackgroundTransparency = 1
-    wrapper.Parent = parentPage
-
-    -- 2. Main Search Bar Frame
-    local searchFrame = Instance.new("Frame")
-    searchFrame.Name = "SearchBarFrame"
-    searchFrame.AnchorPoint = Vector2.new(0.5, 0.5)
-    searchFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
-    searchFrame.Size = UDim2.new(0.95, 0, 0, 38)
-    searchFrame.BorderSizePixel = 0
-    Instance.new("UICorner", searchFrame).CornerRadius = UDim.new(0, 6)
-    searchFrame.Parent = wrapper
-    
-    -- Uses standard deep obsidian Kaze theme engine
-    KazeUI:AddPanel(searchFrame, 0.02)
-    KazeUI:AddTransparentElement(searchFrame, 0)
-
-    -- 3. Neon Outline (Matching library's design tokens)
-    local frameStroke = Instance.new("UIStroke", searchFrame)
-    frameStroke.Thickness = 1.5
-    frameStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-    frameStroke.Color = Color3.fromRGB(45, 45, 50)
-
-    -- 4. Left Label Text
-    local label = Instance.new("TextLabel", searchFrame)
-    label.Size = UDim2.new(0.3, 0, 1, 0)
-    label.Position = UDim2.fromOffset(12, 0)
-    label.BackgroundTransparency = 1
-    label.Text = titleText
-    label.TextColor3 = Color3.fromRGB(255, 255, 255)
-    label.Font = Enum.Font.GothamBold
-    label.TextSize = 14
-    label.TextXAlignment = Enum.TextXAlignment.Left
-
-    -- 5. TextBox Input Element
-    local textBox = Instance.new("TextBox", searchFrame)
-    textBox.Size = UDim2.new(0.65, -16, 0, 28)
-    textBox.Position = UDim2.new(0.35, 4, 0.5, -14)
-    textBox.BorderSizePixel = 0
-    textBox.PlaceholderText = placeholderText
-    textBox.PlaceholderColor3 = Color3.fromRGB(120, 120, 125)
-    textBox.Text = ""
-    textBox.TextColor3 = Color3.fromRGB(255, 255, 255)
-    textBox.Font = Enum.Font.Gotham
-    textBox.TextSize = 13
-    textBox.TextXAlignment = Enum.TextXAlignment.Left
-    textBox.ClearTextOnFocus = false
-    
-    Instance.new("UICorner", textBox).CornerRadius = UDim.new(0, 5)
-    KazeUI:AddPanel(textBox, -0.02)
-    KazeUI:AddTransparentElement(textBox, 0)
-
-    local inputPadding = Instance.new("UIPadding", textBox)
-    inputPadding.PaddingLeft = UDim.new(0, 8)
-
-    -- Glow/Neon effect when clicking the search box
-    textBox.Focused:Connect(function() StartNeonLoop(frameStroke) end)
-    textBox.FocusLost:Connect(function() 
-        StopNeonLoop(frameStroke) 
-        frameStroke.Color = Color3.fromRGB(45, 45, 50) 
-    end)
-
-    -- 6. Dynamic Filtering Logic
-    textBox:GetPropertyChangedSignal("Text"):Connect(function()
-        local query = string.lower(textBox.Text)
-        
-        -- Loop through every component on the page
-        for _, child in ipairs(parentPage:GetChildren()) do
-            -- Skip layouts, spacing padding, and the Search Bar itself
-            if child ~= wrapper and not child:IsA("UIListLayout") and not child:IsA("UIPadding") then
-                
-                -- Look up search identifiers (using a registered search text string)
-                local searchTag = child:GetAttribute("SearchText")
-                if not searchTag then
-                    -- Fallback: Look for any embedded labels inside the UI elements
-                    local foundLabel = child:FindFirstChild("Title", true) or child:FindFirstChildOfClass("TextLabel", true)
-                    searchTag = foundLabel and string.lower(foundLabel.Text) or ""
-                end
-
-                if query == "" or string.find(string.lower(searchTag), query, 1, true) then
-                    child.Visible = true
-                else
-                    child.Visible = false
-                end
-            end
-        end
-
-        if type(callback) == "function" then
-            task.spawn(callback, textBox.Text)
-        end
-    end)
-
-    return {
-        Wrapper = wrapper,
-        Frame = searchFrame,
-        Clear = function()
-            textBox.Text = ""
-        end,
-        GetText = function()
-            return textBox.Text
-        end
-    }
 end
 
 local function CreateVisualSectionDivider(parentFrame, titleArg)
@@ -1951,7 +1931,7 @@ local function CreateVisualSectionDivider(parentFrame, titleArg)
 	wrapper.Size = UDim2.new(0.95, 0, 0, 32)
 	wrapper.BackgroundTransparency = 1
 	wrapper.Parent = parentFrame
-	wrapper:SetAttribute("SearchText", "sc_ignore_section")
+	wrapper:SetAttribute("SearchText", title)
 
 	local label = Instance.new("TextLabel")
 	label.Size = UDim2.new(1, -12, 1, 0)
@@ -2074,18 +2054,6 @@ AttachElementsToAPI = function(apiTable, parentFrame)
 		return CreateKeybindInput(parentFrame, title, def, cb, flag)
 	end
 
-	function apiTable:SearchBar(arg1, arg2, arg3)
-		local title, place, cb
-		if type(arg1) == "table" then
-			title, place, cb = arg1.Title, arg1.Placeholder, arg1.Callback
-		else
-			title, place, cb = arg1, arg2, arg3
-		end
-		local el = CreateSearchBarInput(parentFrame, title, place, cb)
-		el.Wrapper:SetAttribute("SearchText", "sc_ignore_searchbar")
-		return el
-	end
-
 	function apiTable:SectionUI(arg1)
 		local title = type(arg1) == "table" and arg1.Title or arg1
 		return CreateCollapsibleSection(parentFrame, title)
@@ -2094,6 +2062,19 @@ AttachElementsToAPI = function(apiTable, parentFrame)
 	function apiTable:Section(arg1)
 		local title = type(arg1) == "table" and arg1.Title or arg1
 		return CreateVisualSectionDivider(parentFrame, title)
+	end
+
+	-- Integrated Custom Search Bar Component
+	function apiTable:SearchBar(arg1, arg2, arg3)
+		local title, place, callback
+		if type(arg1) == "table" then
+			title, place, callback = arg1.Title, arg1.Placeholder, arg1.Callback
+		else
+			title, place, callback = arg1, arg2, arg3
+		end
+		local el = CreateSearchBarInput(parentFrame, title, place, callback)
+		el.Wrapper:SetAttribute("SearchText", "sc_ignore_searchbar")
+		return el
 	end
 end
 
@@ -2196,14 +2177,11 @@ CreateCollapsibleSection = function(parentFrame, titleArg)
 	AttachElementsToAPI(sectionPublic, sectionContent)
 	function sectionPublic:SetText(newText)
 		titleLabel.Text = newText
-		sectionBox:SetAttribute("SearchText", newText)
 	end
 	return sectionPublic
 end
 
--- ==========================================
--- Main Window Creation
--- ==========================================
+-- Create Window Initialization
 function KazeUI:CreateWindow(config)
 	config = config or {}
 	local Title = config.Title or "Kaze UI"
@@ -2521,6 +2499,47 @@ function KazeUI:CreateWindow(config)
 	KazeUI:AddPanel(SideBar, 0)
 	KazeUI:AddTransparentElement(SideBar, 0)
 
+	-- BUILT-IN SIDEBAR SEARCH BAR (MATCHES SCREENSHOT)
+	local SidebarSearchFrame = Instance.new("Frame")
+	SidebarSearchFrame.Size = UDim2.new(1, -12, 0, 32)
+	SidebarSearchFrame.Position = UDim2.fromOffset(6, 6)
+	SidebarSearchFrame.BorderSizePixel = 0
+	SidebarSearchFrame.Parent = SideBar
+	Instance.new("UICorner", SidebarSearchFrame).CornerRadius = UDim.new(0, 6)
+	KazeUI:AddPanel(SidebarSearchFrame, 0.02)
+	KazeUI:AddTransparentElement(SidebarSearchFrame, 0)
+
+	local SidebarSearchStroke = Instance.new("UIStroke", SidebarSearchFrame)
+	SidebarSearchStroke.Thickness = 1.5
+	SidebarSearchStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+	SidebarSearchStroke.Color = Color3.fromRGB(45, 45, 50)
+
+	local SidebarSearchIcon = Instance.new("ImageLabel", SidebarSearchFrame)
+	SidebarSearchIcon.Size = UDim2.fromOffset(16, 16)
+	SidebarSearchIcon.Position = UDim2.fromOffset(8, 8)
+	SidebarSearchIcon.BackgroundTransparency = 1
+	SidebarSearchIcon.Image = "rbxassetid://6031154749" -- Magnifying Glass Icon
+	SidebarSearchIcon.ImageColor3 = Color3.fromRGB(150, 150, 150)
+
+	local SidebarSearchBox = Instance.new("TextBox", SidebarSearchFrame)
+	SidebarSearchBox.Size = UDim2.new(1, -36, 1, 0)
+	SidebarSearchBox.Position = UDim2.fromOffset(28, 0)
+	SidebarSearchBox.BackgroundTransparency = 1
+	SidebarSearchBox.PlaceholderText = "Search elements..."
+	SidebarSearchBox.PlaceholderColor3 = Color3.fromRGB(120, 120, 125)
+	SidebarSearchBox.Text = ""
+	SidebarSearchBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+	SidebarSearchBox.Font = Enum.Font.Gotham
+	SidebarSearchBox.TextSize = 13
+	SidebarSearchBox.TextXAlignment = Enum.TextXAlignment.Left
+	SidebarSearchBox.ClearTextOnFocus = false
+
+	SidebarSearchBox.Focused:Connect(function() StartNeonLoop(SidebarSearchStroke) end)
+	SidebarSearchBox.FocusLost:Connect(function() 
+		StopNeonLoop(SidebarSearchStroke) 
+		SidebarSearchStroke.Color = Color3.fromRGB(45, 45, 50) 
+	end)
+
 	local VertDivider = Instance.new("Frame")
 	VertDivider.Size = UDim2.new(0,2,1,0)
 	VertDivider.Position = UDim2.new(0,190,0,0)
@@ -2552,10 +2571,11 @@ function KazeUI:CreateWindow(config)
 		end
 	end)
 
+	-- Offset Tabs Scroller downward to allow the Sidebar Search Bar to fit neatly above it
 	local TabsScroller = Instance.new("ScrollingFrame")
 	TabsScroller.Parent = SideBar
-	TabsScroller.Position = UDim2.fromOffset(6,6)
-	TabsScroller.Size = UDim2.new(1, -12, 1, -12)
+	TabsScroller.Position = UDim2.fromOffset(6, 44)
+	TabsScroller.Size = UDim2.new(1, -12, 1, -50)
 	TabsScroller.BackgroundTransparency = 1
 	TabsScroller.ScrollBarThickness = 4
 	TabsScroller.CanvasSize = UDim2.new(0, 0, 0, 0)
@@ -2595,6 +2615,50 @@ function KazeUI:CreateWindow(config)
 			end
 		end
 	}
+
+	-- Set up Sidebar Search Filtering Logic
+	SidebarSearchBox:GetPropertyChangedSignal("Text"):Connect(function()
+		local query = string.lower(SidebarSearchBox.Text)
+		
+		-- 1. Filter tabs dynamically in the sidebar
+		for _, tabData in ipairs(Win._Tabs) do
+			local tabName = string.lower(tabData.Label.Text)
+			if query == "" or string.find(tabName, query, 1, true) then
+				tabData.Button.Visible = true
+			else
+				tabData.Button.Visible = false
+			end
+		end
+
+		-- 2. Filter components within the currently active page layout
+		local activePageFrame = nil
+		for _, tabData in ipairs(Win._Tabs) do
+			if tabData.Page.Visible then
+				activePageFrame = tabData.Page:FindFirstChildOfClass("ScrollingFrame")
+				break
+			end
+		end
+
+		if activePageFrame then
+			for _, child in ipairs(activePageFrame:GetChildren()) do
+				if not child:IsA("UIListLayout") and not child:IsA("UIPadding") then
+					local searchTag = child:GetAttribute("SearchText")
+					if not searchTag then
+						local foundLabel = child:FindFirstChild("Title", true) or child:FindFirstChildOfClass("TextLabel", true)
+						searchTag = foundLabel and string.lower(foundLabel.Text) or ""
+					end
+
+					if searchTag == "sc_ignore_searchbar" then
+						child.Visible = true
+					elseif query == "" or string.find(string.lower(searchTag), query, 1, true) then
+						child.Visible = true
+					else
+						child.Visible = false
+					end
+				end
+			end
+		end
+	end)
 
 	function Win:CreateConfigManager(tab)
 		local sec = tab:SectionUI("Config Manager")
@@ -2761,6 +2825,31 @@ function KazeUI:CreateWindow(config)
 			page.Visible = true
 			txt.TextColor3 = Color3.fromRGB(255, 255, 255)
 			txt.Font = Enum.Font.GothamBold
+
+			-- Re-apply search filtering context on Tab Activation
+			if SidebarSearchBox then
+				local query = string.lower(SidebarSearchBox.Text)
+				local activePageFrame = page:FindFirstChildOfClass("ScrollingFrame")
+				if activePageFrame then
+					for _, child in ipairs(activePageFrame:GetChildren()) do
+						if not child:IsA("UIListLayout") and not child:IsA("UIPadding") then
+							local searchTag = child:GetAttribute("SearchText")
+							if not searchTag then
+								local foundLabel = child:FindFirstChild("Title", true) or child:FindFirstChildOfClass("TextLabel", true)
+								searchTag = foundLabel and string.lower(foundLabel.Text) or ""
+							end
+
+							if searchTag == "sc_ignore_searchbar" then
+								child.Visible = true
+							elseif query == "" or string.find(string.lower(searchTag), query, 1, true) then
+								child.Visible = true
+							else
+								child.Visible = false
+							end
+						end
+					end
+				end
+			end
 		end
 
 		btn.MouseEnter:Connect(function()
