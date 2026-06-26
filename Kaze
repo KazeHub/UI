@@ -5,7 +5,7 @@
 	Fixes: Text Clipping/Overflow fixed globally, Multi-Dropdown Color Hover State Fixed
 	Critical Fix: Rendered Notifications on a separate ScreenGui with DisplayOrder = 999999 to prevent them from drawing behind the main Window
 	Added: Smooth & Responsive Continuous Window Resizing with UIScale correction, PC Hover Cursor (↘), and Multi-Touch Protection
-	Fixes: Robust MakeDraggable with strict thresholding and global release cleanup to prevent click misclicks
+	Updated: Adaptive Device & Monitor Scale Protection Engine (0.85x Mobile / 1.0x Tablet / 1.15x Desktop Wide)
 --]]
 
 local KazeUI = {}
@@ -79,11 +79,39 @@ NotifContainer.Parent = NotifScreenGui -- Attached to NotifScreenGui instead of 
 local UIScale = Instance.new("UIScale")
 UIScale.Parent = ScreenGui
 
+-- DEVICE & SCREEN ADAPTIVE SCALING ENGINE
 local function UpdateScale()
 	local size = workspace.CurrentCamera.ViewportSize
-	local scaleX = math.clamp(size.X / 800, 0.35, 1)
-	local scaleY = math.clamp(size.Y / 500, 0.35, 1)
-	UIScale.Scale = math.min(scaleX, scaleY)
+	local width = size.X
+	local height = size.Y
+	local minAxis = math.min(width, height)
+	
+	local targetScale = 1.0
+
+	if UIS.TouchEnabled then
+		-- Mobile Devices (Phones vs Tablets)
+		if minAxis < 500 then
+			-- Phone Resolution Layouts
+			targetScale = 0.85
+		else
+			-- Tablet Layouts
+			targetScale = 1.0
+		end
+	else
+		-- Desktop / PC Layouts
+		if width >= 1920 or height >= 1080 then
+			-- Large Monitor Resolution
+			targetScale = 1.15
+		elseif width <= 1366 then
+			-- Lower laptop screen resolutions / smaller physical monitors
+			targetScale = 0.95
+		else
+			-- Standard PC Desktop Size
+			targetScale = 1.0
+		end
+	end
+
+	UIScale.Scale = targetScale
 	ScreenGui.IgnoreGuiInset = true
 end
 
@@ -131,55 +159,50 @@ local function FormatImage(id)
 	return "rbxassetid://" .. clean
 end
 
--- Robust Draggable System with clean Drag Threshold limits to prevent misclick dragging
+-- Threshold dragging to prevent minimize misclicks (Scale-adjusted for fluid dragging)
 local function MakeDraggable(dragPart, targetPart)
 	local dragging = false
-	local dragStart = nil
-	local startPos = nil
+	local dragInput, dragStart, startPos
 	local dragActive = false
 	
-	local inputBeganConn, inputChangedConn, inputEndedConn
+	local function update(input)
+		if not dragStart or not startPos then return end
+		local delta = input.Position - dragStart
+		local scale = UIScale.Scale
+		
+		if dragActive or delta.Magnitude > 8 then
+			dragActive = true
+			targetPart.Position = UDim2.new(
+				startPos.X.Scale, startPos.X.Offset + (delta.X / scale),
+				startPos.Y.Scale, startPos.Y.Offset + (delta.Y / scale)
+			)
+		end
+	end
 	
-	inputBeganConn = dragPart.InputBegan:Connect(function(input)
+	dragPart.InputBegan:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 			dragging = true
 			dragActive = false
 			dragStart = input.Position
 			startPos = targetPart.Position
-		end
-	end)
-	
-	inputChangedConn = UIS.InputChanged:Connect(function(input)
-		if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-			if not dragStart or not startPos then return end
-			local delta = input.Position - dragStart
-			local scale = UIScale.Scale
 			
-			-- Strict 8-pixel threshold in screen coordinates to decouple accidental wiggles from clicks
-			if dragActive or delta.Magnitude > 8 then
-				dragActive = true
-				targetPart.Position = UDim2.new(
-					startPos.X.Scale, startPos.X.Offset + (delta.X / scale),
-					startPos.Y.Scale, startPos.Y.Offset + (delta.Y / scale)
-				)
-			end
+			input.Changed:Connect(function()
+				if input.UserInputState == Enum.UserInputState.End then
+					dragging = false
+					dragInput = nil
+				end
+			end)
 		end
 	end)
 	
-	inputEndedConn = UIS.InputEnded:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-			dragging = false
-			dragActive = false
-			dragStart = nil
-			startPos = nil
+	dragPart.InputChanged:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+			dragInput = input
 		end
 	end)
 	
-	-- Automatic Connection GC on Destruction
-	dragPart.Destroying:Connect(function()
-		if inputBeganConn then inputBeganConn:Disconnect() end
-		if inputChangedConn then inputChangedConn:Disconnect() end
-		if inputEndedConn then inputEndedConn:Disconnect() end
+	UIS.InputChanged:Connect(function(input)
+		if input == dragInput and dragging then update(input) end
 	end)
 end
 
@@ -1921,7 +1944,7 @@ AttachElementsToAPI = function(apiTable, parentFrame)
 	end
 
 	function apiTable:Dropdown(arg1, arg2, arg3, arg4, arg5, arg6)
-		local title, vals, def, multi, callback, flag
+		local title, vals, def, callback, multi, flag
 		if type(arg1) == "table" then
 			title, vals, def, multi, callback, flag = arg1.Title, (arg1.Values or arg1.Options), arg1.Default, (arg1.Multi or false), arg1.Callback, arg1.Flag
 		else
@@ -2289,10 +2312,10 @@ function KazeUI:CreateWindow(config)
 			toggledMaximized = true
 			Window.AnchorPoint = Vector2.new(0.5,0.5)
 			Window.Position = UDim2.fromScale(0.5,0.5)
-			TweenService:Create(Window, TweenInfo.new(0.25, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), { Size = UDim2.fromScale(0.95,0.9) }):Play()
+			TweenService:Create(Window, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Size = UDim2.fromScale(0.95,0.9) }):Play()
 		else
 			toggledMaximized = false
-			TweenService:Create(Window, TweenInfo.new(0.25, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), { Size = lastNormalSize, Position = lastNormalPosition }):Play()
+			TweenService:Create(Window, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Size = lastNormalSize, Position = lastNormalPosition }):Play()
 			task.delay(0.25, function() Window.AnchorPoint = lastNormalAnchor end)
 		end
 	end)
