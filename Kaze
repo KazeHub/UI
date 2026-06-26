@@ -1,7 +1,8 @@
+
 --[[
 	Kaze UI Library
 	Optimized: Deep Obsidian Only, Dynamic Tab Text Scaling (No "..." Dots), Wider Sidebar, Safe Close Dialog Margin Padding
-	Added: New Dynamic Keybind Component, Full Config Manager Overhaul, Memory Leak Prevention
+	Added: New Dynamic Keybind Component, Full Config Manager Overhaul, Memory Leak Prevention, SearchBar Feature
 	Fixes: Text Clipping/Overflow fixed globally, Multi-Dropdown Color Hover State Fixed
 	Critical Fix: Rendered Notifications on a separate ScreenGui with DisplayOrder = 999999 to prevent them from drawing behind the main Window
 --]]
@@ -393,6 +394,117 @@ local function ToggleScrollingAncestors(element, state)
 end
 
 -- Component factories
+local function CreateSearchBar(parentFrame, title, placeholder, callback)
+	title = tostring(title or "Search Elements")
+	placeholder = tostring(placeholder or "Type to filter...")
+
+	local wrapper = Instance.new("Frame")
+	wrapper.Size = UDim2.new(1, 0, 0, 0)
+	wrapper.BackgroundTransparency = 1
+	wrapper.Parent = parentFrame
+	wrapper.AutomaticSize = Enum.AutomaticSize.Y
+
+	local container = Instance.new("Frame")
+	container.Name = "SearchBar_Container"
+	container.AnchorPoint = Vector2.new(0.5, 0)
+	container.Position = UDim2.new(0.5, 0, 0, 3)
+	container.Size = UDim2.new(0.95, 0, 0, 45)
+	container.BorderSizePixel = 0
+	container.Parent = wrapper
+	Instance.new("UICorner", container).CornerRadius = UDim.new(0, 8)
+	KazeUI:AddPanel(container, 0.02)
+	KazeUI:AddTransparentElement(container, 0)
+
+	local containerStroke = Instance.new("UIStroke")
+	containerStroke.Thickness = 1.5
+	containerStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+	containerStroke.Parent = container
+	StartNeonLoop(containerStroke)
+
+	local label = Instance.new("TextLabel")
+	label.Name = "Title"
+	label.Size = UDim2.new(0.35, 0, 1, 0)
+	label.Position = UDim2.new(0, 12, 0, 0)
+	label.BackgroundTransparency = 1
+	label.Text = title
+	label.TextColor3 = Color3.fromRGB(220, 220, 220)
+	label.Font = Enum.Font.GothamBold
+	label.TextSize = 14
+	label.TextXAlignment = Enum.TextXAlignment.Left
+	label.Parent = container
+
+	local textBoxWrapper = Instance.new("Frame")
+	textBoxWrapper.Size = UDim2.new(0.6, -12, 0, 30)
+	textBoxWrapper.Position = UDim2.new(0.4, 0, 0.5, -15)
+	textBoxWrapper.BorderSizePixel = 0
+	textBoxWrapper.Parent = container
+	Instance.new("UICorner", textBoxWrapper).CornerRadius = UDim.new(0, 5)
+	KazeUI:AddPanel(textBoxWrapper, -0.02)
+	KazeUI:AddTransparentElement(textBoxWrapper, 0)
+
+	local boxStroke = Instance.new("UIStroke")
+	boxStroke.Color = Color3.fromRGB(45, 45, 50)
+	boxStroke.Thickness = 1
+	boxStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+	boxStroke.Parent = textBoxWrapper
+
+	local textBox = Instance.new("TextBox")
+	textBox.Name = "Input"
+	textBox.Size = UDim2.new(1, -16, 1, 0)
+	textBox.Position = UDim2.fromOffset(8, 0)
+	textBox.BackgroundTransparency = 1
+	textBox.Text = ""
+	textBox.PlaceholderText = placeholder
+	textBox.PlaceholderColor3 = Color3.fromRGB(100, 100, 105)
+	textBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+	textBox.Font = Enum.Font.Gotham
+	textBox.TextSize = 13
+	textBox.TextXAlignment = Enum.TextXAlignment.Left
+	textBox.ClearTextOnFocus = false
+	textBox.Parent = textBoxWrapper
+
+	textBox.Focused:Connect(function()
+		StartNeonLoop(boxStroke)
+		TweenService:Create(container, TweenInfo.new(0.12), { BackgroundColor3 = KazeUI.GetColor(0.04) }):Play()
+	end)
+
+	textBox.FocusLost:Connect(function()
+		StopNeonLoop(boxStroke)
+		TweenService:Create(boxStroke, TweenInfo.new(0.15), {Color = Color3.fromRGB(45, 45, 50)}):Play()
+		TweenService:Create(container, TweenInfo.new(0.12), { BackgroundColor3 = KazeUI.GetColor(0.02) }):Play()
+	end)
+
+	-- Real-time filtering logic
+	textBox:GetPropertyChangedSignal("Text"):Connect(function()
+		local query = string.lower(textBox.Text)
+		for _, element in ipairs(parentFrame:GetChildren()) do
+			if element:IsA("Frame") and element ~= wrapper and element.Name ~= "UIListLayout" and element.Name ~= "UIPadding" then
+				local matchFound = false
+				if query == "" then
+					matchFound = true
+				else
+					for _, desc in ipairs(element:GetDescendants()) do
+						if desc:IsA("TextLabel") or desc:IsA("TextBox") then
+							if string.find(string.lower(desc.Text), query) then
+								matchFound = true
+								break
+							end
+						end
+					end
+				end
+				element.Visible = matchFound
+			end
+		end
+		if type(callback) == "function" then task.spawn(callback, textBox.Text) end
+	end)
+
+	return {
+		Wrapper = wrapper,
+		GetText = function() return textBox.Text end,
+		SetText = function(self, newText) textBox.Text = newText end
+	}
+end
+
 local function CreateDropdown(parentFrame, title, options, defaultOption, callback, isMulti, flag)
 	title = tostring(title or "Dropdown")
 	options = type(options) == "table" and options or {}
@@ -716,7 +828,6 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 		UpdateHeaderVisual()
 		Refresh(options)
 		
-		-- Hook properly into config applying state
 		if typeof(callback) == "function" then
 			if isMulti then
 				local ret = {}
@@ -1940,6 +2051,16 @@ AttachElementsToAPI = function(apiTable, parentFrame)
 		end
 		return CreateKeybindInput(parentFrame, title, def, cb, flag)
 	end
+	
+	function apiTable:SearchBar(arg1, arg2, arg3)
+		local title, placeholder, callback
+		if type(arg1) == "table" then
+			title, placeholder, callback = arg1.Title, arg1.Placeholder, arg1.Callback
+		else
+			title, placeholder, callback = arg1, arg2, arg3
+		end
+		return CreateSearchBar(parentFrame, title, placeholder, callback)
+	end
 
 	function apiTable:SectionUI(arg1)
 		local title = type(arg1) == "table" and arg1.Title or arg1
@@ -2113,7 +2234,7 @@ function KazeUI:CreateWindow(config)
 	StartNeonLoop(avatarStroke)
 
 	local TitleLabel = Instance.new("TextLabel")
-	TitleLabel.Size = UDim2.new(1, -200, 0, 20)
+	TitleLabel.Size = UDim2.new(1, -400, 0, 20)
 	TitleLabel.Position = UDim2.fromOffset(50,6)
 	TitleLabel.BackgroundTransparency = 1
 	TitleLabel.Text = Title
@@ -2124,7 +2245,7 @@ function KazeUI:CreateWindow(config)
 	TitleLabel.Parent = TopBar
 
 	local SubLabel = Instance.new("TextLabel")
-	SubLabel.Size = UDim2.new(1, -200, 0, 16)
+	SubLabel.Size = UDim2.new(1, -400, 0, 16)
 	SubLabel.Position = UDim2.fromOffset(50,26)
 	SubLabel.BackgroundTransparency = 1
 	SubLabel.Text = Author .. " | v" .. Version
@@ -2165,6 +2286,97 @@ function KazeUI:CreateWindow(config)
 	local BtnGreen = createCircleButton("BtnGreen", -96, Color3.fromRGB(117,204,50))
 	local BtnYellow = createCircleButton("BtnYellow", -68, Color3.fromRGB(255,204,51))
 	local BtnRed = createCircleButton("BtnRed", -40, Color3.fromRGB(235,80,80))
+
+	local Content = Instance.new("Frame")
+	Content.Position = UDim2.fromOffset(0,50)
+	Content.Size = UDim2.new(1,0,1,-50)
+	Content.BackgroundTransparency = 1
+	Content.Parent = ContentClipper
+
+	local Pages = Instance.new("Frame")
+	Pages.Position = UDim2.new(0,192,0,0)
+	Pages.Size = UDim2.new(1, -192, 1, 0)
+	Pages.BorderSizePixel = 0
+	Pages.Parent = Content
+	KazeUI:AddPanel(Pages, -0.01)
+	KazeUI:AddTransparentElement(Pages, 0)
+
+	-- ============================================
+	-- Global Window Search Bar (Config Injection)
+	-- ============================================
+	if config.SearchBar then
+		local globalSearch = Instance.new("Frame")
+		globalSearch.Size = UDim2.new(0, 160, 0, 26)
+		globalSearch.AnchorPoint = Vector2.new(1, 0.5)
+		globalSearch.Position = UDim2.new(1, -120, 0.5, 0)
+		globalSearch.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
+		globalSearch.BorderSizePixel = 0
+		globalSearch.Parent = TopBar
+		Instance.new("UICorner", globalSearch).CornerRadius = UDim.new(0, 6)
+
+		local globalSearchStroke = Instance.new("UIStroke", globalSearch)
+		globalSearchStroke.Color = Color3.fromRGB(45, 45, 50)
+		globalSearchStroke.Thickness = 1
+		globalSearchStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+
+		local searchIcon = Instance.new("ImageLabel", globalSearch)
+		searchIcon.Size = UDim2.fromOffset(14, 14)
+		searchIcon.Position = UDim2.new(0, 8, 0.5, -7)
+		searchIcon.BackgroundTransparency = 1
+		searchIcon.Image = "rbxassetid://6031154871" -- Default search icon
+		searchIcon.ImageColor3 = Color3.fromRGB(150, 150, 150)
+
+		local globalSearchInput = Instance.new("TextBox", globalSearch)
+		globalSearchInput.Size = UDim2.new(1, -30, 1, 0)
+		globalSearchInput.Position = UDim2.new(0, 28, 0, 0)
+		globalSearchInput.BackgroundTransparency = 1
+		globalSearchInput.Text = ""
+		globalSearchInput.PlaceholderText = "Search..."
+		globalSearchInput.PlaceholderColor3 = Color3.fromRGB(100, 100, 105)
+		globalSearchInput.TextColor3 = Color3.fromRGB(255, 255, 255)
+		globalSearchInput.Font = Enum.Font.Gotham
+		globalSearchInput.TextSize = 13
+		globalSearchInput.TextXAlignment = Enum.TextXAlignment.Left
+		globalSearchInput.ClearTextOnFocus = false
+
+		globalSearchInput.Focused:Connect(function() StartNeonLoop(globalSearchStroke) end)
+		globalSearchInput.FocusLost:Connect(function() 
+			StopNeonLoop(globalSearchStroke) 
+			globalSearchStroke.Color = Color3.fromRGB(45, 45, 50)
+		end)
+
+		-- Search across ALL Pages inside Window
+		globalSearchInput:GetPropertyChangedSignal("Text"):Connect(function()
+			local query = string.lower(globalSearchInput.Text)
+			for _, page in ipairs(Pages:GetChildren()) do
+				if page:IsA("Frame") then
+					local contentScroll = page:FindFirstChildOfClass("ScrollingFrame")
+					if contentScroll then
+						for _, element in ipairs(contentScroll:GetChildren()) do
+							if element:IsA("Frame") and element.Name ~= "UIListLayout" and element.Name ~= "UIPadding" then
+								local matchFound = false
+								if query == "" then
+									matchFound = true
+								else
+									-- Recursive text lookup inside wrapper frames
+									for _, desc in ipairs(element:GetDescendants()) do
+										if desc:IsA("TextLabel") or desc:IsA("TextBox") then
+											if string.find(string.lower(desc.Text), query) then
+												matchFound = true
+												break
+											end
+										end
+									end
+								end
+								element.Visible = matchFound
+							end
+						end
+					end
+				end
+			end
+		end)
+	end
+	-- ============================================
 
 	local MiniButton = Instance.new("TextButton") 
 	MiniButton.Size = MiniButtonSize
@@ -2353,12 +2565,6 @@ function KazeUI:CreateWindow(config)
 	end
 	BtnRed.MouseButton1Click:Connect(ShowCloseConfirm)
 
-	local Content = Instance.new("Frame")
-	Content.Position = UDim2.fromOffset(0,50)
-	Content.Size = UDim2.new(1,0,1,-50)
-	Content.BackgroundTransparency = 1
-	Content.Parent = ContentClipper
-
 	local SideBarMask = Instance.new("Frame")
 	SideBarMask.Size = UDim2.new(0, 190, 1, 0)
 	SideBarMask.BackgroundTransparency = 1
@@ -2379,14 +2585,6 @@ function KazeUI:CreateWindow(config)
 	VertDivider.BorderSizePixel = 0
 	VertDivider.Parent = Content
 	StartNeonLoop(VertDivider)
-
-	local Pages = Instance.new("Frame")
-	Pages.Position = UDim2.new(0,192,0,0)
-	Pages.Size = UDim2.new(1, -192, 1, 0)
-	Pages.BorderSizePixel = 0
-	Pages.Parent = Content
-	KazeUI:AddPanel(Pages, -0.01)
-	KazeUI:AddTransparentElement(Pages, 0)
 	
 	local isSidebarOpen = true
 	Avatar.MouseButton1Click:Connect(function()
