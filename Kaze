@@ -1,6 +1,5 @@
-
 --[[
-	Kaze UI Library
+	Kaze UI Library (Optimized & Safe-Area Protected)
 	Optimized: Deep Obsidian Only, Dynamic Tab Text Scaling (No "..." Dots), Wider Sidebar, Safe Close Dialog Margin Padding
 	Added: New Dynamic Keybind Component, Full Config Manager Overhaul, Memory Leak Prevention
 	Fixes: Text Clipping/Overflow fixed globally, Multi-Dropdown Color Hover State Fixed
@@ -8,6 +7,7 @@
 	Added: Smooth & Responsive Continuous Window Resizing with UIScale correction, PC Hover Cursor (↘), and Multi-Touch Protection
 	Updated: Adaptive Device & Monitor Scale Protection Engine (0.85x Mobile / 1.0x Tablet / 1.15x Desktop Wide)
 	Updated: Adjusted Default Window Size to 600x400
+	SAFE-AREA PROTECTION UPGRADE: Completely respects notches, dynamic islands, and status bars using automatic inset mapping and boundary clamping.
 --]]
 
 local KazeUI = {}
@@ -19,6 +19,7 @@ local TweenService = game:GetService("TweenService")
 local UIS = game:GetService("UserInputService")
 local TextService = game:GetService("TextService")
 local HttpService = game:GetService("HttpService")
+local GuiService = game:GetService("GuiService")
 local LP = Players.LocalPlayer
 local Mouse = LP:GetMouse()
 
@@ -46,6 +47,7 @@ ScreenGui.Name = "KazeUI"
 ScreenGui.ResetOnSpawn = false
 ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 ScreenGui.DisplayOrder = 10 -- Base window layer
+ScreenGui.IgnoreGuiInset = false -- Respect safe area (Notch, status bar, dynamic island)
 
 local success, parent = pcall(function() return game:GetService("CoreGui") end)
 if not success or not parent then
@@ -59,6 +61,7 @@ NotifScreenGui.Name = "KazeUINotifications"
 NotifScreenGui.ResetOnSpawn = false
 NotifScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 NotifScreenGui.DisplayOrder = 999999 -- Forces notifications to draw on top of everything
+NotifScreenGui.IgnoreGuiInset = false -- Notifications respect safe area boundary too
 NotifScreenGui.Parent = parent
 
 -- Notification Container Setup
@@ -114,7 +117,7 @@ local function UpdateScale()
 	end
 
 	UIScale.Scale = targetScale
-	ScreenGui.IgnoreGuiInset = true
+	ScreenGui.IgnoreGuiInset = false -- Guarantee safe space inclusion across updates
 end
 
 UpdateScale()
@@ -161,7 +164,7 @@ local function FormatImage(id)
 	return "rbxassetid://" .. clean
 end
 
--- Threshold dragging to prevent minimize misclicks (Scale-adjusted for fluid dragging)
+-- Threshold dragging with active Device Notch & Safe Zone boundary clamping
 local function MakeDraggable(dragPart, targetPart)
 	local dragging = false
 	local dragInput, dragStart, startPos
@@ -174,9 +177,36 @@ local function MakeDraggable(dragPart, targetPart)
 		
 		if dragActive or delta.Magnitude > 8 then
 			dragActive = true
+			
+			local newX = startPos.X.Offset + (delta.X / scale)
+			local newY = startPos.Y.Offset + (delta.Y / scale)
+			
+			-- Viewport clamping to protect safe areas (such as Notch, Island, and Topbar)
+			local camera = workspace.CurrentCamera
+			if camera then
+				local viewportSize = camera.ViewportSize
+				local topInset, bottomInset = GuiService:GetGuiInset()
+				
+				-- Available height inside ScreenGui is: ViewportHeight - topInset - bottomInset
+				local availableWidth = viewportSize.X / scale
+				local availableHeight = (viewportSize.Y - topInset.Y - bottomInset.Y) / scale
+				
+				local winWidth = targetPart.Size.X.Offset
+				local winHeight = targetPart.Size.Y.Offset
+				
+				local ap = targetPart.AnchorPoint
+				local minX = winWidth * ap.X
+				local maxX = availableWidth - (winWidth * (1 - ap.X))
+				local minY = winHeight * ap.Y
+				local maxY = availableHeight - (winHeight * (1 - ap.Y))
+				
+				newX = math.clamp(newX, minX, maxX)
+				newY = math.clamp(newY, minY, maxY)
+			end
+			
 			targetPart.Position = UDim2.new(
-				startPos.X.Scale, startPos.X.Offset + (delta.X / scale),
-				startPos.Y.Scale, startPos.Y.Offset + (delta.Y / scale)
+				startPos.X.Scale, newX,
+				startPos.Y.Scale, newY
 			)
 		end
 	end
@@ -2464,7 +2494,7 @@ function KazeUI:CreateWindow(config)
 	tabsLayout.Padding = UDim.new(0,4)
 
 	-- ==========================================
-	-- SMOOTH & ACCURATE CONTINUOUS WINDOW RESIZING
+	-- SMOOTH & ACCURATE CONTINUOUS WINDOW RESIZING WITH SAFE-AREA CLAMP PROTECTION
 	-- ==========================================
 	local ResizeHandle = Instance.new("ImageLabel")
 	ResizeHandle.Name = "ResizeHandle"
@@ -2502,9 +2532,25 @@ function KazeUI:CreateWindow(config)
 		local delta = input.Position - resizeStartInput
 		local scale = UIScale.Scale
 
+		-- Dynamically check safe screen margins to cap window sizes safely on small devices
+		local camera = workspace.CurrentCamera
+		local targetMaxWidth = maxWidth
+		local targetMaxHeight = maxHeight
+		
+		if camera then
+			local viewportSize = camera.ViewportSize
+			local topInset, bottomInset = GuiService:GetGuiInset()
+			
+			local availableWidth = viewportSize.X / scale
+			local availableHeight = (viewportSize.Y - topInset.Y - bottomInset.Y) / scale
+			
+			targetMaxWidth = math.min(maxWidth, availableWidth)
+			targetMaxHeight = math.min(maxHeight, availableHeight)
+		end
+
 		-- UIScale.Scale correct delta division to avoid dragging lag on scaled screens
-		local newWidth = math.clamp(resizeStartSize.X + (delta.X / scale), minWidth, maxWidth)
-		local newHeight = math.clamp(resizeStartSize.Y + (delta.Y / scale), minHeight, maxHeight)
+		local newWidth = math.clamp(resizeStartSize.X + (delta.X / scale), minWidth, targetMaxWidth)
+		local newHeight = math.clamp(resizeStartSize.Y + (delta.Y / scale), minHeight, targetMaxHeight)
 
 		Window.Size = UDim2.fromOffset(newWidth, newHeight)
 		lastNormalSize = Window.Size
