@@ -1,10 +1,9 @@
 --[[
 	Kaze UI Library
 	Optimized: Deep Obsidian Only, Dynamic Tab Text Scaling (No "..." Dots), Wider Sidebar, Safe Close Dialog Margin Padding
-	Added: New Dynamic Keybind Component, Full Config Manager Overhaul, Memory Leak Prevention, Standalone SearchBar Component
+	Added: New Dynamic Keybind Component, Full Config Manager Overhaul, Memory Leak Prevention
 	Fixes: Text Clipping/Overflow fixed globally, Multi-Dropdown Color Hover State Fixed
 	Critical Bug Fix: Dedicated Notification ScreenGui with Highest DisplayOrder (Always on Top)
-	New Feature: Interactive Page Search Bar (Always on Top of Page Content, Glowing Neon Outline, Filters All Component Types)
 --]]
 
 local KazeUI = {}
@@ -1236,81 +1235,6 @@ local function CreateTextBoxInput(parentFrame, title, placeholder, defaultVal, c
 	}
 end
 
-local function CreateSearchBar(parentFrame, placeholder, callback, flag)
-	placeholder = tostring(placeholder or "Search...")
-	
-	local wrapper = Instance.new("Frame")
-	wrapper.Size = UDim2.new(1, 0, 0, 42)
-	wrapper.BackgroundTransparency = 1
-	wrapper.Parent = parentFrame
-	wrapper.AutomaticSize = Enum.AutomaticSize.Y
-	
-	local dropFrame = Instance.new("Frame")
-	dropFrame.AnchorPoint = Vector2.new(0.5, 0)
-	dropFrame.Position = UDim2.new(0.5, 0, 0, 5)
-	dropFrame.Size = UDim2.new(0.95, 0, 0, 32)
-	dropFrame.BorderSizePixel = 0
-	Instance.new("UICorner", dropFrame).CornerRadius = UDim.new(0, 6)
-	dropFrame.Parent = wrapper
-	KazeUI:AddPanel(dropFrame, -0.02)
-	KazeUI:AddTransparentElement(dropFrame, 0)
-
-	local searchStroke = Instance.new("UIStroke", dropFrame)
-	searchStroke.Color = Color3.fromRGB(45, 45, 50)
-	searchStroke.Thickness = 1.5
-	searchStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-	
-	local searchIcon = Instance.new("ImageLabel")
-	searchIcon.Size = UDim2.fromOffset(16, 16)
-	searchIcon.Position = UDim2.new(0, 10, 0.5, -8)
-	searchIcon.BackgroundTransparency = 1
-	searchIcon.Image = FormatImage("9882298751") -- Search Icon
-	searchIcon.ImageColor3 = Color3.fromRGB(160, 160, 165)
-	searchIcon.Parent = dropFrame
-
-	local searchBox = Instance.new("TextBox")
-	searchBox.Size = UDim2.new(1, -42, 1, 0)
-	searchBox.Position = UDim2.new(0, 32, 0, 0)
-	searchBox.BackgroundTransparency = 1
-	searchBox.PlaceholderText = placeholder
-	searchBox.PlaceholderColor3 = Color3.fromRGB(120, 120, 125)
-	searchBox.Text = ""
-	searchBox.TextColor3 = Color3.fromRGB(255, 255, 255)
-	searchBox.Font = Enum.Font.Gotham
-	searchBox.TextSize = 13
-	searchBox.TextXAlignment = Enum.TextXAlignment.Left
-	searchBox.Parent = dropFrame
-
-	searchBox.Focused:Connect(function() 
-		StartNeonLoop(searchStroke) 
-	end)
-	
-	searchBox.FocusLost:Connect(function() 
-		StopNeonLoop(searchStroke) 
-		searchStroke.Color = Color3.fromRGB(45, 45, 50) 
-	end)
-
-	searchBox:GetPropertyChangedSignal("Text"):Connect(function()
-		if typeof(callback) == "function" then
-			task.spawn(callback, searchBox.Text)
-		end
-	end)
-
-	RegisterFlag(flag, function() return searchBox.Text end, function(val)
-		searchBox.Text = val
-		if typeof(callback) == "function" then
-			task.spawn(callback, searchBox.Text)
-		end
-	end)
-
-	return {
-		Wrapper = wrapper,
-		Instance = dropFrame,
-		SetText = function(self, newText) searchBox.Text = newText end,
-		GetText = function() return searchBox.Text end
-	}
-end
-
 local function CreateSliderInput(parentFrame, title, min, max, default, callback, flag)
 	title = tostring(title or "Slider")
 	min = tonumber(min) or 0
@@ -2016,26 +1940,6 @@ AttachElementsToAPI = function(apiTable, parentFrame, registeredList)
 			table.insert(registeredList, {
 				Instance = element.Wrapper,
 				TextToSearch = tostring(title or "") .. " " .. tostring(place or "")
-			})
-		end
-		return element
-	end
-
-	-- NEW STANDALONE SEARCHBAR COMPONENT 
-	function apiTable:SearchBar(arg1, arg2, arg3)
-		local place, cb, flag
-		if type(arg1) == "table" then
-			place, cb, flag = arg1.Placeholder, arg1.Callback, arg1.Flag
-		else
-			place, cb, flag = arg1, arg2, arg3
-		end
-		
-		local element = CreateSearchBar(parentFrame, place, cb, flag)
-		
-		if registeredList then
-			table.insert(registeredList, {
-				Instance = element.Wrapper,
-				TextToSearch = tostring(place or "")
 			})
 		end
 		return element
