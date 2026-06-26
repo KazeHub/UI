@@ -1,5 +1,5 @@
 --[[
-	Kaze UI Library (Optimized & Safe-Area Protected)
+	Kaze UI Library (Optimized & Drag Fixed)
 	Optimized: Deep Obsidian Only, Dynamic Tab Text Scaling (No "..." Dots), Wider Sidebar, Safe Close Dialog Margin Padding
 	Added: New Dynamic Keybind Component, Full Config Manager Overhaul, Memory Leak Prevention
 	Fixes: Text Clipping/Overflow fixed globally, Multi-Dropdown Color Hover State Fixed
@@ -170,13 +170,36 @@ local function MakeDraggable(dragPart, targetPart)
 	local dragInput, dragStart, startPos
 	local dragActive = false
 	
+	-- Translates screen coordinate position directly into scale-corrected offsets relative to ScreenGui origin
+	local function GetRelativeOffset(part)
+		local scale = UIScale.Scale
+		local absPos = part.AbsolutePosition
+		local size = part.AbsoluteSize
+		local ap = part.AnchorPoint
+		local topInset, _ = GuiService:GetGuiInset()
+		
+		local absAnchorX = absPos.X + (size.X * ap.X)
+		local absAnchorY = absPos.Y + (size.Y * ap.Y)
+		
+		-- Factor in left/top notch offsets
+		local relativeX = absAnchorX - topInset.X
+		local relativeY = absAnchorY - topInset.Y
+		
+		return UDim2.new(0, relativeX / scale, 0, relativeY / scale)
+	end
+	
 	local function update(input)
 		if not dragStart or not startPos then return end
 		local delta = input.Position - dragStart
 		local scale = UIScale.Scale
 		
 		if dragActive or delta.Magnitude > 8 then
-			dragActive = true
+			if not dragActive then
+				-- Convert to offset-only coords instantly before moving, preventing jump calculations
+				targetPart.Position = GetRelativeOffset(targetPart)
+				startPos = targetPart.Position
+				dragActive = true
+			end
 			
 			local newX = startPos.X.Offset + (delta.X / scale)
 			local newY = startPos.Y.Offset + (delta.Y / scale)
@@ -187,8 +210,8 @@ local function MakeDraggable(dragPart, targetPart)
 				local viewportSize = camera.ViewportSize
 				local topInset, bottomInset = GuiService:GetGuiInset()
 				
-				-- Available height inside ScreenGui is: ViewportHeight - topInset - bottomInset
-				local availableWidth = viewportSize.X / scale
+				-- Available dimensions inside safe ScreenGui
+				local availableWidth = (viewportSize.X - topInset.X - bottomInset.X) / scale
 				local availableHeight = (viewportSize.Y - topInset.Y - bottomInset.Y) / scale
 				
 				local winWidth = targetPart.Size.X.Offset
@@ -204,10 +227,7 @@ local function MakeDraggable(dragPart, targetPart)
 				newY = math.clamp(newY, minY, maxY)
 			end
 			
-			targetPart.Position = UDim2.new(
-				startPos.X.Scale, newX,
-				startPos.Y.Scale, newY
-			)
+			targetPart.Position = UDim2.new(0, newX, 0, newY)
 		end
 	end
 	
@@ -2133,13 +2153,30 @@ function KazeUI:CreateWindow(config)
 	local maxWidth = config.MaxWidth or 900
 	local maxHeight = config.MaxHeight or 700
 
+	-- Automatically adjust default window sizing down if screen space is extremely restricted (low-res mobile devices)
+	local scale = UIScale.Scale
+	local camera = workspace.CurrentCamera
+	local currentWidth, currentHeight = 600, 400
+	if camera then
+		local topInset, bottomInset = GuiService:GetGuiInset()
+		local availableWidth = camera.ViewportSize.X / scale
+		local availableHeight = (camera.ViewportSize.Y - topInset.Y - bottomInset.Y) / scale
+		
+		if availableWidth < currentWidth then
+			currentWidth = math.max(minWidth, availableWidth - 20)
+		end
+		if availableHeight < currentHeight then
+			currentHeight = math.max(minHeight, availableHeight - 20)
+		end
+	end
+
 	KazeUI.BackgroundColor = Color3.fromRGB(10, 10, 12) -- Permanent Deep Obsidian background
 	if config.GlowColor then KazeUI.GlowColor = config.GlowColor end
 
 	local MiniButtonSize = UDim2.fromOffset(46, 46)
 
 	local Window = Instance.new("Frame")
-	Window.Size = UDim2.fromOffset(600, 400) -- Default Window Size 600x400
+	Window.Size = UDim2.fromOffset(currentWidth, currentHeight)
 	Window.Position = UDim2.fromScale(0.5, 0.5)
 	Window.AnchorPoint = Vector2.new(0.5, 0.5)
 	Window.BorderSizePixel = 0
@@ -2213,7 +2250,7 @@ function KazeUI:CreateWindow(config)
 	TopDivider.Parent = TopBar
 	StartNeonLoop(TopDivider)
 
-	local defaultWindowSize = UDim2.fromOffset(600, 400) -- Default Window Size 600x400
+	local defaultWindowSize = UDim2.fromOffset(currentWidth, currentHeight)
 	local lastNormalSize = defaultWindowSize
 	local lastNormalPosition = UDim2.fromScale(0.5,0.5)
 	local lastNormalAnchor = Vector2.new(0.5,0.5)
@@ -2315,8 +2352,8 @@ function KazeUI:CreateWindow(config)
 		if miniDragStart and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
 			if (input.Position - miniDragStart).Magnitude > 8 then
 				miniDragMoved = true
-				-- Update position manually
-				local delta = input.Position - miniDragStart
+				-- Update position manually (scaled to handle varying viewport scaling factors flawlessly)
+				local delta = (input.Position - miniDragStart) / UIScale.Scale
 				MiniButton.Position = UDim2.new(
 					0, MiniButton.Position.X.Offset + delta.X,
 					0, MiniButton.Position.Y.Offset + delta.Y
@@ -2541,7 +2578,7 @@ function KazeUI:CreateWindow(config)
 			local viewportSize = camera.ViewportSize
 			local topInset, bottomInset = GuiService:GetGuiInset()
 			
-			local availableWidth = viewportSize.X / scale
+			local availableWidth = (viewportSize.X - topInset.X - bottomInset.X) / scale
 			local availableHeight = (viewportSize.Y - topInset.Y - bottomInset.Y) / scale
 			
 			targetMaxWidth = math.min(maxWidth, availableWidth)
