@@ -1,9 +1,10 @@
 --[[
-	Kaze UI Library v2.0
+	Kaze UI Library v2.0 (Premium Responsive Edition)
 	Added: Performance Widget, Search System, Window Resizing, Theme Manager 2.0
 	Added: Thumbnail Component, Prompt System, Config Manager Overhaul
+	Added: Universal Auto-UIScaling for Phone, Tablet, & PC
+	Added: Safe Area, Notch, Status Bar & Dynamic Island Guardrails (IgnoreGuiInset Protection)
 	Fixed: UIScale-compensated fluid resizing, stable Theme Resetting, Glass Transparency recovery & Perfect Square Thumbnails.
-	Fixed: Keybind "perks" syntax typo.
 	Fixed: Search bar exclusion for SectionUI, Section, and AddLabel.
 --]]
 
@@ -18,6 +19,7 @@ local TextService = game:GetService("TextService")
 local HttpService = game:GetService("HttpService")
 local RunService = game:GetService("RunService")
 local Stats = game:GetService("Stats")
+local GuiService = game:GetService("GuiService")
 local LP = Players.LocalPlayer
 
 -- Global State & Managers
@@ -43,6 +45,7 @@ local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "KazeUI"
 ScreenGui.ResetOnSpawn = false
 ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+ScreenGui.IgnoreGuiInset = false -- Dynamic Safe Area & Notch respect enabled
 
 local success, parent = pcall(function() return game:GetService("CoreGui") end)
 if not success or not parent then
@@ -66,20 +69,53 @@ NotifContainer.Position = UDim2.new(1, -320, 0, 0)
 NotifContainer.BackgroundTransparency = 1
 NotifContainer.Parent = ScreenGui
 
--- Screen Scale Controller
+-- =========================================================================
+-- UNIVERSAL AUTO-UISCALING ENGINE (Supports Phone, Tablet, & PC Adaptability)
+-- =========================================================================
 local UIScale = Instance.new("UIScale")
 UIScale.Parent = ScreenGui
 
 local function UpdateScale()
 	local size = workspace.CurrentCamera.ViewportSize
-	local scaleX = math.clamp(size.X / 800, 0.35, 1)
-	local scaleY = math.clamp(size.Y / 500, 0.35, 1)
-	UIScale.Scale = math.min(scaleX, scaleY)
-	ScreenGui.IgnoreGuiInset = true
+	local x, y = size.X, size.Y
+	
+	-- Automatic Device-class categorization & scaling calculations
+	local baseScale = 1
+	if x < 700 or y < 500 then
+		-- Phones (Small Screens): Needs smaller scale to prevent UI occupying the entire viewport
+		baseScale = math.clamp(math.min(x / 960, y / 540), 0.45, 0.75)
+	elseif x < 1200 or y < 800 then
+		-- Tablets (Medium Screens)
+		baseScale = math.clamp(math.min(x / 1100, y / 700), 0.70, 0.90)
+	else
+		-- PC / Consoles (Large Screens)
+		baseScale = math.clamp(math.min(x / 1366, y / 768), 0.85, 1.15)
+	end
+	
+	UIScale.Scale = baseScale
 end
 
 UpdateScale()
 workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(UpdateScale)
+
+-- Dynamic Safe Area / Inset Offset Margin controller for ScreenGui
+local function ApplySafeArea()
+	local top, bottom = GuiService:GetGuiInset()
+	-- Dynamic Padding creation to protect notch, camera island, and mobile status bars
+	local safePadding = ScreenGui:FindFirstChild("SafeAreaPadding")
+	if not safePadding then
+		safePadding = Instance.new("UIPadding")
+		safePadding.Name = "SafeAreaPadding"
+		safePadding.Parent = ScreenGui
+	end
+	safePadding.PaddingTop = UDim.new(0, top > 0 and top or 10)
+	safePadding.PaddingBottom = UDim.new(0, bottom > 0 and bottom or 10)
+	safePadding.PaddingLeft = UDim.new(0, 10)
+	safePadding.PaddingRight = UDim.new(0, 10)
+end
+
+ApplySafeArea()
+GuiService:GetPropertyChangedSignal("TopbarInset"):Connect(ApplySafeArea)
 
 -- Auto-Icon Fetcher via HttpGet
 local IconsMap = {}
@@ -129,7 +165,7 @@ local function MakeDraggable(dragPart, targetPart)
 	
 	local function update(input)
 		if not dragStart or not startPos then return end
-		local delta = (input.Position - dragStart) / UIScale.Scale -- Scale Offset correction
+		local delta = (input.Position - dragStart) / UIScale.Scale -- Safe UIScale Compensated Dragging
 		
 		if dragActive or delta.Magnitude > 8 then
 			dragActive = true
@@ -821,7 +857,7 @@ local function CreateParagraph(parentFrame, title, body)
 	}
 end
 
--- Re-engineered Thumbnail: Perfect Square, auto-scalable, Fit AspectRatio and no cutting off.
+-- Re-engineered Thumbnail: Perfect Square, auto-scalable, Fit AspectRatio
 local function CreateThumbnail(parentFrame, title, body, imageId)
 	title = tostring(title or "")
 	body = tostring(body or "")
@@ -877,12 +913,12 @@ local function CreateThumbnail(parentFrame, title, body, imageId)
 	
 	-- Frame container for Square aspect control (WidthControlsHeight)
 	local imgContainer = Instance.new("Frame", paraFrame)
-	imgContainer.Size = UDim2.new(0.9, 0, 0, 0) -- Scaled up to fill 90% of available card layout
+	imgContainer.Size = UDim2.new(0.9, 0, 0, 0)
 	imgContainer.BackgroundTransparency = 1
 	imgContainer.LayoutOrder = 1
 	
 	local aspect = Instance.new("UIAspectRatioConstraint", imgContainer)
-	aspect.AspectRatio = 1 -- 1:1 Aspect ratio
+	aspect.AspectRatio = 1
 	aspect.AspectType = Enum.AspectType.WidthControlsHeight
 	
 	local imgLabel = Instance.new("ImageLabel", imgContainer)
@@ -890,7 +926,7 @@ local function CreateThumbnail(parentFrame, title, body, imageId)
 	imgLabel.BackgroundTransparency = 0
 	imgLabel.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
 	imgLabel.Image = formattedImage
-	imgLabel.ScaleType = Enum.ScaleType.Fit -- Scale properly inside a square frame (does not cut off or distort aspect ratio)
+	imgLabel.ScaleType = Enum.ScaleType.Fit
 	Instance.new("UICorner", imgLabel).CornerRadius = UDim.new(0, 6)
 	KazeUI:AddPanel(imgLabel, -0.01)
 	
@@ -920,6 +956,7 @@ local function CreateThumbnail(parentFrame, title, body, imageId)
 	bodyLabel.TextWrapped = true
 	bodyLabel.TextXAlignment = Enum.TextXAlignment.Left
 	bodyLabel.TextYAlignment = Enum.TextYAlignment.Top
+	bodyLabel.LayoutOrder = 3
 	
 	return { 
 		Wrapper = wrapper, 
@@ -1153,6 +1190,43 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 	bodyLabel.TextWrapped = true
 	bodyLabel.TextXAlignment = Enum.TextXAlignment.Left
 	bodyLabel.TextYAlignment = Enum.TextYAlignment.Top
+	
+	local function setToggleState(newState, instant)
+		state = newState
+		local targetPos = state and UDim2.new(1, -16, 0.5, 0) or UDim2.new(0, 2, 0.5, 0)
+		local targetBg = state and Color3.fromRGB(255, 255, 255) or KazeUI.GetColor(0.08)
+		
+		if instant then
+			switchIndicator.Position = targetPos
+			switchContainer.BackgroundColor3 = targetBg
+		else
+			TweenService:Create(switchIndicator, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Position = targetPos }):Play()
+			TweenService:Create(switchContainer, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { BackgroundColor3 = targetBg }):Play()
+		end
+	end
+
+	clickDetector.MouseEnter:Connect(function()
+		TweenService:Create(paraFrame, TweenInfo.new(0.12), { BackgroundColor3 = KazeUI.GetColor(0.05) }):Play()
+		TweenService:Create(glow, TweenInfo.new(0.12), { BackgroundTransparency = 0.92 }):Play()
+	end)
+	clickDetector.MouseLeave:Connect(function()
+		TweenService:Create(paraFrame, TweenInfo.new(0.12), { BackgroundColor3 = KazeUI.GetColor(0.02) }):Play()
+		TweenService:Create(glow, TweenInfo.new(0.12), { BackgroundTransparency = 0.96 }):Play()
+		TweenService:Create(paraFrame, TweenInfo.new(0.1), { Size = UDim2.new(0.95, 0, 0, totalHeight), Position = UDim2.new(0.5, 0, 0, 3) }):Play()
+	end)
+	clickDetector.MouseButton1Down:Connect(function()
+		TweenService:Create(paraFrame, TweenInfo.new(0.08), { Size = UDim2.new(0.93, 0, 0, totalHeight - 3), Position = UDim2.new(0.5, 0, 0, 4) }):Play()
+	end)
+	clickDetector.MouseButton1Up:Connect(function()
+		TweenService:Create(paraFrame, TweenInfo.new(0.08), { Size = UDim2.new(0.95, 0, 0, totalHeight), Position = UDim2.new(0.5, 0, 0, 3) }):Play()
+		setToggleState(not state, false)
+		if typeof(callback) == "function" then task.spawn(callback, state) end
+	end)
+
+	RegisterFlag(flag, function() return state end, function(val)
+		setToggleState(val, false)
+		if typeof(callback) == "function" then task.spawn(callback, state) end
+	end)
 	
 	return { 
 		Wrapper = wrapper, 
@@ -1904,7 +1978,7 @@ local CreateCollapsibleSection
 local AttachElementsToAPI
 
 AttachElementsToAPI = function(apiTable, parentFrame, winRef)
-	local elementCount = 0 -- Keeps order tracking during search overlay layouts
+	local elementCount = 0
 	local function registerElement(wrapper, textContent)
 		elementCount = elementCount + 1
 		if wrapper:IsA("GuiObject") then
@@ -1931,7 +2005,7 @@ AttachElementsToAPI = function(apiTable, parentFrame, winRef)
 		label.TextXAlignment = Enum.TextXAlignment.Left
 		label.TextWrapped = true
 		label.Parent = parentFrame
-		-- EXCLUDED: Section headers, visual dividers, and text labels are ignored by the Search engine to prevent layout bugs.
+		-- EXCLUDED: Plain labels are excluded from Search logic to prevent breaking Section UI structures.
 		return label
 	end
 
@@ -2039,14 +2113,14 @@ AttachElementsToAPI = function(apiTable, parentFrame, winRef)
 	function apiTable:SectionUI(arg1)
 		local title = type(arg1) == "table" and arg1.Title or arg1
 		local el = CreateCollapsibleSection(parentFrame, title, winRef)
-		-- EXCLUDED: SectionUI headers are excluded from search to prevent hierarchy layout breakage.
+		-- EXCLUDED: SectionUI containers are excluded from Search logic
 		return el
 	end
 	
 	function apiTable:Section(arg1)
 		local title = type(arg1) == "table" and arg1.Title or arg1
 		local el = CreateVisualSectionDivider(parentFrame, title)
-		-- EXCLUDED: Section visual lines are excluded from search.
+		-- EXCLUDED: Visual dividers are excluded from Search logic
 		return el
 	end
 end
