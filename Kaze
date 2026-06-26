@@ -8,6 +8,7 @@
 	Updated: Adaptive Device & Monitor Scale Protection Engine (0.85x Mobile / 1.0x Tablet / 1.15x Desktop Wide)
 	Updated: Adjusted Default Window Size to 600x400
 	Fixed: Nested Dropdown scrolling conflict on PC & Mobile (Smart Boundary-Aware Scroll Controller)
+	Fixed: Single and Multi Dropdown option rendering bug with large datasets (1-100) and layout collisions
 --]]
 
 local KazeUI = {}
@@ -309,11 +310,14 @@ function KazeUI:SetGlow(color)
 end
 
 -- Robust Notification Animation Sequence
+local notifCounter = 0
 function KazeUI:Notify(config)
 	config = config or {}
 	local title = tostring(config.Title or "Notification")
 	local content = tostring(config.Content or "")
 	local duration = tonumber(config.Duration) or 3
+
+	notifCounter = notifCounter + 1
 
 	local notifHolder = Instance.new("Frame")
 	notifHolder.Name = "NotifHolder"
@@ -321,6 +325,7 @@ function KazeUI:Notify(config)
 	notifHolder.BackgroundTransparency = 1
 	notifHolder.BorderSizePixel = 0
 	notifHolder.ClipsDescendants = true
+	notifHolder.LayoutOrder = notifCounter
 	notifHolder.Parent = NotifContainer
 
 	local notifFrame = Instance.new("Frame")
@@ -436,6 +441,17 @@ local function ToggleScrollingAncestors(element, state)
 	end
 end
 
+-- Sequential Layout Engine (Ensures layout-driven sections never overlap)
+local function GetNextLayoutOrder(container)
+	local currentMax = 0
+	for _, child in ipairs(container:GetChildren()) do
+		if child:IsA("GuiObject") then
+			currentMax = math.max(currentMax, child.LayoutOrder)
+		end
+	end
+	return currentMax + 1
+end
+
 -- Component factories
 local function CreateDropdown(parentFrame, title, options, defaultOption, callback, isMulti, flag)
 	title = tostring(title or "Dropdown")
@@ -459,6 +475,7 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 	wrapper.Name = "DropdownWrapper"
 	wrapper.Size = UDim2.new(1, 0, 0, 0)
 	wrapper.BackgroundTransparency = 1
+	wrapper.LayoutOrder = GetNextLayoutOrder(parentFrame)
 	wrapper.Parent = parentFrame
 	wrapper.AutomaticSize = Enum.AutomaticSize.Y
 
@@ -693,9 +710,11 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 		table.clear(optionItems)
 
 		options = type(newOptions) == "table" and newOptions or {}
-		for _, opt in ipairs(options) do
+		for i, opt in ipairs(options) do
 			local optStr = tostring(opt)
 			local btn = Instance.new("TextButton")
+			btn.Name = "Option_" .. optStr -- Set unique names to prevent sorting conflicts
+			btn.LayoutOrder = i -- Enforces strict sequence and eliminates the y-coordinate overlapping bug
 			btn.Size = UDim2.new(1, -8, 0, 30)
 			btn.BorderSizePixel = 0
 			btn.Text = "  " .. optStr
@@ -786,7 +805,9 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 	searchBox:GetPropertyChangedSignal("Text"):Connect(function()
 		local q = string.lower(searchBox.Text)
 		for _, item in ipairs(optionItems) do
-			item.Btn.Visible = (q == "" or string.find(string.lower(item.Text), q, 1, true)) ~= nil
+			-- Resolves evaluation errors on complex queries
+			local isMatch = (q == "") or (string.find(string.lower(item.Text), q, 1, true) ~= nil)
+			item.Btn.Visible = isMatch
 		end
 		CalcHeight()
 	end)
@@ -880,6 +901,7 @@ local function CreateParagraph(parentFrame, title, body)
 	local wrapper = Instance.new("Frame")
 	wrapper.Size = UDim2.new(1, 0, 0, 0)
 	wrapper.BackgroundTransparency = 1
+	wrapper.LayoutOrder = GetNextLayoutOrder(parentFrame)
 	wrapper.Parent = parentFrame
 	wrapper.AutomaticSize = Enum.AutomaticSize.Y
 	
@@ -968,6 +990,7 @@ local function CreateClickableParagraph(parentFrame, title, body, callback)
 	local wrapper = Instance.new("Frame")
 	wrapper.Size = UDim2.new(1, 0, 0, 0)
 	wrapper.BackgroundTransparency = 1
+	wrapper.LayoutOrder = GetNextLayoutOrder(parentFrame)
 	wrapper.Parent = parentFrame
 	wrapper.AutomaticSize = Enum.AutomaticSize.Y
 	
@@ -1094,6 +1117,7 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 	local wrapper = Instance.new("Frame")
 	wrapper.Size = UDim2.new(1, 0, 0, 0)
 	wrapper.BackgroundTransparency = 1
+	wrapper.LayoutOrder = GetNextLayoutOrder(parentFrame)
 	wrapper.Parent = parentFrame
 	wrapper.AutomaticSize = Enum.AutomaticSize.Y
 	
@@ -1246,6 +1270,7 @@ local function CreateTextBoxInput(parentFrame, title, placeholder, defaultVal, c
 	local wrapper = Instance.new("Frame")
 	wrapper.Size = UDim2.new(1, 0, 0, 0)
 	wrapper.BackgroundTransparency = 1
+	wrapper.LayoutOrder = GetNextLayoutOrder(parentFrame)
 	wrapper.Parent = parentFrame
 	wrapper.AutomaticSize = Enum.AutomaticSize.Y
 	
@@ -1367,6 +1392,7 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 	local wrapper = Instance.new("Frame")
 	wrapper.Size = UDim2.new(1, 0, 0, 0)
 	wrapper.BackgroundTransparency = 1
+	wrapper.LayoutOrder = GetNextLayoutOrder(parentFrame)
 	wrapper.Parent = parentFrame
 	wrapper.AutomaticSize = Enum.AutomaticSize.Y
 	
@@ -1549,6 +1575,7 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 	local wrapper = Instance.new("Frame")
 	wrapper.Size = UDim2.new(1, 0, 0, 0)
 	wrapper.BackgroundTransparency = 1
+	wrapper.LayoutOrder = GetNextLayoutOrder(parentFrame)
 	wrapper.Parent = parentFrame
 	wrapper.AutomaticSize = Enum.AutomaticSize.Y
 
@@ -1658,7 +1685,7 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 	local hg = Instance.new("UIGradient", hueSlider)
 	hg.Color = ColorSequence.new{
 		ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 0, 0)),
-		ColorSequenceKeypoint.new(0.167, Color3.fromRGB(255, 255, 0)),
+		ColorSequenceKeypoint.new(0.167, Color3.fromRGB(255, 255, Yellow)),
 		ColorSequenceKeypoint.new(0.333, Color3.fromRGB(0, 255, 0)),
 		ColorSequenceKeypoint.new(0.5, Color3.fromRGB(0, 255, 255)),
 		ColorSequenceKeypoint.new(0.667, Color3.fromRGB(0, 0, 255)),
@@ -1792,6 +1819,7 @@ local function CreateKeybindInput(parentFrame, title, defaultKey, callback, flag
 	local wrapper = Instance.new("Frame")
 	wrapper.Size = UDim2.new(1, 0, 0, 0)
 	wrapper.BackgroundTransparency = 1
+	wrapper.LayoutOrder = GetNextLayoutOrder(parentFrame)
 	wrapper.Parent = parentFrame
 	wrapper.AutomaticSize = Enum.AutomaticSize.Y
 	
@@ -1932,6 +1960,7 @@ local function CreateVisualSectionDivider(parentFrame, titleArg)
 	local wrapper = Instance.new("Frame")
 	wrapper.Size = UDim2.new(0.95, 0, 0, 32)
 	wrapper.BackgroundTransparency = 1
+	wrapper.LayoutOrder = GetNextLayoutOrder(parentFrame)
 	wrapper.Parent = parentFrame
 
 	local label = Instance.new("TextLabel")
@@ -1978,6 +2007,7 @@ AttachElementsToAPI = function(apiTable, parentFrame)
 		label.TextSize = 13
 		label.TextXAlignment = Enum.TextXAlignment.Left
 		label.TextWrapped = true
+		label.LayoutOrder = GetNextLayoutOrder(parentFrame)
 		label.Parent = parentFrame
 		return label
 	end
@@ -2073,6 +2103,7 @@ CreateCollapsibleSection = function(parentFrame, titleArg)
 	local sectionBox = Instance.new("Frame")
 	sectionBox.Size = UDim2.new(0.95, 0, 0, 0)
 	sectionBox.BorderSizePixel = 0
+	sectionBox.LayoutOrder = GetNextLayoutOrder(parentFrame)
 	sectionBox.Parent = parentFrame
 	sectionBox.AutomaticSize = Enum.AutomaticSize.Y
 	Instance.new("UICorner", sectionBox).CornerRadius = UDim.new(0, 8)
