@@ -1,4 +1,3 @@
-
 --[[
 	Kaze UI Library
 	Optimized: Deep Obsidian Only, Dynamic Tab Text Scaling (No "..." Dots), Wider Sidebar, Safe Close Dialog Margin Padding
@@ -8,7 +7,7 @@
 	Added: Smooth & Responsive Continuous Window Resizing with UIScale correction, PC Hover Cursor (↘), and Multi-Touch Protection
 	Updated: Adaptive Device & Monitor Scale Protection Engine (0.85x Mobile / 1.0x Tablet / 1.15x Desktop Wide)
 	Updated: Adjusted Default Window Size to 600x400
-	Fixed: Mobile Camera Rotations while dragging any UI visual element (Sinks Touch inputs to Camera controls)
+	Fixed: Clamped Window Dragging to keep UI within Screen Bounds
 --]]
 
 local KazeUI = {}
@@ -20,7 +19,6 @@ local TweenService = game:GetService("TweenService")
 local UIS = game:GetService("UserInputService")
 local TextService = game:GetService("TextService")
 local HttpService = game:GetService("HttpService")
-local CAS = game:GetService("ContextActionService")
 local LP = Players.LocalPlayer
 local Mouse = LP:GetMouse()
 
@@ -35,26 +33,6 @@ KazeUI.GlowElements = {}
 KazeUI.NeonTweens = {}
 KazeUI.PanelElements = {} 
 KazeUI.TransparentElements = {}
-
--- Mobile Camera Rotation Lock / Input Sink Mechanics
-local SINK_ACTION_NAME = "KazeUIDragSink"
-
-local function StartInputSink()
-	CAS:BindActionAtPriority(
-		SINK_ACTION_NAME,
-		function()
-			return Enum.ContextActionResult.Sink
-		end,
-		false,
-		Enum.ContextActionPriority.High.Value + 1000, -- Overrides Roblox default Camera controls
-		Enum.UserInputType.Touch,
-		Enum.UserInputType.MouseMovement
-	)
-end
-
-local function StopInputSink()
-	CAS:UnbindAction(SINK_ACTION_NAME)
-end
 
 local function RegisterFlag(flag, getFunc, setFunc)
 	if flag then
@@ -183,13 +161,11 @@ local function FormatImage(id)
 	return "rbxassetid://" .. clean
 end
 
--- Threshold dragging to prevent minimize misclicks (Scale-adjusted for fluid dragging)
+-- Threshold dragging with active viewport/screen boundary clamping (UIScale corrected)
 local function MakeDraggable(dragPart, targetPart)
 	local dragging = false
 	local dragInput, dragStart, startPos
 	local dragActive = false
-	
-	dragPart.Active = true -- Native UI event consumption
 	
 	local function update(input)
 		if not dragStart or not startPos then return end
@@ -198,10 +174,26 @@ local function MakeDraggable(dragPart, targetPart)
 		
 		if dragActive or delta.Magnitude > 8 then
 			dragActive = true
-			targetPart.Position = UDim2.new(
-				startPos.X.Scale, startPos.X.Offset + (delta.X / scale),
-				startPos.Y.Scale, startPos.Y.Offset + (delta.Y / scale)
-			)
+			
+			-- Calculate target raw unscaled position based on original offset + pointer translation delta
+			local targetX = startPos.X.Offset + (delta.X / scale)
+			local targetY = startPos.Y.Offset + (delta.Y / scale)
+			
+			-- Get current screen size dimensions in design/unscaled pixels
+			local viewportSize = workspace.CurrentCamera.ViewportSize
+			local screenWidth = viewportSize.X / scale
+			local screenHeight = viewportSize.Y / scale
+			
+			-- Get current window dimensions in design/unscaled pixels
+			local winWidth = targetPart.AbsoluteSize.X / scale
+			local winHeight = targetPart.AbsoluteSize.Y / scale
+			
+			-- Clamp bounds strictly to keep targetPart within view space
+			-- Left >= 0, Top >= 0, Right <= Screen, Bottom <= Screen
+			local clampedX = math.clamp(targetX, 0, math.max(0, screenWidth - winWidth))
+			local clampedY = math.clamp(targetY, 0, math.max(0, screenHeight - winHeight))
+			
+			targetPart.Position = UDim2.fromOffset(clampedX, clampedY)
 		end
 	end
 	
@@ -210,14 +202,20 @@ local function MakeDraggable(dragPart, targetPart)
 			dragging = true
 			dragActive = false
 			dragStart = input.Position
+			
+			-- Shift window to AnchorPoint(0,0) and pure Offset on drag start for seamless screen boundary calculations
+			local scale = UIScale.Scale
+			local absolutePosition = targetPart.AbsolutePosition / scale
+			
+			targetPart.AnchorPoint = Vector2.new(0, 0)
+			targetPart.Position = UDim2.fromOffset(absolutePosition.X, absolutePosition.Y)
+			
 			startPos = targetPart.Position
-			StartInputSink() -- Prevents camera rotation instantly when drag begins
 			
 			input.Changed:Connect(function()
 				if input.UserInputState == Enum.UserInputState.End then
 					dragging = false
 					dragInput = nil
-					StopInputSink() -- Safely restores normal camera gameplay mechanics
 				end
 			end)
 		end
@@ -743,7 +741,6 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 		CalcHeight()
 	end)
 
-	clickBtn.MouseButton1Click.Active = true
 	clickBtn.MouseButton1Click:Connect(function()
 		isOpen = not isOpen
 		if isOpen then
@@ -991,7 +988,6 @@ local function CreateClickableParagraph(parentFrame, title, body, callback)
 	clickDetector.Text = ""
 	clickDetector.ZIndex = 10
 	clickDetector.Parent = paraFrame
-	clickDetector.Active = true
 
 	clickDetector.MouseEnter:Connect(function()
 		TweenService:Create(paraFrame, TweenInfo.new(0.12), { BackgroundColor3 = KazeUI.GetColor(0.05) }):Play()
@@ -1127,7 +1123,6 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 	clickDetector.Text = ""
 	clickDetector.ZIndex = 10
 	clickDetector.Parent = paraFrame
-	clickDetector.Active = true
 
 	local function setToggleState(newState, instant)
 		state = newState
@@ -1265,7 +1260,7 @@ local function CreateTextBoxInput(parentFrame, title, placeholder, defaultVal, c
 	textBox.TextSize = 13
 	textBox.TextXAlignment = Enum.TextXAlignment.Left
 	textBox.ClearTextOnFocus = false
-	textBox.Parent = textBoxContainer
+	textBox.Parent = textBox
 
 	textBox.Focused:Connect(function()
 		StartNeonLoop(innerStroke)
@@ -1379,7 +1374,6 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 	Instance.new("UICorner", track).CornerRadius = UDim.new(1, 0)
 	KazeUI:AddPanel(track, -0.02)
 	KazeUI:AddTransparentElement(track, 0)
-	track.Active = true
 	
 	local fill = Instance.new("Frame")
 	fill.Size = UDim2.new(0, 0, 1, 0)
@@ -1418,7 +1412,6 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 	clickDetector.Text = ""
 	clickDetector.ZIndex = 10
 	clickDetector.Parent = track
-	clickDetector.Active = true
 	
 	local isDragging = false
 	
@@ -1447,7 +1440,6 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 	clickDetector.InputBegan:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 			isDragging = true
-			StartInputSink() -- Prevents camera scroll from slider dragging interaction
 			ToggleScrollingAncestors(track, false)
 			modalLock.Visible = true
 			modalLock.Modal = true
@@ -1461,7 +1453,6 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 			endCon = UIS.InputEnded:Connect(function(endInput)
 				if endInput.UserInputType == Enum.UserInputType.MouseButton1 or endInput.UserInputType == Enum.UserInputType.Touch then
 					isDragging = false
-					StopInputSink() -- Restores camera functionality back to gameplay
 					ToggleScrollingAncestors(track, true)
 					modalLock.Visible = false
 					modalLock.Modal = false
@@ -1566,7 +1557,6 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 	clickBtn.Size = UDim2.fromScale(1, 1)
 	clickBtn.BackgroundTransparency = 1
 	clickBtn.Text = ""
-	clickBtn.Active = true
 
 	local pickerArea = Instance.new("Frame", dropFrame)
 	pickerArea.Size = UDim2.new(1, -16, 0, 150)
@@ -1580,7 +1570,6 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 	svMap.BackgroundColor3 = Color3.fromHSV(h, 1, 1)
 	svMap.Text = ""
 	Instance.new("UICorner", svMap).CornerRadius = UDim.new(0, 4)
-	svMap.Active = true
 
 	local whiteOverlay = Instance.new("Frame", svMap)
 	whiteOverlay.Size = UDim2.fromScale(1, 1)
@@ -1610,7 +1599,6 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 	hueSlider.AutoButtonColor = false
 	hueSlider.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
 	hueSlider.Text = ""
-	hueSlider.Active = true
 	local hg = Instance.new("UIGradient", hueSlider)
 	hg.Color = ColorSequence.new{
 		ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 0, 0)),
@@ -1667,7 +1655,6 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 	svMap.InputBegan:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 			draggingMap = true
-			StartInputSink() -- Block camera movement on touch manipulation
 			ToggleScrollingAncestors(svMap, false)
 			updateSV(input)
 		end
@@ -1676,7 +1663,6 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 	hueSlider.InputBegan:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 			draggingHue = true
-			StartInputSink() -- Block camera movement on touch manipulation
 			ToggleScrollingAncestors(hueSlider, false)
 			updateHue(input)
 		end
@@ -1694,9 +1680,6 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 
 	UIS.InputEnded:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-			if draggingMap or draggingHue then
-				StopInputSink() -- Restore normal controls when sliding finishes
-			end
 			draggingMap = false
 			draggingHue = false
 			ToggleScrollingAncestors(svMap, true)
@@ -1810,7 +1793,6 @@ local function CreateKeybindInput(parentFrame, title, defaultKey, callback, flag
 	local bindStroke = Instance.new("UIStroke", bindContainer)
 	bindStroke.Thickness = 1
 	bindStroke.Color = Color3.fromRGB(45, 45, 50)
-	bindContainer.Active = true
 	
 	local bindLabel = Instance.new("TextLabel", bindContainer)
 	bindLabel.Size = UDim2.new(1, 0, 1, 0)
@@ -2112,7 +2094,6 @@ CreateCollapsibleSection = function(parentFrame, titleArg)
 	toggleDetector.Text = ""
 	toggleDetector.ZIndex = 10
 	toggleDetector.Parent = headerFrame
-	toggleDetector.Active = true
 
 	toggleDetector.MouseButton1Click:Connect(function()
 		isOpen = not isOpen
@@ -2157,7 +2138,6 @@ function KazeUI:CreateWindow(config)
 	Window.AnchorPoint = Vector2.new(0.5, 0.5)
 	Window.BorderSizePixel = 0
 	Window.Parent = ScreenGui
-	Window.Active = true
 	Instance.new("UICorner", Window).CornerRadius = UDim.new(0, 12)
 	KazeUI:AddPanel(Window, 0)
 	KazeUI:AddTransparentElement(Window, 0)
@@ -2258,7 +2238,6 @@ function KazeUI:CreateWindow(config)
 	MiniButton.Visible = false
 	MiniButton.Parent = ScreenGui
 	MiniButton.ZIndex = 999
-	MiniButton.Active = true
 
 	local MiniIcon = Instance.new("ImageLabel")
 	MiniIcon.Size = UDim2.fromScale(1, 1) 
@@ -2323,7 +2302,6 @@ function KazeUI:CreateWindow(config)
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 			miniDragStart = input.Position
 			miniDragMoved = false
-			StartInputSink() -- Block camera movement on touch manipulation drag
 		end
 	end)
 	
@@ -2349,7 +2327,6 @@ function KazeUI:CreateWindow(config)
 			end
 			miniDragStart = nil
 			miniDragMoved = false
-			StopInputSink() -- Restore default camera settings safely
 		end
 	end)
 
@@ -2522,7 +2499,6 @@ function KazeUI:CreateWindow(config)
 	ResizeHandle.ImageColor3 = Color3.fromRGB(150, 150, 150)
 	ResizeHandle.ZIndex = 99
 	ResizeHandle.Parent = Window
-	ResizeHandle.Active = true
 
 	local isResizing = false
 	local resizeStartSize = Vector2.new(0, 0)
@@ -2568,7 +2544,6 @@ function KazeUI:CreateWindow(config)
 			end
 
 			isResizing = true
-			StartInputSink() -- Prevents camera rotations while resizing continuously
 			resizeStartSize = Vector2.new(Window.AbsoluteSize.X / UIScale.Scale, Window.AbsoluteSize.Y / UIScale.Scale)
 			resizeStartInput = input.Position
 
@@ -2596,7 +2571,6 @@ function KazeUI:CreateWindow(config)
 				return
 			end
 			isResizing = false
-			StopInputSink() -- Unbind camera actions once dragging is finished
 			resizeTouchInput = nil
 			ToggleScrollingAncestors(ResizeHandle, true)
 			Mouse.Icon = ""
@@ -2716,7 +2690,6 @@ function KazeUI:CreateWindow(config)
 		btn.Parent = TabsList
 		btn.ClipsDescendants = true
 		btn.LayoutOrder = #self._Tabs + 1
-		btn.Active = true
 		Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
 		KazeUI:AddPanel(btn, 0.02)
 		KazeUI:AddTransparentElement(btn, 0)
