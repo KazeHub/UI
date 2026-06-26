@@ -1,5 +1,5 @@
 --[[
-	Kaze UI Library (Optimized & Drag Fixed)
+	Kaze UI Library
 	Optimized: Deep Obsidian Only, Dynamic Tab Text Scaling (No "..." Dots), Wider Sidebar, Safe Close Dialog Margin Padding
 	Added: New Dynamic Keybind Component, Full Config Manager Overhaul, Memory Leak Prevention
 	Fixes: Text Clipping/Overflow fixed globally, Multi-Dropdown Color Hover State Fixed
@@ -7,7 +7,7 @@
 	Added: Smooth & Responsive Continuous Window Resizing with UIScale correction, PC Hover Cursor (↘), and Multi-Touch Protection
 	Updated: Adaptive Device & Monitor Scale Protection Engine (0.85x Mobile / 1.0x Tablet / 1.15x Desktop Wide)
 	Updated: Adjusted Default Window Size to 600x400
-	SAFE-AREA PROTECTION UPGRADE: Completely respects notches, dynamic islands, and status bars using automatic inset mapping and boundary clamping.
+	Fixed: Nested Dropdown scrolling conflict on PC & Mobile (Smart Boundary-Aware Scroll Controller)
 --]]
 
 local KazeUI = {}
@@ -19,7 +19,6 @@ local TweenService = game:GetService("TweenService")
 local UIS = game:GetService("UserInputService")
 local TextService = game:GetService("TextService")
 local HttpService = game:GetService("HttpService")
-local GuiService = game:GetService("GuiService")
 local LP = Players.LocalPlayer
 local Mouse = LP:GetMouse()
 
@@ -47,7 +46,6 @@ ScreenGui.Name = "KazeUI"
 ScreenGui.ResetOnSpawn = false
 ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 ScreenGui.DisplayOrder = 10 -- Base window layer
-ScreenGui.IgnoreGuiInset = false -- Respect safe area (Notch, status bar, dynamic island)
 
 local success, parent = pcall(function() return game:GetService("CoreGui") end)
 if not success or not parent then
@@ -61,7 +59,6 @@ NotifScreenGui.Name = "KazeUINotifications"
 NotifScreenGui.ResetOnSpawn = false
 NotifScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 NotifScreenGui.DisplayOrder = 999999 -- Forces notifications to draw on top of everything
-NotifScreenGui.IgnoreGuiInset = false -- Notifications respect safe area boundary too
 NotifScreenGui.Parent = parent
 
 -- Notification Container Setup
@@ -117,7 +114,7 @@ local function UpdateScale()
 	end
 
 	UIScale.Scale = targetScale
-	ScreenGui.IgnoreGuiInset = false -- Guarantee safe space inclusion across updates
+	ScreenGui.IgnoreGuiInset = true
 end
 
 UpdateScale()
@@ -164,29 +161,11 @@ local function FormatImage(id)
 	return "rbxassetid://" .. clean
 end
 
--- Threshold dragging with active Device Notch & Safe Zone boundary clamping
+-- Threshold dragging to prevent minimize misclicks (Scale-adjusted for fluid dragging)
 local function MakeDraggable(dragPart, targetPart)
 	local dragging = false
 	local dragInput, dragStart, startPos
 	local dragActive = false
-	
-	-- Translates screen coordinate position directly into scale-corrected offsets relative to ScreenGui origin
-	local function GetRelativeOffset(part)
-		local scale = UIScale.Scale
-		local absPos = part.AbsolutePosition
-		local size = part.AbsoluteSize
-		local ap = part.AnchorPoint
-		local topInset, _ = GuiService:GetGuiInset()
-		
-		local absAnchorX = absPos.X + (size.X * ap.X)
-		local absAnchorY = absPos.Y + (size.Y * ap.Y)
-		
-		-- Factor in left/top notch offsets
-		local relativeX = absAnchorX - topInset.X
-		local relativeY = absAnchorY - topInset.Y
-		
-		return UDim2.new(0, relativeX / scale, 0, relativeY / scale)
-	end
 	
 	local function update(input)
 		if not dragStart or not startPos then return end
@@ -194,40 +173,11 @@ local function MakeDraggable(dragPart, targetPart)
 		local scale = UIScale.Scale
 		
 		if dragActive or delta.Magnitude > 8 then
-			if not dragActive then
-				-- Convert to offset-only coords instantly before moving, preventing jump calculations
-				targetPart.Position = GetRelativeOffset(targetPart)
-				startPos = targetPart.Position
-				dragActive = true
-			end
-			
-			local newX = startPos.X.Offset + (delta.X / scale)
-			local newY = startPos.Y.Offset + (delta.Y / scale)
-			
-			-- Viewport clamping to protect safe areas (such as Notch, Island, and Topbar)
-			local camera = workspace.CurrentCamera
-			if camera then
-				local viewportSize = camera.ViewportSize
-				local topInset, bottomInset = GuiService:GetGuiInset()
-				
-				-- Available dimensions inside safe ScreenGui
-				local availableWidth = (viewportSize.X - topInset.X - bottomInset.X) / scale
-				local availableHeight = (viewportSize.Y - topInset.Y - bottomInset.Y) / scale
-				
-				local winWidth = targetPart.Size.X.Offset
-				local winHeight = targetPart.Size.Y.Offset
-				
-				local ap = targetPart.AnchorPoint
-				local minX = winWidth * ap.X
-				local maxX = availableWidth - (winWidth * (1 - ap.X))
-				local minY = winHeight * ap.Y
-				local maxY = availableHeight - (winHeight * (1 - ap.Y))
-				
-				newX = math.clamp(newX, minX, maxX)
-				newY = math.clamp(newY, minY, maxY)
-			end
-			
-			targetPart.Position = UDim2.new(0, newX, 0, newY)
+			dragActive = true
+			targetPart.Position = UDim2.new(
+				startPos.X.Scale, startPos.X.Offset + (delta.X / scale),
+				startPos.Y.Scale, startPos.Y.Offset + (delta.Y / scale)
+			)
 		end
 	end
 	
@@ -468,6 +418,16 @@ function KazeUI:LoadConfig(name)
 	end
 end
 
+-- Smart Screen Position Detector (Ensures accurate nested scrolling focus)
+local function IsMouseInFrame(frame)
+	if not frame or not frame.Visible or frame.AbsoluteSize.X <= 0 then return false end
+	local mPos = UIS:GetMouseLocation()
+	local absPos = frame.AbsolutePosition
+	local absSize = frame.AbsoluteSize
+	return mPos.X >= absPos.X and mPos.X <= absPos.X + absSize.X and
+		mPos.Y >= absPos.Y and mPos.Y <= absPos.Y + absSize.Y
+end
+
 local function ToggleScrollingAncestors(element, state)
 	local current = element.Parent
 	while current do
@@ -638,12 +598,85 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 	listContainer.ScrollBarImageColor3 = Color3.fromRGB(60, 60, 65)
 	listContainer.Parent = dropFrame
 
-	listContainer.MouseEnter:Connect(function() ToggleScrollingAncestors(dropFrame, false) end)
-	listContainer.MouseLeave:Connect(function() ToggleScrollingAncestors(dropFrame, true) end)
+	-- =========================================================================
+	-- SMART NESTED SCROLL IMPLEMENTATION (Locks child and transfers gracefully)
+	-- =========================================================================
+	local scrollConnection
+	local function UpdateScrollInterception(input)
+		if isOpen and IsMouseInFrame(listContainer) then
+			local canvasHeight = listContainer.AbsoluteCanvasSize.Y
+			local windowHeight = listContainer.AbsoluteSize.Y
+			local maxScroll = math.max(0, canvasHeight - windowHeight)
+			local currentScroll = listContainer.CanvasPosition.Y
 
-	local listLayout = Instance.new("UIListLayout", listContainer)
-	listLayout.SortOrder = Enum.SortOrder.LayoutOrder
-	listLayout.Padding = UDim.new(0, 2)
+			-- If all content fits perfectly, don't lock scroll Focus
+			if maxScroll <= 0 then
+				ToggleScrollingAncestors(dropFrame, true)
+				return
+			end
+
+			-- Check if the wheel is moving and at the boundaries
+			if input and input.UserInputType == Enum.UserInputType.MouseWheel then
+				local delta = input.Position.Z
+				if delta > 0 and currentScroll <= 2 then
+					-- At the TOP and scrolling UP -> pass scroll to page
+					ToggleScrollingAncestors(dropFrame, true)
+					return
+				elseif delta < 0 and currentScroll >= maxScroll - 2 then
+					-- At the BOTTOM and scrolling DOWN -> pass scroll to page
+					ToggleScrollingAncestors(dropFrame, true)
+					return
+				end
+			end
+
+			-- Inside listContainer & not overflowing -> Lock Parent Scroll
+			ToggleScrollingAncestors(dropFrame, false)
+		else
+			ToggleScrollingAncestors(dropFrame, true)
+		end
+	end
+
+	local function ConnectScrollTracker()
+		if scrollConnection then scrollConnection:Disconnect() end
+		scrollConnection = UIS.InputChanged:Connect(function(input)
+			if input.UserInputType == Enum.UserInputType.MouseMovement or 
+			   input.UserInputType == Enum.UserInputType.Touch or 
+			   input.UserInputType == Enum.UserInputType.MouseWheel then
+				UpdateScrollInterception(input)
+			end
+		end)
+	end
+
+	local function DisconnectScrollTracker()
+		if scrollConnection then
+			scrollConnection:Disconnect()
+			scrollConnection = nil
+		end
+		ToggleScrollingAncestors(dropFrame, true)
+	end
+
+	-- Touch & Click drags immediately lock context to child scroll
+	listContainer.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
+			ToggleScrollingAncestors(dropFrame, false)
+		end
+	end)
+
+	listContainer.InputEnded:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
+			UpdateScrollInterception()
+		end
+	end)
+
+	local function CloseDropdown()
+		isOpen = false
+		searchBox.Text = "" 
+		searchWrapper.Visible = false
+		divider.Visible = false
+		listContainer.Visible = false
+		TweenService:Create(arrowIcon, TweenInfo.new(0.2), {Rotation = 0}):Play()
+		DisconnectScrollTracker()
+	end
 
 	local optionItems = {}
 
@@ -653,15 +686,6 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 		local height = math.min(count, 4.5) * 32
 		listContainer.Size = UDim2.new(1, -16, 0, height)
 		listContainer.CanvasSize = UDim2.new(0, 0, 0, count * 32)
-	end
-
-	local function CloseDropdown()
-		isOpen = false
-		searchBox.Text = "" 
-		searchWrapper.Visible = false
-		divider.Visible = false
-		listContainer.Visible = false
-		TweenService:Create(arrowIcon, TweenInfo.new(0.2), {Rotation = 0}):Play()
 	end
 
 	local function Refresh(newOptions)
@@ -775,9 +799,15 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 			listContainer.Visible = true
 			CalcHeight()
 			TweenService:Create(arrowIcon, TweenInfo.new(0.2), {Rotation = 180}):Play()
+			ConnectScrollTracker()
 		else
 			CloseDropdown()
 		end
+	end)
+
+	-- Safe connection cleanup
+	wrapper.Destroying:Connect(function()
+		DisconnectScrollTracker()
 	end)
 
 	-- Save & Load Registry Hook
@@ -2153,30 +2183,13 @@ function KazeUI:CreateWindow(config)
 	local maxWidth = config.MaxWidth or 900
 	local maxHeight = config.MaxHeight or 700
 
-	-- Automatically adjust default window sizing down if screen space is extremely restricted (low-res mobile devices)
-	local scale = UIScale.Scale
-	local camera = workspace.CurrentCamera
-	local currentWidth, currentHeight = 600, 400
-	if camera then
-		local topInset, bottomInset = GuiService:GetGuiInset()
-		local availableWidth = camera.ViewportSize.X / scale
-		local availableHeight = (camera.ViewportSize.Y - topInset.Y - bottomInset.Y) / scale
-		
-		if availableWidth < currentWidth then
-			currentWidth = math.max(minWidth, availableWidth - 20)
-		end
-		if availableHeight < currentHeight then
-			currentHeight = math.max(minHeight, availableHeight - 20)
-		end
-	end
-
 	KazeUI.BackgroundColor = Color3.fromRGB(10, 10, 12) -- Permanent Deep Obsidian background
 	if config.GlowColor then KazeUI.GlowColor = config.GlowColor end
 
 	local MiniButtonSize = UDim2.fromOffset(46, 46)
 
 	local Window = Instance.new("Frame")
-	Window.Size = UDim2.fromOffset(currentWidth, currentHeight)
+	Window.Size = UDim2.fromOffset(600, 400) -- Default Window Size 600x400
 	Window.Position = UDim2.fromScale(0.5, 0.5)
 	Window.AnchorPoint = Vector2.new(0.5, 0.5)
 	Window.BorderSizePixel = 0
@@ -2250,7 +2263,7 @@ function KazeUI:CreateWindow(config)
 	TopDivider.Parent = TopBar
 	StartNeonLoop(TopDivider)
 
-	local defaultWindowSize = UDim2.fromOffset(currentWidth, currentHeight)
+	local defaultWindowSize = UDim2.fromOffset(600, 400) -- Default Window Size 600x400
 	local lastNormalSize = defaultWindowSize
 	local lastNormalPosition = UDim2.fromScale(0.5,0.5)
 	local lastNormalAnchor = Vector2.new(0.5,0.5)
@@ -2352,8 +2365,8 @@ function KazeUI:CreateWindow(config)
 		if miniDragStart and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
 			if (input.Position - miniDragStart).Magnitude > 8 then
 				miniDragMoved = true
-				-- Update position manually (scaled to handle varying viewport scaling factors flawlessly)
-				local delta = (input.Position - miniDragStart) / UIScale.Scale
+				-- Update position manually
+				local delta = input.Position - miniDragStart
 				MiniButton.Position = UDim2.new(
 					0, MiniButton.Position.X.Offset + delta.X,
 					0, MiniButton.Position.Y.Offset + delta.Y
@@ -2531,7 +2544,7 @@ function KazeUI:CreateWindow(config)
 	tabsLayout.Padding = UDim.new(0,4)
 
 	-- ==========================================
-	-- SMOOTH & ACCURATE CONTINUOUS WINDOW RESIZING WITH SAFE-AREA CLAMP PROTECTION
+	-- SMOOTH & ACCURATE CONTINUOUS WINDOW RESIZING
 	-- ==========================================
 	local ResizeHandle = Instance.new("ImageLabel")
 	ResizeHandle.Name = "ResizeHandle"
@@ -2569,25 +2582,9 @@ function KazeUI:CreateWindow(config)
 		local delta = input.Position - resizeStartInput
 		local scale = UIScale.Scale
 
-		-- Dynamically check safe screen margins to cap window sizes safely on small devices
-		local camera = workspace.CurrentCamera
-		local targetMaxWidth = maxWidth
-		local targetMaxHeight = maxHeight
-		
-		if camera then
-			local viewportSize = camera.ViewportSize
-			local topInset, bottomInset = GuiService:GetGuiInset()
-			
-			local availableWidth = (viewportSize.X - topInset.X - bottomInset.X) / scale
-			local availableHeight = (viewportSize.Y - topInset.Y - bottomInset.Y) / scale
-			
-			targetMaxWidth = math.min(maxWidth, availableWidth)
-			targetMaxHeight = math.min(maxHeight, availableHeight)
-		end
-
 		-- UIScale.Scale correct delta division to avoid dragging lag on scaled screens
-		local newWidth = math.clamp(resizeStartSize.X + (delta.X / scale), minWidth, targetMaxWidth)
-		local newHeight = math.clamp(resizeStartSize.Y + (delta.Y / scale), minHeight, targetMaxHeight)
+		local newWidth = math.clamp(resizeStartSize.X + (delta.X / scale), minWidth, maxWidth)
+		local newHeight = math.clamp(resizeStartSize.Y + (delta.Y / scale), minHeight, maxHeight)
 
 		Window.Size = UDim2.fromOffset(newWidth, newHeight)
 		lastNormalSize = Window.Size
