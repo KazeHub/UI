@@ -1,9 +1,14 @@
+
 --[[
-	Kaze UI Library - Professional Edition (Fully Fixed)
-	Optimized: Deep Obsidian Only, Dynamic Tab Text Scaling
-	QA Passed: Viewport Clamping, Notification Queue, Hover/Tween Sanitization
-	Fixes: Bulletproof Window Dragging with Immediate Pointer Capture, No Camera Interference
-	Updated: Adaptive Device & Monitor Scale Protection Engine
+	Kaze UI Library
+	Optimized: Deep Obsidian Only, Dynamic Tab Text Scaling (No "..." Dots), Wider Sidebar, Safe Close Dialog Margin Padding
+	Added: New Dynamic Keybind Component, Full Config Manager Overhaul, Memory Leak Prevention
+	Fixes: Text Clipping/Overflow fixed globally, Multi-Dropdown Color Hover State Fixed
+	Critical Fix: Rendered Notifications on a separate ScreenGui with DisplayOrder = 999999 to prevent them from drawing behind the main Window
+	Added: Smooth & Responsive Continuous Window Resizing with UIScale correction, PC Hover Cursor (↘), and Multi-Touch Protection
+	Updated: Adaptive Device & Monitor Scale Protection Engine (0.85x Mobile / 1.0x Tablet / 1.15x Desktop Wide)
+	Updated: Adjusted Default Window Size to 600x400
+	Fixed: Mobile camera rotation / player movement blocked globally during UI drags (Window, Resize, Sliders, Pickers)
 --]]
 
 local KazeUI = {}
@@ -15,35 +20,21 @@ local TweenService = game:GetService("TweenService")
 local UIS = game:GetService("UserInputService")
 local TextService = game:GetService("TextService")
 local HttpService = game:GetService("HttpService")
-local RunService = game:GetService("RunService")
+local CAS = game:GetService("ContextActionService") -- Added ContextActionService
 local LP = Players.LocalPlayer
 local Mouse = LP:GetMouse()
 
 -- Global State & Managers
 KazeUI.GlowColor = Color3.fromRGB(0, 160, 255)
-KazeUI.BackgroundColor = Color3.fromRGB(10, 10, 12)
+KazeUI.BackgroundColor = Color3.fromRGB(10, 10, 12) -- Locked to Deep Obsidian
 KazeUI.Flags = {}
 KazeUI.ActiveWindows = {} 
-KazeUI.Connections = {} -- Cleanup tracking
 
 -- Visual Controllers
 KazeUI.GlowElements = {}
 KazeUI.NeonTweens = {}
 KazeUI.PanelElements = {} 
 KazeUI.TransparentElements = {}
-
--- Notification Queue System (QA #5)
-KazeUI.NotificationQueue = {}
-KazeUI.ActiveNotifs = 0
-KazeUI.MaxNotifs = 5
-
--- Standardized Animation Timings (QA #21)
-local TIMING = {
-	Hover = 0.12,
-	Click = 0.08,
-	Transition = 0.20,
-	Theme = 0.25
-}
 
 local function RegisterFlag(flag, getFunc, setFunc)
 	if flag then
@@ -56,7 +47,7 @@ local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "KazeUI"
 ScreenGui.ResetOnSpawn = false
 ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-ScreenGui.DisplayOrder = 10
+ScreenGui.DisplayOrder = 10 -- Base window layer
 
 local success, parent = pcall(function() return game:GetService("CoreGui") end)
 if not success or not parent then
@@ -64,12 +55,12 @@ if not success or not parent then
 end
 ScreenGui.Parent = parent
 
--- Separate Notification Screen Gui
+-- SEPARATE NOTIFICATION SCREEN GUI (CRITICAL BUG FIX)
 local NotifScreenGui = Instance.new("ScreenGui")
 NotifScreenGui.Name = "KazeUINotifications"
 NotifScreenGui.ResetOnSpawn = false
 NotifScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-NotifScreenGui.DisplayOrder = 999999
+NotifScreenGui.DisplayOrder = 999999 -- Forces notifications to draw on top of everything
 NotifScreenGui.Parent = parent
 
 -- Notification Container Setup
@@ -86,32 +77,50 @@ NotifContainer.Name = "NotifContainer"
 NotifContainer.Size = UDim2.new(0, 300, 1, 0)
 NotifContainer.Position = UDim2.new(1, -320, 0, 0)
 NotifContainer.BackgroundTransparency = 1
-NotifContainer.Parent = NotifScreenGui
+NotifContainer.Parent = NotifScreenGui -- Attached to NotifScreenGui instead of main ScreenGui
 
 -- Screen Scale Controller
 local UIScale = Instance.new("UIScale")
 UIScale.Parent = ScreenGui
 
+-- DEVICE & SCREEN ADAPTIVE SCALING ENGINE
 local function UpdateScale()
 	local size = workspace.CurrentCamera.ViewportSize
 	local width = size.X
 	local height = size.Y
 	local minAxis = math.min(width, height)
+	
 	local targetScale = 1.0
 
 	if UIS.TouchEnabled then
-		if minAxis < 500 then targetScale = 0.85 else targetScale = 1.0 end
+		-- Mobile Devices (Phones vs Tablets)
+		if minAxis < 500 then
+			-- Phone Resolution Layouts
+			targetScale = 0.85
+		else
+			-- Tablet Layouts
+			targetScale = 1.0
+		end
 	else
-		if width >= 1920 or height >= 1080 then targetScale = 1.15
-		elseif width <= 1366 then targetScale = 0.95
-		else targetScale = 1.0 end
+		-- Desktop / PC Layouts
+		if width >= 1920 or height >= 1080 then
+			-- Large Monitor Resolution
+			targetScale = 1.15
+		elseif width <= 1366 then
+			-- Lower laptop screen resolutions / smaller physical monitors
+			targetScale = 0.95
+		else
+			-- Standard PC Desktop Size
+			targetScale = 1.0
+		end
 	end
+
 	UIScale.Scale = targetScale
 	ScreenGui.IgnoreGuiInset = true
 end
 
 UpdateScale()
-table.insert(KazeUI.Connections, workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(UpdateScale))
+workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(UpdateScale)
 
 -- Auto-Icon Fetcher via HttpGet
 local IconsMap = {}
@@ -154,91 +163,73 @@ local function FormatImage(id)
 	return "rbxassetid://" .. clean
 end
 
--- ==========================================
--- Bulletproof Dragging & Boundary Clamping Engine
--- ==========================================
-local function MakeDraggable(dragPart, targetPart)
-	dragPart.Active = true -- Blocks touch inputs from reaching the workspace/camera
+-- Global Drag / Camera Interaction Lock to prevent Camera Rotations during GUI interaction
+local activeDragLocks = 0
+local function SetDragLock(state)
+	if state then
+		activeDragLocks = activeDragLocks + 1
+		if activeDragLocks == 1 then
+			CAS:BindActionAtPriority("KazeUIDragSink", function()
+				return Enum.ContextActionResult.Sink
+			end, false, Enum.ContextActionPriority.High.Value + 1000, Enum.UserInputType.MouseMovement, Enum.UserInputType.Touch)
+		end
+	else
+		activeDragLocks = math.max(0, activeDragLocks - 1)
+		if activeDragLocks == 0 then
+			CAS:UnbindAction("KazeUIDragSink")
+		end
+	end
+end
 
+-- Threshold dragging to prevent minimize misclicks (Scale-adjusted for fluid dragging)
+local function MakeDraggable(dragPart, targetPart)
 	local dragging = false
-	local dragStart = nil
-	local startPos = nil
-	local activeInputObject = nil
+	local dragInput, dragStart, startPos
+	local dragActive = false
 	
-	table.insert(KazeUI.Connections, dragPart.InputBegan:Connect(function(input)
+	local function update(input)
+		if not dragStart or not startPos then return end
+		local delta = input.Position - dragStart
+		local scale = UIScale.Scale
+		
+		if dragActive or delta.Magnitude > 8 then
+			dragActive = true
+			targetPart.Position = UDim2.new(
+				startPos.X.Scale, startPos.X.Offset + (delta.X / scale),
+				startPos.Y.Scale, startPos.Y.Offset + (delta.Y / scale)
+			)
+		end
+	end
+	
+	dragPart.InputBegan:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 			dragging = true
+			SetDragLock(true)
+			dragActive = false
 			dragStart = input.Position
 			startPos = targetPart.Position
-			activeInputObject = input -- Instantly captures input to prevent uninitialized drag states
-
-			-- Clear focus from textboxes
-			local focused = UIS:GetFocusedTextBox()
-			if focused then focused:ReleaseFocus() end
 			
-			local endCon
-			endCon = input.Changed:Connect(function()
+			input.Changed:Connect(function()
 				if input.UserInputState == Enum.UserInputState.End then
-					dragging = false
-					activeInputObject = nil
-					if endCon then endCon:Disconnect() end
+					if dragging then
+						dragging = false
+						SetDragLock(false)
+					end
+					dragInput = nil
 				end
 			end)
 		end
-	end))
+	end)
 	
-	table.insert(KazeUI.Connections, UIS.InputChanged:Connect(function(input)
-		if dragging and input == activeInputObject then
-			local delta = input.Position - dragStart
-			local scale = UIScale.Scale
-			
-			local newX = startPos.X.Offset + (delta.X / scale)
-			local newY = startPos.Y.Offset + (delta.Y / scale)
-
-			-- Boundary Clamping Calculations (Correctly scaled for resolution/device)
-			local vpSize = workspace.CurrentCamera.ViewportSize / scale
-			local winSize = targetPart.AbsoluteSize / scale
-			local apX = targetPart.AnchorPoint.X
-			local apY = targetPart.AnchorPoint.Y
-
-			local minX = winSize.X * apX
-			local maxX = vpSize.X - (winSize.X * (1 - apX))
-			local minY = winSize.Y * apY
-			local maxY = vpSize.Y - (winSize.Y * (1 - apY))
-
-			-- Fallback check to prevent jumps if viewport is smaller than UI
-			if minX > maxX then minX, maxX = maxX, minX end
-			if minY > maxY then minY, maxY = maxY, minY end
-
-			newX = math.clamp(newX, minX, maxX)
-			newY = math.clamp(newY, minY, maxY)
-
-			targetPart.Position = UDim2.new(startPos.X.Scale, newX, startPos.Y.Scale, newY)
+	dragPart.InputChanged:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+			dragInput = input
 		end
-	end))
-end
-
--- ==========================================
--- Full Memory Cleanup Engine (QA #6)
--- ==========================================
-function KazeUI:Destroy()
-	for _, conn in ipairs(self.Connections) do
-		if conn.Connected then conn:Disconnect() end
-	end
-	self.Connections = {}
+	end)
 	
-	for target, tween in pairs(self.NeonTweens) do
-		if tween then tween:Cancel() end
-	end
-	
-	self.NeonTweens = {}
-	self.GlowElements = {}
-	self.PanelElements = {}
-	self.TransparentElements = {}
-	self.ActiveWindows = {}
-	
-	if ScreenGui then ScreenGui:Destroy() end
-	if NotifScreenGui then NotifScreenGui:Destroy() end
+	UIS.InputChanged:Connect(function(input)
+		if input == dragInput and dragging then update(input) end
+	end)
 end
 
 -- ==========================================
@@ -250,25 +241,28 @@ function KazeUI.GetColor(elevation)
 	return Color3.fromHSV(h, s, math.clamp(v + offset, 0, 1))
 end
 
+-- Elements Registry
 function KazeUI:AddPanel(inst, elevation)
 	table.insert(KazeUI.PanelElements, {Inst = inst, Elevation = elevation or 0})
 	if inst and inst:IsA("GuiObject") then
 		inst.BackgroundColor3 = KazeUI.GetColor(elevation or 0)
-		table.insert(KazeUI.Connections, inst.Destroying:Connect(function()
+		-- Prevent Memory Leak
+		inst.Destroying:Connect(function()
 			for i = #KazeUI.PanelElements, 1, -1 do
 				if KazeUI.PanelElements[i].Inst == inst then table.remove(KazeUI.PanelElements, i) end
 			end
-		end))
+		end)
 	end
 end
 
 function KazeUI:AddTransparentElement(inst, defaultTrans)
 	table.insert(KazeUI.TransparentElements, {Inst = inst, Default = defaultTrans or inst.BackgroundTransparency})
-	table.insert(KazeUI.Connections, inst.Destroying:Connect(function()
+	-- Prevent Memory Leak
+	inst.Destroying:Connect(function()
 		for i = #KazeUI.TransparentElements, 1, -1 do
 			if KazeUI.TransparentElements[i].Inst == inst then table.remove(KazeUI.TransparentElements, i) end
 		end
-	end))
+	end)
 end
 
 function KazeUI:SetBackgroundColor(color)
@@ -339,24 +333,9 @@ function KazeUI:SetGlow(color)
 	end
 end
 
--- ==========================================
--- Notification Queue Engine (QA #5)
--- ==========================================
-function KazeUI:ProcessQueue()
-	if #self.NotificationQueue > 0 and self.ActiveNotifs < self.MaxNotifs then
-		local config = table.remove(self.NotificationQueue, 1)
-		self:RenderNotification(config)
-	end
-end
-
+-- Robust Notification Animation Sequence
 function KazeUI:Notify(config)
-	table.insert(self.NotificationQueue, config or {})
-	self:ProcessQueue()
-end
-
-function KazeUI:RenderNotification(config)
-	self.ActiveNotifs = self.ActiveNotifs + 1
-	
+	config = config or {}
 	local title = tostring(config.Title or "Notification")
 	local content = tostring(config.Content or "")
 	local duration = tonumber(config.Duration) or 3
@@ -420,9 +399,6 @@ function KazeUI:RenderNotification(config)
 
 		StopNeonLoop(stroke)
 		notifHolder:Destroy()
-		
-		self.ActiveNotifs = self.ActiveNotifs - 1
-		self:ProcessQueue()
 	end)
 end
 
@@ -475,9 +451,7 @@ local function ToggleScrollingAncestors(element, state)
 	end
 end
 
--- ==========================================
--- Component Factories
--- ==========================================
+-- Component factories
 local function CreateDropdown(parentFrame, title, options, defaultOption, callback, isMulti, flag)
 	title = tostring(title or "Dropdown")
 	options = type(options) == "table" and options or {}
@@ -485,7 +459,6 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 
 	local selectedSingle = ""
 	local selectedMulti = {}
-	local activeTweens = {}
 
 	if isMulti then
 		if type(defaultOption) == "table" then
@@ -525,13 +498,17 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 	boxStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 	StartNeonLoop(boxStroke)
 
+	local layout = Instance.new("UIListLayout", dropFrame)
+	layout.SortOrder = Enum.SortOrder.LayoutOrder
+	layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+	layout.Padding = UDim.new(0, 4)
+
 	local header = Instance.new("Frame")
 	header.Name = "Header"
 	header.Size = UDim2.new(1, -16, 0, 36)
 	header.BackgroundTransparency = 1
 	header.LayoutOrder = 1
 	header.Parent = dropFrame
-	header.Position = UDim2.fromOffset(8,0)
 
 	local titleLabel = Instance.new("TextLabel", header)
 	titleLabel.Size = UDim2.new(0.5, 0, 1, 0)
@@ -587,7 +564,6 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 
 	local searchWrapper = Instance.new("Frame")
 	searchWrapper.Size = UDim2.new(1, -16, 0, 30)
-	searchWrapper.Position = UDim2.fromOffset(8, 40)
 	searchWrapper.BackgroundTransparency = 1
 	searchWrapper.LayoutOrder = 2
 	searchWrapper.Visible = false
@@ -605,7 +581,7 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 	searchBox.TextSize = 13
 	searchBox.TextXAlignment = Enum.TextXAlignment.Left
 	searchBox.Parent = searchWrapper
-	Instance.new("UICorner", searchBox).CornerRadius = UDim.new(0, 8)
+	Instance.new("UICorner", searchBox).CornerRadius = UDim.new(0, 5)
 	KazeUI:AddPanel(searchBox, -0.02)
 	KazeUI:AddTransparentElement(searchBox, 0)
 
@@ -613,15 +589,14 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 	searchStroke.Color = Color3.fromRGB(45, 45, 50)
 	searchStroke.Thickness = 1
 
-	table.insert(KazeUI.Connections, searchBox.Focused:Connect(function() StartNeonLoop(searchStroke) end))
-	table.insert(KazeUI.Connections, searchBox.FocusLost:Connect(function() 
+	searchBox.Focused:Connect(function() StartNeonLoop(searchStroke) end)
+	searchBox.FocusLost:Connect(function() 
 		StopNeonLoop(searchStroke) 
 		searchStroke.Color = Color3.fromRGB(45, 45, 50) 
-	end))
+	end)
 	
 	local divider = Instance.new("Frame")
 	divider.Size = UDim2.new(1, -16, 0, 1)
-	divider.Position = UDim2.fromOffset(8, 76)
 	divider.BackgroundColor3 = Color3.fromRGB(38, 38, 42)
 	divider.BorderSizePixel = 0
 	divider.LayoutOrder = 3
@@ -630,7 +605,6 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 
 	local listContainer = Instance.new("ScrollingFrame")
 	listContainer.Size = UDim2.new(1, -16, 0, 0)
-	listContainer.Position = UDim2.fromOffset(8, 80)
 	listContainer.BackgroundTransparency = 1
 	listContainer.BorderSizePixel = 0
 	listContainer.LayoutOrder = 4
@@ -639,8 +613,8 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 	listContainer.ScrollBarImageColor3 = Color3.fromRGB(60, 60, 65)
 	listContainer.Parent = dropFrame
 
-	table.insert(KazeUI.Connections, listContainer.MouseEnter:Connect(function() ToggleScrollingAncestors(dropFrame, false) end))
-	table.insert(KazeUI.Connections, listContainer.MouseLeave:Connect(function() ToggleScrollingAncestors(dropFrame, true) end))
+	listContainer.MouseEnter:Connect(function() ToggleScrollingAncestors(dropFrame, false) end)
+	listContainer.MouseLeave:Connect(function() ToggleScrollingAncestors(dropFrame, true) end)
 
 	local listLayout = Instance.new("UIListLayout", listContainer)
 	listLayout.SortOrder = Enum.SortOrder.LayoutOrder
@@ -654,20 +628,15 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 		local height = math.min(count, 4.5) * 32
 		listContainer.Size = UDim2.new(1, -16, 0, height)
 		listContainer.CanvasSize = UDim2.new(0, 0, 0, count * 32)
-		dropFrame.Size = UDim2.new(0.95, 0, 0, isOpen and (84 + height) or 44)
 	end
 
-	local tweenArrow
 	local function CloseDropdown()
 		isOpen = false
 		searchBox.Text = "" 
 		searchWrapper.Visible = false
 		divider.Visible = false
 		listContainer.Visible = false
-		if tweenArrow then tweenArrow:Cancel() end
-		tweenArrow = TweenService:Create(arrowIcon, TweenInfo.new(TIMING.Transition), {Rotation = 0})
-		tweenArrow:Play()
-		CalcHeight()
+		TweenService:Create(arrowIcon, TweenInfo.new(0.2), {Rotation = 0}):Play()
 	end
 
 	local function Refresh(newOptions)
@@ -702,7 +671,7 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 			end
             
 			local isHovering = false
-			
+
 			local function UpdateVisuals(instant)
 				local active = isMulti and selectedMulti[optStr] or (not isMulti and selectedSingle == optStr)
 				
@@ -718,29 +687,28 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 				if instant == true then
 					btn.BackgroundColor3 = targetBg
 					btn.TextColor3 = targetTxt
-					if indicator then indicator.BackgroundColor3 = indTargetBg end
+					if isMulti and indicator then
+						indicator.BackgroundColor3 = indTargetBg
+					end
 				else
-					if activeTweens[btn] then activeTweens[btn]:Cancel() end
-					activeTweens[btn] = TweenService:Create(btn, TweenInfo.new(TIMING.Hover), {BackgroundColor3 = targetBg, TextColor3 = targetTxt})
-					activeTweens[btn]:Play()
-					
-					if indicator then
-						if activeTweens[indicator] then activeTweens[indicator]:Cancel() end
-						activeTweens[indicator] = TweenService:Create(indicator, TweenInfo.new(TIMING.Hover), {BackgroundColor3 = indTargetBg})
-						activeTweens[indicator]:Play()
+					TweenService:Create(btn, TweenInfo.new(0.15), {BackgroundColor3 = targetBg, TextColor3 = targetTxt}):Play()
+					if isMulti and indicator then
+						TweenService:Create(indicator, TweenInfo.new(0.15), {BackgroundColor3 = indTargetBg}):Play()
 					end
 				end
 			end
 			UpdateVisuals(true)
 
-			table.insert(KazeUI.Connections, btn.MouseEnter:Connect(function() 
-				isHovering = true; UpdateVisuals(false)
-			end))
-			table.insert(KazeUI.Connections, btn.MouseLeave:Connect(function()
-				isHovering = false; UpdateVisuals(false)
-			end))
+			btn.MouseEnter:Connect(function() 
+				isHovering = true
+				UpdateVisuals(false)
+			end)
+			btn.MouseLeave:Connect(function()
+				isHovering = false
+				UpdateVisuals(false)
+			end)
 
-			table.insert(KazeUI.Connections, btn.MouseButton1Click:Connect(function()
+			btn.MouseButton1Click:Connect(function()
 				if isMulti then
 					selectedMulti[optStr] = not selectedMulti[optStr]
 					UpdateVisuals(false)
@@ -757,7 +725,7 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 					for _, item in ipairs(optionItems) do item.Update(false) end
 					if type(callback) == "function" then task.spawn(callback, selectedSingle) end
 				end
-			end))
+			end)
 
 			table.insert(optionItems, { Btn = btn, Text = optStr, Update = function(instant) UpdateVisuals(instant) end })
 		end
@@ -766,29 +734,28 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 
 	Refresh(options)
 
-	table.insert(KazeUI.Connections, searchBox:GetPropertyChangedSignal("Text"):Connect(function()
+	searchBox:GetPropertyChangedSignal("Text"):Connect(function()
 		local q = string.lower(searchBox.Text)
 		for _, item in ipairs(optionItems) do
 			item.Btn.Visible = (q == "" or string.find(string.lower(item.Text), q, 1, true)) ~= nil
 		end
 		CalcHeight()
-	end))
+	end)
 
-	table.insert(KazeUI.Connections, clickBtn.MouseButton1Click:Connect(function()
+	clickBtn.MouseButton1Click:Connect(function()
 		isOpen = not isOpen
 		if isOpen then
 			searchWrapper.Visible = true
 			divider.Visible = true
 			listContainer.Visible = true
-			if tweenArrow then tweenArrow:Cancel() end
-			tweenArrow = TweenService:Create(arrowIcon, TweenInfo.new(TIMING.Transition), {Rotation = 180})
-			tweenArrow:Play()
 			CalcHeight()
+			TweenService:Create(arrowIcon, TweenInfo.new(0.2), {Rotation = 180}):Play()
 		else
 			CloseDropdown()
 		end
-	end))
+	end)
 
+	-- Save & Load Registry Hook
 	RegisterFlag(flag, function()
 		if isMulti then
 			local ret = {}
@@ -808,6 +775,7 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 		UpdateHeaderVisual()
 		Refresh(options)
 		
+		-- Hook properly into config applying state
 		if typeof(callback) == "function" then
 			if isMulti then
 				local ret = {}
@@ -1022,31 +990,22 @@ local function CreateClickableParagraph(parentFrame, title, body, callback)
 	clickDetector.ZIndex = 10
 	clickDetector.Parent = paraFrame
 
-	local bgTween, glowTween, sizeTween
-	table.insert(KazeUI.Connections, clickDetector.MouseEnter:Connect(function()
-		if bgTween then bgTween:Cancel() end; if glowTween then glowTween:Cancel() end
-		bgTween = TweenService:Create(paraFrame, TweenInfo.new(TIMING.Hover), { BackgroundColor3 = KazeUI.GetColor(0.05) })
-		glowTween = TweenService:Create(glow, TweenInfo.new(TIMING.Hover), { BackgroundTransparency = 0.92 })
-		bgTween:Play(); glowTween:Play()
-	end))
-	table.insert(KazeUI.Connections, clickDetector.MouseLeave:Connect(function()
-		if bgTween then bgTween:Cancel() end; if glowTween then glowTween:Cancel() end; if sizeTween then sizeTween:Cancel() end
-		bgTween = TweenService:Create(paraFrame, TweenInfo.new(TIMING.Hover), { BackgroundColor3 = KazeUI.GetColor(0.02) })
-		glowTween = TweenService:Create(glow, TweenInfo.new(TIMING.Hover), { BackgroundTransparency = 0.96 })
-		sizeTween = TweenService:Create(paraFrame, TweenInfo.new(0.1), { Size = UDim2.new(0.95, 0, 0, totalHeight), Position = UDim2.new(0.5, 0, 0, 3) })
-		bgTween:Play(); glowTween:Play(); sizeTween:Play()
-	end))
-	table.insert(KazeUI.Connections, clickDetector.MouseButton1Down:Connect(function()
-		if sizeTween then sizeTween:Cancel() end
-		sizeTween = TweenService:Create(paraFrame, TweenInfo.new(TIMING.Click), { Size = UDim2.new(0.93, 0, 0, totalHeight - 3), Position = UDim2.new(0.5, 0, 0, 4) })
-		sizeTween:Play()
-	end))
-	table.insert(KazeUI.Connections, clickDetector.MouseButton1Up:Connect(function()
-		if sizeTween then sizeTween:Cancel() end
-		sizeTween = TweenService:Create(paraFrame, TweenInfo.new(TIMING.Click), { Size = UDim2.new(0.95, 0, 0, totalHeight), Position = UDim2.new(0.5, 0, 0, 3) })
-		sizeTween:Play()
+	clickDetector.MouseEnter:Connect(function()
+		TweenService:Create(paraFrame, TweenInfo.new(0.12), { BackgroundColor3 = KazeUI.GetColor(0.05) }):Play()
+		TweenService:Create(glow, TweenInfo.new(0.12), { BackgroundTransparency = 0.92 }):Play()
+	end)
+	clickDetector.MouseLeave:Connect(function()
+		TweenService:Create(paraFrame, TweenInfo.new(0.12), { BackgroundColor3 = KazeUI.GetColor(0.02) }):Play()
+		TweenService:Create(glow, TweenInfo.new(0.12), { BackgroundTransparency = 0.96 }):Play()
+		TweenService:Create(paraFrame, TweenInfo.new(0.1), { Size = UDim2.new(0.95, 0, 0, totalHeight), Position = UDim2.new(0.5, 0, 0, 3) }):Play()
+	end)
+	clickDetector.MouseButton1Down:Connect(function()
+		TweenService:Create(paraFrame, TweenInfo.new(0.08), { Size = UDim2.new(0.93, 0, 0, totalHeight - 3), Position = UDim2.new(0.5, 0, 0, 4) }):Play()
+	end)
+	clickDetector.MouseButton1Up:Connect(function()
+		TweenService:Create(paraFrame, TweenInfo.new(0.08), { Size = UDim2.new(0.95, 0, 0, totalHeight), Position = UDim2.new(0.5, 0, 0, 3) }):Play()
 		if typeof(callback) == "function" then task.spawn(callback) end
-	end))
+	end)
 	
 	return { 
 		Wrapper = wrapper, 
@@ -1165,8 +1124,7 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 	clickDetector.Text = ""
 	clickDetector.ZIndex = 10
 	clickDetector.Parent = paraFrame
-	
-	local indTween, contTween
+
 	local function setToggleState(newState, instant)
 		state = newState
 		local targetPos = state and UDim2.new(1, -16, 0.5, 0) or UDim2.new(0, 2, 0.5, 0)
@@ -1176,39 +1134,28 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 			switchIndicator.Position = targetPos
 			switchContainer.BackgroundColor3 = targetBg
 		else
-			if indTween then indTween:Cancel() end; if contTween then contTween:Cancel() end
-			indTween = TweenService:Create(switchIndicator, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Position = targetPos })
-			contTween = TweenService:Create(switchContainer, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { BackgroundColor3 = targetBg })
-			indTween:Play(); contTween:Play()
+			TweenService:Create(switchIndicator, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Position = targetPos }):Play()
+			TweenService:Create(switchContainer, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { BackgroundColor3 = targetBg }):Play()
 		end
 	end
 
-	local bgTween, glowTween, sizeTween
-	table.insert(KazeUI.Connections, clickDetector.MouseEnter:Connect(function()
-		if bgTween then bgTween:Cancel() end; if glowTween then glowTween:Cancel() end
-		bgTween = TweenService:Create(paraFrame, TweenInfo.new(TIMING.Hover), { BackgroundColor3 = KazeUI.GetColor(0.05) })
-		glowTween = TweenService:Create(glow, TweenInfo.new(TIMING.Hover), { BackgroundTransparency = 0.92 })
-		bgTween:Play(); glowTween:Play()
-	end))
-	table.insert(KazeUI.Connections, clickDetector.MouseLeave:Connect(function()
-		if bgTween then bgTween:Cancel() end; if glowTween then glowTween:Cancel() end; if sizeTween then sizeTween:Cancel() end
-		bgTween = TweenService:Create(paraFrame, TweenInfo.new(TIMING.Hover), { BackgroundColor3 = KazeUI.GetColor(0.02) })
-		glowTween = TweenService:Create(glow, TweenInfo.new(TIMING.Hover), { BackgroundTransparency = 0.96 })
-		sizeTween = TweenService:Create(paraFrame, TweenInfo.new(0.1), { Size = UDim2.new(0.95, 0, 0, totalHeight), Position = UDim2.new(0.5, 0, 0, 3) })
-		bgTween:Play(); glowTween:Play(); sizeTween:Play()
-	end))
-	table.insert(KazeUI.Connections, clickDetector.MouseButton1Down:Connect(function()
-		if sizeTween then sizeTween:Cancel() end
-		sizeTween = TweenService:Create(paraFrame, TweenInfo.new(TIMING.Click), { Size = UDim2.new(0.93, 0, 0, totalHeight - 3), Position = UDim2.new(0.5, 0, 0, 4) })
-		sizeTween:Play()
-	end))
-	table.insert(KazeUI.Connections, clickDetector.MouseButton1Up:Connect(function()
-		if sizeTween then sizeTween:Cancel() end
-		sizeTween = TweenService:Create(paraFrame, TweenInfo.new(TIMING.Click), { Size = UDim2.new(0.95, 0, 0, totalHeight), Position = UDim2.new(0.5, 0, 0, 3) })
-		sizeTween:Play()
+	clickDetector.MouseEnter:Connect(function()
+		TweenService:Create(paraFrame, TweenInfo.new(0.12), { BackgroundColor3 = KazeUI.GetColor(0.05) }):Play()
+		TweenService:Create(glow, TweenInfo.new(0.12), { BackgroundTransparency = 0.92 }):Play()
+	end)
+	clickDetector.MouseLeave:Connect(function()
+		TweenService:Create(paraFrame, TweenInfo.new(0.12), { BackgroundColor3 = KazeUI.GetColor(0.02) }):Play()
+		TweenService:Create(glow, TweenInfo.new(0.12), { BackgroundTransparency = 0.96 }):Play()
+		TweenService:Create(paraFrame, TweenInfo.new(0.1), { Size = UDim2.new(0.95, 0, 0, totalHeight), Position = UDim2.new(0.5, 0, 0, 3) }):Play()
+	end)
+	clickDetector.MouseButton1Down:Connect(function()
+		TweenService:Create(paraFrame, TweenInfo.new(0.08), { Size = UDim2.new(0.93, 0, 0, totalHeight - 3), Position = UDim2.new(0.5, 0, 0, 4) }):Play()
+	end)
+	clickDetector.MouseButton1Up:Connect(function()
+		TweenService:Create(paraFrame, TweenInfo.new(0.08), { Size = UDim2.new(0.95, 0, 0, totalHeight), Position = UDim2.new(0.5, 0, 0, 3) }):Play()
 		setToggleState(not state, false)
 		if typeof(callback) == "function" then task.spawn(callback, state) end
-	end))
+	end)
 
 	RegisterFlag(flag, function() return state end, function(val)
 		setToggleState(val, false)
@@ -1316,22 +1263,17 @@ local function CreateTextBoxInput(parentFrame, title, placeholder, defaultVal, c
 	textBox.ClearTextOnFocus = false
 	textBox.Parent = textBoxContainer
 
-	local tTween, bTween
-	table.insert(KazeUI.Connections, textBox.Focused:Connect(function()
+	textBox.Focused:Connect(function()
 		StartNeonLoop(innerStroke)
-		if bTween then bTween:Cancel() end
-		bTween = TweenService:Create(paraFrame, TweenInfo.new(TIMING.Hover), { BackgroundColor3 = KazeUI.GetColor(0.04) })
-		bTween:Play()
-	end))
+		TweenService:Create(paraFrame, TweenInfo.new(0.12), { BackgroundColor3 = KazeUI.GetColor(0.04) }):Play()
+	end)
 
-	table.insert(KazeUI.Connections, textBox.FocusLost:Connect(function(enterPressed)
+	textBox.FocusLost:Connect(function(enterPressed)
 		StopNeonLoop(innerStroke)
-		if tTween then tTween:Cancel() end; if bTween then bTween:Cancel() end
-		tTween = TweenService:Create(innerStroke, TweenInfo.new(0.15), { Color = Color3.fromRGB(45, 45, 50) })
-		bTween = TweenService:Create(paraFrame, TweenInfo.new(TIMING.Hover), { BackgroundColor3 = KazeUI.GetColor(0.02) })
-		tTween:Play(); bTween:Play()
+		TweenService:Create(innerStroke, TweenInfo.new(0.15), { Color = Color3.fromRGB(45, 45, 50) }):Play()
+		TweenService:Create(paraFrame, TweenInfo.new(0.12), { BackgroundColor3 = KazeUI.GetColor(0.02) }):Play()
 		if typeof(callback) == "function" then task.spawn(callback, textBox.Text, enterPressed) end
-	end))
+	end)
 	
 	RegisterFlag(flag, function() return textBox.Text end, function(val)
 		textBox.Text = val
@@ -1474,21 +1416,20 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 	
 	local isDragging = false
 	
-	-- Continuous Smooth Update (QA #17)
 	local function UpdateValueFromInput(input)
 		local trackWidth = track.AbsoluteSize.X
 		if trackWidth <= 0 then return end
 		local relativeX = input.Position.X - track.AbsolutePosition.X
 		local percentage = math.clamp(relativeX / trackWidth, 0, 1)
-		
-		-- Unrounded real value for smooth track rendering, rounded value for display
-		local realValue = min + (max - min) * percentage
-		value = math.clamp(math.floor(realValue + 0.5), min, max)
+		local newVal = min + (max - min) * percentage
+		newVal = math.clamp(math.floor(newVal + 0.5), min, max)
+		value = newVal
 		valueLabel.Text = tostring(value)
 		
-		fill.Size = UDim2.new(percentage, 0, 1, 0)
-		knob.Position = UDim2.new(percentage, 0, 0.5, 0)
-		
+		local visualPercentage = 0
+		if max > min then visualPercentage = (value - min) / (max - min) end
+		fill.Size = UDim2.new(visualPercentage, 0, 1, 0)
+		knob.Position = UDim2.new(visualPercentage, 0, 0.5, 0)
 		if typeof(callback) == "function" then task.spawn(callback, value) end
 	end
 	
@@ -1497,9 +1438,10 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 	fill.Size = UDim2.new(startingPercentage, 0, 1, 0)
 	knob.Position = UDim2.new(startingPercentage, 0, 0.5, 0)
 	
-	table.insert(KazeUI.Connections, clickDetector.InputBegan:Connect(function(input)
+	clickDetector.InputBegan:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 			isDragging = true
+			SetDragLock(true)
 			ToggleScrollingAncestors(track, false)
 			modalLock.Visible = true
 			modalLock.Modal = true
@@ -1512,7 +1454,10 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 			end)
 			endCon = UIS.InputEnded:Connect(function(endInput)
 				if endInput.UserInputType == Enum.UserInputType.MouseButton1 or endInput.UserInputType == Enum.UserInputType.Touch then
-					isDragging = false
+					if isDragging then
+						isDragging = false
+						SetDragLock(false)
+					end
 					ToggleScrollingAncestors(track, true)
 					modalLock.Visible = false
 					modalLock.Modal = false
@@ -1521,9 +1466,9 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 				end
 			end)
 		end
-	end))
+	end)
 
-	table.insert(KazeUI.Connections, wrapper.Destroying:Connect(function() modalLock:Destroy() end))
+	wrapper.Destroying:Connect(function() modalLock:Destroy() end)
 
 	local api = {
 		Wrapper = wrapper,
@@ -1712,23 +1657,25 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 		UpdateColor()
 	end
 
-	table.insert(KazeUI.Connections, svMap.InputBegan:Connect(function(input)
+	svMap.InputBegan:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 			draggingMap = true
+			SetDragLock(true)
 			ToggleScrollingAncestors(svMap, false)
 			updateSV(input)
 		end
-	end))
+	end)
 
-	table.insert(KazeUI.Connections, hueSlider.InputBegan:Connect(function(input)
+	hueSlider.InputBegan:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 			draggingHue = true
+			SetDragLock(true)
 			ToggleScrollingAncestors(hueSlider, false)
 			updateHue(input)
 		end
-	end))
+	end)
 
-	table.insert(KazeUI.Connections, UIS.InputChanged:Connect(function(input)
+	UIS.InputChanged:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
 			if draggingMap then
 				updateSV(input)
@@ -1736,24 +1683,24 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 				updateHue(input)
 			end
 		end
-	end))
+	end)
 
-	table.insert(KazeUI.Connections, UIS.InputEnded:Connect(function(input)
+	UIS.InputEnded:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			if draggingMap or draggingHue then
+				SetDragLock(false)
+			end
 			draggingMap = false
 			draggingHue = false
 			ToggleScrollingAncestors(svMap, true)
 		end
-	end))
+	end)
 
-	local twArrow
-	table.insert(KazeUI.Connections, clickBtn.MouseButton1Click:Connect(function()
+	clickBtn.MouseButton1Click:Connect(function()
 		isOpen = not isOpen
 		pickerArea.Visible = isOpen
-		if twArrow then twArrow:Cancel() end
-		twArrow = TweenService:Create(arrowIcon, TweenInfo.new(TIMING.Transition), {Rotation = isOpen and 180 or 0})
-		twArrow:Play()
-	end))
+		TweenService:Create(arrowIcon, TweenInfo.new(0.2), {Rotation = isOpen and 180 or 0}):Play()
+	end)
 
 	RegisterFlag(flag, function() return color:ToHex() end, function(val)
 		local success, parsed = pcall(function() return Color3.fromHex(val) end)
@@ -1785,7 +1732,7 @@ local function CreateKeybindInput(parentFrame, title, defaultKey, callback, flag
 	local isBinding = false
 	
 	local measuredWidth = 598 * 0.92
-	if parentFrame and parentFrame.AbsoluteSize and parentFrame.AbsoluteSize.X > 0 then measuredWidth = parentFrame.AbsoluteSize.X * 0.95 end
+	if parentFrame fund parentFrame.AbsoluteSize and parentFrame.AbsoluteSize.X > 0 then measuredWidth = parentFrame.AbsoluteSize.X * 0.95 end
 	local textContainerWidth = measuredWidth - 24 - 90
 	
 	local titleHeight = 0
@@ -1865,14 +1812,14 @@ local function CreateKeybindInput(parentFrame, title, defaultKey, callback, flag
 	bindLabel.Font = Enum.Font.GothamBold
 	bindLabel.TextSize = 13
 	
-	table.insert(KazeUI.Connections, bindContainer.MouseEnter:Connect(function()
+	bindContainer.MouseEnter:Connect(function()
 		if not isBinding then bindStroke.Color = Color3.fromRGB(80, 80, 85) end
-	end))
-	table.insert(KazeUI.Connections, bindContainer.MouseLeave:Connect(function()
+	end)
+	bindContainer.MouseLeave:Connect(function()
 		if not isBinding then bindStroke.Color = Color3.fromRGB(45, 45, 50) end
-	end))
+	end)
 	
-	table.insert(KazeUI.Connections, bindContainer.MouseButton1Click:Connect(function()
+	bindContainer.MouseButton1Click:Connect(function()
 		if isBinding then return end
 		isBinding = true
 		bindLabel.Text = "..."
@@ -1899,19 +1846,20 @@ local function CreateKeybindInput(parentFrame, title, defaultKey, callback, flag
 				StopNeonLoop(bindStroke)
 				bindStroke.Color = Color3.fromRGB(45, 45, 50)
 				conn:Disconnect()
+
+				-- BUG FIX: Delayed release to stop global event from catching the exact same key press
 				task.delay(0.15, function() isBinding = false end)
 			end
 		end)
-		table.insert(KazeUI.Connections, conn)
-	end))
+	end)
 	
-	table.insert(KazeUI.Connections, UIS.InputBegan:Connect(function(input, gp)
+	UIS.InputBegan:Connect(function(input, gp)
 		if not gp and not isBinding and currentKey ~= Enum.KeyCode.Unknown and input.KeyCode == currentKey then
 			if typeof(callback) == "function" then
 				task.spawn(callback, currentKey)
 			end
 		end
-	end))
+	end)
 
 	RegisterFlag(flag, function() return currentKey.Name end, function(val)
 		pcall(function()
@@ -2157,17 +2105,14 @@ CreateCollapsibleSection = function(parentFrame, titleArg)
 	toggleDetector.ZIndex = 10
 	toggleDetector.Parent = headerFrame
 
-	local twArrow
-	table.insert(KazeUI.Connections, toggleDetector.MouseButton1Click:Connect(function()
+	toggleDetector.MouseButton1Click:Connect(function()
 		isOpen = not isOpen
 		sectionContent.Visible = isOpen
 		divider.Visible = isOpen
-		if twArrow then twArrow:Cancel() end
-		twArrow = TweenService:Create(arrowIcon, TweenInfo.new(TIMING.Transition, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+		TweenService:Create(arrowIcon, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
 			Rotation = isOpen and 0 or -90
-		})
-		twArrow:Play()
-	end))
+		}):Play()
+	end)
 
 	local sectionPublic = { Frame = sectionBox, ContentFrame = sectionContent, Header = headerFrame }
 	AttachElementsToAPI(sectionPublic, sectionContent)
@@ -2177,9 +2122,7 @@ CreateCollapsibleSection = function(parentFrame, titleArg)
 	return sectionPublic
 end
 
--- ==========================================
--- Main Window Initialization
--- ==========================================
+-- Create Window Initialization
 function KazeUI:CreateWindow(config)
 	config = config or {}
 	local Title = config.Title or "Kaze UI"
@@ -2188,18 +2131,19 @@ function KazeUI:CreateWindow(config)
 	local MainIcon = FormatImage(config.Icon or "6031763447")
 	local OpenIcon = FormatImage((config.OpenButton and config.OpenButton.Icon) or config.Icon or "6031763447")
 	
+	-- Configurable resizing settings with fallback defaults
 	local minWidth = config.MinWidth or 350
 	local minHeight = config.MinHeight or 250
 	local maxWidth = config.MaxWidth or 900
 	local maxHeight = config.MaxHeight or 700
 
-	KazeUI.BackgroundColor = Color3.fromRGB(10, 10, 12)
+	KazeUI.BackgroundColor = Color3.fromRGB(10, 10, 12) -- Permanent Deep Obsidian background
 	if config.GlowColor then KazeUI.GlowColor = config.GlowColor end
 
 	local MiniButtonSize = UDim2.fromOffset(46, 46)
 
 	local Window = Instance.new("Frame")
-	Window.Size = UDim2.fromOffset(600, 400)
+	Window.Size = UDim2.fromOffset(600, 400) -- Default Window Size 600x400
 	Window.Position = UDim2.fromScale(0.5, 0.5)
 	Window.AnchorPoint = Vector2.new(0.5, 0.5)
 	Window.BorderSizePixel = 0
@@ -2233,7 +2177,7 @@ function KazeUI:CreateWindow(config)
 	Avatar.Position = UDim2.fromOffset(10,9)
 	Avatar.BackgroundColor3 = Color3.fromRGB(30,30,35)
 	Avatar.Image = MainIcon
-	Avatar.ScaleType = Enum.ScaleType.Fit -- Fix (QA #8)
+	Avatar.ScaleType = Enum.ScaleType.Fit
 	Avatar.AutoButtonColor = false
 	Avatar.Parent = TopBar
 	Instance.new("UICorner", Avatar).CornerRadius = UDim.new(1,0)
@@ -2273,7 +2217,7 @@ function KazeUI:CreateWindow(config)
 	TopDivider.Parent = TopBar
 	StartNeonLoop(TopDivider)
 
-	local defaultWindowSize = UDim2.fromOffset(600, 400)
+	local defaultWindowSize = UDim2.fromOffset(600, 400) -- Default Window Size 600x400
 	local lastNormalSize = defaultWindowSize
 	local lastNormalPosition = UDim2.fromScale(0.5,0.5)
 	local lastNormalAnchor = Vector2.new(0.5,0.5)
@@ -2311,7 +2255,7 @@ function KazeUI:CreateWindow(config)
 	MiniIcon.AnchorPoint = Vector2.new(0.5, 0.5)
 	MiniIcon.BackgroundTransparency = 0
 	MiniIcon.Image = OpenIcon
-	MiniIcon.ScaleType = Enum.ScaleType.Fit -- Fix (QA #14)
+	MiniIcon.ScaleType = Enum.ScaleType.Stretch 
 	MiniIcon.Parent = MiniButton
 	MiniIcon.ZIndex = 1000
 	Instance.new("UICorner", MiniIcon).CornerRadius = UDim.new(0, 8)
@@ -2329,6 +2273,7 @@ function KazeUI:CreateWindow(config)
 		if isMinimized then return end
 		isMinimized = true
 		
+		-- BUG FIX: Don't save size here. Spamming Tween Back Style causes it to overshoot and grow to infinity.
 		if not toggledMaximized then
 			lastNormalPosition = Window.Position
 			lastNormalAnchor = Window.AnchorPoint
@@ -2357,43 +2302,52 @@ function KazeUI:CreateWindow(config)
 		end
 	end
 
-	table.insert(KazeUI.Connections, BtnYellow.MouseButton1Click:Connect(minimizeWindow))
+	BtnYellow.MouseButton1Click:Connect(minimizeWindow)
 
+	-- BUG FIX: Global Dragging to stop slipping off the Mini Button bounds and triggering clicks
 	local miniDragStart
 	local miniDragMoved = false
+	local miniDragging = false
 	
-	table.insert(KazeUI.Connections, MiniButton.InputBegan:Connect(function(input)
+	MiniButton.InputBegan:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 			miniDragStart = input.Position
 			miniDragMoved = false
+			miniDragging = true
+			SetDragLock(true)
 		end
-	end))
+	end)
 	
-	table.insert(KazeUI.Connections, UIS.InputChanged:Connect(function(input)
+	UIS.InputChanged:Connect(function(input)
 		if miniDragStart and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
 			if (input.Position - miniDragStart).Magnitude > 8 then
 				miniDragMoved = true
+				-- Update position manually
 				local delta = input.Position - miniDragStart
 				MiniButton.Position = UDim2.new(
 					0, MiniButton.Position.X.Offset + delta.X,
 					0, MiniButton.Position.Y.Offset + delta.Y
 				)
-				miniDragStart = input.Position
+				miniDragStart = input.Position -- Reset delta step
 			end
 		end
-	end))
+	end)
 	
-	table.insert(KazeUI.Connections, UIS.InputEnded:Connect(function(input)
+	UIS.InputEnded:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			if miniDragging then
+				SetDragLock(false)
+				miniDragging = false
+			end
 			if miniDragStart and not miniDragMoved then
 				unminimizeWindow()
 			end
 			miniDragStart = nil
 			miniDragMoved = false
 		end
-	end))
+	end)
 
-	table.insert(KazeUI.Connections, BtnGreen.MouseButton1Click:Connect(function()
+	BtnGreen.MouseButton1Click:Connect(function()
 		if not toggledMaximized then
 			lastNormalSize = Window.Size
 			lastNormalPosition = Window.Position
@@ -2407,7 +2361,7 @@ function KazeUI:CreateWindow(config)
 			TweenService:Create(Window, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Size = lastNormalSize, Position = lastNormalPosition }):Play()
 			task.delay(0.25, function() Window.AnchorPoint = lastNormalAnchor end)
 		end
-	end))
+	end)
 
 	local confirmActive = false
 	local function ShowCloseConfirm()
@@ -2475,10 +2429,10 @@ function KazeUI:CreateWindow(config)
 		CancelBtn.ZIndex = 54
 		Instance.new("UICorner", CancelBtn).CornerRadius = UDim.new(0,8)
 
-		table.insert(KazeUI.Connections, ConfirmBtn.MouseButton1Click:Connect(function() KazeUI:Destroy() end))
-		table.insert(KazeUI.Connections, CancelBtn.MouseButton1Click:Connect(function() Overlay:Destroy(); confirmActive = false; BtnYellow.Active = true; BtnGreen.Active = true; BtnRed.Active = true end))
+		ConfirmBtn.MouseButton1Click:Connect(function() ScreenGui:Destroy() end)
+		CancelBtn.MouseButton1Click:Connect(function() Overlay:Destroy(); confirmActive = false; BtnYellow.Active = true; BtnGreen.Active = true; BtnRed.Active = true end)
 	end
-	table.insert(KazeUI.Connections, BtnRed.MouseButton1Click:Connect(ShowCloseConfirm))
+	BtnRed.MouseButton1Click:Connect(ShowCloseConfirm)
 
 	local Content = Instance.new("Frame")
 	Content.Position = UDim2.fromOffset(0,50)
@@ -2516,22 +2470,19 @@ function KazeUI:CreateWindow(config)
 	KazeUI:AddTransparentElement(Pages, 0)
 	
 	local isSidebarOpen = true
-	local twSide1, twSide2, twSide3
-	table.insert(KazeUI.Connections, Avatar.MouseButton1Click:Connect(function()
+	Avatar.MouseButton1Click:Connect(function()
 		isSidebarOpen = not isSidebarOpen
-		local tInfo = TweenInfo.new(TIMING.Transition, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
-		if twSide1 then twSide1:Cancel() end; if twSide2 then twSide2:Cancel() end; if twSide3 then twSide3:Cancel() end
+		local tInfo = TweenInfo.new(0.35, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
 		if isSidebarOpen then
-			twSide1 = TweenService:Create(SideBarMask, tInfo, {Size = UDim2.new(0, 190, 1, 0)})
-			twSide2 = TweenService:Create(VertDivider, tInfo, {Position = UDim2.new(0, 190, 0, 0), BackgroundTransparency = 0})
-			twSide3 = TweenService:Create(Pages, tInfo, {Position = UDim2.new(0, 192, 0, 0), Size = UDim2.new(1, -192, 1, 0)})
+			TweenService:Create(SideBarMask, tInfo, {Size = UDim2.new(0, 190, 1, 0)}):Play()
+			TweenService:Create(VertDivider, tInfo, {Position = UDim2.new(0, 190, 0, 0), BackgroundTransparency = 0}):Play()
+			TweenService:Create(Pages, tInfo, {Position = UDim2.new(0, 192, 0, 0), Size = UDim2.new(1, -192, 1, 0)}):Play()
 		else
-			twSide1 = TweenService:Create(SideBarMask, tInfo, {Size = UDim2.new(0, 0, 1, 0)})
-			twSide2 = TweenService:Create(VertDivider, tInfo, {Position = UDim2.new(0, 0, 0, 0), BackgroundTransparency = 1})
-			twSide3 = TweenService:Create(Pages, tInfo, {Position = UDim2.new(0, 0, 0, 0), Size = UDim2.new(1, 0, 1, 0)})
+			TweenService:Create(SideBarMask, tInfo, {Size = UDim2.new(0, 0, 1, 0)}):Play()
+			TweenService:Create(VertDivider, tInfo, {Position = UDim2.new(0, 0, 0, 0), BackgroundTransparency = 1}):Play()
+			TweenService:Create(Pages, tInfo, {Position = UDim2.new(0, 0, 0, 0), Size = UDim2.new(1, 0, 1, 0)}):Play()
 		end
-		twSide1:Play(); twSide2:Play(); twSide3:Play()
-	end))
+	end)
 
 	local TabsScroller = Instance.new("ScrollingFrame")
 	TabsScroller.Parent = SideBar
@@ -2561,7 +2512,7 @@ function KazeUI:CreateWindow(config)
 	ResizeHandle.Size = UDim2.fromOffset(18, 18)
 	ResizeHandle.Position = UDim2.new(1, -18, 1, -18)
 	ResizeHandle.BackgroundTransparency = 1
-	ResizeHandle.Image = "rbxassetid://10747373117"
+	ResizeHandle.Image = "rbxassetid://10747373117" -- Diagonal resize design mark (↘)
 	ResizeHandle.ImageColor3 = Color3.fromRGB(150, 150, 150)
 	ResizeHandle.ZIndex = 99
 	ResizeHandle.Parent = Window
@@ -2569,83 +2520,82 @@ function KazeUI:CreateWindow(config)
 	local isResizing = false
 	local resizeStartSize = Vector2.new(0, 0)
 	local resizeStartInput = Vector3.new(0, 0, 0)
-	local resizeTouchInput = nil 
+	local resizeTouchInput = nil -- Multi-touch protector
 
-	local hoverCursor = "rbxassetid://10747373117" 
-	
-	local resTw
-	table.insert(KazeUI.Connections, ResizeHandle.MouseEnter:Connect(function()
+	-- PC Hover State Change
+	local hoverCursor = "rbxassetid://10747373117" -- Resize diagonal cursor asset ID
+	ResizeHandle.MouseEnter:Connect(function()
 		if not isResizing and not toggledMaximized then
 			Mouse.Icon = hoverCursor
-			if resTw then resTw:Cancel() end
-			resTw = TweenService:Create(ResizeHandle, TweenInfo.new(TIMING.Hover), {ImageColor3 = KazeUI.GlowColor})
-			resTw:Play()
+			TweenService:Create(ResizeHandle, TweenInfo.new(0.12), {ImageColor3 = KazeUI.GlowColor}):Play()
 		end
-	end))
+	end)
 
-	table.insert(KazeUI.Connections, ResizeHandle.MouseLeave:Connect(function()
+	ResizeHandle.MouseLeave:Connect(function()
 		if not isResizing then
 			Mouse.Icon = ""
-			if resTw then resTw:Cancel() end
-			resTw = TweenService:Create(ResizeHandle, TweenInfo.new(TIMING.Hover), {ImageColor3 = Color3.fromRGB(150, 150, 150)})
-			resTw:Play()
+			TweenService:Create(ResizeHandle, TweenInfo.new(0.12), {ImageColor3 = Color3.fromRGB(150, 150, 150)}):Play()
 		end
-	end))
+	end)
 
 	local function UpdateResize(input)
 		if not isResizing then return end
 		local delta = input.Position - resizeStartInput
 		local scale = UIScale.Scale
 
+		-- UIScale.Scale correct delta division to avoid dragging lag on scaled screens
 		local newWidth = math.clamp(resizeStartSize.X + (delta.X / scale), minWidth, maxWidth)
 		local newHeight = math.clamp(resizeStartSize.Y + (delta.Y / scale), minHeight, maxHeight)
-
-		-- Resize Safety Bounds Protection (QA #3)
-		local vpSize = workspace.CurrentCamera.ViewportSize / scale
-		local winPos = Window.AbsolutePosition / scale
-		if winPos.X + newWidth > vpSize.X then newWidth = vpSize.X - winPos.X end
-		if winPos.Y + newHeight > vpSize.Y then newHeight = vpSize.Y - winPos.Y end
 
 		Window.Size = UDim2.fromOffset(newWidth, newHeight)
 		lastNormalSize = Window.Size
 	end
 
-	table.insert(KazeUI.Connections, ResizeHandle.InputBegan:Connect(function(input)
-		if toggledMaximized or isMinimized then return end -- (QA #7)
+	ResizeHandle.InputBegan:Connect(function(input)
+		if toggledMaximized then return end -- Block resizing if currently maximized
+
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			-- Save reference to the primary single finger touch or mouse
 			if input.UserInputType == Enum.UserInputType.Touch and resizeTouchInput == nil then
 				resizeTouchInput = input
 			end
+
 			isResizing = true
+			SetDragLock(true)
 			resizeStartSize = Vector2.new(Window.AbsoluteSize.X / UIScale.Scale, Window.AbsoluteSize.Y / UIScale.Scale)
 			resizeStartInput = input.Position
 
+			-- Disable active scrollable ancestors to prevent drag conflicts
 			ToggleScrollingAncestors(ResizeHandle, false)
 			Mouse.Icon = hoverCursor
 		end
-	end))
+	end)
 
-	table.insert(KazeUI.Connections, UIS.InputChanged:Connect(function(input)
+	UIS.InputChanged:Connect(function(input)
 		if isResizing then
-			if input.UserInputType == Enum.UserInputType.Touch and input ~= resizeTouchInput then return end -- Strict multitouch bypass (QA #18)
+			-- Multi-touch protection: Ignore other finger touches
+			if input.UserInputType == Enum.UserInputType.Touch and input ~= resizeTouchInput then
+				return
+			end
 			if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
 				UpdateResize(input)
 			end
 		end
-	end))
+	end)
 
-	table.insert(KazeUI.Connections, UIS.InputEnded:Connect(function(input)
+	UIS.InputEnded:Connect(function(input)
 		if isResizing then
-			if input.UserInputType == Enum.UserInputType.Touch and input ~= resizeTouchInput then return end
+			if input.UserInputType == Enum.UserInputType.Touch and input ~= resizeTouchInput then
+				return
+			end
 			isResizing = false
+			SetDragLock(false)
 			resizeTouchInput = nil
 			ToggleScrollingAncestors(ResizeHandle, true)
 			Mouse.Icon = ""
-			if resTw then resTw:Cancel() end
-			resTw = TweenService:Create(ResizeHandle, TweenInfo.new(TIMING.Hover), {ImageColor3 = Color3.fromRGB(150, 150, 150)})
-			resTw:Play()
+			TweenService:Create(ResizeHandle, TweenInfo.new(0.12), {ImageColor3 = Color3.fromRGB(150, 150, 150)}):Play()
 		end
-	end))
+	end)
 
 	local Win = {
 		Window = Window,
@@ -2668,16 +2618,14 @@ function KazeUI:CreateWindow(config)
 			else
 				self:Minimize()
 			end
-		end,
-		Destroy = function(self)
-			KazeUI:Destroy()
 		end
 	}
 
-	-- Config & Theme managers intact...
 	function Win:CreateConfigManager(tab)
 		local sec = tab:SectionUI("Config Manager")
+
 		local cfgName = "Default"
+
 		local function getConfigs()
 			local list = {}
 			if listfiles then
@@ -2723,13 +2671,14 @@ function KazeUI:CreateWindow(config)
 		end})
 	end
 
+	-- BUG FIX: Theme UI elements missing Flags to save
 	function Win:CreateThemeManager(tab)
 		local sec = tab:SectionUI("Theme & Visuals")
 		
 		sec:ColorPicker({
 			Title = "UI Glow Color",
 			Default = KazeUI.GlowColor,
-			Flag = "KazeUI_Theme_GlowColor", 
+			Flag = "KazeUI_Theme_GlowColor", -- Added flag so Config saves it
 			Callback = function(color)
 				KazeUI:SetGlow(color)
 			end
@@ -2740,14 +2689,13 @@ function KazeUI:CreateWindow(config)
 			Min = 0,
 			Max = 100,
 			Default = 0,
-			Flag = "KazeUI_Theme_BackgroundTransparency", 
+			Flag = "KazeUI_Theme_BackgroundTransparency", -- Added flag so Config saves it
 			Callback = function(val)
 				KazeUI:SetTransparency(val / 100)
 			end
 		})
 	end
 
-	local activeTabTweenBtn
 	function Win:CreateTab(arg1, arg2)
 		local name = tostring(type(arg1) == "table" and (arg1.Title or arg1.Name) or arg1 or "Tab")
 		local iconId = type(arg1) == "table" and arg1.Icon or arg2
@@ -2761,7 +2709,7 @@ function KazeUI:CreateWindow(config)
 		btn.Parent = TabsList
 		btn.ClipsDescendants = true
 		btn.LayoutOrder = #self._Tabs + 1
-		Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 8)
+		Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
 		KazeUI:AddPanel(btn, 0.02)
 		KazeUI:AddTransparentElement(btn, 0)
 
@@ -2823,46 +2771,36 @@ function KazeUI:CreateWindow(config)
 		contentLayout.Padding = UDim.new(0,4)
 		contentLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 
-		table.insert(self._Tabs, { Button = btn, Indicator = leftIndicator, Label = txt, Page = page, Tween = nil })
+		table.insert(self._Tabs, { Button = btn, Indicator = leftIndicator, Label = txt, Page = page })
 
-		-- Tab Animation Fixes (QA #10)
 		local function activate()
-			if activeTabTweenBtn then activeTabTweenBtn:Cancel() end
 			for _, t in ipairs(self._Tabs) do
-				if t.Tween then t.Tween:Cancel() end
-				t.Tween = TweenService:Create(t.Button, TweenInfo.new(TIMING.Hover), { BackgroundColor3 = KazeUI.GetColor(0.02) })
-				t.Tween:Play()
+				TweenService:Create(t.Button, TweenInfo.new(0.12), { BackgroundColor3 = KazeUI.GetColor(0.02) }):Play()
 				t.Indicator.Visible = false
 				t.Page.Visible = false
 				t.Label.TextColor3 = Color3.fromRGB(200, 200, 200)
 				t.Label.Font = Enum.Font.Gotham
 			end
-			activeTabTweenBtn = TweenService:Create(btn, TweenInfo.new(TIMING.Hover), { BackgroundColor3 = KazeUI.GetColor(0.06) })
-			activeTabTweenBtn:Play()
+			TweenService:Create(btn, TweenInfo.new(0.12), { BackgroundColor3 = KazeUI.GetColor(0.06) }):Play()
 			leftIndicator.Visible = true
 			page.Visible = true
 			txt.TextColor3 = Color3.fromRGB(255, 255, 255)
 			txt.Font = Enum.Font.GothamBold
 		end
 
-		local tabHoverTw
-		table.insert(KazeUI.Connections, btn.MouseEnter:Connect(function()
+		btn.MouseEnter:Connect(function()
 			if not leftIndicator.Visible then
-				if tabHoverTw then tabHoverTw:Cancel() end
-				tabHoverTw = TweenService:Create(btn, TweenInfo.new(TIMING.Hover), { BackgroundColor3 = KazeUI.GetColor(0.04) })
-				tabHoverTw:Play()
+				TweenService:Create(btn, TweenInfo.new(0.1), { BackgroundColor3 = KazeUI.GetColor(0.04) }):Play()
 				txt.TextColor3 = Color3.fromRGB(220, 220, 220)
 			end
-		end))
-		table.insert(KazeUI.Connections, btn.MouseLeave:Connect(function()
+		end)
+		btn.MouseLeave:Connect(function()
 			if not leftIndicator.Visible then
-				if tabHoverTw then tabHoverTw:Cancel() end
-				tabHoverTw = TweenService:Create(btn, TweenInfo.new(TIMING.Hover), { BackgroundColor3 = KazeUI.GetColor(0.02) })
-				tabHoverTw:Play()
+				TweenService:Create(btn, TweenInfo.new(0.1), { BackgroundColor3 = KazeUI.GetColor(0.02) }):Play()
 				txt.TextColor3 = Color3.fromRGB(200, 200, 200)
 			end
-		end))
-		table.insert(KazeUI.Connections, btn.MouseButton1Click:Connect(activate))
+		end)
+		btn.MouseButton1Click:Connect(activate)
 		if #self._Tabs == 1 then activate() end
 
 		local public = { Button = btn, Page = page }
