@@ -5,6 +5,7 @@
 	Fixes: Text Clipping/Overflow fixed globally, Multi-Dropdown Color Hover State Fixed
 	Critical Fix: Rendered Notifications on a separate ScreenGui with DisplayOrder = 999999 to prevent them from drawing behind the main Window
 	Added: Smooth & Responsive Continuous Window Resizing with UIScale correction, PC Hover Cursor (↘), and Multi-Touch Protection
+	Fixes: Robust MakeDraggable with strict thresholding and global release cleanup to prevent click misclicks
 --]]
 
 local KazeUI = {}
@@ -130,50 +131,55 @@ local function FormatImage(id)
 	return "rbxassetid://" .. clean
 end
 
--- Threshold dragging to prevent minimize misclicks (Scale-adjusted for fluid dragging)
+-- Robust Draggable System with clean Drag Threshold limits to prevent misclick dragging
 local function MakeDraggable(dragPart, targetPart)
 	local dragging = false
-	local dragInput, dragStart, startPos
+	local dragStart = nil
+	local startPos = nil
 	local dragActive = false
 	
-	local function update(input)
-		if not dragStart or not startPos then return end
-		local delta = input.Position - dragStart
-		local scale = UIScale.Scale
-		
-		if dragActive or delta.Magnitude > 8 then
-			dragActive = true
-			targetPart.Position = UDim2.new(
-				startPos.X.Scale, startPos.X.Offset + (delta.X / scale),
-				startPos.Y.Scale, startPos.Y.Offset + (delta.Y / scale)
-			)
-		end
-	end
+	local inputBeganConn, inputChangedConn, inputEndedConn
 	
-	dragPart.InputBegan:Connect(function(input)
+	inputBeganConn = dragPart.InputBegan:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 			dragging = true
 			dragActive = false
 			dragStart = input.Position
 			startPos = targetPart.Position
+		end
+	end)
+	
+	inputChangedConn = UIS.InputChanged:Connect(function(input)
+		if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+			if not dragStart or not startPos then return end
+			local delta = input.Position - dragStart
+			local scale = UIScale.Scale
 			
-			input.Changed:Connect(function()
-				if input.UserInputState == Enum.UserInputState.End then
-					dragging = false
-					dragInput = nil
-				end
-			end)
+			-- Strict 8-pixel threshold in screen coordinates to decouple accidental wiggles from clicks
+			if dragActive or delta.Magnitude > 8 then
+				dragActive = true
+				targetPart.Position = UDim2.new(
+					startPos.X.Scale, startPos.X.Offset + (delta.X / scale),
+					startPos.Y.Scale, startPos.Y.Offset + (delta.Y / scale)
+				)
+			end
 		end
 	end)
 	
-	dragPart.InputChanged:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
-			dragInput = input
+	inputEndedConn = UIS.InputEnded:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			dragging = false
+			dragActive = false
+			dragStart = nil
+			startPos = nil
 		end
 	end)
 	
-	UIS.InputChanged:Connect(function(input)
-		if input == dragInput and dragging then update(input) end
+	-- Automatic Connection GC on Destruction
+	dragPart.Destroying:Connect(function()
+		if inputBeganConn then inputBeganConn:Disconnect() end
+		if inputChangedConn then inputChangedConn:Disconnect() end
+		if inputEndedConn then inputEndedConn:Disconnect() end
 	end)
 end
 
@@ -1915,7 +1921,7 @@ AttachElementsToAPI = function(apiTable, parentFrame)
 	end
 
 	function apiTable:Dropdown(arg1, arg2, arg3, arg4, arg5, arg6)
-		local title, vals, def, callback, multi, flag
+		local title, vals, def, multi, callback, flag
 		if type(arg1) == "table" then
 			title, vals, def, multi, callback, flag = arg1.Title, (arg1.Values or arg1.Options), arg1.Default, (arg1.Multi or false), arg1.Callback, arg1.Flag
 		else
@@ -2283,10 +2289,10 @@ function KazeUI:CreateWindow(config)
 			toggledMaximized = true
 			Window.AnchorPoint = Vector2.new(0.5,0.5)
 			Window.Position = UDim2.fromScale(0.5,0.5)
-			TweenService:Create(Window, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Size = UDim2.fromScale(0.95,0.9) }):Play()
+			TweenService:Create(Window, TweenInfo.new(0.25, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), { Size = UDim2.fromScale(0.95,0.9) }):Play()
 		else
 			toggledMaximized = false
-			TweenService:Create(Window, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Size = lastNormalSize, Position = lastNormalPosition }):Play()
+			TweenService:Create(Window, TweenInfo.new(0.25, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), { Size = lastNormalSize, Position = lastNormalPosition }):Play()
 			task.delay(0.25, function() Window.AnchorPoint = lastNormalAnchor end)
 		end
 	end)
