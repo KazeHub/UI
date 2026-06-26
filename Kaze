@@ -1,16 +1,17 @@
+```lua
 --[[
 	Kaze UI Library
 	Optimized: Deep Obsidian Only, Dynamic Tab Text Scaling (No "..." Dots), Wider Sidebar, Safe Close Dialog Margin Padding
 	Added: New Dynamic Keybind Component, Full Config Manager Overhaul, Memory Leak Prevention
 	Fixes: Text Clipping/Overflow fixed globally, Multi-Dropdown Color Hover State Fixed
 	Critical Bug Fix: Dedicated Notification ScreenGui with Highest DisplayOrder (Always on Top)
-	New Feature: Interactive Page Search Bar (Always on Top of Sidebar, Glowing Neon Outline, Filters All Component Types while keeping Section headers visible)
+	New Feature: Interactive Page Search Bar (Always on Top of Sidebar, Glowing Neon Outline, Filters Only Interactive Elements)
 --]]
 
 local KazeUI = {}
 KazeUI.__index = KazeUI
 
--- Roblox Services
+-- Mga Roblox Services
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local UIS = game:GetService("UserInputService")
@@ -18,13 +19,13 @@ local TextService = game:GetService("TextService")
 local HttpService = game:GetService("HttpService")
 local LP = Players.LocalPlayer
 
--- Global State & Managers
+-- Global na Estado at mga Manager
 KazeUI.GlowColor = Color3.fromRGB(0, 160, 255)
 KazeUI.BackgroundColor = Color3.fromRGB(10, 10, 12) -- Naka-lock sa Deep Obsidian
 KazeUI.Flags = {}
 KazeUI.ActiveWindows = {} 
 
--- Visual Controllers
+-- Visual na mga Controller
 KazeUI.GlowElements = {}
 KazeUI.NeonTweens = {}
 KazeUI.PanelElements = {} 
@@ -192,7 +193,7 @@ function KazeUI:AddPanel(inst, elevation)
 	table.insert(KazeUI.PanelElements, {Inst = inst, Elevation = elevation or 0})
 	if inst and inst:IsA("GuiObject") then
 		inst.BackgroundColor3 = KazeUI.GetColor(elevation or 0)
-		-- Prevent Memory Leak
+		-- Iwasan ang Memory Leak
 		inst.Destroying:Connect(function()
 			for i = #KazeUI.PanelElements, 1, -1 do
 				if KazeUI.PanelElements[i].Inst == inst then table.remove(KazeUI.PanelElements, i) end
@@ -203,7 +204,7 @@ end
 
 function KazeUI:AddTransparentElement(inst, defaultTrans)
 	table.insert(KazeUI.TransparentElements, {Inst = inst, Default = defaultTrans or inst.BackgroundTransparency})
-	-- Prevent Memory Leak
+	-- Iwasan ang Memory Leak
 	inst.Destroying:Connect(function()
 		for i = #KazeUI.TransparentElements, 1, -1 do
 			if KazeUI.TransparentElements[i].Inst == inst then table.remove(KazeUI.TransparentElements, i) end
@@ -279,7 +280,7 @@ function KazeUI:SetGlow(color)
 	end
 end
 
--- Maayos na Notification Animation (Laging nasa pinakaibabaw dahil sa NotifScreenGui)
+-- Notification Animation sa loob ng NotifScreenGui
 function KazeUI:Notify(config)
 	config = config or {}
 	local title = tostring(config.Title or "Notification")
@@ -1771,7 +1772,7 @@ local function CreateKeybindInput(parentFrame, title, defaultKey, callback, flag
 				if isKey then
 					local key = input.KeyCode
 					if key == Enum.KeyCode.Escape then
-						-- Kinansela ang bind, panatilihin ang luma
+						-- Kinansela ang bind
 					elseif key == Enum.KeyCode.Backspace or key == Enum.KeyCode.Delete then
 						currentKey = Enum.KeyCode.Unknown
 					else
@@ -1784,7 +1785,7 @@ local function CreateKeybindInput(parentFrame, title, defaultKey, callback, flag
 				bindStroke.Color = Color3.fromRGB(45, 45, 50)
 				conn:Disconnect()
 
-				-- BUG FIX: Lagyan ng delay ang release para hindi mahuli ng global handler ang mismong keypress
+				-- BUG FIX: Delay bago payagang ma-release para iwasan ang double triggers
 				task.delay(0.15, function() isBinding = false end)
 			end
 		end)
@@ -1858,6 +1859,7 @@ local CreateCollapsibleSection
 local AttachElementsToAPI
 
 AttachElementsToAPI = function(apiTable, parentFrame, registeredList)
+	-- FIX: Ang 'AddLabel' ay hindi na idaragdag sa registeredList para hindi masali sa search
 	function apiTable:AddLabel(arg1)
 		local t = type(arg1) == "table" and (arg1.Text or arg1.Title) or arg1
 		local label = Instance.new("TextLabel")
@@ -1870,14 +1872,6 @@ AttachElementsToAPI = function(apiTable, parentFrame, registeredList)
 		label.TextXAlignment = Enum.TextXAlignment.Left
 		label.TextWrapped = true
 		label.Parent = parentFrame
-		
-		-- Upang maisama sa Page Search
-		if registeredList then
-			table.insert(registeredList, {
-				Instance = label,
-				TextToSearch = tostring(t or " ")
-			})
-		end
 		return label
 	end
 
@@ -2022,32 +2016,17 @@ AttachElementsToAPI = function(apiTable, parentFrame, registeredList)
 		return element
 	end
 
+	-- FIX: Ang SectionUI header ay hindi na idaragdag sa registeredList para hindi masira ang itsura kapag nag-search
 	function apiTable:SectionUI(arg1)
 		local title = type(arg1) == "table" and arg1.Title or arg1
 		local element = CreateCollapsibleSection(parentFrame, title, registeredList)
-		
-		if registeredList then
-			table.insert(registeredList, {
-				Instance = element.Frame,
-				TextToSearch = tostring(title or ""),
-				IsSection = true,
-				SubElements = element.SubItemsList,
-				ForceOpen = element.ForceOpen
-			})
-		end
 		return element
 	end
 	
+	-- FIX: Ang Visual Section Divider ay hindi na idaragdag sa registeredList
 	function apiTable:Section(arg1)
 		local title = type(arg1) == "table" and arg1.Title or arg1
 		local element = CreateVisualSectionDivider(parentFrame, title)
-		
-		if registeredList then
-			table.insert(registeredList, {
-				Instance = element.Label.Parent,
-				TextToSearch = tostring(title or "")
-			})
-		end
 		return element
 	end
 end
@@ -2150,12 +2129,10 @@ CreateCollapsibleSection = function(parentFrame, titleArg, registeredList)
 		setSectionOpen(not isOpen)
 	end)
 
-	local subItemsList = {}
 	local sectionPublic = { 
 		Frame = sectionBox, 
 		ContentFrame = sectionContent, 
 		Header = headerFrame, 
-		SubItemsList = subItemsList, 
 		ForceOpen = function()
 			if not isOpen then
 				setSectionOpen(true)
@@ -2163,7 +2140,9 @@ CreateCollapsibleSection = function(parentFrame, titleArg, registeredList)
 		end 
 	}
 	
-	AttachElementsToAPI(sectionPublic, sectionContent, subItemsList)
+	-- I-pass ang orihinal na flat `registeredList` para irehistro lamang ang aktwal na interactive components
+	AttachElementsToAPI(sectionPublic, sectionContent, registeredList)
+	
 	function sectionPublic:SetText(newText)
 		titleLabel.Text = newText
 	end
@@ -2505,7 +2484,7 @@ function KazeUI:CreateWindow(config)
 	KazeUI:AddTransparentElement(Pages, 0)
 
 	-- ===================================================
-	-- GLOBAL SIDEBAR SEARCH BAR (ALWAYS ON TOP OF TABS)
+	-- GLOBAL SIDEBAR SEARCH BAR (NASA TAAS NG TABS)
 	-- ===================================================
 	local SidebarSearchFrame = Instance.new("Frame")
 	SidebarSearchFrame.Name = "SidebarSearchFrame"
@@ -2525,7 +2504,7 @@ function KazeUI:CreateWindow(config)
 	local searchBarStroke = Instance.new("UIStroke", SearchInputContainer)
 	searchBarStroke.Thickness = 1.5
 	searchBarStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-	StartNeonLoop(searchBarStroke) -- Outline is always glowing/pulsing
+	StartNeonLoop(searchBarStroke) -- Umiilaw na outline (Neon loop)
 
 	local searchIcon = Instance.new("ImageLabel")
 	searchIcon.Name = "SearchIcon"
@@ -2567,7 +2546,7 @@ function KazeUI:CreateWindow(config)
 
 	local TabsScroller = Instance.new("ScrollingFrame")
 	TabsScroller.Parent = SideBar
-	TabsScroller.Position = UDim2.fromOffset(6, 44) -- Safe spacing below search bar (6 + 32 + 6 = 44)
+	TabsScroller.Position = UDim2.fromOffset(6, 44) -- May ligtas na agwat sa ilalim ng search bar
 	TabsScroller.Size = UDim2.new(1, -12, 1, -50)
 	TabsScroller.BackgroundTransparency = 1
 	TabsScroller.ScrollBarThickness = 4
@@ -2611,7 +2590,7 @@ function KazeUI:CreateWindow(config)
 		end
 	}
 
-	-- Dynamic Search filtering updates when typing
+	-- Live-update ng filter tuwing nagta-type
 	SearchBoxInput:GetPropertyChangedSignal("Text"):Connect(function()
 		if Win.ActiveTab and Win.ActiveTab.SearchFilter then
 			Win.ActiveTab.SearchFilter(SearchBoxInput.Text)
@@ -2668,7 +2647,6 @@ function KazeUI:CreateWindow(config)
 		end})
 	end
 
-	-- Theme UI elements na may kasamang Flags para ma-save
 	function Win:CreateThemeManager(tab)
 		local sec = tab:SectionUI("Theme & Visuals")
 		
@@ -2748,7 +2726,7 @@ function KazeUI:CreateWindow(config)
 		page.Visible = false
 		page.Parent = self._Pages
 
-		-- Content Area (Nasa pinakataas dahil wala nang search bar sa page frame)
+		-- Content Area ng Page
 		local pageContent = Instance.new("ScrollingFrame", page)
 		pageContent.Size = UDim2.new(1, 0, 1, 0)
 		pageContent.Position = UDim2.new(0, 0, 0, 0)
@@ -2772,45 +2750,18 @@ function KazeUI:CreateWindow(config)
 
 		local registeredPageElements = {}
 
-		-- Optimized Search Filtering Logic (SectionUI always visible, filters subelements only)
+		-- Optimized na Search Filter (Tanging ang interactive elements lang ang sasalain)
 		local function applySearch(query)
 			query = string.lower(query)
 			
 			for _, elementData in ipairs(registeredPageElements) do
 				local inst = elementData.Instance
-				local isSection = elementData.IsSection
 				
 				if query == "" then
 					inst.Visible = true
-					if isSection then
-						for _, subData in ipairs(elementData.SubElements) do
-							subData.Instance.Visible = true
-						end
-					end
 				else
-					if isSection then
-						-- Ang SectionUI framework mismo ay laging nakabukas/visible
-						inst.Visible = true 
-						
-						local anySubMatch = false
-						for _, subData in ipairs(elementData.SubElements) do
-							local subLowerText = string.lower(subData.TextToSearch)
-							local subMatch = string.find(subLowerText, query, 1, true) ~= nil
-							subData.Instance.Visible = subMatch
-							if subMatch then
-								anySubMatch = true
-							end
-						end
-						
-						-- Force open section kung may nakitang katugmang elements sa loob
-						if anySubMatch and elementData.ForceOpen then
-							elementData.ForceOpen()
-						end
-					else
-						-- Para sa regular na components (Buttons, Toggles, Sliders, atbp.) na wala sa loob ng Sections
-						local lowerText = string.lower(elementData.TextToSearch)
-						inst.Visible = string.find(lowerText, query, 1, true) ~= nil
-					end
+					local lowerText = string.lower(elementData.TextToSearch)
+					inst.Visible = string.find(lowerText, query, 1, true) ~= nil
 				end
 			end
 		end
@@ -2838,9 +2789,8 @@ function KazeUI:CreateWindow(config)
 			txt.TextColor3 = Color3.fromRGB(255, 255, 255)
 			txt.Font = Enum.Font.GothamBold
 			
-			-- Itakda bilang active tab para gumana ang global search filtering
+			-- Itakda bilang active tab
 			Win.ActiveTab = tabData
-			-- Ilapat agad ang kasalukuyang nakasulat sa global search box
 			applySearch(SearchBoxInput.Text)
 		end
 
@@ -2871,195 +2821,5 @@ function KazeUI:CreateWindow(config)
 	if typeof(config.Callback) == "function" then pcall(config.Callback) end
 	return Win
 end
-
-
--- ===================================================
--- SHOWCASE SCRIPT (LOADS LOCAL LIBRARY INSTANTLY)
--- ===================================================
-
-local Window = KazeUI:CreateWindow({
-    Title = "KazeUI Showcase",
-    Author = "Justine",
-    Version = "1.0",
-    SearchBar = true,
-    Icon = "101379130906456"
-})
-
-----------------------------------------------------
--- Tabs
-----------------------------------------------------
-
-local HomeTab = Window:CreateTab({
-    Title = "Home",
-    Icon = "house"
-})
-
-local ThemesTab = Window:CreateTab({
-    Title = "Themes",
-    Icon = "palette"
-})
-
-local ConfigTab = Window:CreateTab({
-    Title = "Configs",
-    Icon = "settings"
-})
-
-----------------------------------------------------
--- Labels & Paragraphs
-----------------------------------------------------
-
-local Labels = HomeTab:SectionUI("Labels & Paragraphs")
-
-Labels:AddLabel("Default Label")
-
-Labels:Paragraph({
-    Title = "Paragraph",
-    Content = "This is a paragraph component used to display information."
-})
-
-----------------------------------------------------
--- Buttons
-----------------------------------------------------
-
-local Buttons = HomeTab:SectionUI("Buttons")
-
-Buttons:Button({
-    Title = "Simple Button",
-    Description = "Prints Hello World",
-    Callback = function()
-        print("Hello World")
-    end
-})
-
-Buttons:Button({
-    Title = "Notification",
-    Description = "Show Notification",
-    Callback = function()
-        KazeUI:Notify({
-            Title = "KazeUI",
-            Content = "Notification works!",
-            Duration = 5
-        })
-    end
-})
-
-----------------------------------------------------
--- Toggles
-----------------------------------------------------
-
-local Toggles = HomeTab:SectionUI("Toggles")
-
-Toggles:Toggle({
-    Title = "Toggle",
-    Description = "Basic Toggle",
-    Default = false,
-    Callback = function(Value)
-        print("Toggle:", Value)
-    end
-})
-
-----------------------------------------------------
--- Sliders
-----------------------------------------------------
-
-local Sliders = HomeTab:SectionUI("Sliders")
-
-Sliders:Slider({
-    Title = "WalkSpeed",
-    Description = "0 - 100",
-    Min = 0,
-    Max = 100,
-    Default = 16,
-    Callback = function(Value)
-        print(Value)
-    end
-})
-
-----------------------------------------------------
--- Textboxes
-----------------------------------------------------
-
-local Inputs = HomeTab:SectionUI("Textboxes")
-
-Inputs:TextBox({
-    Title = "Username",
-    Placeholder = "Type here...",
-    Callback = function(Text)
-        print(Text)
-    end
-})
-
-----------------------------------------------------
--- Dropdowns
-----------------------------------------------------
-
-local Drops = HomeTab:SectionUI("Dropdowns")
-
-Drops:Dropdown({
-    Title = "Single Dropdown",
-    Description = "Choose one",
-    Options = {
-        "Apple",
-        "Banana",
-        "Orange",
-        "Grape",
-        "Watermelon"
-    },
-    Default = "Apple",
-    Callback = function(Value)
-        print(Value)
-    end
-})
-
-Drops:Dropdown({
-    Title = "Multi Dropdown",
-    Description = "Choose multiple",
-    Multi = true,
-    Options = {
-        "ESP",
-        "Aimbot",
-        "Fly",
-        "Noclip",
-        "Speed"
-    },
-    Default = {"ESP","Fly"},
-    Callback = function(Value)
-        print(table.concat(Value,", "))
-    end
-})
-
-----------------------------------------------------
--- Keybinds
-----------------------------------------------------
-
-local Keys = HomeTab:SectionUI("Keybinds")
-
-Keys:Keybind({
-    Title = "Toggle UI",
-    Description = "Press RightShift",
-    Default = Enum.KeyCode.RightShift,
-    Callback = function()
-        print("Pressed")
-    end
-})
-
-
-----------------------------------------------------
--- Managers
-----------------------------------------------------
-
-Window:CreateThemeManager(ThemesTab)
-
-Window:CreateConfigManager(ConfigTab)
-
-----------------------------------------------------
--- Welcome Notification
-----------------------------------------------------
-
-KazeUI:Notify({
-    Title = "Loaded",
-    Content = "Welcome to the KazeUI Showcase!",
-    Duration = 5
-})
 
 return KazeUI
