@@ -3,7 +3,7 @@
 	Optimized: Deep Obsidian Only, Dynamic Tab Text Scaling (No "..." Dots), Wider Sidebar, Safe Close Dialog Margin Padding
 	Added: New Dynamic Keybind Component, Full Config Manager Overhaul, Memory Leak Prevention
 	Fixes: Text Clipping/Overflow fixed globally, Multi-Dropdown Color Hover State Fixed
-	Critical Bug Fix: Dedicated Notification ScreenGui with Highest DisplayOrder (Always on Top)
+	Hotfix: Critical Notification Z-Index bug resolved (Notifications forced to highest Layer)
 --]]
 
 local KazeUI = {}
@@ -19,7 +19,7 @@ local LP = Players.LocalPlayer
 
 -- Global State & Managers
 KazeUI.GlowColor = Color3.fromRGB(0, 160, 255)
-KazeUI.BackgroundColor = Color3.fromRGB(10, 10, 12) -- Naka-lock sa Deep Obsidian
+KazeUI.BackgroundColor = Color3.fromRGB(10, 10, 12) -- Locked to Deep Obsidian
 KazeUI.Flags = {}
 KazeUI.ActiveWindows = {} 
 
@@ -35,32 +35,19 @@ local function RegisterFlag(flag, getFunc, setFunc)
 	end
 end
 
--- Maghanap ng parent para sa GUI (CoreGui o PlayerGui kung walang access)
-local targetParent = nil
-local success, coreGui = pcall(function() return game:GetService("CoreGui") end)
-if success and coreGui then
-	targetParent = coreGui
-else
-	targetParent = LP:WaitForChild("PlayerGui", 15)
-end
-
--- ScreenGui Setup para sa Main UI
+-- ScreenGui Setup (Supports CoreGui & PlayerGui Fallback)
 local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "KazeUI_Main"
+ScreenGui.Name = "KazeUI"
 ScreenGui.ResetOnSpawn = false
 ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-ScreenGui.DisplayOrder = 10 -- Karaniwang level para sa main Windows
-ScreenGui.Parent = targetParent
 
--- Dedikadong ScreenGui para sa Notifications (Ito ang solusyon para laging nasa ibabaw)
-local NotifScreenGui = Instance.new("ScreenGui")
-NotifScreenGui.Name = "KazeUI_Notifications"
-NotifScreenGui.ResetOnSpawn = false
-NotifScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-NotifScreenGui.DisplayOrder = 9999 -- Pinakamataas na priority para hindi matakpan ng Window
-NotifScreenGui.Parent = targetParent
+local success, parent = pcall(function() return game:GetService("CoreGui") end)
+if not success or not parent then
+	parent = LP:WaitForChild("PlayerGui", 15)
+end
+ScreenGui.Parent = parent
 
--- Notification Container Setup sa loob ng NotifScreenGui
+-- Notification Container Setup
 local NotifContainer = Instance.new("Frame")
 local notifLayout = Instance.new("UIListLayout", NotifContainer)
 notifLayout.SortOrder = Enum.SortOrder.LayoutOrder
@@ -74,9 +61,10 @@ NotifContainer.Name = "NotifContainer"
 NotifContainer.Size = UDim2.new(0, 300, 1, 0)
 NotifContainer.Position = UDim2.new(1, -320, 0, 0)
 NotifContainer.BackgroundTransparency = 1
-NotifContainer.Parent = NotifScreenGui
+NotifContainer.ZIndex = 99999 -- CRITICAL FIX: Ensure notification container sits on top of all windows
+NotifContainer.Parent = ScreenGui
 
--- Screen Scale Controller para sa Main UI
+-- Screen Scale Controller
 local UIScale = Instance.new("UIScale")
 UIScale.Parent = ScreenGui
 
@@ -91,7 +79,7 @@ end
 UpdateScale()
 workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(UpdateScale)
 
--- Auto-Icon Fetcher gamit ang HttpGet
+-- Auto-Icon Fetcher via HttpGet
 local IconsMap = {}
 pcall(function()
 	if game and game.HttpGet then
@@ -132,7 +120,7 @@ local function FormatImage(id)
 	return "rbxassetid://" .. clean
 end
 
--- Threshold dragging para maiwasan ang maling minimize clicks
+-- Threshold dragging to prevent minimize misclicks
 local function MakeDraggable(dragPart, targetPart)
 	local dragging = false
 	local dragInput, dragStart, startPos
@@ -278,7 +266,7 @@ function KazeUI:SetGlow(color)
 	end
 end
 
--- Maayos na Notification Animation (Laging nasa pinakaibabaw dahil sa NotifScreenGui)
+-- Robust Notification Animation Sequence
 function KazeUI:Notify(config)
 	config = config or {}
 	local title = tostring(config.Title or "Notification")
@@ -290,6 +278,7 @@ function KazeUI:Notify(config)
 	notifHolder.Size = UDim2.new(1, 0, 0, 0)
 	notifHolder.BackgroundTransparency = 1
 	notifHolder.BorderSizePixel = 0
+	notifHolder.ZIndex = 99999 -- CRITICAL FIX: Ensure holder is forced to highest ZIndex
 	notifHolder.ClipsDescendants = true
 	notifHolder.Parent = NotifContainer
 
@@ -298,6 +287,7 @@ function KazeUI:Notify(config)
 	notifFrame.Size = UDim2.new(1, -10, 0, 60)
 	notifFrame.Position = UDim2.new(1.2, 0, 0, 0)
 	notifFrame.BorderSizePixel = 0
+	notifFrame.ZIndex = 99999 -- CRITICAL FIX: Ensure visual panel inherits/has max ZIndex
 	notifFrame.Parent = notifHolder
 	Instance.new("UICorner", notifFrame).CornerRadius = UDim.new(0, 8)
 	KazeUI:AddPanel(notifFrame, 0.02)
@@ -317,6 +307,7 @@ function KazeUI:Notify(config)
 	titleLab.TextSize = 14
 	titleLab.TextXAlignment = Enum.TextXAlignment.Left
 	titleLab.TextTruncate = Enum.TextTruncate.AtEnd
+	titleLab.ZIndex = 99999
 
 	local contentLab = Instance.new("TextLabel", notifFrame)
 	contentLab.Size = UDim2.new(1, -20, 0, 20)
@@ -328,6 +319,7 @@ function KazeUI:Notify(config)
 	contentLab.TextSize = 13
 	contentLab.TextXAlignment = Enum.TextXAlignment.Left
 	contentLab.TextTruncate = Enum.TextTruncate.AtEnd
+	contentLab.ZIndex = 99999
 
 	TweenService:Create(notifHolder, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Size = UDim2.new(1, 0, 0, 70)}):Play()
 	TweenService:Create(notifFrame, TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Position = UDim2.new(0, 5, 0, 0)}):Play()
@@ -720,7 +712,7 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 		UpdateHeaderVisual()
 		Refresh(options)
 		
-		-- Hook properly sa config applying state
+		-- Hook properly into config applying state
 		if typeof(callback) == "function" then
 			if isMulti then
 				local ret = {}
@@ -1770,7 +1762,7 @@ local function CreateKeybindInput(parentFrame, title, defaultKey, callback, flag
 				if isKey then
 					local key = input.KeyCode
 					if key == Enum.KeyCode.Escape then
-						-- Kinansela ang bind, panatilihin ang luma
+						-- Cancel bindings, preserve old key
 					elseif key == Enum.KeyCode.Backspace or key == Enum.KeyCode.Delete then
 						currentKey = Enum.KeyCode.Unknown
 					else
@@ -1783,7 +1775,7 @@ local function CreateKeybindInput(parentFrame, title, defaultKey, callback, flag
 				bindStroke.Color = Color3.fromRGB(45, 45, 50)
 				conn:Disconnect()
 
-				-- BUG FIX: Lagyan ng delay ang release para hindi mahuli ng global handler ang mismong keypress
+				-- BUG FIX: Delayed release to stop global event from catching the exact same key press
 				task.delay(0.15, function() isBinding = false end)
 			end
 		end)
@@ -1856,7 +1848,7 @@ end
 local CreateCollapsibleSection
 local AttachElementsToAPI
 
-AttachElementsToAPI = function(apiTable, parentFrame, registeredList)
+AttachElementsToAPI = function(apiTable, parentFrame)
 	function apiTable:AddLabel(arg1)
 		local t = type(arg1) == "table" and (arg1.Text or arg1.Title) or arg1
 		local label = Instance.new("TextLabel")
@@ -1869,44 +1861,20 @@ AttachElementsToAPI = function(apiTable, parentFrame, registeredList)
 		label.TextXAlignment = Enum.TextXAlignment.Left
 		label.TextWrapped = true
 		label.Parent = parentFrame
-		
-		-- Upang maisama sa Page Search
-		if registeredList then
-			table.insert(registeredList, {
-				Instance = label,
-				TextToSearch = tostring(t or " ")
-			})
-		end
 		return label
 	end
 
 	function apiTable:Paragraph(arg1, arg2)
 		local title = type(arg1) == "table" and arg1.Title or arg1
 		local content = type(arg1) == "table" and (arg1.Content or arg1.Description) or arg2
-		local element = CreateParagraph(parentFrame, title, content)
-		
-		if registeredList then
-			table.insert(registeredList, {
-				Instance = element.Wrapper,
-				TextToSearch = tostring(title or "") .. " " .. tostring(content or "")
-			})
-		end
-		return element
+		return CreateParagraph(parentFrame, title, content)
 	end
 
 	function apiTable:Button(arg1, arg2, arg3)
 		local title = type(arg1) == "table" and arg1.Title or arg1
 		local desc = type(arg1) == "table" and (arg1.Description or arg1.Content or "") or arg2
 		local callback = type(arg1) == "table" and arg1.Callback or arg3
-		local element = CreateClickableParagraph(parentFrame, title, desc, callback)
-		
-		if registeredList then
-			table.insert(registeredList, {
-				Instance = element.Wrapper,
-				TextToSearch = tostring(title or "") .. " " .. tostring(desc or "")
-			})
-		end
-		return element
+		return CreateClickableParagraph(parentFrame, title, desc, callback)
 	end
 
 	function apiTable:Toggle(arg1, arg2, arg3, arg4, arg5)
@@ -1916,15 +1884,7 @@ AttachElementsToAPI = function(apiTable, parentFrame, registeredList)
 		else
 			title, desc, def, callback, flag = arg1, arg2, arg3, arg4, arg5
 		end
-		local element = CreateToggleSwitch(parentFrame, title, desc, def, callback, flag)
-		
-		if registeredList then
-			table.insert(registeredList, {
-				Instance = element.Wrapper,
-				TextToSearch = tostring(title or "") .. " " .. tostring(desc or "")
-			})
-		end
-		return element
+		return CreateToggleSwitch(parentFrame, title, desc, def, callback, flag)
 	end
 
 	function apiTable:TextBox(arg1, arg2, arg3, arg4, arg5)
@@ -1934,15 +1894,7 @@ AttachElementsToAPI = function(apiTable, parentFrame, registeredList)
 		else
 			title, place, def, callback, flag = arg1, arg2, arg3, arg4, arg5
 		end
-		local element = CreateTextBoxInput(parentFrame, title, place, def, callback, flag)
-		
-		if registeredList then
-			table.insert(registeredList, {
-				Instance = element.Wrapper,
-				TextToSearch = tostring(title or "") .. " " .. tostring(place or "")
-			})
-		end
-		return element
+		return CreateTextBoxInput(parentFrame, title, place, def, callback, flag)
 	end
 
 	function apiTable:Slider(arg1, arg2, arg3, arg4, arg5, arg6)
@@ -1952,15 +1904,7 @@ AttachElementsToAPI = function(apiTable, parentFrame, registeredList)
 		else
 			title, min, max, def, callback, flag = arg1, arg2, arg3, arg4, arg5, arg6
 		end
-		local element = CreateSliderInput(parentFrame, title, min, max, def, callback, flag)
-		
-		if registeredList then
-			table.insert(registeredList, {
-				Instance = element.Wrapper,
-				TextToSearch = tostring(title or "")
-			})
-		end
-		return element
+		return CreateSliderInput(parentFrame, title, min, max, def, callback, flag)
 	end
 
 	function apiTable:Dropdown(arg1, arg2, arg3, arg4, arg5, arg6)
@@ -1970,19 +1914,7 @@ AttachElementsToAPI = function(apiTable, parentFrame, registeredList)
 		else
 			title, vals, def, callback, multi, flag = arg1, arg2, arg3, arg4, (arg5 or false), arg6
 		end
-		local element = CreateDropdown(parentFrame, title, vals, def, callback, multi, flag)
-		
-		if registeredList then
-			local optionsText = ""
-			if type(vals) == "table" then
-				optionsText = " " .. table.concat(vals, " ")
-			end
-			table.insert(registeredList, {
-				Instance = element.Wrapper,
-				TextToSearch = tostring(title or "") .. optionsText
-			})
-		end
-		return element
+		return CreateDropdown(parentFrame, title, vals, def, callback, multi, flag)
 	end
 
 	function apiTable:ColorPicker(arg1, arg2, arg3, arg4)
@@ -1992,15 +1924,7 @@ AttachElementsToAPI = function(apiTable, parentFrame, registeredList)
 		else
 			title, def, cb, flag = arg1, arg2, arg3, arg4
 		end
-		local element = CreateColorPicker(parentFrame, title, def, cb, flag)
-		
-		if registeredList then
-			table.insert(registeredList, {
-				Instance = element.Wrapper,
-				TextToSearch = tostring(title or "")
-			})
-		end
-		return element
+		return CreateColorPicker(parentFrame, title, def, cb, flag)
 	end
 	
 	function apiTable:Keybind(arg1, arg2, arg3, arg4)
@@ -2010,47 +1934,21 @@ AttachElementsToAPI = function(apiTable, parentFrame, registeredList)
 		else
 			title, def, cb, flag = arg1, arg2, arg3, arg4
 		end
-		local element = CreateKeybindInput(parentFrame, title, def, cb, flag)
-		
-		if registeredList then
-			table.insert(registeredList, {
-				Instance = element.Wrapper,
-				TextToSearch = tostring(title or "")
-			})
-		end
-		return element
+		return CreateKeybindInput(parentFrame, title, def, cb, flag)
 	end
 
 	function apiTable:SectionUI(arg1)
 		local title = type(arg1) == "table" and arg1.Title or arg1
-		local element = CreateCollapsibleSection(parentFrame, title, registeredList)
-		
-		if registeredList then
-			table.insert(registeredList, {
-				Instance = element.Frame,
-				TextToSearch = tostring(title or ""),
-				IsSection = true,
-				SubElements = element.SubItemsList
-			})
-		end
-		return element
+		return CreateCollapsibleSection(parentFrame, title)
 	end
 	
 	function apiTable:Section(arg1)
 		local title = type(arg1) == "table" and arg1.Title or arg1
-		local element = CreateVisualSectionDivider(parentFrame, title)
-		
-		if registeredList then
-			table.insert(registeredList, {
-				Instance = element.Label.Parent,
-				TextToSearch = tostring(title or "")
-			})
-		end
-		return element
+		return CreateVisualSectionDivider(parentFrame, title)
 	end
 end
 
-CreateCollapsibleSection = function(parentFrame, titleArg, registeredList)
+CreateCollapsibleSection = function(parentFrame, titleArg)
 	local title = type(titleArg) == "table" and titleArg.Title or tostring(titleArg or "Section")
 	local isOpen = false
 
@@ -2144,17 +2042,8 @@ CreateCollapsibleSection = function(parentFrame, titleArg, registeredList)
 		}):Play()
 	end)
 
-	local subItemsList = {}
-	local sectionPublic = { Frame = sectionBox, ContentFrame = sectionContent, Header = headerFrame, SubItemsList = subItemsList, ForceOpen = function()
-		if not isOpen then
-			isOpen = true
-			sectionContent.Visible = true
-			divider.Visible = true
-			arrowIcon.Rotation = 0
-		end
-	end }
-	
-	AttachElementsToAPI(sectionPublic, sectionContent, subItemsList)
+	local sectionPublic = { Frame = sectionBox, ContentFrame = sectionContent, Header = headerFrame }
+	AttachElementsToAPI(sectionPublic, sectionContent)
 	function sectionPublic:SetText(newText)
 		titleLabel.Text = newText
 	end
@@ -2306,7 +2195,7 @@ function KazeUI:CreateWindow(config)
 		if isMinimized then return end
 		isMinimized = true
 		
-		-- BUG FIX: Huwag i-save ang size dito. Kapag pinindot nang mabilis ang Back Style tween, baka lumaki ang size nang walang katapusan.
+		-- BUG FIX: Don't save size here. Spamming Tween Back Style causes it to overshoot and grow to infinity.
 		if not toggledMaximized then
 			lastNormalPosition = Window.Position
 			lastNormalAnchor = Window.AnchorPoint
@@ -2337,7 +2226,7 @@ function KazeUI:CreateWindow(config)
 
 	BtnYellow.MouseButton1Click:Connect(minimizeWindow)
 
-	-- BUG FIX: Global Dragging para hindi matanggal sa bounds ng Mini Button habang hinihila
+	-- BUG FIX: Global Dragging to stop slipping off the Mini Button bounds and triggering clicks
 	local miniDragStart
 	local miniDragMoved = false
 	
@@ -2352,7 +2241,7 @@ function KazeUI:CreateWindow(config)
 		if miniDragStart and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
 			if (input.Position - miniDragStart).Magnitude > 8 then
 				miniDragMoved = true
-				-- Manu-manong i-update ang posisyon
+				-- Update position manually
 				local delta = input.Position - miniDragStart
 				MiniButton.Position = UDim2.new(
 					0, MiniButton.Position.X.Offset + delta.X,
@@ -2381,10 +2270,10 @@ function KazeUI:CreateWindow(config)
 			toggledMaximized = true
 			Window.AnchorPoint = Vector2.new(0.5,0.5)
 			Window.Position = UDim2.fromScale(0.5,0.5)
-			TweenService:Create(Window, TweenInfo.new(0.25, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), { Size = UDim2.fromScale(0.95,0.9) }):Play()
+			TweenService:Create(Window, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Size = UDim2.fromScale(0.95,0.9) }):Play()
 		else
 			toggledMaximized = false
-			TweenService:Create(Window, TweenInfo.new(0.25, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), { Size = lastNormalSize, Position = lastNormalPosition }):Play()
+			TweenService:Create(Window, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Size = lastNormalSize, Position = lastNormalPosition }):Play()
 			task.delay(0.25, function() Window.AnchorPoint = lastNormalAnchor end)
 		end
 	end)
@@ -2455,10 +2344,7 @@ function KazeUI:CreateWindow(config)
 		CancelBtn.ZIndex = 54
 		Instance.new("UICorner", CancelBtn).CornerRadius = UDim.new(0,8)
 
-		ConfirmBtn.MouseButton1Click:Connect(function() 
-			ScreenGui:Destroy() 
-			NotifScreenGui:Destroy() -- Linisin din ang notifications GUI kapag pinatay ang UI
-		end)
+		ConfirmBtn.MouseButton1Click:Connect(function() ScreenGui:Destroy() end)
 		CancelBtn.MouseButton1Click:Connect(function() Overlay:Destroy(); confirmActive = false; BtnYellow.Active = true; BtnGreen.Active = true; BtnRed.Active = true end)
 	end
 	BtnRed.MouseButton1Click:Connect(ShowCloseConfirm)
@@ -2536,7 +2422,6 @@ function KazeUI:CreateWindow(config)
 	local Win = {
 		Window = Window,
 		ScreenGui = ScreenGui,
-		NotifScreenGui = NotifScreenGui,
 		_Pages = Pages,
 		_TabsList = TabsList,
 		_Tabs = {},
@@ -2608,14 +2493,14 @@ function KazeUI:CreateWindow(config)
 		end})
 	end
 
-	-- Theme UI elements na may kasamang Flags para ma-save
+	-- BUG FIX: Theme UI elements missing Flags to save
 	function Win:CreateThemeManager(tab)
 		local sec = tab:SectionUI("Theme & Visuals")
 		
 		sec:ColorPicker({
 			Title = "UI Glow Color",
 			Default = KazeUI.GlowColor,
-			Flag = "KazeUI_Theme_GlowColor", -- Added flag para i-save ng Config
+			Flag = "KazeUI_Theme_GlowColor", -- Added flag so Config saves it
 			Callback = function(color)
 				KazeUI:SetGlow(color)
 			end
@@ -2626,7 +2511,7 @@ function KazeUI:CreateWindow(config)
 			Min = 0,
 			Max = 100,
 			Default = 0,
-			Flag = "KazeUI_Theme_BackgroundTransparency", -- Added flag para i-save ng Config
+			Flag = "KazeUI_Theme_BackgroundTransparency", -- Added flag so Config saves it
 			Callback = function(val)
 				KazeUI:SetTransparency(val / 100)
 			end
@@ -2688,66 +2573,8 @@ function KazeUI:CreateWindow(config)
 		page.Visible = false
 		page.Parent = self._Pages
 
-		-- ==========================================
-		-- PAGE SEARCH SYSTEM (ALWAYS ON TOP)
-		-- ==========================================
-		local SearchBarFrame = Instance.new("Frame")
-		SearchBarFrame.Name = "SearchBarFrame"
-		SearchBarFrame.Size = UDim2.new(1, 0, 0, 42)
-		SearchBarFrame.Position = UDim2.new(0, 0, 0, 0)
-		SearchBarFrame.BackgroundTransparency = 1
-		SearchBarFrame.Parent = page
-
-		local SearchInputContainer = Instance.new("Frame")
-		SearchInputContainer.Name = "SearchInputContainer"
-		SearchInputContainer.Size = UDim2.new(0.95, 0, 0, 32)
-		SearchInputContainer.Position = UDim2.new(0.025, 0, 0, 4)
-		SearchInputContainer.Parent = SearchBarFrame
-		Instance.new("UICorner", SearchInputContainer).CornerRadius = UDim.new(0, 6)
-		KazeUI:AddPanel(SearchInputContainer, 0.02)
-		KazeUI:AddTransparentElement(SearchInputContainer, 0)
-
-		local searchBarStroke = Instance.new("UIStroke", SearchInputContainer)
-		searchBarStroke.Thickness = 1.5
-		searchBarStroke.Color = Color3.fromRGB(45, 45, 50)
-		searchBarStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-
-		local searchIcon = Instance.new("ImageLabel")
-		searchIcon.Name = "SearchIcon"
-		searchIcon.Size = UDim2.fromOffset(16, 16)
-		searchIcon.Position = UDim2.new(0, 10, 0.5, -8)
-		searchIcon.BackgroundTransparency = 1
-		searchIcon.Image = FormatImage("9882298751") -- Roblox search glass icon ID or general search icon
-		searchIcon.ImageColor3 = Color3.fromRGB(160, 160, 165)
-		searchIcon.Parent = SearchInputContainer
-
-		local SearchBoxInput = Instance.new("TextBox")
-		SearchBoxInput.Name = "SearchBoxInput"
-		SearchBoxInput.Size = UDim2.new(1, -42, 1, 0)
-		SearchBoxInput.Position = UDim2.new(0, 32, 0, 0)
-		SearchBoxInput.BackgroundTransparency = 1
-		SearchBoxInput.PlaceholderText = "Search features here..."
-		SearchBoxInput.PlaceholderColor3 = Color3.fromRGB(120, 120, 125)
-		SearchBoxInput.Text = ""
-		SearchBoxInput.TextColor3 = Color3.fromRGB(255, 255, 255)
-		SearchBoxInput.Font = Enum.Font.Gotham
-		SearchBoxInput.TextSize = 13
-		SearchBoxInput.TextXAlignment = Enum.TextXAlignment.Left
-		SearchBoxInput.Parent = SearchInputContainer
-
-		-- Ang Glowing Neon effect ng Search Bar
-		SearchBoxInput.Focused:Connect(function()
-			StartNeonLoop(searchBarStroke)
-		end)
-		SearchBoxInput.FocusLost:Connect(function()
-			StopNeonLoop(searchBarStroke)
-			searchBarStroke.Color = Color3.fromRGB(45, 45, 50)
-		end)
-
-		-- Content Area (Nasa ilalim ng Search Bar, ito lang ang mag-scroscroll)
 		local pageContent = Instance.new("ScrollingFrame", page)
-		pageContent.Size = UDim2.new(1, 0, 1, -44)
-		pageContent.Position = UDim2.new(0, 0, 0, 44)
+		pageContent.Size = UDim2.new(1, 0, 1, 0)
 		pageContent.BackgroundTransparency = 1
 		pageContent.BorderSizePixel = 0
 		pageContent.ScrollBarThickness = 5
@@ -2756,7 +2583,7 @@ function KazeUI:CreateWindow(config)
 		pageContent.ScrollBarImageColor3 = Color3.fromRGB(40,40,45)
 
 		local pagePadding = Instance.new("UIPadding", pageContent)
-		pagePadding.PaddingTop = UDim.new(0, 4)
+		pagePadding.PaddingTop = UDim.new(0, 8)
 		pagePadding.PaddingBottom = UDim.new(0, 8)
 		pagePadding.PaddingLeft = UDim.new(0, 8)
 		pagePadding.PaddingRight = UDim.new(0, 8)
@@ -2765,54 +2592,6 @@ function KazeUI:CreateWindow(config)
 		contentLayout.SortOrder = Enum.SortOrder.LayoutOrder
 		contentLayout.Padding = UDim.new(0,4)
 		contentLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-
-		local registeredPageElements = {}
-
-		-- Search Filtering Logic
-		SearchBoxInput:GetPropertyChangedSignal("Text"):Connect(function()
-			local query = string.lower(SearchBoxInput.Text)
-			
-			for _, elementData in ipairs(registeredPageElements) do
-				local inst = elementData.Instance
-				local isSection = elementData.IsSection
-				
-				if query == "" then
-					inst.Visible = true
-					if isSection then
-						for _, subData in ipairs(elementData.SubElements) do
-							subData.Instance.Visible = true
-						end
-					end
-				else
-					local lowerText = string.lower(elementData.TextToSearch)
-					local matchFound = string.find(lowerText, query, 1, true) ~= nil
-					
-					if isSection then
-						-- Filter para sa mga Sub-items ng Section
-						local subMatchFound = false
-						for _, subData in ipairs(elementData.SubElements) do
-							local subLowerText = string.lower(subData.TextToSearch)
-							local subMatch = string.find(subLowerText, query, 1, true) ~= nil
-							subData.Instance.Visible = subMatch
-							if subMatch then
-								subMatchFound = true
-							end
-						end
-						
-						-- Kapag nag-match ang Section name mismo o alinman sa sub-items nito
-						if matchFound or subMatchFound then
-							inst.Visible = true
-							elementData.Instance:FindFirstAncestorOfClass("Frame"):ForceOpen()
-						else
-							inst.Visible = false
-						end
-					else
-						-- Para sa regular na components (Buttons, Toggles, Keybinds, Sliders, atbp.)
-						inst.Visible = matchFound
-					end
-				end
-			end
-		end)
 
 		table.insert(self._Tabs, { Button = btn, Indicator = leftIndicator, Label = txt, Page = page })
 
@@ -2847,7 +2626,7 @@ function KazeUI:CreateWindow(config)
 		if #self._Tabs == 1 then activate() end
 
 		local public = { Button = btn, Page = page }
-		AttachElementsToAPI(public, pageContent, registeredPageElements)
+		AttachElementsToAPI(public, pageContent)
 		function public:SetText(newText)
 			txt.Text = newText
 		end
