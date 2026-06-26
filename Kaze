@@ -2,8 +2,8 @@
 	Kaze UI Library v2.0
 	Added: Performance Widget, Search System, Window Resizing, Theme Manager 2.0
 	Added: Thumbnail Component, Prompt System, Config Manager Overhaul
-	Fixed: UIScale-compensated fluid resizing, stable Theme Resetting, Glass Transparency recovery & Perfect Square Thumbnails.
-	Fixed: Keybind "perks" syntax typo.
+	Fixed: UIScale-compensated fluid resizing, stable Theme Resetting, Glass Transparency recovery.
+	Fixed: Reverted Thumbnail to mathematically rigid layout to bypass Delta Executor layout engine bugs.
 --]]
 
 local KazeUI = {}
@@ -820,11 +820,26 @@ local function CreateParagraph(parentFrame, title, body)
 	}
 end
 
--- Re-engineered Thumbnail: Perfect Square, auto-scalable, Fit AspectRatio and no cutting off.
+-- Reverted to Original Mathematics-based Rendering for robust Executor compatibility
 local function CreateThumbnail(parentFrame, title, body, imageId)
 	title = tostring(title or "")
 	body = tostring(body or "")
 	local formattedImage = FormatImage(imageId or "")
+	
+	local measuredWidth = 598 * 0.92
+	if parentFrame and parentFrame.AbsoluteSize and parentFrame.AbsoluteSize.X > 0 then measuredWidth = parentFrame.AbsoluteSize.X * 0.95 end
+	
+	local titleHeight = 0
+	if title ~= " " and title ~= "" then
+		local ts = TextService:GetTextSize(title, 16, Enum.Font.GothamBold, Vector2.new(measuredWidth - 24, 1000))
+		titleHeight = math.max(18, math.ceil(ts.Y))
+	end
+	
+	local bodySize = TextService:GetTextSize(body, 14, Enum.Font.Gotham, Vector2.new(measuredWidth - 24, 2000))
+	local bodyHeight = body ~= "" and math.ceil(bodySize.Y) or 0
+	local imageHeight = 150
+	
+	local totalHeight = 6 + imageHeight + 6 + titleHeight + (title ~= "" and 3 or 0) + bodyHeight + 6
 	
 	local wrapper = Instance.new("Frame")
 	wrapper.Size = UDim2.new(1, 0, 0, 0)
@@ -835,78 +850,47 @@ local function CreateThumbnail(parentFrame, title, body, imageId)
 	local paraFrame = Instance.new("Frame")
 	paraFrame.AnchorPoint = Vector2.new(0.5, 0)
 	paraFrame.Position = UDim2.new(0.5, 0, 0, 3)
-	paraFrame.Size = UDim2.new(0.95, 0, 0, 0)
+	paraFrame.Size = UDim2.new(0.95, 0, 0, totalHeight)
 	paraFrame.BorderSizePixel = 0
-	paraFrame.AutomaticSize = Enum.AutomaticSize.Y
 	Instance.new("UICorner", paraFrame).CornerRadius = UDim.new(0, 8)
 	paraFrame.Parent = wrapper
 	KazeUI:AddPanel(paraFrame, 0.02)
 	KazeUI:AddTransparentElement(paraFrame, 0)
 	
-	local paraLayout = Instance.new("UIListLayout", paraFrame)
-	paraLayout.SortOrder = Enum.SortOrder.LayoutOrder
-	paraLayout.Padding = UDim.new(0, 6)
-	paraLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-	
-	local paraPadding = Instance.new("UIPadding", paraFrame)
-	paraPadding.PaddingTop = UDim.new(0, 10)
-	paraPadding.PaddingBottom = UDim.new(0, 10)
-	paraPadding.PaddingLeft = UDim.new(0, 12)
-	paraPadding.PaddingRight = UDim.new(0, 12)
-	
-	-- Backing neon glow
 	local glow = Instance.new("Frame")
 	glow.AnchorPoint = Vector2.new(0.5, 0)
 	glow.Position = UDim2.new(0.5, 0, 0, 1)
-	glow.Size = UDim2.new(0.96, 0, 1, 6)
+	glow.Size = UDim2.new(0.96, 0, 0, totalHeight + 6)
 	glow.BackgroundTransparency = 0.96
 	Instance.new("UICorner", glow).CornerRadius = UDim.new(0, 10)
 	glow.Parent = wrapper
 	StartNeonLoop(glow)
-	
-	-- Continuously scale glow relative to responsive automatic height adjustments
-	paraFrame:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
-		glow.Size = UDim2.new(0.96, 0, 0, paraFrame.AbsoluteSize.Y + 6)
-	end)
 	
 	local paraStroke = Instance.new("UIStroke", paraFrame)
 	paraStroke.Thickness = 1.5
 	paraStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 	StartNeonLoop(paraStroke)
 	
-	-- Frame container for Square aspect control (WidthControlsHeight)
-	local imgContainer = Instance.new("Frame", paraFrame)
-	-- FIX: Providing a default offset ensures AutomaticSize does not collapse before the UI layout initializes
-	imgContainer.Size = UDim2.new(0.9, 0, 0, 250) 
-	imgContainer.BackgroundTransparency = 1
-	imgContainer.LayoutOrder = 1
+	local inner = Instance.new("Frame", paraFrame)
+	inner.Size = UDim2.new(1, -16, 1, -12)
+	inner.Position = UDim2.fromOffset(8, 6)
+	inner.BackgroundTransparency = 1
 	
-	local aspect = Instance.new("UIAspectRatioConstraint", imgContainer)
-	aspect.AspectRatio = 1 -- 1:1 Aspect ratio
-	aspect.AspectType = Enum.AspectType.WidthControlsHeight
-
-	-- FIX: Dynamically link the Y offset to absolute X width to guarantee layout engine detects the square height
-	imgContainer:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
-		local w = imgContainer.AbsoluteSize.X
-		if w > 0 and math.abs(imgContainer.Size.Y.Offset - w) > 2 then
-			imgContainer.Size = UDim2.new(0.9, 0, 0, w)
-		end
-	end)
-	
-	local imgLabel = Instance.new("ImageLabel", imgContainer)
-	imgLabel.Size = UDim2.new(1, 0, 1, 0)
+	local imgLabel = Instance.new("ImageLabel", inner)
+	imgLabel.Size = UDim2.new(1, 0, 0, imageHeight)
+	imgLabel.Position = UDim2.new(0, 0, 0, 0)
 	imgLabel.BackgroundTransparency = 0
 	imgLabel.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
 	imgLabel.Image = formattedImage
-	imgLabel.ScaleType = Enum.ScaleType.Fit 
+	imgLabel.ScaleType = Enum.ScaleType.Crop
 	Instance.new("UICorner", imgLabel).CornerRadius = UDim.new(0, 6)
 	KazeUI:AddPanel(imgLabel, -0.01)
 	
 	local ptitleLabel
 	if title ~= " " and title ~= "" then
-		ptitleLabel = Instance.new("TextLabel", paraFrame)
-		ptitleLabel.Size = UDim2.new(1, 0, 0, 0)
-		ptitleLabel.AutomaticSize = Enum.AutomaticSize.Y
+		ptitleLabel = Instance.new("TextLabel", inner)
+		ptitleLabel.Size = UDim2.new(1,0,0,titleHeight)
+		ptitleLabel.Position = UDim2.fromOffset(0, imageHeight + 6)
 		ptitleLabel.BackgroundTransparency = 1
 		ptitleLabel.Text = title
 		ptitleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -914,21 +898,22 @@ local function CreateThumbnail(parentFrame, title, body, imageId)
 		ptitleLabel.TextSize = 15
 		ptitleLabel.TextXAlignment = Enum.TextXAlignment.Left
 		ptitleLabel.TextWrapped = true
-		ptitleLabel.LayoutOrder = 2
 	end
 	
-	local bodyLabel = Instance.new("TextLabel", paraFrame)
-	bodyLabel.Size = UDim2.new(1, 0, 0, 0)
-	bodyLabel.AutomaticSize = Enum.AutomaticSize.Y
-	bodyLabel.BackgroundTransparency = 1
-	bodyLabel.Text = body
-	bodyLabel.TextColor3 = Color3.fromRGB(220, 220, 220)
-	bodyLabel.Font = Enum.Font.Gotham
-	bodyLabel.TextSize = 13
-	bodyLabel.TextWrapped = true
-	bodyLabel.TextXAlignment = Enum.TextXAlignment.Left
-	bodyLabel.TextYAlignment = Enum.TextYAlignment.Top
-	bodyLabel.LayoutOrder = 3
+	local bodyLabel
+	if body ~= "" then
+		bodyLabel = Instance.new("TextLabel", inner)
+		bodyLabel.Size = UDim2.new(1,0,0,bodyHeight)
+		bodyLabel.Position = UDim2.fromOffset(0, imageHeight + 6 + titleHeight + (title ~= "" and 3 or 0))
+		bodyLabel.BackgroundTransparency = 1
+		bodyLabel.Text = body
+		bodyLabel.TextColor3 = Color3.fromRGB(220, 220, 220)
+		bodyLabel.Font = Enum.Font.Gotham
+		bodyLabel.TextSize = 13
+		bodyLabel.TextWrapped = true
+		bodyLabel.TextXAlignment = Enum.TextXAlignment.Left
+		bodyLabel.TextYAlignment = Enum.TextYAlignment.Top
+	end
 	
 	return { 
 		Wrapper = wrapper, 
@@ -1849,7 +1834,6 @@ local function CreateKeybindInput(parentFrame, title, defaultKey, callback, flag
 	local bindLabel = Instance.new("TextLabel", bindContainer)
 	bindLabel.Size = UDim2.new(1, 0, 1, 0)
 	bindLabel.BackgroundTransparency = 1
-	-- Fixed: Keybind "perks" syntax typo. Corrected to "and"
 	bindLabel.Text = currentKey == Enum.KeyCode.Unknown and "None" or currentKey.Name
 	bindLabel.TextColor3 = Color3.fromRGB(220, 220, 220)
 	bindLabel.Font = Enum.Font.GothamBold
