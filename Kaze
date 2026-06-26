@@ -1,9 +1,11 @@
+
 --[[
 	Kaze UI Library
 	Optimized: Deep Obsidian Only, Dynamic Tab Text Scaling (No "..." Dots), Wider Sidebar, Safe Close Dialog Margin Padding
 	Added: New Dynamic Keybind Component, Full Config Manager Overhaul, Memory Leak Prevention
 	Fixes: Text Clipping/Overflow fixed globally, Multi-Dropdown Color Hover State Fixed
 	Critical Bug Fix: Dedicated Notification ScreenGui with Highest DisplayOrder (Always on Top)
+	New Feature: Interactive Page Search Bar (Always on Top of Page Content, Glowing Neon Outline, Filters All Component Types)
 --]]
 
 local KazeUI = {}
@@ -1856,7 +1858,7 @@ end
 local CreateCollapsibleSection
 local AttachElementsToAPI
 
-AttachElementsToAPI = function(apiTable, parentFrame)
+AttachElementsToAPI = function(apiTable, parentFrame, registeredList)
 	function apiTable:AddLabel(arg1)
 		local t = type(arg1) == "table" and (arg1.Text or arg1.Title) or arg1
 		local label = Instance.new("TextLabel")
@@ -1869,20 +1871,44 @@ AttachElementsToAPI = function(apiTable, parentFrame)
 		label.TextXAlignment = Enum.TextXAlignment.Left
 		label.TextWrapped = true
 		label.Parent = parentFrame
+		
+		-- Upang maisama sa Page Search
+		if registeredList then
+			table.insert(registeredList, {
+				Instance = label,
+				TextToSearch = tostring(t or " ")
+			})
+		end
 		return label
 	end
 
 	function apiTable:Paragraph(arg1, arg2)
 		local title = type(arg1) == "table" and arg1.Title or arg1
 		local content = type(arg1) == "table" and (arg1.Content or arg1.Description) or arg2
-		return CreateParagraph(parentFrame, title, content)
+		local element = CreateParagraph(parentFrame, title, content)
+		
+		if registeredList then
+			table.insert(registeredList, {
+				Instance = element.Wrapper,
+				TextToSearch = tostring(title or "") .. " " .. tostring(content or "")
+			})
+		end
+		return element
 	end
 
 	function apiTable:Button(arg1, arg2, arg3)
 		local title = type(arg1) == "table" and arg1.Title or arg1
 		local desc = type(arg1) == "table" and (arg1.Description or arg1.Content or "") or arg2
 		local callback = type(arg1) == "table" and arg1.Callback or arg3
-		return CreateClickableParagraph(parentFrame, title, desc, callback)
+		local element = CreateClickableParagraph(parentFrame, title, desc, callback)
+		
+		if registeredList then
+			table.insert(registeredList, {
+				Instance = element.Wrapper,
+				TextToSearch = tostring(title or "") .. " " .. tostring(desc or "")
+			})
+		end
+		return element
 	end
 
 	function apiTable:Toggle(arg1, arg2, arg3, arg4, arg5)
@@ -1892,7 +1918,15 @@ AttachElementsToAPI = function(apiTable, parentFrame)
 		else
 			title, desc, def, callback, flag = arg1, arg2, arg3, arg4, arg5
 		end
-		return CreateToggleSwitch(parentFrame, title, desc, def, callback, flag)
+		local element = CreateToggleSwitch(parentFrame, title, desc, def, callback, flag)
+		
+		if registeredList then
+			table.insert(registeredList, {
+				Instance = element.Wrapper,
+				TextToSearch = tostring(title or "") .. " " .. tostring(desc or "")
+			})
+		end
+		return element
 	end
 
 	function apiTable:TextBox(arg1, arg2, arg3, arg4, arg5)
@@ -1902,7 +1936,15 @@ AttachElementsToAPI = function(apiTable, parentFrame)
 		else
 			title, place, def, callback, flag = arg1, arg2, arg3, arg4, arg5
 		end
-		return CreateTextBoxInput(parentFrame, title, place, def, callback, flag)
+		local element = CreateTextBoxInput(parentFrame, title, place, def, callback, flag)
+		
+		if registeredList then
+			table.insert(registeredList, {
+				Instance = element.Wrapper,
+				TextToSearch = tostring(title or "") .. " " .. tostring(place or "")
+			})
+		end
+		return element
 	end
 
 	function apiTable:Slider(arg1, arg2, arg3, arg4, arg5, arg6)
@@ -1912,7 +1954,15 @@ AttachElementsToAPI = function(apiTable, parentFrame)
 		else
 			title, min, max, def, callback, flag = arg1, arg2, arg3, arg4, arg5, arg6
 		end
-		return CreateSliderInput(parentFrame, title, min, max, def, callback, flag)
+		local element = CreateSliderInput(parentFrame, title, min, max, def, callback, flag)
+		
+		if registeredList then
+			table.insert(registeredList, {
+				Instance = element.Wrapper,
+				TextToSearch = tostring(title or "")
+			})
+		end
+		return element
 	end
 
 	function apiTable:Dropdown(arg1, arg2, arg3, arg4, arg5, arg6)
@@ -1922,7 +1972,19 @@ AttachElementsToAPI = function(apiTable, parentFrame)
 		else
 			title, vals, def, callback, multi, flag = arg1, arg2, arg3, arg4, (arg5 or false), arg6
 		end
-		return CreateDropdown(parentFrame, title, vals, def, callback, multi, flag)
+		local element = CreateDropdown(parentFrame, title, vals, def, callback, multi, flag)
+		
+		if registeredList then
+			local optionsText = ""
+			if type(vals) == "table" then
+				optionsText = " " .. table.concat(vals, " ")
+			end
+			table.insert(registeredList, {
+				Instance = element.Wrapper,
+				TextToSearch = tostring(title or "") .. optionsText
+			})
+		end
+		return element
 	end
 
 	function apiTable:ColorPicker(arg1, arg2, arg3, arg4)
@@ -1932,7 +1994,15 @@ AttachElementsToAPI = function(apiTable, parentFrame)
 		else
 			title, def, cb, flag = arg1, arg2, arg3, arg4
 		end
-		return CreateColorPicker(parentFrame, title, def, cb, flag)
+		local element = CreateColorPicker(parentFrame, title, def, cb, flag)
+		
+		if registeredList then
+			table.insert(registeredList, {
+				Instance = element.Wrapper,
+				TextToSearch = tostring(title or "")
+			})
+		end
+		return element
 	end
 	
 	function apiTable:Keybind(arg1, arg2, arg3, arg4)
@@ -1942,21 +2012,47 @@ AttachElementsToAPI = function(apiTable, parentFrame)
 		else
 			title, def, cb, flag = arg1, arg2, arg3, arg4
 		end
-		return CreateKeybindInput(parentFrame, title, def, cb, flag)
+		local element = CreateKeybindInput(parentFrame, title, def, cb, flag)
+		
+		if registeredList then
+			table.insert(registeredList, {
+				Instance = element.Wrapper,
+				TextToSearch = tostring(title or "")
+			})
+		end
+		return element
 	end
 
 	function apiTable:SectionUI(arg1)
 		local title = type(arg1) == "table" and arg1.Title or arg1
-		return CreateCollapsibleSection(parentFrame, title)
+		local element = CreateCollapsibleSection(parentFrame, title, registeredList)
+		
+		if registeredList then
+			table.insert(registeredList, {
+				Instance = element.Frame,
+				TextToSearch = tostring(title or ""),
+				IsSection = true,
+				SubElements = element.SubItemsList
+			})
+		end
+		return element
 	end
 	
 	function apiTable:Section(arg1)
 		local title = type(arg1) == "table" and arg1.Title or arg1
-		return CreateVisualSectionDivider(parentFrame, title)
+		local element = CreateVisualSectionDivider(parentFrame, title)
+		
+		if registeredList then
+			table.insert(registeredList, {
+				Instance = element.Label.Parent,
+				TextToSearch = tostring(title or "")
+			})
+		end
+		return element
 	end
 end
 
-CreateCollapsibleSection = function(parentFrame, titleArg)
+CreateCollapsibleSection = function(parentFrame, titleArg, registeredList)
 	local title = type(titleArg) == "table" and titleArg.Title or tostring(titleArg or "Section")
 	local isOpen = false
 
@@ -2050,8 +2146,17 @@ CreateCollapsibleSection = function(parentFrame, titleArg)
 		}):Play()
 	end)
 
-	local sectionPublic = { Frame = sectionBox, ContentFrame = sectionContent, Header = headerFrame }
-	AttachElementsToAPI(sectionPublic, sectionContent)
+	local subItemsList = {}
+	local sectionPublic = { Frame = sectionBox, ContentFrame = sectionContent, Header = headerFrame, SubItemsList = subItemsList, ForceOpen = function()
+		if not isOpen then
+			isOpen = true
+			sectionContent.Visible = true
+			divider.Visible = true
+			arrowIcon.Rotation = 0
+		end
+	end }
+	
+	AttachElementsToAPI(sectionPublic, sectionContent, subItemsList)
 	function sectionPublic:SetText(newText)
 		titleLabel.Text = newText
 	end
@@ -2585,8 +2690,66 @@ function KazeUI:CreateWindow(config)
 		page.Visible = false
 		page.Parent = self._Pages
 
+		-- ==========================================
+		-- PAGE SEARCH SYSTEM (ALWAYS ON TOP)
+		-- ==========================================
+		local SearchBarFrame = Instance.new("Frame")
+		SearchBarFrame.Name = "SearchBarFrame"
+		SearchBarFrame.Size = UDim2.new(1, 0, 0, 42)
+		SearchBarFrame.Position = UDim2.new(0, 0, 0, 0)
+		SearchBarFrame.BackgroundTransparency = 1
+		SearchBarFrame.Parent = page
+
+		local SearchInputContainer = Instance.new("Frame")
+		SearchInputContainer.Name = "SearchInputContainer"
+		SearchInputContainer.Size = UDim2.new(0.95, 0, 0, 32)
+		SearchInputContainer.Position = UDim2.new(0.025, 0, 0, 4)
+		SearchInputContainer.Parent = SearchBarFrame
+		Instance.new("UICorner", SearchInputContainer).CornerRadius = UDim.new(0, 6)
+		KazeUI:AddPanel(SearchInputContainer, 0.02)
+		KazeUI:AddTransparentElement(SearchInputContainer, 0)
+
+		local searchBarStroke = Instance.new("UIStroke", SearchInputContainer)
+		searchBarStroke.Thickness = 1.5
+		searchBarStroke.Color = Color3.fromRGB(45, 45, 50)
+		searchBarStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+
+		local searchIcon = Instance.new("ImageLabel")
+		searchIcon.Name = "SearchIcon"
+		searchIcon.Size = UDim2.fromOffset(16, 16)
+		searchIcon.Position = UDim2.new(0, 10, 0.5, -8)
+		searchIcon.BackgroundTransparency = 1
+		searchIcon.Image = FormatImage("9882298751") -- Roblox search glass icon ID or general search icon
+		searchIcon.ImageColor3 = Color3.fromRGB(160, 160, 165)
+		searchIcon.Parent = SearchInputContainer
+
+		local SearchBoxInput = Instance.new("TextBox")
+		SearchBoxInput.Name = "SearchBoxInput"
+		SearchBoxInput.Size = UDim2.new(1, -42, 1, 0)
+		SearchBoxInput.Position = UDim2.new(0, 32, 0, 0)
+		SearchBoxInput.BackgroundTransparency = 1
+		SearchBoxInput.PlaceholderText = "Search features here..."
+		SearchBoxInput.PlaceholderColor3 = Color3.fromRGB(120, 120, 125)
+		SearchBoxInput.Text = ""
+		SearchBoxInput.TextColor3 = Color3.fromRGB(255, 255, 255)
+		SearchBoxInput.Font = Enum.Font.Gotham
+		SearchBoxInput.TextSize = 13
+		SearchBoxInput.TextXAlignment = Enum.TextXAlignment.Left
+		SearchBoxInput.Parent = SearchInputContainer
+
+		-- Ang Glowing Neon effect ng Search Bar
+		SearchBoxInput.Focused:Connect(function()
+			StartNeonLoop(searchBarStroke)
+		end)
+		SearchBoxInput.FocusLost:Connect(function()
+			StopNeonLoop(searchBarStroke)
+			searchBarStroke.Color = Color3.fromRGB(45, 45, 50)
+		end)
+
+		-- Content Area (Nasa ilalim ng Search Bar, ito lang ang mag-scroscroll)
 		local pageContent = Instance.new("ScrollingFrame", page)
-		pageContent.Size = UDim2.new(1, 0, 1, 0)
+		pageContent.Size = UDim2.new(1, 0, 1, -44)
+		pageContent.Position = UDim2.new(0, 0, 0, 44)
 		pageContent.BackgroundTransparency = 1
 		pageContent.BorderSizePixel = 0
 		pageContent.ScrollBarThickness = 5
@@ -2595,7 +2758,7 @@ function KazeUI:CreateWindow(config)
 		pageContent.ScrollBarImageColor3 = Color3.fromRGB(40,40,45)
 
 		local pagePadding = Instance.new("UIPadding", pageContent)
-		pagePadding.PaddingTop = UDim.new(0, 8)
+		pagePadding.PaddingTop = UDim.new(0, 4)
 		pagePadding.PaddingBottom = UDim.new(0, 8)
 		pagePadding.PaddingLeft = UDim.new(0, 8)
 		pagePadding.PaddingRight = UDim.new(0, 8)
@@ -2604,6 +2767,54 @@ function KazeUI:CreateWindow(config)
 		contentLayout.SortOrder = Enum.SortOrder.LayoutOrder
 		contentLayout.Padding = UDim.new(0,4)
 		contentLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+
+		local registeredPageElements = {}
+
+		-- Search Filtering Logic
+		SearchBoxInput:GetPropertyChangedSignal("Text"):Connect(function()
+			local query = string.lower(SearchBoxInput.Text)
+			
+			for _, elementData in ipairs(registeredPageElements) do
+				local inst = elementData.Instance
+				local isSection = elementData.IsSection
+				
+				if query == "" then
+					inst.Visible = true
+					if isSection then
+						for _, subData in ipairs(elementData.SubElements) do
+							subData.Instance.Visible = true
+						end
+					end
+				else
+					local lowerText = string.lower(elementData.TextToSearch)
+					local matchFound = string.find(lowerText, query, 1, true) ~= nil
+					
+					if isSection then
+						-- Filter para sa mga Sub-items ng Section
+						local subMatchFound = false
+						for _, subData in ipairs(elementData.SubElements) do
+							local subLowerText = string.lower(subData.TextToSearch)
+							local subMatch = string.find(subLowerText, query, 1, true) ~= nil
+							subData.Instance.Visible = subMatch
+							if subMatch then
+								subMatchFound = true
+							end
+						end
+						
+						-- Kapag nag-match ang Section name mismo o alinman sa sub-items nito
+						if matchFound or subMatchFound then
+							inst.Visible = true
+							elementData.Instance:FindFirstAncestorOfClass("Frame"):ForceOpen()
+						else
+							inst.Visible = false
+						end
+					else
+						-- Para sa regular na components (Buttons, Toggles, Keybinds, Sliders, atbp.)
+						inst.Visible = matchFound
+					end
+				end
+			end
+		end)
 
 		table.insert(self._Tabs, { Button = btn, Indicator = leftIndicator, Label = txt, Page = page })
 
@@ -2638,7 +2849,7 @@ function KazeUI:CreateWindow(config)
 		if #self._Tabs == 1 then activate() end
 
 		local public = { Button = btn, Page = page }
-		AttachElementsToAPI(public, pageContent)
+		AttachElementsToAPI(public, pageContent, registeredPageElements)
 		function public:SetText(newText)
 			txt.Text = newText
 		end
