@@ -1,4 +1,3 @@
-
 --[[
 	Kaze UI Library
 	Optimized: Deep Obsidian Only, Dynamic Tab Text Scaling (No "..." Dots), Wider Sidebar, Safe Close Dialog Margin Padding
@@ -8,8 +7,7 @@
 	Added: Smooth & Responsive Continuous Window Resizing with UIScale correction, PC Hover Cursor (↘), and Multi-Touch Protection
 	Updated: Adaptive Device & Monitor Scale Protection Engine (0.85x Mobile / 1.0x Tablet / 1.15x Desktop Wide)
 	Updated: Adjusted Default Window Size to 600x400
-	MOBILE OPTIMIZED: Centralized 0x0 Modal Camera Locker to fix camera rotating on mobile touch dragging/resizing/sliders/color pickers.
-	FRAME-PERFECT FIX: Eliminated nested AutomaticSize visual tearing, sync lag, and manual-scrolling rendering delay via a custom synchronous layout engine.
+	Fixed: Collapsible Section alignment/centering issue in CreateCollapsibleSection.
 --]]
 
 local KazeUI = {}
@@ -54,26 +52,6 @@ if not success or not parent then
 	parent = LP:WaitForChild("PlayerGui", 15)
 end
 ScreenGui.Parent = parent
-
--- CENTRALIZED CAMERA LOCKER FOR MOBILE TOUCH & PC
--- 0x0 size allows it to trigger Modal = true globally without intercepting/blocking touch gestures!
-local CameraLocker = Instance.new("TextButton")
-CameraLocker.Name = "CameraLocker"
-CameraLocker.Size = UDim2.fromOffset(0, 0)
-CameraLocker.Position = UDim2.fromOffset(0, 0)
-CameraLocker.BackgroundTransparency = 1
-CameraLocker.Text = ""
-CameraLocker.Modal = false
-CameraLocker.Visible = true
-CameraLocker.Parent = ScreenGui
-
-local function LockCamera()
-	CameraLocker.Modal = true
-end
-
-local function UnlockCamera()
-	CameraLocker.Modal = false
-end
 
 -- SEPARATE NOTIFICATION SCREEN GUI (CRITICAL BUG FIX)
 local NotifScreenGui = Instance.new("ScreenGui")
@@ -189,8 +167,6 @@ local function MakeDraggable(dragPart, targetPart)
 	local dragInput, dragStart, startPos
 	local dragActive = false
 	
-	dragPart.Active = true
-	
 	local function update(input)
 		if not dragStart or not startPos then return end
 		local delta = input.Position - dragStart
@@ -212,15 +188,10 @@ local function MakeDraggable(dragPart, targetPart)
 			dragStart = input.Position
 			startPos = targetPart.Position
 			
-			LockCamera() -- Lock 3D camera from spinning on mobile/PC drag
-			
-			local releaseCon
-			releaseCon = input.Changed:Connect(function()
+			input.Changed:Connect(function()
 				if input.UserInputState == Enum.UserInputState.End then
 					dragging = false
 					dragInput = nil
-					UnlockCamera() -- Unlock camera when finger is lifted
-					if releaseCon then releaseCon:Disconnect() end
 				end
 			end)
 		end
@@ -476,16 +447,18 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 
 	local wrapper = Instance.new("Frame")
 	wrapper.Name = "DropdownWrapper"
-	wrapper.Size = UDim2.new(1, 0, 0, 44) -- Driven manually to prevent layout stutter
+	wrapper.Size = UDim2.new(1, 0, 0, 0)
 	wrapper.BackgroundTransparency = 1
 	wrapper.Parent = parentFrame
+	wrapper.AutomaticSize = Enum.AutomaticSize.Y
 
 	local dropFrame = Instance.new("Frame")
 	dropFrame.Name = "DropdownFrame"
 	dropFrame.AnchorPoint = Vector2.new(0.5, 0)
 	dropFrame.Position = UDim2.new(0.5, 0, 0, 3)
-	dropFrame.Size = UDim2.new(0.95, 0, 0, 38)
+	dropFrame.Size = UDim2.new(0.95, 0, 0, 0)
 	dropFrame.BorderSizePixel = 0
+	dropFrame.AutomaticSize = Enum.AutomaticSize.Y
 	Instance.new("UICorner", dropFrame).CornerRadius = UDim.new(0, 8)
 	dropFrame.Parent = wrapper
 	KazeUI:AddPanel(dropFrame, 0.02)
@@ -621,14 +594,6 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 	local listLayout = Instance.new("UIListLayout", listContainer)
 	listLayout.SortOrder = Enum.SortOrder.LayoutOrder
 	listLayout.Padding = UDim.new(0, 2)
-
-	-- Frame-Perfect Sync Update Logic
-	local function updateDropdownSize()
-		local height = layout.AbsoluteContentSize.Y + 8
-		dropFrame.Size = UDim2.new(0.95, 0, 0, height)
-		wrapper.Size = UDim2.new(1, 0, 0, height + 6)
-	end
-	layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(updateDropdownSize)
 
 	local optionItems = {}
 
@@ -833,9 +798,10 @@ local function CreateParagraph(parentFrame, title, body)
 	local totalHeight = 6 + titleHeight + 3 + bodyHeight + 6
 	
 	local wrapper = Instance.new("Frame")
-	wrapper.Size = UDim2.new(1, 0, 0, totalHeight + 6)
+	wrapper.Size = UDim2.new(1, 0, 0, 0)
 	wrapper.BackgroundTransparency = 1
 	wrapper.Parent = parentFrame
+	wrapper.AutomaticSize = Enum.AutomaticSize.Y
 	
 	local paraFrame = Instance.new("Frame")
 	paraFrame.AnchorPoint = Vector2.new(0.5, 0)
@@ -920,9 +886,10 @@ local function CreateClickableParagraph(parentFrame, title, body, callback)
 	local totalHeight = 6 + titleHeight + (body ~= "" and 3 or 0) + bodyHeight + 6
 	
 	local wrapper = Instance.new("Frame")
-	wrapper.Size = UDim2.new(1, 0, 0, totalHeight + 6)
+	wrapper.Size = UDim2.new(1, 0, 0, 0)
 	wrapper.BackgroundTransparency = 1
 	wrapper.Parent = parentFrame
+	wrapper.AutomaticSize = Enum.AutomaticSize.Y
 	
 	local paraFrame = Instance.new("Frame")
 	paraFrame.AnchorPoint = Vector2.new(0.5, 0)
@@ -1045,9 +1012,10 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 	local totalHeight = 6 + titleHeight + (body ~= "" and 3 or 0) + bodyHeight + 6
 	
 	local wrapper = Instance.new("Frame")
-	wrapper.Size = UDim2.new(1, 0, 0, totalHeight + 6)
+	wrapper.Size = UDim2.new(1, 0, 0, 0)
 	wrapper.BackgroundTransparency = 1
 	wrapper.Parent = parentFrame
+	wrapper.AutomaticSize = Enum.AutomaticSize.Y
 	
 	local paraFrame = Instance.new("Frame")
 	paraFrame.AnchorPoint = Vector2.new(0.5, 0)
@@ -1196,9 +1164,10 @@ local function CreateTextBoxInput(parentFrame, title, placeholder, defaultVal, c
 	local totalHeight = 6 + titleHeight + 6 + 32 + 6
 	
 	local wrapper = Instance.new("Frame")
-	wrapper.Size = UDim2.new(1, 0, 0, totalHeight + 6)
+	wrapper.Size = UDim2.new(1, 0, 0, 0)
 	wrapper.BackgroundTransparency = 1
 	wrapper.Parent = parentFrame
+	wrapper.AutomaticSize = Enum.AutomaticSize.Y
 	
 	local paraFrame = Instance.new("Frame")
 	paraFrame.AnchorPoint = Vector2.new(0.5, 0)
@@ -1316,9 +1285,10 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 	local totalHeight = 6 + titleHeight + 6 + 18 + 6
 	
 	local wrapper = Instance.new("Frame")
-	wrapper.Size = UDim2.new(1, 0, 0, totalHeight + 6)
+	wrapper.Size = UDim2.new(1, 0, 0, 0)
 	wrapper.BackgroundTransparency = 1
 	wrapper.Parent = parentFrame
+	wrapper.AutomaticSize = Enum.AutomaticSize.Y
 	
 	local paraFrame = Instance.new("Frame")
 	paraFrame.AnchorPoint = Vector2.new(0.5, 0)
@@ -1401,6 +1371,15 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 	local knobStroke = Instance.new("UIStroke", knob)
 	knobStroke.Thickness = 1.5
 	StartNeonLoop(knobStroke)
+	
+	local modalLock = Instance.new("TextButton")
+	modalLock.Size = UDim2.fromScale(1, 1)
+	modalLock.BackgroundTransparency = 1
+	modalLock.Text = ""
+	modalLock.Visible = false
+	modalLock.Modal = false
+	modalLock.ZIndex = 9999
+	modalLock.Parent = ScreenGui
 
 	local clickDetector = Instance.new("TextButton")
 	clickDetector.Size = UDim2.new(1, 0, 1, 14)
@@ -1438,7 +1417,8 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 			isDragging = true
 			ToggleScrollingAncestors(track, false)
-			LockCamera() -- Centralized non-blocking mobile lock
+			modalLock.Visible = true
+			modalLock.Modal = true
 			UpdateValueFromInput(input)
 			local moveCon, endCon
 			moveCon = UIS.InputChanged:Connect(function(moveInput)
@@ -1450,13 +1430,16 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 				if endInput.UserInputType == Enum.UserInputType.MouseButton1 or endInput.UserInputType == Enum.UserInputType.Touch then
 					isDragging = false
 					ToggleScrollingAncestors(track, true)
-					UnlockCamera() -- Restore camera rotation on release
+					modalLock.Visible = false
+					modalLock.Modal = false
 					if moveCon then moveCon:Disconnect() end
 					if endCon then endCon:Disconnect() end
 				end
 			end)
 		end
 	end)
+
+	wrapper.Destroying:Connect(function() modalLock:Destroy() end)
 
 	local api = {
 		Wrapper = wrapper,
@@ -1484,15 +1467,17 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 	local isOpen = false
 
 	local wrapper = Instance.new("Frame")
-	wrapper.Size = UDim2.new(1, 0, 0, 44) -- Driven manually to prevent layout stutter
+	wrapper.Size = UDim2.new(1, 0, 0, 0)
 	wrapper.BackgroundTransparency = 1
 	wrapper.Parent = parentFrame
+	wrapper.AutomaticSize = Enum.AutomaticSize.Y
 
 	local dropFrame = Instance.new("Frame")
 	dropFrame.AnchorPoint = Vector2.new(0.5, 0)
 	dropFrame.Position = UDim2.new(0.5, 0, 0, 3)
-	dropFrame.Size = UDim2.new(0.95, 0, 0, 38)
+	dropFrame.Size = UDim2.new(0.95, 0, 0, 0)
 	dropFrame.BorderSizePixel = 0
+	dropFrame.AutomaticSize = Enum.AutomaticSize.Y
 	Instance.new("UICorner", dropFrame).CornerRadius = UDim.new(0, 8)
 	dropFrame.Parent = wrapper
 	KazeUI:AddPanel(dropFrame, 0.02)
@@ -1609,14 +1594,6 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 	Instance.new("UICorner", hueCursor).CornerRadius = UDim.new(1, 0)
 	Instance.new("UIStroke", hueCursor).Color = Color3.fromRGB(0, 0, 0)
 
-	-- Frame-Perfect Sync Update Logic
-	local function updatePickerSize()
-		local height = layout.AbsoluteContentSize.Y + 8
-		dropFrame.Size = UDim2.new(0.95, 0, 0, height)
-		wrapper.Size = UDim2.new(1, 0, 0, height + 6)
-	end
-	layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(updatePickerSize)
-
 	local function UpdateColor()
 		color = Color3.fromHSV(h, s, v)
 		previewColor.BackgroundColor3 = color
@@ -1655,7 +1632,6 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 			draggingMap = true
 			ToggleScrollingAncestors(svMap, false)
-			LockCamera() -- Stop mobile camera rotation during color map drag
 			updateSV(input)
 		end
 	end)
@@ -1664,7 +1640,6 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 			draggingHue = true
 			ToggleScrollingAncestors(hueSlider, false)
-			LockCamera() -- Stop mobile camera rotation during hue slider drag
 			updateHue(input)
 		end
 	end)
@@ -1683,7 +1658,6 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 			draggingMap = false
 			draggingHue = false
-			UnlockCamera() -- Restore normal mobile camera controls
 			ToggleScrollingAncestors(svMap, true)
 		end
 	end)
@@ -1736,9 +1710,10 @@ local function CreateKeybindInput(parentFrame, title, defaultKey, callback, flag
 	local totalHeight = 6 + math.max(titleHeight, 24) + 6
 	
 	local wrapper = Instance.new("Frame")
-	wrapper.Size = UDim2.new(1, 0, 0, totalHeight + 6)
+	wrapper.Size = UDim2.new(1, 0, 0, 0)
 	wrapper.BackgroundTransparency = 1
 	wrapper.Parent = parentFrame
+	wrapper.AutomaticSize = Enum.AutomaticSize.Y
 	
 	local paraFrame = Instance.new("Frame")
 	paraFrame.AnchorPoint = Vector2.new(0.5, 0)
@@ -1971,7 +1946,7 @@ AttachElementsToAPI = function(apiTable, parentFrame)
 	end
 
 	function apiTable:Dropdown(arg1, arg2, arg3, arg4, arg5, arg6)
-		local title, vals, def, multi, callback, flag
+		local title, vals, def, callback, multi, flag
 		if type(arg1) == "table" then
 			title, vals, def, multi, callback, flag = arg1.Title, (arg1.Values or arg1.Options), arg1.Default, (arg1.Multi or false), arg1.Callback, arg1.Flag
 		else
@@ -2016,10 +1991,15 @@ CreateCollapsibleSection = function(parentFrame, titleArg)
 	local isOpen = false
 
 	local sectionBox = Instance.new("Frame")
-	sectionBox.Size = UDim2.new(0.95, 0, 0, 36) -- Static base closed height, driven by layout sync
+	sectionBox.Size = UDim2.new(0.95, 0, 0, 0)
 	sectionBox.BorderSizePixel = 0
+	sectionBox.AnchorPoint = Vector2.new(0.5, 0)
+	sectionBox.Position = UDim2.new(0.5, 0, 0, 3)
 	sectionBox.Parent = parentFrame
-	-- AutomaticSize removed to completely prevent nested Roblox size engine conflicts
+	sectionBox.AutomaticSize = Enum.AutomaticSize.Y
+	Instance.new("UICorner", sectionBox).CornerRadius = UDim.new(0, 8)
+	KazeUI:AddPanel(sectionBox, 0.02)
+	KazeUI:AddTransparentElement(sectionBox, 0)
 
 	local boxStroke = Instance.new("UIStroke", sectionBox)
 	boxStroke.Thickness = 1.5
@@ -2071,6 +2051,7 @@ CreateCollapsibleSection = function(parentFrame, titleArg)
 	sectionContent.BackgroundTransparency = 1
 	sectionContent.BorderSizePixel = 0
 	sectionContent.Visible = isOpen
+	sectionContent.AutomaticSize = Enum.AutomaticSize.Y
 	sectionContent.LayoutOrder = 3
 	sectionContent.Parent = sectionBox
 
@@ -2092,21 +2073,6 @@ CreateCollapsibleSection = function(parentFrame, titleArg)
 	toggleDetector.ZIndex = 10
 	toggleDetector.Parent = headerFrame
 
-	-- Frame-Perfect Synchronous Layout Sync Engine
-	local function updateSectionSize()
-		if isOpen then
-			local contentHeight = contentLayout.AbsoluteContentSize.Y + 14 -- Top & Bottom padding offsets included
-			sectionContent.Size = UDim2.new(1, 0, 0, contentHeight)
-			sectionBox.Size = UDim2.new(0.95, 0, 0, 36 + 1 + contentHeight)
-		else
-			sectionContent.Size = UDim2.new(1, 0, 0, 0)
-			sectionBox.Size = UDim2.new(0.95, 0, 0, 36)
-		end
-	end
-
-	-- Intercept dynamic adjustments instantly within the same frame pass
-	contentLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(updateSectionSize)
-
 	toggleDetector.MouseButton1Click:Connect(function()
 		isOpen = not isOpen
 		sectionContent.Visible = isOpen
@@ -2114,7 +2080,6 @@ CreateCollapsibleSection = function(parentFrame, titleArg)
 		TweenService:Create(arrowIcon, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
 			Rotation = isOpen and 0 or -90
 		}):Play()
-		updateSectionSize()
 	end)
 
 	local sectionPublic = { Frame = sectionBox, ContentFrame = sectionContent, Header = headerFrame }
@@ -2150,7 +2115,6 @@ function KazeUI:CreateWindow(config)
 	Window.Position = UDim2.fromScale(0.5, 0.5)
 	Window.AnchorPoint = Vector2.new(0.5, 0.5)
 	Window.BorderSizePixel = 0
-	Window.Active = true -- Block touches from hitting workspace on mobile
 	Window.Parent = ScreenGui
 	Instance.new("UICorner", Window).CornerRadius = UDim.new(0, 12)
 	KazeUI:AddPanel(Window, 0)
@@ -2171,7 +2135,6 @@ function KazeUI:CreateWindow(config)
 	local TopBar = Instance.new("Frame")
 	TopBar.Size = UDim2.new(1,0,0,50)
 	TopBar.BorderSizePixel = 0
-	TopBar.Active = true
 	TopBar.Parent = ContentClipper
 	MakeDraggable(TopBar, Window)
 	KazeUI:AddPanel(TopBar, -0.02)
@@ -2222,7 +2185,7 @@ function KazeUI:CreateWindow(config)
 	TopDivider.Parent = TopBar
 	StartNeonLoop(TopDivider)
 
-	local defaultWindowSize = UDim2.fromOffset(600, 400)
+	local defaultWindowSize = UDim2.fromOffset(600, 400) -- Default Window Size 600x400
 	local lastNormalSize = defaultWindowSize
 	local lastNormalPosition = UDim2.fromScale(0.5,0.5)
 	local lastNormalAnchor = Vector2.new(0.5,0.5)
@@ -2512,7 +2475,6 @@ function KazeUI:CreateWindow(config)
 	ResizeHandle.BackgroundTransparency = 1
 	ResizeHandle.Image = "rbxassetid://10747373117" -- Diagonal resize design mark (↘)
 	ResizeHandle.ImageColor3 = Color3.fromRGB(150, 150, 150)
-	ResizeHandle.Active = true
 	ResizeHandle.ZIndex = 99
 	ResizeHandle.Parent = Window
 
@@ -2563,8 +2525,6 @@ function KazeUI:CreateWindow(config)
 			resizeStartSize = Vector2.new(Window.AbsoluteSize.X / UIScale.Scale, Window.AbsoluteSize.Y / UIScale.Scale)
 			resizeStartInput = input.Position
 
-			LockCamera() -- Centralized mobile touch camera lock
-
 			-- Disable active scrollable ancestors to prevent drag conflicts
 			ToggleScrollingAncestors(ResizeHandle, false)
 			Mouse.Icon = hoverCursor
@@ -2590,9 +2550,6 @@ function KazeUI:CreateWindow(config)
 			end
 			isResizing = false
 			resizeTouchInput = nil
-			
-			UnlockCamera() -- Restore mobile touch camera movement on release
-			
 			ToggleScrollingAncestors(ResizeHandle, true)
 			Mouse.Icon = ""
 			TweenService:Create(ResizeHandle, TweenInfo.new(0.12), {ImageColor3 = Color3.fromRGB(150, 150, 150)}):Play()
@@ -2698,37 +2655,6 @@ function KazeUI:CreateWindow(config)
 		})
 	end
 
-	-- Pre-integrated layout-sync Stress Test Page helper
-	function Win:CreateStressTest(tab)
-		local test = tab:SectionUI("Outline Stress Test")
-		test:AddLabel("Generates hundreds of continuous sizing calculations synchronously")
-		
-		for i = 1, 40 do
-			test:Paragraph({
-				Title = "Paragraph " .. i,
-				Content = "This paragraph container forces immediate layout engine size calculations."
-			})
-			test:Button({
-				Title = "Button " .. i,
-				Description = "Synchronous UI Stroke test interaction trigger",
-				Callback = function() end
-			})
-			test:Toggle({
-				Title = "Toggle " .. i,
-				Default = false,
-				Callback = function() end
-			})
-		end
-
-		for i = 1, 15 do
-			test:Dropdown({
-				Title = "Dropdown " .. i,
-				Options = { "Apple", "Banana", "Orange", "Watermelon", "Grape", "Mango", "Pineapple", "Melon" },
-				Callback = function() end
-			})
-		end
-	end
-
 	function Win:CreateTab(arg1, arg2)
 		local name = tostring(type(arg1) == "table" and (arg1.Title or arg1.Name) or arg1 or "Tab")
 		local iconId = type(arg1) == "table" and arg1.Icon or arg2
@@ -2789,11 +2715,9 @@ function KazeUI:CreateWindow(config)
 		pageContent.BackgroundTransparency = 1
 		pageContent.BorderSizePixel = 0
 		pageContent.ScrollBarThickness = 5
-		pageContent.ScrollBarImageColor3 = Color3.fromRGB(40,40,45)
-		
-		-- Explicit manual canvas recalculations driven synchronously to eliminate scrollbar delays
 		pageContent.CanvasSize = UDim2.new(0, 0, 0, 0)
-		pageContent.AutomaticCanvasSize = Enum.AutomaticCanvasSize.None
+		pageContent.AutomaticCanvasSize = Enum.AutomaticSize.Y
+		pageContent.ScrollBarImageColor3 = Color3.fromRGB(40,40,45)
 
 		local pagePadding = Instance.new("UIPadding", pageContent)
 		pagePadding.PaddingTop = UDim.new(0, 8)
@@ -2805,11 +2729,6 @@ function KazeUI:CreateWindow(config)
 		contentLayout.SortOrder = Enum.SortOrder.LayoutOrder
 		contentLayout.Padding = UDim.new(0,4)
 		contentLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-
-		-- Recalculate scrolling bounds synchronously in the same frame
-		contentLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-			pageContent.CanvasSize = UDim2.fromOffset(0, contentLayout.AbsoluteContentSize.Y + 20)
-		end)
 
 		table.insert(self._Tabs, { Button = btn, Indicator = leftIndicator, Label = txt, Page = page })
 
