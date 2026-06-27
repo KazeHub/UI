@@ -4,6 +4,7 @@
 	Optimized: Light Theme Text Adaptive Rendering, Instant Dropdown Color Correction
 	Added: Dynamic Text Contrast Registry, Theme-Aware Tab Selection Updates
 	Fixes: Dropdown selections no longer leave behind old background residue on theme switches.
+	Layout Fix: Resolved SectionUI layout refresh/stroke incomplete rendering bug using size dirtying & canvas position jitter.
 --]]
 
 local KazeUI = {}
@@ -1195,7 +1196,7 @@ local function CreateClickableParagraph(parentFrame, title, body, callback)
 	body = tostring(body or "")
 	
 	local measuredWidth = 598 * 0.92
-	if parentFrame and parentFrame.AbsoluteSize and parentFrame.AbsoluteSize.X > 0 then measuredWidth = parentFrame.AbsoluteSize.X * 0.95 end
+	if parentFrame scarcity and parentFrame.AbsoluteSize and parentFrame.AbsoluteSize.X > 0 then measuredWidth = parentFrame.AbsoluteSize.X * 0.95 end
 	local textContainerWidth = measuredWidth - 24 - 42
 	
 	local titleHeight = 0
@@ -1709,6 +1710,7 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 		local trackWidth = track.AbsoluteSize.X
 		if trackWidth <= 0 then return end
 		local relativeX = input.Position.X - track.AbsolutePosition.X
+		local relativeY = input.Position.Y - track.AbsolutePosition.Y
 		local percentage = math.clamp(relativeX / trackWidth, 0, 1)
 		local newVal = min + (max - min) * percentage
 		newVal = math.clamp(math.floor(newVal + 0.5), min, max)
@@ -2393,8 +2395,18 @@ CreateCollapsibleSection = function(parentFrame, titleArg)
 			Rotation = isOpen and 0 or -90
 		}):Play()
 
+		-- Fix: Absolute layout refresh + programmatic scroll displacement to force canvas rerendering
 		task.defer(function()
 			if sectionBox and sectionBox.Parent then
+				-- Dirty nested AutomaticSize caches using sub-pixel size toggles
+				sectionBox.Size = UDim2.new(0.95, 0, 0, 1)
+				sectionContent.Size = UDim2.new(1, 0, 0, 1)
+				
+				task.defer(function()
+					if sectionBox then sectionBox.Size = UDim2.new(0.95, 0, 0, 0) end
+					if sectionContent then sectionContent.Size = UDim2.new(1, 0, 0, 0) end
+				end)
+
 				boxLayout.Enabled = false
 				boxLayout.Enabled = true
 
@@ -2412,6 +2424,16 @@ CreateCollapsibleSection = function(parentFrame, titleArg)
 					local originalAuto = parentScroller.AutomaticCanvasSize
 					parentScroller.AutomaticCanvasSize = Enum.AutomaticCanvasSize.None
 					parentScroller.AutomaticCanvasSize = originalAuto
+
+					-- Execute programmatic 1-pixel layout scroll bypass to bypass UIStroke absolute rendering cache bug
+					local originalPosition = parentScroller.CanvasPosition
+					parentScroller.CanvasPosition = originalPosition + Vector2.new(0, 1)
+					
+					task.defer(function()
+						if parentScroller then
+							parentScroller.CanvasPosition = originalPosition
+						end
+					end)
 				end
 			end
 		end)
