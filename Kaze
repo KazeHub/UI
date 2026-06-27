@@ -1,4 +1,3 @@
-
 --[[
 	Kaze UI Library
 	Optimized: Deep Obsidian Only, Dynamic Tab Text Scaling (No "..." Dots), Wider Sidebar, Safe Close Dialog Margin Padding
@@ -9,11 +8,6 @@
 	Updated: Adaptive Device & Monitor Scale Protection Engine (0.85x Mobile / 1.0x Tablet / 1.15x Desktop Wide)
 	Updated: Adjusted Default Window Size to 600x400
 	MOBILE OPTIMIZED: Centralized 0x0 Modal Camera Locker to fix camera rotating on mobile touch dragging/resizing/sliders/color pickers.
-	PREMIUM NOTIFICATIONS UPGRADE: Integrated Lucide icon aliases, modernized horizontal layout structure, and a highly responsive glowing bottom progress bar.
-	
-	NEW UPDATE:
-	- Added Premium Startup Splash/Execute Animation Engine with seamless "Morph-into-Window" mechanics.
-	- Integrated fluid opening/closing window scale-fade animations.
 --]]
 
 local KazeUI = {}
@@ -40,21 +34,6 @@ KazeUI.NeonTweens = {}
 KazeUI.PanelElements = {} 
 KazeUI.TransparentElements = {}
 
--- Premium Notification Icon Aliases
-local NotificationIcons = {
-	bell = "rbxassetid://10747373859",
-	check = "rbxassetid://10747384356",
-	alerttriangle = "rbxassetid://10747372370",
-	xcircle = "rbxassetid://10747372224",
-	info = "rbxassetid://10747381665",
-	download = "rbxassetid://10747384110",
-	upload = "rbxassetid://10747383921",
-	settings = "rbxassetid://10747382431",
-	shield = "rbxassetid://10747382226",
-	bug = "rbxassetid://10747372439",
-	sparkles = "rbxassetid://10747381982"
-}
-
 local function RegisterFlag(flag, getFunc, setFunc)
 	if flag then
 		KazeUI.Flags[flag] = { Get = getFunc, Set = setFunc }
@@ -75,6 +54,7 @@ end
 ScreenGui.Parent = parent
 
 -- CENTRALIZED CAMERA LOCKER FOR MOBILE TOUCH & PC
+-- 0x0 size allows it to trigger Modal = true globally without intercepting/blocking touch gestures!
 local CameraLocker = Instance.new("TextButton")
 CameraLocker.Name = "CameraLocker"
 CameraLocker.Size = UDim2.fromOffset(0, 0)
@@ -112,10 +92,10 @@ local notifPadding = Instance.new("UIPadding", NotifContainer)
 notifPadding.PaddingBottom = UDim.new(0, 20)
 
 NotifContainer.Name = "NotifContainer"
-NotifContainer.Size = UDim2.new(0, 320, 1, 0)
-NotifContainer.Position = UDim2.new(1, -340, 0, 0)
+NotifContainer.Size = UDim2.new(0, 300, 1, 0)
+NotifContainer.Position = UDim2.new(1, -320, 0, 0)
 NotifContainer.BackgroundTransparency = 1
-NotifContainer.Parent = NotifScreenGui
+NotifContainer.Parent = NotifScreenGui -- Attached to NotifScreenGui instead of main ScreenGui
 
 -- Screen Scale Controller
 local UIScale = Instance.new("UIScale")
@@ -131,17 +111,24 @@ local function UpdateScale()
 	local targetScale = 1.0
 
 	if UIS.TouchEnabled then
+		-- Mobile Devices (Phones vs Tablets)
 		if minAxis < 500 then
+			-- Phone Resolution Layouts
 			targetScale = 0.85
 		else
+			-- Tablet Layouts
 			targetScale = 1.0
 		end
 	else
+		-- Desktop / PC Layouts
 		if width >= 1920 or height >= 1080 then
+			-- Large Monitor Resolution
 			targetScale = 1.15
 		elseif width <= 1366 then
+			-- Lower laptop screen resolutions / smaller physical monitors
 			targetScale = 0.95
 		else
+			-- Standard PC Desktop Size
 			targetScale = 1.0
 		end
 	end
@@ -194,6 +181,7 @@ local function FormatImage(id)
 	return "rbxassetid://" .. clean
 end
 
+-- Threshold dragging to prevent minimize misclicks (Scale-adjusted for fluid dragging)
 local function MakeDraggable(dragPart, targetPart)
 	local dragging = false
 	local dragInput, dragStart, startPos
@@ -222,14 +210,14 @@ local function MakeDraggable(dragPart, targetPart)
 			dragStart = input.Position
 			startPos = targetPart.Position
 			
-			LockCamera()
+			LockCamera() -- Lock 3D camera from spinning on mobile/PC drag
 			
 			local releaseCon
 			releaseCon = input.Changed:Connect(function()
 				if input.UserInputState == Enum.UserInputState.End then
 					dragging = false
 					dragInput = nil
-					UnlockCamera()
+					UnlockCamera() -- Unlock camera when finger is lifted
 					if releaseCon then releaseCon:Disconnect() end
 				end
 			end)
@@ -247,6 +235,9 @@ local function MakeDraggable(dragPart, targetPart)
 	end)
 end
 
+-- ==========================================
+-- Smart Color & Transparency Engines
+-- ==========================================
 function KazeUI.GetColor(elevation)
 	local h, s, v = Color3.toHSV(KazeUI.BackgroundColor)
 	local offset = v > 0.5 and -elevation or elevation
@@ -257,6 +248,7 @@ function KazeUI:AddPanel(inst, elevation)
 	table.insert(KazeUI.PanelElements, {Inst = inst, Elevation = elevation or 0})
 	if inst and inst:IsA("GuiObject") then
 		inst.BackgroundColor3 = KazeUI.GetColor(elevation or 0)
+		-- Prevent Memory Leak
 		inst.Destroying:Connect(function()
 			for i = #KazeUI.PanelElements, 1, -1 do
 				if KazeUI.PanelElements[i].Inst == inst then table.remove(KazeUI.PanelElements, i) end
@@ -267,6 +259,7 @@ end
 
 function KazeUI:AddTransparentElement(inst, defaultTrans)
 	table.insert(KazeUI.TransparentElements, {Inst = inst, Default = defaultTrans or inst.BackgroundTransparency})
+	-- Prevent Memory Leak
 	inst.Destroying:Connect(function()
 		for i = #KazeUI.TransparentElements, 1, -1 do
 			if KazeUI.TransparentElements[i].Inst == inst then table.remove(KazeUI.TransparentElements, i) end
@@ -342,18 +335,12 @@ function KazeUI:SetGlow(color)
 	end
 end
 
--- Premium Modern Notification System
+-- Robust Notification Animation Sequence
 function KazeUI:Notify(config)
 	config = config or {}
 	local title = tostring(config.Title or "Notification")
-	local content = tostring(config.Content or config.Description or "")
+	local content = tostring(config.Content or "")
 	local duration = tonumber(config.Duration) or 3
-	
-	local iconId = ""
-	if config.Icon and config.Icon ~= "" then
-		local iconName = string.lower(tostring(config.Icon))
-		iconId = NotificationIcons[iconName] or FormatImage(config.Icon)
-	end
 
 	local notifHolder = Instance.new("Frame")
 	notifHolder.Name = "NotifHolder"
@@ -365,7 +352,7 @@ function KazeUI:Notify(config)
 
 	local notifFrame = Instance.new("Frame")
 	notifFrame.Name = "NotifFrame"
-	notifFrame.Size = UDim2.new(1, -10, 0, 64)
+	notifFrame.Size = UDim2.new(1, -10, 0, 60)
 	notifFrame.Position = UDim2.new(1.2, 0, 0, 0)
 	notifFrame.BorderSizePixel = 0
 	notifFrame.Parent = notifHolder
@@ -377,23 +364,9 @@ function KazeUI:Notify(config)
 	stroke.Thickness = 1.5
 	StartNeonLoop(stroke)
 
-	local hasIcon = iconId ~= ""
-	
-	if hasIcon then
-		local iconLabel = Instance.new("ImageLabel", notifFrame)
-		iconLabel.Name = "NotificationIcon"
-		iconLabel.Size = UDim2.fromOffset(24, 24)
-		iconLabel.Position = UDim2.fromOffset(12, 18)
-		iconLabel.BackgroundTransparency = 1
-		iconLabel.Image = iconId
-		iconLabel.ImageColor3 = Color3.fromRGB(255, 255, 255)
-		iconLabel.ScaleType = Enum.ScaleType.Fit
-		StartNeonLoop(iconLabel)
-	end
-
 	local titleLab = Instance.new("TextLabel", notifFrame)
-	titleLab.Size = UDim2.new(1, hasIcon and -54 or -24, 0, 20)
-	titleLab.Position = UDim2.fromOffset(hasIcon and 46 or 12, 10)
+	titleLab.Size = UDim2.new(1, -20, 0, 20)
+	titleLab.Position = UDim2.fromOffset(10, 8)
 	titleLab.BackgroundTransparency = 1
 	titleLab.Text = title
 	titleLab.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -403,8 +376,8 @@ function KazeUI:Notify(config)
 	titleLab.TextTruncate = Enum.TextTruncate.AtEnd
 
 	local contentLab = Instance.new("TextLabel", notifFrame)
-	contentLab.Size = UDim2.new(1, hasIcon and -54 or -24, 0, 20)
-	contentLab.Position = UDim2.fromOffset(hasIcon and 46 or 12, 30)
+	contentLab.Size = UDim2.new(1, -20, 0, 20)
+	contentLab.Position = UDim2.fromOffset(10, 30)
 	contentLab.BackgroundTransparency = 1
 	contentLab.Text = content
 	contentLab.TextColor3 = Color3.fromRGB(200, 200, 200)
@@ -413,30 +386,11 @@ function KazeUI:Notify(config)
 	contentLab.TextXAlignment = Enum.TextXAlignment.Left
 	contentLab.TextTruncate = Enum.TextTruncate.AtEnd
 
-	local progressTrack = Instance.new("Frame", notifFrame)
-	progressTrack.Name = "ProgressTrack"
-	progressTrack.Size = UDim2.new(1, -2, 0, 3)
-	progressTrack.Position = UDim2.new(0, 1, 1, -4)
-	progressTrack.BackgroundTransparency = 1
-	progressTrack.BorderSizePixel = 0
-	Instance.new("UICorner", progressTrack).CornerRadius = UDim.new(0, 1)
-
-	local progressBar = Instance.new("Frame", progressTrack)
-	progressBar.Name = "ProgressBar"
-	progressBar.Size = UDim2.new(1, 0, 1, 0)
-	progressBar.BorderSizePixel = 0
-	Instance.new("UICorner", progressBar).CornerRadius = UDim.new(0, 1)
-	StartNeonLoop(progressBar)
-
-	TweenService:Create(notifHolder, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Size = UDim2.new(1, 0, 0, 74)}):Play()
+	TweenService:Create(notifHolder, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Size = UDim2.new(1, 0, 0, 70)}):Play()
 	TweenService:Create(notifFrame, TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Position = UDim2.new(0, 5, 0, 0)}):Play()
-
-	local progressTween = TweenService:Create(progressBar, TweenInfo.new(duration, Enum.EasingStyle.Linear), {Size = UDim2.new(0, 0, 1, 0)})
-	progressTween:Play()
 
 	task.spawn(function()
 		task.wait(duration)
-		
 		local outTween = TweenService:Create(notifFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {Position = UDim2.new(1.2, 0, 0, 0)})
 		outTween:Play()
 		outTween.Completed:Wait()
@@ -446,18 +400,13 @@ function KazeUI:Notify(config)
 		shrinkTween.Completed:Wait()
 
 		StopNeonLoop(stroke)
-		StopNeonLoop(progressBar)
-		local iconLabel = notifFrame:FindFirstChild("NotificationIcon")
-		if iconLabel then StopNeonLoop(iconLabel) end
-		
-		progressTween:Cancel()
 		notifHolder:Destroy()
 	end)
 end
 
 function KazeUI:SaveConfig(name)
 	if not name or name == "" then
-		KazeUI:Notify({Icon = "AlertTriangle", Title = "Config Error", Content = "Config name cannot be empty.", Duration = 3})
+		KazeUI:Notify({Title = "Config Error", Content = "Config name cannot be empty.", Duration = 3})
 		return
 	end
 	
@@ -468,12 +417,12 @@ function KazeUI:SaveConfig(name)
 		local success, encoded = pcall(function() return HttpService:JSONEncode(data) end)
 		if success then
 			writefile("KazeUI_"..name..".json", encoded)
-			KazeUI:Notify({Icon = "Check", Title = "Config Saved", Content = "Successfully saved " .. name, Duration = 3})
+			KazeUI:Notify({Title = "Config Saved", Content = "Successfully saved " .. name, Duration = 3})
 		else
-			KazeUI:Notify({Icon = "AlertTriangle", Title = "Config Error", Content = "Failed to encode settings to JSON.", Duration = 3})
+			KazeUI:Notify({Title = "Config Error", Content = "Failed to encode settings to JSON.", Duration = 3})
 		end
 	else
-		KazeUI:Notify({Icon = "AlertTriangle", Title = "Config Error", Content = "Your executor does not support saving files.", Duration = 3})
+		KazeUI:Notify({Title = "Config Error", Content = "Your executor does not support saving files.", Duration = 3})
 	end
 end
 
@@ -486,12 +435,12 @@ function KazeUI:LoadConfig(name)
 				for flag, val in pairs(data) do
 					if KazeUI.Flags[flag] then KazeUI.Flags[flag].Set(val) end
 				end
-				KazeUI:Notify({Icon = "Check", Title = "Config Loaded", Content = "Successfully loaded " .. name, Duration = 3})
+				KazeUI:Notify({Title = "Config Loaded", Content = "Successfully loaded " .. name, Duration = 3})
 			else
-				KazeUI:Notify({Icon = "AlertTriangle", Title = "Config Error", Content = "Invalid or corrupted config format.", Duration = 3})
+				KazeUI:Notify({Title = "Config Error", Content = "Invalid or corrupted config format.", Duration = 3})
 			end
 		else
-			KazeUI:Notify({Icon = "AlertTriangle", Title = "Config Error", Content = "Config " .. name .. " not found.", Duration = 3})
+			KazeUI:Notify({Title = "Config Error", Content = "Config " .. name .. " not found.", Duration = 3})
 		end
 	end
 end
@@ -808,6 +757,7 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 		end
 	end)
 
+	-- Save & Load Registry Hook
 	RegisterFlag(flag, function()
 		if isMulti then
 			local ret = {}
@@ -827,6 +777,7 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 		UpdateHeaderVisual()
 		Refresh(options)
 		
+		-- Hook properly into config applying state
 		if typeof(callback) == "function" then
 			if isMulti then
 				local ret = {}
@@ -1484,7 +1435,7 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 			isDragging = true
 			ToggleScrollingAncestors(track, false)
-			LockCamera()
+			LockCamera() -- Centralized non-blocking mobile lock
 			UpdateValueFromInput(input)
 			local moveCon, endCon
 			moveCon = UIS.InputChanged:Connect(function(moveInput)
@@ -1496,7 +1447,7 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 				if endInput.UserInputType == Enum.UserInputType.MouseButton1 or endInput.UserInputType == Enum.UserInputType.Touch then
 					isDragging = false
 					ToggleScrollingAncestors(track, true)
-					UnlockCamera()
+					UnlockCamera() -- Restore camera rotation on release
 					if moveCon then moveCon:Disconnect() end
 					if endCon then endCon:Disconnect() end
 				end
@@ -1695,7 +1646,7 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 			draggingMap = true
 			ToggleScrollingAncestors(svMap, false)
-			LockCamera()
+			LockCamera() -- Stop mobile camera rotation during color map drag
 			updateSV(input)
 		end
 	end)
@@ -1704,7 +1655,7 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 			draggingHue = true
 			ToggleScrollingAncestors(hueSlider, false)
-			LockCamera()
+			LockCamera() -- Stop mobile camera rotation during hue slider drag
 			updateHue(input)
 		end
 	end)
@@ -1723,7 +1674,7 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 			draggingMap = false
 			draggingHue = false
-			UnlockCamera()
+			UnlockCamera() -- Restore normal mobile camera controls
 			ToggleScrollingAncestors(svMap, true)
 		end
 	end)
@@ -1866,7 +1817,7 @@ local function CreateKeybindInput(parentFrame, title, defaultKey, callback, flag
 				if isKey then
 					local key = input.KeyCode
 					if key == Enum.KeyCode.Escape then
-						-- Escape key cancels bind / keeps old
+						-- Cancel bindings, preserve old key
 					elseif key == Enum.KeyCode.Backspace or key == Enum.KeyCode.Delete then
 						currentKey = Enum.KeyCode.Unknown
 					else
@@ -1879,6 +1830,7 @@ local function CreateKeybindInput(parentFrame, title, defaultKey, callback, flag
 				bindStroke.Color = Color3.fromRGB(45, 45, 50)
 				conn:Disconnect()
 
+				-- BUG FIX: Delayed release to stop global event from catching the exact same key press
 				task.delay(0.15, function() isBinding = false end)
 			end
 		end)
@@ -2144,14 +2096,18 @@ CreateCollapsibleSection = function(parentFrame, titleArg)
 			Rotation = isOpen and 0 or -90
 		}):Play()
 
+		-- CRITICAL FIX: Force Roblox layout and rendering engine to recalculate outline bounds & canvas sizes
 		task.defer(function()
 			if sectionBox and sectionBox.Parent then
+				-- Toggle section internal layouts to trigger a synchronous layout check
 				boxLayout.Enabled = false
 				boxLayout.Enabled = true
 
+				-- Toggle Stroke to force Roblox to redraw visually incomplete borders
 				boxStroke.Enabled = false
 				boxStroke.Enabled = true
 
+				-- Query ancestor ScrollingFrame to recalculate its CanvasSize immediately without manual scrolling
 				local parentScroller = sectionBox:FindFirstAncestorOfClass("ScrollingFrame")
 				if parentScroller then
 					local parentLayout = parentScroller:FindFirstChildOfClass("UIListLayout")
@@ -2160,6 +2116,7 @@ CreateCollapsibleSection = function(parentFrame, titleArg)
 						parentLayout.Enabled = true
 					end
 					
+					-- Resetting the AutomaticCanvasSize forces the scrollbar canvas to dynamically shrink/expand
 					local originalAuto = parentScroller.AutomaticCanvasSize
 					parentScroller.AutomaticCanvasSize = Enum.AutomaticCanvasSize.None
 					parentScroller.AutomaticCanvasSize = originalAuto
@@ -2185,23 +2142,23 @@ function KazeUI:CreateWindow(config)
 	local MainIcon = FormatImage(config.Icon or "6031763447")
 	local OpenIcon = FormatImage((config.OpenButton and config.OpenButton.Icon) or config.Icon or "6031763447")
 	
+	-- Configurable resizing settings with fallback defaults
 	local minWidth = config.MinWidth or 350
 	local minHeight = config.MinHeight or 250
 	local maxWidth = config.MaxWidth or 900
 	local maxHeight = config.MaxHeight or 700
 
-	KazeUI.BackgroundColor = Color3.fromRGB(10, 10, 12)
+	KazeUI.BackgroundColor = Color3.fromRGB(10, 10, 12) -- Permanent Deep Obsidian background
 	if config.GlowColor then KazeUI.GlowColor = config.GlowColor end
 
 	local MiniButtonSize = UDim2.fromOffset(46, 46)
 
 	local Window = Instance.new("Frame")
-	Window.Size = UDim2.fromOffset(600, 400)
+	Window.Size = UDim2.fromOffset(600, 400) -- Default Window Size 600x400
 	Window.Position = UDim2.fromScale(0.5, 0.5)
 	Window.AnchorPoint = Vector2.new(0.5, 0.5)
 	Window.BorderSizePixel = 0
-	Window.Active = true
-	Window.Visible = false -- Starts hidden for splash/opening animation
+	Window.Active = true -- Block touches from hitting workspace on mobile
 	Window.Parent = ScreenGui
 	Instance.new("UICorner", Window).CornerRadius = UDim.new(0, 12)
 	KazeUI:AddPanel(Window, 0)
@@ -2216,7 +2173,6 @@ function KazeUI:CreateWindow(config)
 	ContentClipper.Size = UDim2.fromScale(1, 1)
 	ContentClipper.BackgroundTransparency = 1
 	ContentClipper.BorderSizePixel = 0
-	ContentClipper.GroupTransparency = 1 -- Starts transparent
 	ContentClipper.Parent = Window
 	Instance.new("UICorner", ContentClipper).CornerRadius = UDim.new(0, 12)
 
@@ -2330,24 +2286,15 @@ function KazeUI:CreateWindow(config)
 		if isMinimized then return end
 		isMinimized = true
 		
+		-- BUG FIX: Don't save size here. Spamming Tween Back Style causes it to overshoot and grow to infinity.
 		if not toggledMaximized then
 			lastNormalPosition = Window.Position
 			lastNormalAnchor = Window.AnchorPoint
 		end
-		
-		-- Smooth close animation down to mini icon
-		TweenService:Create(Window, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In), { 
-			Size = UDim2.fromOffset(600 * 0.9, 400 * 0.9) 
-		}):Play()
-		local closeTween = TweenService:Create(ContentClipper, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.In), { GroupTransparency = 1 })
-		closeTween:Play()
-		
-		closeTween.Completed:Connect(function()
-			Window.Visible = false
-			MiniButton.Visible = true
-			MiniButton.Size = UDim2.fromOffset(0,0)
-			TweenService:Create(MiniButton, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Size = MiniButtonSize }):Play()
-		end)
+		Window.Visible = false
+		MiniButton.Visible = true
+		MiniButton.Size = UDim2.fromOffset(0,0)
+		TweenService:Create(MiniButton, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Size = MiniButtonSize }):Play()
 	end
 
 	local function unminimizeWindow()
@@ -2356,24 +2303,21 @@ function KazeUI:CreateWindow(config)
 		
 		MiniButton.Visible = false
 		Window.Visible = true
-		Window.Size = UDim2.fromOffset(600 * 0.95, 400 * 0.95)
-		ContentClipper.GroupTransparency = 1
-		
+		Window.Size = UDim2.fromOffset(0,0)
 		if toggledMaximized then
 			Window.AnchorPoint = Vector2.new(0.5,0.5)
 			Window.Position = UDim2.fromScale(0.5,0.5)
 			TweenService:Create(Window, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Size = UDim2.fromScale(0.95,0.9) }):Play()
-			TweenService:Create(ContentClipper, TweenInfo.new(0.25), { GroupTransparency = 0 }):Play()
 		else
 			Window.AnchorPoint = lastNormalAnchor
 			Window.Position = lastNormalPosition
 			TweenService:Create(Window, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Size = lastNormalSize, Position = lastNormalPosition }):Play()
-			TweenService:Create(ContentClipper, TweenInfo.new(0.25), { GroupTransparency = 0 }):Play()
 		end
 	end
 
 	BtnYellow.MouseButton1Click:Connect(minimizeWindow)
 
+	-- BUG FIX: Global Dragging to stop slipping off the Mini Button bounds and triggering clicks
 	local miniDragStart
 	local miniDragMoved = false
 	
@@ -2388,12 +2332,13 @@ function KazeUI:CreateWindow(config)
 		if miniDragStart and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
 			if (input.Position - miniDragStart).Magnitude > 8 then
 				miniDragMoved = true
+				-- Update position manually
 				local delta = input.Position - miniDragStart
 				MiniButton.Position = UDim2.new(
 					0, MiniButton.Position.X.Offset + delta.X,
 					0, MiniButton.Position.Y.Offset + delta.Y
 				)
-				miniDragStart = input.Position
+				miniDragStart = input.Position -- Reset delta step
 			end
 		end
 	end)
@@ -2490,18 +2435,7 @@ function KazeUI:CreateWindow(config)
 		CancelBtn.ZIndex = 54
 		Instance.new("UICorner", CancelBtn).CornerRadius = UDim.new(0,8)
 
-		ConfirmBtn.MouseButton1Click:Connect(function() 
-			-- Smooth Premium Window Close Animation
-			TweenService:Create(Window, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
-				Size = UDim2.fromOffset(Window.Size.X.Offset * 0.95, Window.Size.Y.Offset * 0.95)
-			}):Play()
-			local fade = TweenService:Create(ContentClipper, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.In), { GroupTransparency = 1 })
-			fade:Play()
-			fade.Completed:Connect(function()
-				ScreenGui:Destroy() 
-			end)
-		end)
-		
+		ConfirmBtn.MouseButton1Click:Connect(function() ScreenGui:Destroy() end)
 		CancelBtn.MouseButton1Click:Connect(function() Overlay:Destroy(); confirmActive = false; BtnYellow.Active = true; BtnGreen.Active = true; BtnRed.Active = true end)
 	end
 	BtnRed.MouseButton1Click:Connect(ShowCloseConfirm)
@@ -2543,8 +2477,8 @@ function KazeUI:CreateWindow(config)
 	
 	local isSidebarOpen = true
 	Avatar.MouseButton1Click:Connect(function()
-		local tInfo = TweenInfo.new(0.35, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
 		isSidebarOpen = not isSidebarOpen
+		local tInfo = TweenInfo.new(0.35, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
 		if isSidebarOpen then
 			TweenService:Create(SideBarMask, tInfo, {Size = UDim2.new(0, 190, 1, 0)}):Play()
 			TweenService:Create(VertDivider, tInfo, {Position = UDim2.new(0, 190, 0, 0), BackgroundTransparency = 0}):Play()
@@ -2584,7 +2518,7 @@ function KazeUI:CreateWindow(config)
 	ResizeHandle.Size = UDim2.fromOffset(18, 18)
 	ResizeHandle.Position = UDim2.new(1, -18, 1, -18)
 	ResizeHandle.BackgroundTransparency = 1
-	ResizeHandle.Image = "rbxassetid://10747373117"
+	ResizeHandle.Image = "rbxassetid://10747373117" -- Diagonal resize design mark (↘)
 	ResizeHandle.ImageColor3 = Color3.fromRGB(150, 150, 150)
 	ResizeHandle.Active = true
 	ResizeHandle.ZIndex = 99
@@ -2593,9 +2527,10 @@ function KazeUI:CreateWindow(config)
 	local isResizing = false
 	local resizeStartSize = Vector2.new(0, 0)
 	local resizeStartInput = Vector3.new(0, 0, 0)
-	local resizeTouchInput = nil
+	local resizeTouchInput = nil -- Multi-touch protector
 
-	local hoverCursor = "rbxassetid://10747373117"
+	-- PC Hover State Change
+	local hoverCursor = "rbxassetid://10747373117" -- Resize diagonal cursor asset ID
 	ResizeHandle.MouseEnter:Connect(function()
 		if not isResizing and not toggledMaximized then
 			Mouse.Icon = hoverCursor
@@ -2615,6 +2550,7 @@ function KazeUI:CreateWindow(config)
 		local delta = input.Position - resizeStartInput
 		local scale = UIScale.Scale
 
+		-- UIScale.Scale correct delta division to avoid dragging lag on scaled screens
 		local newWidth = math.clamp(resizeStartSize.X + (delta.X / scale), minWidth, maxWidth)
 		local newHeight = math.clamp(resizeStartSize.Y + (delta.Y / scale), minHeight, maxHeight)
 
@@ -2623,9 +2559,10 @@ function KazeUI:CreateWindow(config)
 	end
 
 	ResizeHandle.InputBegan:Connect(function(input)
-		if toggledMaximized then return end
+		if toggledMaximized then return end -- Block resizing if currently maximized
 
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			-- Save reference to the primary single finger touch or mouse
 			if input.UserInputType == Enum.UserInputType.Touch and resizeTouchInput == nil then
 				resizeTouchInput = input
 			end
@@ -2634,7 +2571,9 @@ function KazeUI:CreateWindow(config)
 			resizeStartSize = Vector2.new(Window.AbsoluteSize.X / UIScale.Scale, Window.AbsoluteSize.Y / UIScale.Scale)
 			resizeStartInput = input.Position
 
-			LockCamera()
+			LockCamera() -- Centralized mobile touch camera lock
+
+			-- Disable active scrollable ancestors to prevent drag conflicts
 			ToggleScrollingAncestors(ResizeHandle, false)
 			Mouse.Icon = hoverCursor
 		end
@@ -2642,6 +2581,7 @@ function KazeUI:CreateWindow(config)
 
 	UIS.InputChanged:Connect(function(input)
 		if isResizing then
+			-- Multi-touch protection: Ignore other finger touches
 			if input.UserInputType == Enum.UserInputType.Touch and input ~= resizeTouchInput then
 				return
 			end
@@ -2659,228 +2599,13 @@ function KazeUI:CreateWindow(config)
 			isResizing = false
 			resizeTouchInput = nil
 			
-			UnlockCamera()
+			UnlockCamera() -- Restore mobile touch camera movement on release
+			
 			ToggleScrollingAncestors(ResizeHandle, true)
 			Mouse.Icon = ""
 			TweenService:Create(ResizeHandle, TweenInfo.new(0.12), {ImageColor3 = Color3.fromRGB(150, 150, 150)}):Play()
 		end
 	end)
-
-	-- ==========================================
-	-- SPLASH & EXECUTION ANIMATION ENGINE
-	-- ==========================================
-	local splashConfig = config.Splash
-	if splashConfig and splashConfig.Enabled then
-		-- Setup fullscreen Splash container
-		local SplashContainer = Instance.new("Frame")
-		SplashContainer.Name = "SplashContainer"
-		SplashContainer.Size = UDim2.fromScale(1, 1)
-		SplashContainer.Position = UDim2.fromScale(0, 0)
-		SplashContainer.BackgroundColor3 = KazeUI.BackgroundColor
-		SplashContainer.BackgroundTransparency = 1 -- Start transparent for fade-in
-		SplashContainer.BorderSizePixel = 0
-		SplashContainer.ZIndex = 500000 -- Display above main GUI
-		SplashContainer.Parent = ScreenGui
-
-		local logoSize = 80
-		local SplashLogo = Instance.new("ImageLabel")
-		SplashLogo.Size = UDim2.fromOffset(logoSize * 0.8, logoSize * 0.8)
-		SplashLogo.Position = UDim2.new(0.5, 0, 0.4, 0)
-		SplashLogo.AnchorPoint = Vector2.new(0.5, 0.5)
-		SplashLogo.BackgroundTransparency = 1
-		SplashLogo.Image = MainIcon
-		SplashLogo.ImageTransparency = 1
-		SplashLogo.ScaleType = Enum.ScaleType.Fit
-		SplashLogo.Parent = SplashContainer
-
-		local logoStroke = Instance.new("UIStroke", SplashLogo)
-		logoStroke.Thickness = 1.5
-		logoStroke.Color = KazeUI.GlowColor
-		logoStroke.Transparency = 1
-
-		local ShineOverlay = SplashLogo:Clone()
-		ShineOverlay.ImageTransparency = 1
-		ShineOverlay.ZIndex = SplashLogo.ZIndex + 1
-		ShineOverlay.Parent = SplashContainer
-		local shineGradient = Instance.new("UIGradient", ShineOverlay)
-		shineGradient.Color = ColorSequence.new(Color3.fromRGB(255, 255, 255))
-		shineGradient.Transparency = NumberSequence.new({
-			NumberSequenceKeypoint.new(0, 1),
-			NumberSequenceKeypoint.new(0.4, 1),
-			NumberSequenceKeypoint.new(0.5, 0),
-			NumberSequenceKeypoint.new(0.6, 1),
-			NumberSequenceKeypoint.new(1, 1)
-		})
-		shineGradient.Offset = Vector2.new(-1, 0)
-
-		local SplTitle = Instance.new("TextLabel")
-		SplTitle.Size = UDim2.new(1, 0, 0, 30)
-		SplTitle.Position = UDim2.new(0.5, 0, 0.52, 8) -- Slide up offset target
-		SplTitle.AnchorPoint = Vector2.new(0.5, 0.5)
-		SplTitle.BackgroundTransparency = 1
-		SplTitle.Text = Title
-		SplTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
-		SplTitle.Font = Enum.Font.GothamBold
-		SplTitle.TextSize = 24
-		SplTitle.TextTransparency = 1
-		SplTitle.Parent = SplashContainer
-
-		local SplSubtitle = Instance.new("TextLabel")
-		SplSubtitle.Size = UDim2.new(1, 0, 0, 20)
-		SplSubtitle.Position = UDim2.new(0.5, 0, 0.56, 8)
-		SplSubtitle.AnchorPoint = Vector2.new(0.5, 0.5)
-		SplSubtitle.BackgroundTransparency = 1
-		SplSubtitle.Text = splashConfig.Subtitle or "Initializing Premium UI Library..."
-		SplSubtitle.TextColor3 = Color3.fromRGB(160, 160, 160)
-		SplSubtitle.Font = Enum.Font.Gotham
-		SplSubtitle.TextSize = 13
-		SplSubtitle.TextTransparency = 1
-		SplSubtitle.Parent = SplashContainer
-
-		local ProgressTrack = Instance.new("Frame")
-		ProgressTrack.Size = UDim2.new(0, 240, 0, 4)
-		ProgressTrack.Position = UDim2.new(0.5, 0, 0.62, 0)
-		ProgressTrack.AnchorPoint = Vector2.new(0.5, 0.5)
-		ProgressTrack.BackgroundColor3 = KazeUI.GetColor(0.04)
-		ProgressTrack.BackgroundTransparency = 1
-		ProgressTrack.BorderSizePixel = 0
-		ProgressTrack.Parent = SplashContainer
-		Instance.new("UICorner", ProgressTrack).CornerRadius = UDim.new(1, 0)
-
-		local ProgressBar = Instance.new("Frame")
-		ProgressBar.Size = UDim2.new(0, 0, 1, 0)
-		ProgressBar.BackgroundColor3 = KazeUI.GlowColor
-		ProgressBar.BorderSizePixel = 0
-		ProgressBar.Parent = ProgressTrack
-		Instance.new("UICorner", ProgressBar).CornerRadius = UDim.new(1, 0)
-		StartNeonLoop(ProgressBar)
-
-		local StatusLabel = Instance.new("TextLabel")
-		StatusLabel.Size = UDim2.new(1, 0, 0, 16)
-		StatusLabel.Position = UDim2.new(0.5, 0, 0.66, 0)
-		StatusLabel.AnchorPoint = Vector2.new(0.5, 0.5)
-		StatusLabel.BackgroundTransparency = 1
-		StatusLabel.Text = ""
-		StatusLabel.TextColor3 = Color3.fromRGB(130, 130, 135)
-		StatusLabel.Font = Enum.Font.Gotham
-		StatusLabel.TextSize = 11
-		StatusLabel.TextTransparency = 1
-		StatusLabel.Parent = SplashContainer
-
-		task.spawn(function()
-			-- 1. Fade Background In
-			TweenService:Create(SplashContainer, TweenInfo.new(0.15), {BackgroundTransparency = 0}):Play()
-			task.wait(0.15)
-
-			-- 2. Logo Pop-In
-			TweenService:Create(SplashLogo, TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
-				Size = UDim2.fromOffset(logoSize, logoSize),
-				ImageTransparency = 0
-			}):Play()
-			TweenService:Create(logoStroke, TweenInfo.new(0.4), {Transparency = 0}):Play()
-			task.wait(0.3)
-
-			-- 3. Shine Sweep
-			ShineOverlay.Size = UDim2.fromOffset(logoSize, logoSize)
-			ShineOverlay.ImageTransparency = 0
-			TweenService:Create(shineGradient, TweenInfo.new(0.6, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Offset = Vector2.new(1, 0)}):Play()
-			task.wait(0.4)
-			ShineOverlay:Destroy()
-
-			-- 4. Title & Subtitle Fade Slide Up
-			TweenService:Create(SplTitle, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Position = UDim2.new(0.5, 0, 0.52, 0), TextTransparency = 0}):Play()
-			TweenService:Create(SplSubtitle, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Position = UDim2.new(0.5, 0, 0.56, 0), TextTransparency = 0}):Play()
-			TweenService:Create(ProgressTrack, TweenInfo.new(0.3), {BackgroundTransparency = 0}):Play()
-			task.wait(0.3)
-
-			-- 5 & 6. Loading messages sequence & bar interpolation
-			local stages = {
-				{Msg = "Loading Assets...", Prog = 0.25},
-				{Msg = "Initializing Components...", Prog = 0.50},
-				{Msg = "Applying Theme...", Prog = 0.75},
-				{Msg = "Creating Window...", Prog = 0.95},
-				{Msg = "Done.", Prog = 1.0}
-			}
-
-			local stepDuration = (splashConfig.Duration or 1.25) / #stages
-
-			for _, stage in ipairs(stages) do
-				TweenService:Create(StatusLabel, TweenInfo.new(0.1), {TextTransparency = 1}):Play()
-				task.wait(0.1)
-				StatusLabel.Text = stage.Msg
-				TweenService:Create(StatusLabel, TweenInfo.new(0.1), {TextTransparency = 0}):Play()
-				TweenService:Create(ProgressBar, TweenInfo.new(stepDuration, Enum.EasingStyle.Sine, Enum.EasingDirection.Out), {Size = UDim2.fromScale(stage.Prog, 1)}):Play()
-				task.wait(stepDuration)
-			end
-
-			-- 7. Completion Pulse
-			TweenService:Create(SplashLogo, TweenInfo.new(0.15, Enum.EasingStyle.Sine, Enum.EasingDirection.Out), {Size = UDim2.fromOffset(logoSize + 10, logoSize + 10)}):Play()
-			task.wait(0.15)
-			TweenService:Create(SplashLogo, TweenInfo.new(0.15, Enum.EasingStyle.Sine, Enum.EasingDirection.In), {Size = UDim2.fromOffset(logoSize, logoSize)}):Play()
-			task.wait(0.15)
-
-			-- 8. Window Morph Transition Mechanics
-			ContentClipper.GroupTransparency = 1
-			Window.Visible = true
-			Window.Size = UDim2.fromOffset(600 * 0.95, 400 * 0.95)
-			task.wait() -- Allow absolute positions to recalculate correctly
-
-			local scale = UIScale.Scale
-			local targetLogoPos = UDim2.fromOffset(Avatar.AbsolutePosition.X / scale, Avatar.AbsolutePosition.Y / scale)
-			local targetLogoSize = UDim2.fromOffset(Avatar.AbsoluteSize.X / scale, Avatar.AbsoluteSize.Y / scale)
-			local targetDividerPos = UDim2.fromOffset(TopDivider.AbsolutePosition.X / scale, TopDivider.AbsolutePosition.Y / scale)
-			local targetDividerSize = UDim2.fromOffset(TopDivider.AbsoluteSize.X / scale, TopDivider.AbsoluteSize.Y / scale)
-
-			-- Temporarily hide actual Window parts to ensure seamless blend
-			Avatar.Visible = false
-			TopDivider.Visible = false
-
-			-- Fade Splash details
-			TweenService:Create(SplTitle, TweenInfo.new(0.3), {TextTransparency = 1}):Play()
-			TweenService:Create(SplSubtitle, TweenInfo.new(0.3), {TextTransparency = 1}):Play()
-			TweenService:Create(StatusLabel, TweenInfo.new(0.3), {TextTransparency = 1}):Play()
-			TweenService:Create(ProgressTrack, TweenInfo.new(0.3), {BackgroundTransparency = 1}):Play()
-
-			-- Reposition Splash Logo to transition directly to Avatar
-			SplashLogo.AnchorPoint = Vector2.new(0, 0)
-			SplashLogo.Position = UDim2.new(0.5, -logoSize/2, 0.4, -logoSize/2)
-			TweenService:Create(SplashLogo, TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-				Position = targetLogoPos,
-				Size = targetLogoSize
-			}):Play()
-
-			-- Decouple ProgressBar and morph into TopDivider
-			local pbPos = ProgressBar.AbsolutePosition
-			ProgressBar.AnchorPoint = Vector2.new(0, 0)
-			ProgressBar.Position = UDim2.fromOffset(pbPos.X / scale, pbPos.Y / scale)
-			ProgressBar.Parent = SplashContainer
-			ProgressTrack:Destroy()
-
-			TweenService:Create(ProgressBar, TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-				Position = targetDividerPos,
-				Size = targetDividerSize
-			}):Play()
-
-			-- Fade out Splash Background and scale / fade in main Window
-			TweenService:Create(SplashContainer, TweenInfo.new(0.4), {BackgroundTransparency = 1}):Play()
-			TweenService:Create(Window, TweenInfo.new(0.5, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Size = UDim2.fromOffset(600, 400)}):Play()
-			TweenService:Create(ContentClipper, TweenInfo.new(0.4), {GroupTransparency = 0}):Play()
-
-			task.wait(0.5)
-
-			-- Restore window objects and clean up Splash elements entirely
-			Avatar.Visible = true
-			TopDivider.Visible = true
-			SplashContainer:Destroy()
-		end)
-	else
-		-- Default Fast Premium Open (If Splash is disabled)
-		ContentClipper.GroupTransparency = 1
-		Window.Visible = true
-		Window.Size = UDim2.fromOffset(600 * 0.95, 400 * 0.95)
-		TweenService:Create(Window, TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Size = UDim2.fromOffset(600, 400)}):Play()
-		TweenService:Create(ContentClipper, TweenInfo.new(0.3), {GroupTransparency = 0}):Play()
-	end
 
 	local Win = {
 		Window = Window,
@@ -2908,6 +2633,7 @@ function KazeUI:CreateWindow(config)
 
 	function Win:CreateConfigManager(tab)
 		local sec = tab:SectionUI("Config Manager")
+
 		local cfgName = "Default"
 
 		local function getConfigs()
@@ -2947,21 +2673,22 @@ function KazeUI:CreateWindow(config)
 		sec:Button({Title = "Delete Config", Callback = function()
 			if delfile then
 				pcall(function() delfile("KazeUI_"..cfgName..".json") end)
-				KazeUI:Notify({Icon = "Shield", Title = "Config System", Content = "Deleted " .. cfgName, Duration = 3})
+				KazeUI:Notify({Title = "Config System", Content = "Deleted " .. cfgName, Duration = 3})
 				if configDropdown then configDropdown:Refresh(getConfigs()) end
 			else
-				KazeUI:Notify({Icon = "AlertTriangle", Title = "Error", Content = "Your executor lacks 'delfile' support.", Duration = 3})
+				KazeUI:Notify({Title = "Error", Content = "Your executor lacks 'delfile' support.", Duration = 3})
 			end
 		end})
 	end
 
+	-- BUG FIX: Theme UI elements missing Flags to save
 	function Win:CreateThemeManager(tab)
 		local sec = tab:SectionUI("Theme & Visuals")
 		
 		sec:ColorPicker({
 			Title = "UI Glow Color",
 			Default = KazeUI.GlowColor,
-			Flag = "KazeUI_Theme_GlowColor",
+			Flag = "KazeUI_Theme_GlowColor", -- Added flag so Config saves it
 			Callback = function(color)
 				KazeUI:SetGlow(color)
 			end
@@ -2972,7 +2699,7 @@ function KazeUI:CreateWindow(config)
 			Min = 0,
 			Max = 100,
 			Default = 0,
-			Flag = "KazeUI_Theme_BackgroundTransparency",
+			Flag = "KazeUI_Theme_BackgroundTransparency", -- Added flag so Config saves it
 			Callback = function(val)
 				KazeUI:SetTransparency(val / 100)
 			end
