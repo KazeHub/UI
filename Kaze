@@ -1,5 +1,5 @@
 --[[
-	Kaze UI Library (Cinematic Ultra Edition - No Skip)
+	Kaze UI Library (Cinematic Ultra Edition - No Skip with Global Confirm API)
 	Optimized: Deep Obsidian Only, Dynamic Tab Text Scaling (No "..." Dots), Wider Sidebar, Safe Close Dialog Margin Padding
 	Added: New Dynamic Keybind Component, Full Config Manager Overhaul, Memory Leak Prevention
 	Fixes: Text Clipping/Overflow fixed globally, Multi-Dropdown Color Hover State Fixed
@@ -9,7 +9,8 @@
 	Updated: Adjusted Default Window Size to 600x400
 	MOBILE OPTIMIZED: Centralized 0x0 Modal Camera Locker to fix camera rotating on mobile touch dragging/resizing/sliders/color pickers.
 	PREMIUM UPGRADE: Added Smooth Scale & Fade Transitions (95% -> 100% Open, 100% -> 95% Close) with Easing Control.
-	CINEMATIC INTRO v2.1: Corner-accent brackets, fluid slide-and-fade status texts, custom glowing progress bar, and automated .png rbxassetid formatting. (Skip Removed)
+	CINEMATIC INTRO v2.2: Corner-accent brackets, fluid slide-and-fade status texts, custom glowing progress bar, and automated .png rbxassetid formatting. (Skip Removed)
+	ADDED COMPONENT: Global Confirm Modal API (KazeUI:Confirm) integrated natively with existing close triggers and destructive config removals.
 --]]
 
 local KazeUI = {}
@@ -337,6 +338,149 @@ function KazeUI:SetGlow(color)
 	end
 end
 
+-- ==========================================
+-- Native Global Confirmation Modal Component
+-- ==========================================
+function KazeUI:Confirm(config)
+	config = config or {}
+	local titleText = config.Title or "Confirmation"
+	local descText = config.Description or "Are you sure you want to proceed?"
+	local confirmText = config.ConfirmText or "Confirm"
+	local cancelText = config.CancelText or "Cancel"
+	local callback = config.Callback
+
+	-- Choose parent: prioritize active window so it is locked inside, otherwise fall back to ScreenGui
+	local activeWin = KazeUI.ActiveWindows[#KazeUI.ActiveWindows]
+	local modalParent = activeWin or ScreenGui
+
+	local overlay = Instance.new("Frame")
+	overlay.Name = "KazeConfirmOverlay"
+	overlay.Size = UDim2.fromScale(1, 1)
+	overlay.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+	overlay.BackgroundTransparency = 1
+	overlay.BorderSizePixel = 0
+	overlay.ZIndex = 500
+	overlay.Parent = modalParent
+
+	-- Ensure custom rounded bounds inside UI Window
+	if activeWin then
+		Instance.new("UICorner", overlay).CornerRadius = UDim.new(0, 12)
+	end
+
+	local confirmBox = Instance.new("Frame")
+	confirmBox.Name = "ConfirmFrame"
+	confirmBox.Size = UDim2.fromOffset(360, 160)
+	confirmBox.AnchorPoint = Vector2.new(0.5, 0.5)
+	confirmBox.Position = UDim2.fromScale(0.5, 0.5)
+	confirmBox.BackgroundColor3 = Color3.fromRGB(15, 15, 18)
+	confirmBox.BorderSizePixel = 0
+	confirmBox.ZIndex = 502
+	confirmBox.Parent = overlay
+	Instance.new("UICorner", confirmBox).CornerRadius = UDim.new(0, 12)
+
+	local confirmStroke = Instance.new("UIStroke", confirmBox)
+	confirmStroke.Thickness = 2
+	StartNeonLoop(confirmStroke)
+
+	local confirmScale = Instance.new("UIScale", confirmBox)
+	confirmScale.Scale = 0.9
+
+	local titleLabel = Instance.new("TextLabel", confirmBox)
+	titleLabel.Size = UDim2.new(1, -40, 0, 30)
+	titleLabel.Position = UDim2.fromOffset(20, 16)
+	titleLabel.BackgroundTransparency = 1
+	titleLabel.Text = titleText
+	titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+	titleLabel.Font = Enum.Font.GothamBold
+	titleLabel.TextSize = 15
+	titleLabel.TextXAlignment = Enum.TextXAlignment.Center
+	titleLabel.ZIndex = 503
+
+	local descLabel = Instance.new("TextLabel", confirmBox)
+	descLabel.Size = UDim2.new(1, -40, 0, 45)
+	descLabel.Position = UDim2.fromOffset(20, 46)
+	descLabel.BackgroundTransparency = 1
+	descLabel.Text = descText
+	descLabel.TextColor3 = Color3.fromRGB(180, 180, 185)
+	descLabel.Font = Enum.Font.Gotham
+	descLabel.TextSize = 13
+	descLabel.TextWrapped = true
+	descLabel.TextXAlignment = Enum.TextXAlignment.Center
+	descLabel.ZIndex = 503
+
+	local buttonsFrame = Instance.new("Frame", confirmBox)
+	buttonsFrame.Size = UDim2.new(1, -40, 0, 32)
+	buttonsFrame.Position = UDim2.new(0, 20, 1, -16)
+	buttonsFrame.AnchorPoint = Vector2.new(0, 1)
+	buttonsFrame.BackgroundTransparency = 1
+	buttonsFrame.ZIndex = 503
+
+	local layout = Instance.new("UIListLayout", buttonsFrame)
+	layout.FillDirection = Enum.FillDirection.Horizontal
+	layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+	layout.Padding = UDim.new(0, 12)
+
+	local function createModalButton(text, bgCol, isConfirmBtn)
+		local btn = Instance.new("TextButton", buttonsFrame)
+		btn.Size = UDim2.new(0.5, -6, 1, 0)
+		btn.BackgroundColor3 = bgCol
+		btn.BorderSizePixel = 0
+		btn.Text = text
+		btn.TextColor3 = Color3.fromRGB(240, 240, 240)
+		btn.Font = Enum.Font.GothamBold
+		btn.TextSize = 13
+		btn.ZIndex = 504
+		Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
+
+		local btnStroke = Instance.new("UIStroke", btn)
+		btnStroke.Thickness = 1
+		btnStroke.Color = Color3.fromRGB(45, 45, 50)
+
+		btn.MouseEnter:Connect(function()
+			TweenService:Create(btn, TweenInfo.new(0.12), { BackgroundColor3 = bgCol:Lerp(Color3.fromRGB(255, 255, 255), 0.12) }):Play()
+		end)
+		btn.MouseLeave:Connect(function()
+			TweenService:Create(btn, TweenInfo.new(0.12), { BackgroundColor3 = bgCol }):Play()
+		end)
+
+		btn.MouseButton1Click:Connect(function()
+			btn.Active = false
+			overlay.Active = false
+			
+			-- Fade Out & Close Modals
+			local closeT = TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+			TweenService:Create(overlay, closeT, { BackgroundTransparency = 1 }):Play()
+			local boxClose = TweenService:Create(confirmScale, closeT, { Scale = 0.95 })
+			boxClose:Play()
+			boxClose.Completed:Wait()
+
+			StopNeonLoop(confirmStroke)
+			overlay:Destroy()
+
+			if typeof(callback) == "function" then
+				task.spawn(callback, isConfirmBtn)
+			end
+		end)
+	end
+
+	-- Cancel/Decline Left Side Button
+	createModalButton(cancelText, Color3.fromRGB(35, 35, 40), false)
+	-- Confirm Positive Right Side Button
+	createModalButton(confirmText, Color3.fromRGB(0, 150, 255), true)
+
+	-- Lock mobile camera during modal interaction
+	LockCamera()
+
+	-- Opening transitions
+	overlay.Active = true
+	local openT = TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+	TweenService:Create(overlay, openT, { BackgroundTransparency = 0.55 }):Play()
+	TweenService:Create(confirmScale, openT, { Scale = 1 }):Play()
+
+	-- Restore camera locker status upon modal closure
+	overlay.Destroying:Connect(UnlockCamera)
+end
+
 -- Robust Notification Animation Sequence
 function KazeUI:Notify(config)
 	config = config or {}
@@ -406,409 +550,9 @@ function KazeUI:Notify(config)
 	end)
 end
 
-function KazeUI:SaveConfig(name)
-	if not name or name == "" then
-		KazeUI:Notify({Title = "Config Error", Content = "Config name cannot be empty.", Duration = 3})
-		return
-	end
-	
-	local data = {}
-	for flag, obj in pairs(KazeUI.Flags) do data[flag] = obj.Get() end
-	
-	if writefile then
-		local success, encoded = pcall(function() return HttpService:JSONEncode(data) end)
-		if success then
-			writefile("KazeUI_"..name..".json", encoded)
-			KazeUI:Notify({Title = "Config Saved", Content = "Successfully saved " .. name, Duration = 3})
-		else
-			KazeUI:Notify({Title = "Config Error", Content = "Failed to encode settings to JSON.", Duration = 3})
-		end
-	else
-		KazeUI:Notify({Title = "Config Error", Content = "Your executor does not support saving files.", Duration = 3})
-	end
-end
-
-function KazeUI:LoadConfig(name)
-	if readfile then
-		local s, res = pcall(function() return readfile("KazeUI_"..name..".json") end)
-		if s then
-			local s2, data = pcall(function() return HttpService:JSONDecode(res) end)
-			if s2 and type(data) == "table" then
-				for flag, val in pairs(data) do
-					if KazeUI.Flags[flag] then KazeUI.Flags[flag].Set(val) end
-				end
-				KazeUI:Notify({Title = "Config Loaded", Content = "Successfully loaded " .. name, Duration = 3})
-			else
-				KazeUI:Notify({Title = "Config Error", Content = "Invalid or corrupted config format.", Duration = 3})
-			end
-		else
-			KazeUI:Notify({Title = "Config Error", Content = "Config " .. name .. " not found.", Duration = 3})
-		end
-	end
-end
-
-local function ToggleScrollingAncestors(element, state)
-	local current = element.Parent
-	while current do
-		if current:IsA("ScrollingFrame") then current.ScrollingEnabled = state end
-		current = current.Parent
-	end
-end
-
--- Component factories
-local function CreateDropdown(parentFrame, title, options, defaultOption, callback, isMulti, flag)
-	title = tostring(title or "Dropdown")
-	options = type(options) == "table" and options or {}
-	local isOpen = false
-
-	local selectedSingle = ""
-	local selectedMulti = {}
-
-	if isMulti then
-		if type(defaultOption) == "table" then
-			for _, v in ipairs(defaultOption) do selectedMulti[tostring(v)] = true end
-		elseif defaultOption then
-			selectedMulti[tostring(defaultOption)] = true
-		end
-	else
-		selectedSingle = defaultOption or (options[1] or "")
-	end
-
-	local wrapper = Instance.new("Frame")
-	wrapper.Name = "DropdownWrapper"
-	wrapper.Size = UDim2.new(1, 0, 0, 0)
-	wrapper.BackgroundTransparency = 1
-	wrapper.Parent = parentFrame
-	wrapper.AutomaticSize = Enum.AutomaticSize.Y
-
-	local dropFrame = Instance.new("Frame")
-	dropFrame.Name = "DropdownFrame"
-	dropFrame.AnchorPoint = Vector2.new(0.5, 0)
-	dropFrame.Position = UDim2.new(0.5, 0, 0, 3)
-	dropFrame.Size = UDim2.new(0.95, 0, 0, 0)
-	dropFrame.BorderSizePixel = 0
-	dropFrame.AutomaticSize = Enum.AutomaticSize.Y
-	Instance.new("UICorner", dropFrame).CornerRadius = UDim.new(0, 8)
-	dropFrame.Parent = wrapper
-	KazeUI:AddPanel(dropFrame, 0.02)
-	KazeUI:AddTransparentElement(dropFrame, 0)
-
-	local padding = Instance.new("UIPadding", dropFrame)
-	padding.PaddingTop = UDim.new(0, 4)
-	padding.PaddingBottom = UDim.new(0, 4)
-
-	local boxStroke = Instance.new("UIStroke", dropFrame)
-	boxStroke.Thickness = 1.5
-	boxStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-	StartNeonLoop(boxStroke)
-
-	local layout = Instance.new("UIListLayout", dropFrame)
-	layout.SortOrder = Enum.SortOrder.LayoutOrder
-	layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-	layout.Padding = UDim.new(0, 4)
-
-	local header = Instance.new("Frame")
-	header.Name = "Header"
-	header.Size = UDim2.new(1, -16, 0, 36)
-	header.BackgroundTransparency = 1
-	header.LayoutOrder = 1
-	header.Parent = dropFrame
-
-	local titleLabel = Instance.new("TextLabel", header)
-	titleLabel.Size = UDim2.new(0.5, 0, 1, 0)
-	titleLabel.BackgroundTransparency = 1
-	titleLabel.Text = title
-	titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-	titleLabel.Font = Enum.Font.GothamBold
-	titleLabel.TextSize = 14
-	titleLabel.TextXAlignment = Enum.TextXAlignment.Left
-
-	local arrowIcon = Instance.new("ImageLabel", header)
-	arrowIcon.AnchorPoint = Vector2.new(1, 0.5)
-	arrowIcon.Position = UDim2.new(1, 0, 0.5, 0)
-	arrowIcon.Size = UDim2.fromOffset(16, 16)
-	arrowIcon.BackgroundTransparency = 1
-	arrowIcon.ImageColor3 = Color3.fromRGB(255, 255, 255)
-	arrowIcon.Image = "rbxassetid://6031091004"
-	arrowIcon.Rotation = 0
-
-	local selectedLabel = Instance.new("TextLabel", header)
-	selectedLabel.Size = UDim2.new(0.5, -24, 1, 0)
-	selectedLabel.Position = UDim2.new(0.5, 0, 0, 0)
-	selectedLabel.BackgroundTransparency = 1
-	selectedLabel.Font = Enum.Font.Gotham
-	selectedLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-	selectedLabel.TextSize = 13
-	selectedLabel.TextXAlignment = Enum.TextXAlignment.Right
-	selectedLabel.TextTruncate = Enum.TextTruncate.AtEnd
-
-	local clickBtn = Instance.new("TextButton", header)
-	clickBtn.Size = UDim2.fromScale(1, 1)
-	clickBtn.BackgroundTransparency = 1
-	clickBtn.Text = ""
-
-	local function UpdateHeaderVisual()
-		if isMulti then
-			local count = 0
-			local firstVal = ""
-			for k, v in pairs(selectedMulti) do
-				if v then 
-					count = count + 1 
-					if firstVal == "" then firstVal = k end
-				end
-			end
-			if count == 0 then selectedLabel.Text = "None"
-			elseif count == 1 then selectedLabel.Text = firstVal
-			else selectedLabel.Text = count .. " Selected" end
-		else
-			selectedLabel.Text = tostring(selectedSingle)
-		end
-	end
-	UpdateHeaderVisual()
-
-	local searchWrapper = Instance.new("Frame")
-	searchWrapper.Size = UDim2.new(1, -16, 0, 30)
-	searchWrapper.BackgroundTransparency = 1
-	searchWrapper.LayoutOrder = 2
-	searchWrapper.Visible = false
-	searchWrapper.Parent = dropFrame
-
-	local searchBox = Instance.new("TextBox")
-	searchBox.Size = UDim2.new(1, 0, 1, -2)
-	searchBox.Position = UDim2.new(0, 0, 0, 1)
-	searchBox.BorderSizePixel = 0
-	searchBox.PlaceholderText = "   Search option..."
-	searchBox.PlaceholderColor3 = Color3.fromRGB(120, 120, 125)
-	searchBox.Text = ""
-	searchBox.TextColor3 = Color3.fromRGB(255, 255, 255)
-	searchBox.Font = Enum.Font.Gotham
-	searchBox.TextSize = 13
-	searchBox.TextXAlignment = Enum.TextXAlignment.Left
-	searchBox.Parent = searchWrapper
-	Instance.new("UICorner", searchBox).CornerRadius = UDim.new(0, 5)
-	KazeUI:AddPanel(searchBox, -0.02)
-	KazeUI:AddTransparentElement(searchBox, 0)
-
-	local searchStroke = Instance.new("UIStroke", searchBox)
-	searchStroke.Color = Color3.fromRGB(45, 45, 50)
-	searchStroke.Thickness = 1
-
-	searchBox.Focused:Connect(function() StartNeonLoop(searchStroke) end)
-	searchBox.FocusLost:Connect(function() 
-		StopNeonLoop(searchStroke) 
-		searchStroke.Color = Color3.fromRGB(45, 45, 50) 
-	end)
-	
-	local divider = Instance.new("Frame")
-	divider.Size = UDim2.new(1, -16, 0, 1)
-	divider.BackgroundColor3 = Color3.fromRGB(38, 38, 42)
-	divider.BorderSizePixel = 0
-	divider.LayoutOrder = 3
-	divider.Visible = false
-	divider.Parent = dropFrame
-
-	local listContainer = Instance.new("ScrollingFrame")
-	listContainer.Size = UDim2.new(1, -16, 0, 0)
-	listContainer.BackgroundTransparency = 1
-	listContainer.BorderSizePixel = 0
-	listContainer.LayoutOrder = 4
-	listContainer.Visible = false
-	listContainer.ScrollBarThickness = 4
-	listContainer.ScrollBarImageColor3 = Color3.fromRGB(60, 60, 65)
-	listContainer.Parent = dropFrame
-
-	listContainer.MouseEnter:Connect(function() ToggleScrollingAncestors(dropFrame, false) end)
-	listContainer.MouseLeave:Connect(function() ToggleScrollingAncestors(dropFrame, true) end)
-
-	local listLayout = Instance.new("UIListLayout", listContainer)
-	listLayout.SortOrder = Enum.SortOrder.LayoutOrder
-	listLayout.Padding = UDim.new(0, 2)
-
-	local optionItems = {}
-
-	local function CalcHeight()
-		local count = 0
-		for _, item in ipairs(optionItems) do if item.Btn.Visible then count = count + 1 end end
-		local height = math.min(count, 4.5) * 32
-		listContainer.Size = UDim2.new(1, -16, 0, height)
-		listContainer.CanvasSize = UDim2.new(0, 0, 0, count * 32)
-	end
-
-	local function CloseDropdown()
-		isOpen = false
-		searchBox.Text = "" 
-		searchWrapper.Visible = false
-		divider.Visible = false
-		listContainer.Visible = false
-		TweenService:Create(arrowIcon, TweenInfo.new(0.2), {Rotation = 0}):Play()
-	end
-
-	local function Refresh(newOptions)
-		for _, item in ipairs(optionItems) do item.Btn:Destroy() end
-		table.clear(optionItems)
-
-		options = type(newOptions) == "table" and newOptions or {}
-		for _, opt in ipairs(options) do
-			local optStr = tostring(opt)
-			local btn = Instance.new("TextButton")
-			btn.Size = UDim2.new(1, -8, 0, 30)
-			btn.BorderSizePixel = 0
-			btn.Text = "  " .. optStr
-			btn.Font = Enum.Font.Gotham
-			btn.TextSize = 13
-			btn.TextXAlignment = Enum.TextXAlignment.Left
-			btn.Parent = listContainer
-			Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 4)
-			KazeUI:AddPanel(btn, 0.02)
-			KazeUI:AddTransparentElement(btn, 0)
-
-			local indicator
-			if isMulti then
-				indicator = Instance.new("Frame", btn)
-				indicator.AnchorPoint = Vector2.new(1, 0.5)
-				indicator.Position = UDim2.new(1, -6, 0.5, 0)
-				indicator.Size = UDim2.fromOffset(14, 14)
-				Instance.new("UIStroke", indicator).Color = Color3.fromRGB(60, 60, 65)
-				Instance.new("UICorner", indicator).CornerRadius = UDim.new(0, 4)
-				KazeUI:AddPanel(indicator, 0.02)
-				KazeUI:AddTransparentElement(indicator, 0)
-			end
-            
-			local isHovering = false
-
-			local function UpdateVisuals(instant)
-				local active = isMulti and selectedMulti[optStr] or (not isMulti and selectedSingle == optStr)
-				
-				local targetBg = active and KazeUI.GetColor(0.06) or KazeUI.GetColor(0.02)
-				local targetTxt = active and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(200, 200, 200)
-				local indTargetBg = active and Color3.fromRGB(255, 255, 255) or KazeUI.GetColor(0.02)
-				
-				if isHovering then
-					targetBg = KazeUI.GetColor(0.08)
-					targetTxt = Color3.fromRGB(255, 255, 255)
-				end
-
-				if instant == true then
-					btn.BackgroundColor3 = targetBg
-					btn.TextColor3 = targetTxt
-					if isMulti and indicator then
-						indicator.BackgroundColor3 = indTargetBg
-					end
-				else
-					TweenService:Create(btn, TweenInfo.new(0.15), {BackgroundColor3 = targetBg, TextColor3 = targetTxt}):Play()
-					if isMulti and indicator then
-						TweenService:Create(indicator, TweenInfo.new(0.15), {BackgroundColor3 = indTargetBg}):Play()
-					end
-				end
-			end
-			UpdateVisuals(true)
-
-			btn.MouseEnter:Connect(function() 
-				isHovering = true
-				UpdateVisuals(false)
-			end)
-			btn.MouseLeave:Connect(function()
-				isHovering = false
-				UpdateVisuals(false)
-			end)
-
-			btn.MouseButton1Click:Connect(function()
-				if isMulti then
-					selectedMulti[optStr] = not selectedMulti[optStr]
-					UpdateVisuals(false)
-					UpdateHeaderVisual()
-					if type(callback) == "function" then
-						local ret = {}
-						for k,v in pairs(selectedMulti) do if v then table.insert(ret, k) end end
-						task.spawn(callback, ret)
-					end
-				else
-					selectedSingle = optStr
-					UpdateHeaderVisual()
-					CloseDropdown()
-					for _, item in ipairs(optionItems) do item.Update(false) end
-					if type(callback) == "function" then task.spawn(callback, selectedSingle) end
-				end
-			end)
-
-			table.insert(optionItems, { Btn = btn, Text = optStr, Update = function(instant) UpdateVisuals(instant) end })
-		end
-		CalcHeight()
-	end
-
-	Refresh(options)
-
-	searchBox:GetPropertyChangedSignal("Text"):Connect(function()
-		local q = string.lower(searchBox.Text)
-		for _, item in ipairs(optionItems) do
-			item.Btn.Visible = (q == "" or string.find(string.lower(item.Text), q, 1, true)) ~= nil
-		end
-		CalcHeight()
-	end)
-
-	clickBtn.MouseButton1Click:Connect(function()
-		isOpen = not isOpen
-		if isOpen then
-			searchWrapper.Visible = true
-			divider.Visible = true
-			listContainer.Visible = true
-			CalcHeight()
-			TweenService:Create(arrowIcon, TweenInfo.new(0.2), {Rotation = 180}):Play()
-		else
-			CloseDropdown()
-		end
-	end)
-
-	-- Save & Load Registry Hook
-	RegisterFlag(flag, function()
-		if isMulti then
-			local ret = {}
-			for k,v in pairs(selectedMulti) do if v then table.insert(ret, k) end end
-			return ret
-		end
-		return selectedSingle 
-	end, function(val)
-		if isMulti then 
-			selectedMulti = {}
-			if type(val) == "table" then
-				for _, v in ipairs(val) do selectedMulti[tostring(v)] = true end
-			end
-		else 
-			selectedSingle = tostring(val)
-		end
-		UpdateHeaderVisual()
-		Refresh(options)
-		
-		-- Hook properly into config applying state
-		if typeof(callback) == "function" then
-			if isMulti then
-				local ret = {}
-				for k,v in pairs(selectedMulti) do if v then table.insert(ret, k) end end
-				task.spawn(callback, ret)
-			else
-				task.spawn(callback, selectedSingle)
-			end
-		end
-	end)
-
-	return {
-		Wrapper = wrapper,
-		Frame = dropFrame,
-		Refresh = function(self, newOpts) Refresh(newOpts) end,
-		GetValue = function() 
-			if isMulti then
-				local ret = {}
-				for k,v in pairs(selectedMulti) do if v then table.insert(ret, k) end end
-				return ret
-			end
-			return selectedSingle 
-		end,
-		SetText = function(self, newTitle)
-			titleLabel.Text = newTitle
-		end
-	}
-end
-
+-- ==========================================
+-- Sliding Paragraph & Buttons Builders
+-- ==========================================
 local function CreateParagraph(parentFrame, title, body)
 	title = tostring(title or "")
 	body = tostring(body or "")
@@ -1964,7 +1708,7 @@ AttachElementsToAPI = function(apiTable, parentFrame)
 		return CreateSliderInput(parentFrame, title, min, max, def, callback, flag)
 	end
 
-	function apiTable:Dropdown(arg1, arg2, arg3, arg4, arg5, arg6)
+	function apiTable:Dropdown(arg1, arg2, arg3, arg4, @class, arg6)
 		local title, vals, def, multi, callback, flag
 		if type(arg1) == "table" then
 			title, vals, def, multi, callback, flag = arg1.Title, (arg1.Values or arg1.Options), arg1.Default, (arg1.Multi or false), arg1.Callback, arg1.Flag
@@ -2356,102 +2100,34 @@ function KazeUI:CreateWindow(config)
 		end
 	end)
 
-	local confirmActive = false
-	local function ShowCloseConfirm()
-		if confirmActive then return end
-		confirmActive = true
-		BtnYellow.Active = false; BtnGreen.Active = false; BtnRed.Active = false
-		
-		local Overlay = Instance.new("Frame", Window)
-		Overlay.Size = UDim2.new(1,0,1,0)
-		Overlay.BackgroundColor3 = Color3.fromRGB(0,0,0)
-		Overlay.BackgroundTransparency = 0.6
-		Overlay.ZIndex = 50
-		Instance.new("UICorner", Overlay).CornerRadius = UDim.new(0, 12)
-
-		local ConfirmWindow = Instance.new("Frame", Overlay)
-		ConfirmWindow.Size = UDim2.fromOffset(360, 150)
-		ConfirmWindow.AnchorPoint = Vector2.new(0.5,0.5)
-		ConfirmWindow.Position = UDim2.fromScale(0.5,0.5)
-		ConfirmWindow.BackgroundColor3 = Color3.fromRGB(20, 20, 24)
-		ConfirmWindow.ZIndex = 52
-		Instance.new("UICorner", ConfirmWindow).CornerRadius = UDim.new(0,12)
-		local confirmStroke = Instance.new("UIStroke", ConfirmWindow)
-		confirmStroke.Thickness = 2.5
-		StartNeonLoop(confirmStroke)
-
-		local ConfirmText = Instance.new("TextLabel", ConfirmWindow)
-		ConfirmText.Size = UDim2.new(1, -40, 0, 50)
-		ConfirmText.Position = UDim2.fromOffset(20, 18)
-		ConfirmText.BackgroundTransparency = 1
-		ConfirmText.Text = "Are you sure you want to close the UI?"
-		ConfirmText.TextColor3 = Color3.fromRGB(235,235,235)
-		ConfirmText.Font = Enum.Font.GothamBold
-		ConfirmText.TextSize = 15
-		ConfirmText.TextWrapped = true
-		ConfirmText.ZIndex = 53
-
-		local ButtonsFrame = Instance.new("Frame", ConfirmWindow)
-		ButtonsFrame.Size = UDim2.new(1,0,0,40)
-		ButtonsFrame.Position = UDim2.new(0,0,1,-16)
-		ButtonsFrame.AnchorPoint = Vector2.new(0,1)
-		ButtonsFrame.BackgroundTransparency = 1
-		ButtonsFrame.ZIndex = 53
-		local layout = Instance.new("UIListLayout", ButtonsFrame)
-		layout.FillDirection = Enum.FillDirection.Horizontal
-		layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-		layout.Padding = UDim.new(0,16)
-
-		local ConfirmBtn = Instance.new("TextButton", ButtonsFrame)
-		ConfirmBtn.Size = UDim2.new(0,110,0,32)
-		ConfirmBtn.BackgroundColor3 = Color3.fromRGB(0,170,255)
-		ConfirmBtn.Text = "Confirm"
-		ConfirmBtn.TextColor3 = Color3.fromRGB(230,230,230)
-		ConfirmBtn.Font = Enum.Font.GothamBold
-		ConfirmBtn.TextSize = 15
-		ConfirmBtn.ZIndex = 54
-		Instance.new("UICorner", ConfirmBtn).CornerRadius = UDim.new(0,8)
-
-		local CancelBtn = Instance.new("TextButton", ButtonsFrame)
-		CancelBtn.Size = UDim2.new(0,110,0,32)
-		CancelBtn.BackgroundColor3 = Color3.fromRGB(45,45,50)
-		CancelBtn.Text = "Cancel"
-		CancelBtn.TextColor3 = Color3.fromRGB(220,220,220)
-		CancelBtn.Font = Enum.Font.GothamBold
-		CancelBtn.TextSize = 15
-		CancelBtn.ZIndex = 54
-		Instance.new("UICorner", CancelBtn).CornerRadius = UDim.new(0,8)
-
-		ConfirmBtn.MouseButton1Click:Connect(function()
-			ConfirmBtn.Active = false
-			CancelBtn.Active = false
-			
-			-- PREMIUM TRANSITION: Scale 100% -> 95%, Fade Out
-			local closeTweenInfo = TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
-			local t1 = TweenService:Create(WindowScale, closeTweenInfo, { Scale = 0.95 })
-			local t2 = TweenService:Create(Window, closeTweenInfo, { BackgroundTransparency = 1 })
-			local t3 = TweenService:Create(WindowStroke, closeTweenInfo, { Transparency = 1 })
-			local t4 = TweenService:Create(ContentClipper, closeTweenInfo, { GroupTransparency = 1 })
-			
-			t1:Play()
-			t2:Play()
-			t3:Play()
-			t4:Play()
-			
-			t1.Completed:Connect(function()
-				ScreenGui:Destroy()
-			end)
-		end)
-		
-		CancelBtn.MouseButton1Click:Connect(function() 
-			Overlay:Destroy() 
-			confirmActive = false 
-			BtnYellow.Active = true 
-			BtnGreen.Active = true 
-			BtnRed.Active = true 
-		end)
+	local function RequestCloseSequence()
+		KazeUI:Confirm({
+			Title = "Continue using KazeUI?",
+			Description = "Are you sure you want to close the UI?",
+			ConfirmText = "Close",
+			CancelText = "Cancel",
+			Callback = function(Result)
+				if not Result then return end
+				
+				-- PREMIUM TRANSITION: Scale 100% -> 95%, Fade Out
+				local closeTweenInfo = TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+				local t1 = TweenService:Create(WindowScale, closeTweenInfo, { Scale = 0.95 })
+				local t2 = TweenService:Create(Window, closeTweenInfo, { BackgroundTransparency = 1 })
+				local t3 = TweenService:Create(WindowStroke, closeTweenInfo, { Transparency = 1 })
+				local t4 = TweenService:Create(ContentClipper, closeTweenInfo, { GroupTransparency = 1 })
+				
+				t1:Play()
+				t2:Play()
+				t3:Play()
+				t4:Play()
+				
+				t1.Completed:Connect(function()
+					ScreenGui:Destroy()
+				end)
+			end
+		})
 	end
-	BtnRed.MouseButton1Click:Connect(ShowCloseConfirm)
+	BtnRed.MouseButton1Click:Connect(RequestCloseSequence)
 
 	local Content = Instance.new("Frame")
 	Content.Position = UDim2.fromOffset(0,50)
@@ -2684,13 +2360,22 @@ function KazeUI:CreateWindow(config)
 		sec:Button({Title = "Load Config", Callback = function() KazeUI:LoadConfig(cfgName) end})
 		
 		sec:Button({Title = "Delete Config", Callback = function()
-			if delfile then
-				pcall(function() delfile("KazeUI_"..cfgName..".json") end)
-				KazeUI:Notify({Title = "Config System", Content = "Deleted " .. cfgName, Duration = 3})
-				if configDropdown then configDropdown:Refresh(getConfigs()) end
-			else
-				KazeUI:Notify({Title = "Error", Content = "Your executor lacks 'delfile' support.", Duration = 3})
-			end
+			KazeUI:Confirm({
+				Title = "Delete Config?",
+				Description = "Are you sure you want to permanently delete config '" .. cfgName .. "'?",
+				ConfirmText = "Delete",
+				CancelText = "Cancel",
+				Callback = function(Result)
+					if not Result then return end
+					if delfile then
+						pcall(function() delfile("KazeUI_"..cfgName..".json") end)
+						KazeUI:Notify({Title = "Config System", Content = "Deleted " .. cfgName, Duration = 3})
+						if configDropdown then configDropdown:Refresh(getConfigs()) end
+					else
+						KazeUI:Notify({Title = "Error", Content = "Your executor lacks 'delfile' support.", Duration = 3})
+					end
+				end
+			})
 		end})
 	end
 
@@ -2849,7 +2534,7 @@ function KazeUI:CreateWindow(config)
 
 	local Intro = Instance.new("CanvasGroup")
 	Intro.Name = "KazeIntro"
-	Intro.Size = UDim2.fromOffset(300, 160) -- Slightly shorter since skip text is removed
+	Intro.Size = UDim2.fromOffset(300, 160) 
 	Intro.Position = UDim2.fromScale(0.5, 0.5)
 	Intro.AnchorPoint = Vector2.new(0.5, 0.5)
 	Intro.BackgroundColor3 = Color3.fromRGB(10, 10, 12)
