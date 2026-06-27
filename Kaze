@@ -1,4 +1,3 @@
-
 --[[
 	Kaze UI Library
 	Optimized: Deep Obsidian Only, Dynamic Tab Text Scaling (No "..." Dots), Wider Sidebar, Safe Close Dialog Margin Padding
@@ -9,7 +8,6 @@
 	Updated: Adaptive Device & Monitor Scale Protection Engine (0.85x Mobile / 1.0x Tablet / 1.15x Desktop Wide)
 	Updated: Adjusted Default Window Size to 600x400
 	MOBILE OPTIMIZED: Centralized 0x0 Modal Camera Locker to fix camera rotating on mobile touch dragging/resizing/sliders/color pickers.
-	PREMIUM ADDITION: Implemented high-fidelity Window Open Animation (Fade In + Scale In + Back Out Easing) with dual-layer transparency transitioning.
 --]]
 
 local KazeUI = {}
@@ -2097,6 +2095,34 @@ CreateCollapsibleSection = function(parentFrame, titleArg)
 		TweenService:Create(arrowIcon, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
 			Rotation = isOpen and 0 or -90
 		}):Play()
+
+		-- CRITICAL FIX: Force Roblox layout and rendering engine to recalculate outline bounds & canvas sizes
+		task.defer(function()
+			if sectionBox and sectionBox.Parent then
+				-- Toggle section internal layouts to trigger a synchronous layout check
+				boxLayout.Enabled = false
+				boxLayout.Enabled = true
+
+				-- Toggle Stroke to force Roblox to redraw visually incomplete borders
+				boxStroke.Enabled = false
+				boxStroke.Enabled = true
+
+				-- Query ancestor ScrollingFrame to recalculate its CanvasSize immediately without manual scrolling
+				local parentScroller = sectionBox:FindFirstAncestorOfClass("ScrollingFrame")
+				if parentScroller then
+					local parentLayout = parentScroller:FindFirstChildOfClass("UIListLayout")
+					if parentLayout then
+						parentLayout.Enabled = false
+						parentLayout.Enabled = true
+					end
+					
+					-- Resetting the AutomaticCanvasSize forces the scrollbar canvas to dynamically shrink/expand
+					local originalAuto = parentScroller.AutomaticCanvasSize
+					parentScroller.AutomaticCanvasSize = Enum.AutomaticCanvasSize.None
+					parentScroller.AutomaticCanvasSize = originalAuto
+				end
+			end
+		end)
 	end)
 
 	local sectionPublic = { Frame = sectionBox, ContentFrame = sectionContent, Header = headerFrame }
@@ -2796,30 +2822,6 @@ function KazeUI:CreateWindow(config)
 	end
 
 	table.insert(KazeUI.ActiveWindows, Window)
-	
-	-- ==========================================
-	-- PREMIUM WINDOW OPEN ANIMATION
-	-- ==========================================
-	-- Create localized scale instance for animation isolation (prevents global scaling distortion)
-	local WindowScale = Instance.new("UIScale")
-	WindowScale.Scale = 0.95
-	WindowScale.Parent = Window
-
-	-- Set exact state properties pre-transition
-	Window.BackgroundTransparency = 1
-	WindowStroke.Transparency = 1
-	ContentClipper.GroupTransparency = 1
-	Window.Visible = true
-
-	local openTweenInfo = TweenInfo.new(0.20, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
-	local fadeTweenInfo = TweenInfo.new(0.20, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-
-	TweenService:Create(WindowScale, openTweenInfo, { Scale = 1 }):Play()
-	TweenService:Create(Window, fadeTweenInfo, { BackgroundTransparency = 0 }):Play()
-	TweenService:Create(WindowStroke, fadeTweenInfo, { Transparency = 0 }):Play()
-	TweenService:Create(ContentClipper, fadeTweenInfo, { GroupTransparency = 0 }):Play()
-	-- ==========================================
-
 	if typeof(config.Callback) == "function" then pcall(config.Callback) end
 	return Win
 end
