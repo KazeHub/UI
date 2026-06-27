@@ -9,6 +9,7 @@
 	Updated: Adaptive Device & Monitor Scale Protection Engine (0.85x Mobile / 1.0x Tablet / 1.15x Desktop Wide)
 	Updated: Adjusted Default Window Size to 600x400
 	Fixed: SectionUI (sectionBox) missing AnchorPoint + Position bug centering alignment.
+	Fixed: Stroke invisibility bug on elements rendering within newly shown layout frames.
 --]]
 
 local KazeUI = {}
@@ -39,6 +40,27 @@ local function RegisterFlag(flag, getFunc, setFunc)
 	if flag then
 		KazeUI.Flags[flag] = { Get = getFunc, Set = setFunc }
 	end
+end
+
+-- Force UIStroke Refresh to fix Roblox rendering glitches inside scrolling frames/dynamic visibility
+local function RefreshStrokes(container)
+	if not container then return end
+	task.defer(function()
+		local strokes = {}
+		for _, v in ipairs(container:GetDescendants()) do
+			if v:IsA("UIStroke") then
+				table.insert(strokes, {Inst = v, Old = v.Enabled})
+				v.Enabled = false
+			end
+		end
+		task.defer(function()
+			for _, data in ipairs(strokes) do
+				if data.Inst and data.Inst.Parent then
+					data.Inst.Enabled = data.Old
+				end
+			end
+		end)
+	end)
 end
 
 -- ScreenGui Setup (Supports CoreGui & PlayerGui Fallback)
@@ -2081,6 +2103,9 @@ CreateCollapsibleSection = function(parentFrame, titleArg)
 		TweenService:Create(arrowIcon, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
 			Rotation = isOpen and 0 or -90
 		}):Play()
+		if isOpen then
+			RefreshStrokes(sectionContent)
+		end
 	end)
 
 	local sectionPublic = { Frame = sectionBox, ContentFrame = sectionContent, Header = headerFrame }
@@ -2263,11 +2288,19 @@ function KazeUI:CreateWindow(config)
 		if toggledMaximized then
 			Window.AnchorPoint = Vector2.new(0.5,0.5)
 			Window.Position = UDim2.fromScale(0.5,0.5)
-			TweenService:Create(Window, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Size = UDim2.fromScale(0.95,0.9) }):Play()
+			local t = TweenService:Create(Window, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Size = UDim2.fromScale(0.95,0.9) })
+			t:Play()
+			t.Completed:Connect(function()
+				RefreshStrokes(Window)
+			end)
 		else
 			Window.AnchorPoint = lastNormalAnchor
 			Window.Position = lastNormalPosition
-			TweenService:Create(Window, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Size = lastNormalSize, Position = lastNormalPosition }):Play()
+			local t = TweenService:Create(Window, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Size = lastNormalSize, Position = lastNormalPosition })
+			t:Play()
+			t.Completed:Connect(function()
+				RefreshStrokes(Window)
+			end)
 		end
 	end
 
@@ -2746,6 +2779,8 @@ function KazeUI:CreateWindow(config)
 			page.Visible = true
 			txt.TextColor3 = Color3.fromRGB(255, 255, 255)
 			txt.Font = Enum.Font.GothamBold
+			
+			RefreshStrokes(page)
 		end
 
 		btn.MouseEnter:Connect(function()
@@ -2773,6 +2808,7 @@ function KazeUI:CreateWindow(config)
 
 	table.insert(KazeUI.ActiveWindows, Window)
 	if typeof(config.Callback) == "function" then pcall(config.Callback) end
+	RefreshStrokes(Window)
 	return Win
 end
 
