@@ -8,7 +8,7 @@
 	Added: Smooth & Responsive Continuous Window Resizing with UIScale correction, PC Hover Cursor (↘), and Multi-Touch Protection
 	Updated: Adaptive Device & Monitor Scale Protection Engine (0.85x Mobile / 1.0x Tablet / 1.15x Desktop Wide)
 	Updated: Adjusted Default Window Size to 600x400
-	Bug Fix: Restored native AutomaticSize layout engine and resolved the UIStroke rendering bug using task.defer toggle synchronization
+	Bug Fix: UIStroke rendering glitch permanently patched using task.spawn multi-frame refresh synchronization (No outline clipping)
 --]]
 
 local KazeUI = {}
@@ -309,19 +309,6 @@ function KazeUI:SetGlow(color)
 	end
 end
 
--- HELPER: Synchronizes UIStroke bounding boxes dynamically after layout updates (Roblox Engine Patch)
-local function SetupStrokeFix(frame, stroke)
-	if not frame or not stroke then return end
-	frame:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
-		task.defer(function()
-			if stroke and stroke.Parent then
-				stroke.Enabled = false
-				stroke.Enabled = true
-			end
-		end)
-	end)
-end
-
 -- Robust Notification Animation Sequence
 function KazeUI:Notify(config)
 	config = config or {}
@@ -487,8 +474,6 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 	boxStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 	StartNeonLoop(boxStroke)
 
-	SetupStrokeFix(dropFrame, boxStroke)
-
 	local layout = Instance.new("UIListLayout", dropFrame)
 	layout.SortOrder = Enum.SortOrder.LayoutOrder
 	layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
@@ -628,6 +613,17 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 		divider.Visible = false
 		listContainer.Visible = false
 		TweenService:Create(arrowIcon, TweenInfo.new(0.2), {Rotation = 0}):Play()
+		
+		-- FIX: Refresh bounding box geometry over subsequent frames to eliminate visual tearing
+		task.spawn(function()
+			for i = 1, 5 do
+				task.wait()
+				if boxStroke and boxStroke.Parent then
+					boxStroke.Enabled = false
+					boxStroke.Enabled = true
+				end
+			end
+		end)
 	end
 
 	local function Refresh(newOptions)
@@ -744,6 +740,17 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 		else
 			CloseDropdown()
 		end
+
+		-- FIX: Refresh bounding box geometry over subsequent frames to eliminate visual tearing
+		task.spawn(function()
+			for i = 1, 5 do
+				task.wait()
+				if boxStroke and boxStroke.Parent then
+					boxStroke.Enabled = false
+					boxStroke.Enabled = true
+				end
+			end
+		end)
 	end)
 
 	-- Save & Load Registry Hook
@@ -1505,10 +1512,7 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 
 	local boxStroke = Instance.new("UIStroke", dropFrame)
 	boxStroke.Thickness = 1.5
-	boxStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 	StartNeonLoop(boxStroke)
-
-	SetupStrokeFix(dropFrame, boxStroke)
 
 	local layout = Instance.new("UIListLayout", dropFrame)
 	layout.SortOrder = Enum.SortOrder.LayoutOrder
@@ -1685,6 +1689,17 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 		isOpen = not isOpen
 		pickerArea.Visible = isOpen
 		TweenService:Create(arrowIcon, TweenInfo.new(0.2), {Rotation = isOpen and 180 or 0}):Play()
+
+		-- FIX: Refresh bounding box geometry over subsequent frames to eliminate visual tearing
+		task.spawn(function()
+			for i = 1, 5 do
+				task.wait()
+				if boxStroke and boxStroke.Parent then
+					boxStroke.Enabled = false
+					boxStroke.Enabled = true
+				end
+			end
+		end)
 	end)
 
 	RegisterFlag(flag, function() return color:ToHex() end, function(val)
@@ -2023,8 +2038,6 @@ CreateCollapsibleSection = function(parentFrame, titleArg)
 	boxStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 	StartNeonLoop(boxStroke)
 
-	SetupStrokeFix(sectionBox, boxStroke)
-
 	local boxLayout = Instance.new("UIListLayout", sectionBox)
 	boxLayout.SortOrder = Enum.SortOrder.LayoutOrder
 	boxLayout.Padding = UDim.new(0, 0)
@@ -2099,6 +2112,17 @@ CreateCollapsibleSection = function(parentFrame, titleArg)
 		TweenService:Create(arrowIcon, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
 			Rotation = isOpen and 0 or -90
 		}):Play()
+		
+		-- FIX: Refresh bounding box geometry over subsequent frames to eliminate visual tearing
+		task.spawn(function()
+			for i = 1, 5 do
+				task.wait()
+				if boxStroke and boxStroke.Parent then
+					boxStroke.Enabled = false
+					boxStroke.Enabled = true
+				end
+			end
+		end)
 	end)
 
 	local sectionPublic = { Frame = sectionBox, ContentFrame = sectionContent, Header = headerFrame }
