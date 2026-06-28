@@ -8,7 +8,7 @@
 	Added: Smooth & Responsive Continuous Window Resizing with UIScale correction, PC Hover Cursor (↘), and Multi-Touch Protection
 	Updated: Adaptive Device & Monitor Scale Protection Engine (0.85x Mobile / 1.0x Tablet / 1.15x Desktop Wide)
 	Updated: Adjusted Default Window Size to 600x400
-	Bug Fix: UIStroke rendering glitch permanently patched by replacing AutomaticSize with native size calculation engine (SectionUI, Dropdown, ColorPicker)
+	Bug Fix: Restored native AutomaticSize layout engine and resolved the UIStroke rendering bug using task.defer toggle synchronization
 --]]
 
 local KazeUI = {}
@@ -309,6 +309,19 @@ function KazeUI:SetGlow(color)
 	end
 end
 
+-- HELPER: Synchronizes UIStroke bounding boxes dynamically after layout updates (Roblox Engine Patch)
+local function SetupStrokeFix(frame, stroke)
+	if not frame or not stroke then return end
+	frame:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+		task.defer(function()
+			if stroke and stroke.Parent then
+				stroke.Enabled = false
+				stroke.Enabled = true
+			end
+		end)
+	end)
+end
+
 -- Robust Notification Animation Sequence
 function KazeUI:Notify(config)
 	config = config or {}
@@ -457,8 +470,9 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 	dropFrame.Name = "DropdownFrame"
 	dropFrame.AnchorPoint = Vector2.new(0.5, 0)
 	dropFrame.Position = UDim2.new(0.5, 0, 0, 3)
-	dropFrame.Size = UDim2.new(0.95, 0, 0, 44) -- Native exact size to bypass UIStroke AutomaticSize glitch
+	dropFrame.Size = UDim2.new(0.95, 0, 0, 0)
 	dropFrame.BorderSizePixel = 0
+	dropFrame.AutomaticSize = Enum.AutomaticSize.Y
 	Instance.new("UICorner", dropFrame).CornerRadius = UDim.new(0, 8)
 	dropFrame.Parent = wrapper
 	KazeUI:AddPanel(dropFrame, 0.02)
@@ -472,6 +486,8 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 	boxStroke.Thickness = 1.5
 	boxStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 	StartNeonLoop(boxStroke)
+
+	SetupStrokeFix(dropFrame, boxStroke)
 
 	local layout = Instance.new("UIListLayout", dropFrame)
 	layout.SortOrder = Enum.SortOrder.LayoutOrder
@@ -603,12 +619,6 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 		local height = math.min(count, 4.5) * 32
 		listContainer.Size = UDim2.new(1, -16, 0, height)
 		listContainer.CanvasSize = UDim2.new(0, 0, 0, count * 32)
-		
-		if isOpen then
-			dropFrame.Size = UDim2.new(0.95, 0, 0, 44 + 30 + 1 + height)
-		else
-			dropFrame.Size = UDim2.new(0.95, 0, 0, 44)
-		end
 	end
 
 	local function CloseDropdown()
@@ -617,7 +627,6 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 		searchWrapper.Visible = false
 		divider.Visible = false
 		listContainer.Visible = false
-		CalcHeight()
 		TweenService:Create(arrowIcon, TweenInfo.new(0.2), {Rotation = 0}):Play()
 	end
 
@@ -1482,8 +1491,9 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 	local dropFrame = Instance.new("Frame")
 	dropFrame.AnchorPoint = Vector2.new(0.5, 0)
 	dropFrame.Position = UDim2.new(0.5, 0, 0, 3)
-	dropFrame.Size = UDim2.new(0.95, 0, 0, 44) -- Native exact size to bypass UIStroke AutomaticSize glitch
+	dropFrame.Size = UDim2.new(0.95, 0, 0, 0)
 	dropFrame.BorderSizePixel = 0
+	dropFrame.AutomaticSize = Enum.AutomaticSize.Y
 	Instance.new("UICorner", dropFrame).CornerRadius = UDim.new(0, 8)
 	dropFrame.Parent = wrapper
 	KazeUI:AddPanel(dropFrame, 0.02)
@@ -1495,7 +1505,10 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 
 	local boxStroke = Instance.new("UIStroke", dropFrame)
 	boxStroke.Thickness = 1.5
+	boxStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 	StartNeonLoop(boxStroke)
+
+	SetupStrokeFix(dropFrame, boxStroke)
 
 	local layout = Instance.new("UIListLayout", dropFrame)
 	layout.SortOrder = Enum.SortOrder.LayoutOrder
@@ -1671,7 +1684,6 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 	clickBtn.MouseButton1Click:Connect(function()
 		isOpen = not isOpen
 		pickerArea.Visible = isOpen
-		dropFrame.Size = isOpen and UDim2.new(0.95, 0, 0, 44 + 150) or UDim2.new(0.95, 0, 0, 44)
 		TweenService:Create(arrowIcon, TweenInfo.new(0.2), {Rotation = isOpen and 180 or 0}):Play()
 	end)
 
@@ -1998,9 +2010,10 @@ CreateCollapsibleSection = function(parentFrame, titleArg)
 	local isOpen = false
 
 	local sectionBox = Instance.new("Frame")
-	sectionBox.Size = UDim2.new(0.95, 0, 0, 36) -- Native exact size to bypass UIStroke gltich
+	sectionBox.Size = UDim2.new(0.95, 0, 0, 0)
 	sectionBox.BorderSizePixel = 0
 	sectionBox.Parent = parentFrame
+	sectionBox.AutomaticSize = Enum.AutomaticSize.Y
 	Instance.new("UICorner", sectionBox).CornerRadius = UDim.new(0, 8)
 	KazeUI:AddPanel(sectionBox, 0.02)
 	KazeUI:AddTransparentElement(sectionBox, 0)
@@ -2009,6 +2022,8 @@ CreateCollapsibleSection = function(parentFrame, titleArg)
 	boxStroke.Thickness = 1.5
 	boxStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 	StartNeonLoop(boxStroke)
+
+	SetupStrokeFix(sectionBox, boxStroke)
 
 	local boxLayout = Instance.new("UIListLayout", sectionBox)
 	boxLayout.SortOrder = Enum.SortOrder.LayoutOrder
@@ -2055,6 +2070,7 @@ CreateCollapsibleSection = function(parentFrame, titleArg)
 	sectionContent.BackgroundTransparency = 1
 	sectionContent.BorderSizePixel = 0
 	sectionContent.Visible = isOpen
+	sectionContent.AutomaticSize = Enum.AutomaticSize.Y
 	sectionContent.LayoutOrder = 3
 	sectionContent.Parent = sectionBox
 
@@ -2069,22 +2085,6 @@ CreateCollapsibleSection = function(parentFrame, titleArg)
 	contentPadding.PaddingLeft = UDim.new(0, 4)
 	contentPadding.PaddingRight = UDim.new(0, 4)
 
-	local function UpdateSize()
-		if isOpen then
-			local cHeight = contentLayout.AbsoluteContentSize.Y
-			local pHeight = contentPadding.PaddingTop.Offset + contentPadding.PaddingBottom.Offset
-			sectionContent.Size = UDim2.new(1, 0, 0, cHeight + pHeight)
-			sectionBox.Size = UDim2.new(0.95, 0, 0, 36 + 1 + cHeight + pHeight)
-		else
-			sectionContent.Size = UDim2.new(1, 0, 0, 0)
-			sectionBox.Size = UDim2.new(0.95, 0, 0, 36)
-		end
-	end
-
-	contentLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-		if isOpen then UpdateSize() end
-	end)
-
 	local toggleDetector = Instance.new("TextButton")
 	toggleDetector.Size = UDim2.fromScale(1, 1)
 	toggleDetector.BackgroundTransparency = 1
@@ -2096,7 +2096,6 @@ CreateCollapsibleSection = function(parentFrame, titleArg)
 		isOpen = not isOpen
 		sectionContent.Visible = isOpen
 		divider.Visible = isOpen
-		UpdateSize()
 		TweenService:Create(arrowIcon, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
 			Rotation = isOpen and 0 or -90
 		}):Play()
