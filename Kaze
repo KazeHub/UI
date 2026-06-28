@@ -1,6 +1,6 @@
 
 --[[
-	Kaze UI Library
+	Kaze UI Library - Fixed Strokes & Infinite Scroll Edition
 	Optimized: Deep Obsidian Only, Dynamic Tab Text Scaling (No "..." Dots), Wider Sidebar, Safe Close Dialog Margin Padding
 	Added: New Dynamic Keybind Component, Full Config Manager Overhaul, Memory Leak Prevention
 	Fixes: Text Clipping/Overflow fixed globally, Multi-Dropdown Color Hover State Fixed
@@ -8,6 +8,8 @@
 	Added: Smooth & Responsive Continuous Window Resizing with UIScale correction, PC Hover Cursor (↘), and Multi-Touch Protection
 	Updated: Adaptive Device & Monitor Scale Protection Engine (0.85x Mobile / 1.0x Tablet / 1.15x Desktop Wide)
 	Updated: Adjusted Default Window Size to 600x400
+	Fixed: UIStroke outline clipping by replacing ApplyStrokeMode.Border with Center/Inset, and applying appropriate padding compensation.
+	Fixed: Outlines disappearing on deep scroll layouts (Section 3+) by replacing CanvasGroup clipper with a high-performance Frame + Masking system.
 --]]
 
 local KazeUI = {}
@@ -335,6 +337,7 @@ function KazeUI:Notify(config)
 
 	local stroke = Instance.new("UIStroke", notifFrame)
 	stroke.Thickness = 1.5
+	stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Inset
 	StartNeonLoop(stroke)
 
 	local titleLab = Instance.new("TextLabel", notifFrame)
@@ -466,11 +469,13 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 
 	local padding = Instance.new("UIPadding", dropFrame)
 	padding.PaddingTop = UDim.new(0, 4)
-	padding.PaddingBottom = UDim.new(0, 4)
+	padding.PaddingBottom = UDim.new(0, 6)
+	padding.PaddingLeft = UDim.new(0, 4)
+	padding.PaddingRight = UDim.new(0, 4)
 
 	local boxStroke = Instance.new("UIStroke", dropFrame)
 	boxStroke.Thickness = 1.5
-	boxStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+	boxStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Center
 	StartNeonLoop(boxStroke)
 
 	local layout = Instance.new("UIListLayout", dropFrame)
@@ -563,6 +568,7 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 	local searchStroke = Instance.new("UIStroke", searchBox)
 	searchStroke.Color = Color3.fromRGB(45, 45, 50)
 	searchStroke.Thickness = 1
+	searchStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Inset
 
 	searchBox.Focused:Connect(function() StartNeonLoop(searchStroke) end)
 	searchBox.FocusLost:Connect(function() 
@@ -602,7 +608,7 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 		for _, item in ipairs(optionItems) do if item.Btn.Visible then count = count + 1 end end
 		local height = math.min(count, 4.5) * 32
 		listContainer.Size = UDim2.new(1, -16, 0, height)
-		listContainer.CanvasSize = UDim2.new(0, 0, 0, count * 32)
+		listContainer.CanvasSize = UDim2.new(0, 0, 0, (count * 32) + 6)
 	end
 
 	local function CloseDropdown()
@@ -639,7 +645,9 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 				indicator.AnchorPoint = Vector2.new(1, 0.5)
 				indicator.Position = UDim2.new(1, -6, 0.5, 0)
 				indicator.Size = UDim2.fromOffset(14, 14)
-				Instance.new("UIStroke", indicator).Color = Color3.fromRGB(60, 60, 65)
+				local indStroke = Instance.new("UIStroke", indicator)
+				indStroke.Color = Color3.fromRGB(60, 60, 65)
+				indStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Inset
 				Instance.new("UICorner", indicator).CornerRadius = UDim.new(0, 4)
 				KazeUI:AddPanel(indicator, 0.02)
 				KazeUI:AddTransparentElement(indicator, 0)
@@ -795,7 +803,7 @@ local function CreateParagraph(parentFrame, title, body)
 	
 	local bodySize = TextService:GetTextSize(body, 14, Enum.Font.Gotham, Vector2.new(measuredWidth - 24, 2000))
 	local bodyHeight = math.ceil(bodySize.Y)
-	local totalHeight = 6 + titleHeight + 3 + bodyHeight + 6
+	local totalHeight = 6 + titleHeight + 3 + bodyHeight + 8
 	
 	local wrapper = Instance.new("Frame")
 	wrapper.Size = UDim2.new(1, 0, 0, 0)
@@ -824,7 +832,7 @@ local function CreateParagraph(parentFrame, title, body)
 	
 	local paraStroke = Instance.new("UIStroke", paraFrame)
 	paraStroke.Thickness = 1.5
-	paraStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+	paraStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Center
 	StartNeonLoop(paraStroke)
 	
 	local inner = Instance.new("Frame", paraFrame)
@@ -883,7 +891,7 @@ local function CreateClickableParagraph(parentFrame, title, body, callback)
 	
 	local bodySize = TextService:GetTextSize(body, 14, Enum.Font.Gotham, Vector2.new(textContainerWidth, 2000))
 	local bodyHeight = body ~= "" and math.ceil(bodySize.Y) or 0
-	local totalHeight = 6 + titleHeight + (body ~= "" and 3 or 0) + bodyHeight + 6
+	local totalHeight = 6 + titleHeight + (body ~= "" and 3 or 0) + bodyHeight + 8
 	
 	local wrapper = Instance.new("Frame")
 	wrapper.Size = UDim2.new(1, 0, 0, 0)
@@ -912,7 +920,7 @@ local function CreateClickableParagraph(parentFrame, title, body, callback)
 	
 	local paraStroke = Instance.new("UIStroke", paraFrame)
 	paraStroke.Thickness = 1.5
-	paraStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+	paraStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Center
 	StartNeonLoop(paraStroke)
 	
 	local inner = Instance.new("Frame", paraFrame)
@@ -1009,7 +1017,7 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 	
 	local bodySize = TextService:GetTextSize(body, 14, Enum.Font.Gotham, Vector2.new(textContainerWidth, 2000))
 	local bodyHeight = body ~= "" and math.ceil(bodySize.Y) or 0
-	local totalHeight = 6 + titleHeight + (body ~= "" and 3 or 0) + bodyHeight + 6
+	local totalHeight = 6 + titleHeight + (body ~= "" and 3 or 0) + bodyHeight + 8
 	
 	local wrapper = Instance.new("Frame")
 	wrapper.Size = UDim2.new(1, 0, 0, 0)
@@ -1038,7 +1046,7 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 	
 	local paraStroke = Instance.new("UIStroke", paraFrame)
 	paraStroke.Thickness = 1.5
-	paraStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+	paraStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Center
 	StartNeonLoop(paraStroke)
 	
 	local inner = Instance.new("Frame", paraFrame)
@@ -1061,6 +1069,7 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 	switchIndicator.Size = UDim2.fromOffset(14, 14)
 	switchIndicator.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
 	switchIndicator.BorderSizePixel = 0
+	switchIndicator.CornerRadius = UDim.new(1, 0)
 	Instance.new("UICorner", switchIndicator).CornerRadius = UDim.new(1, 0)
 	switchIndicator.Parent = switchContainer
 	
@@ -1161,7 +1170,7 @@ local function CreateTextBoxInput(parentFrame, title, placeholder, defaultVal, c
 		titleHeight = math.max(16, math.ceil(ts.Y))
 	end
 	
-	local totalHeight = 6 + titleHeight + 6 + 32 + 6
+	local totalHeight = 6 + titleHeight + 6 + 32 + 8
 	
 	local wrapper = Instance.new("Frame")
 	wrapper.Size = UDim2.new(1, 0, 0, 0)
@@ -1190,7 +1199,7 @@ local function CreateTextBoxInput(parentFrame, title, placeholder, defaultVal, c
 	
 	local paraStroke = Instance.new("UIStroke", paraFrame)
 	paraStroke.Thickness = 1.5
-	paraStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+	paraStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Center
 	StartNeonLoop(paraStroke)
 	
 	local inner = Instance.new("Frame", paraFrame)
@@ -1223,6 +1232,7 @@ local function CreateTextBoxInput(parentFrame, title, placeholder, defaultVal, c
 	local innerStroke = Instance.new("UIStroke", textBoxContainer)
 	innerStroke.Thickness = 1
 	innerStroke.Color = Color3.fromRGB(45, 45, 50)
+	innerStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Inset
 	
 	local textBox = Instance.new("TextBox")
 	textBox.Size = UDim2.new(1, -16, 1, 0)
@@ -1282,7 +1292,7 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 		titleHeight = math.max(16, math.ceil(ts.Y))
 	end
 	
-	local totalHeight = 6 + titleHeight + 6 + 18 + 6
+	local totalHeight = 6 + titleHeight + 6 + 18 + 8
 	
 	local wrapper = Instance.new("Frame")
 	wrapper.Size = UDim2.new(1, 0, 0, 0)
@@ -1311,7 +1321,7 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 	
 	local paraStroke = Instance.new("UIStroke", paraFrame)
 	paraStroke.Thickness = 1.5
-	paraStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+	paraStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Center
 	StartNeonLoop(paraStroke)
 	
 	local inner = Instance.new("Frame", paraFrame)
@@ -1370,6 +1380,7 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 	
 	local knobStroke = Instance.new("UIStroke", knob)
 	knobStroke.Thickness = 1.5
+	knobStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Inset
 	StartNeonLoop(knobStroke)
 	
 	local modalLock = Instance.new("TextButton")
@@ -1485,10 +1496,13 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 
 	local padding = Instance.new("UIPadding", dropFrame)
 	padding.PaddingTop = UDim.new(0, 4)
-	padding.PaddingBottom = UDim.new(0, 4)
+	padding.PaddingBottom = UDim.new(0, 6)
+	padding.PaddingLeft = UDim.new(0, 4)
+	padding.PaddingRight = UDim.new(0, 4)
 
 	local boxStroke = Instance.new("UIStroke", dropFrame)
 	boxStroke.Thickness = 1.5
+	boxStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Center
 	StartNeonLoop(boxStroke)
 
 	local layout = Instance.new("UIListLayout", dropFrame)
@@ -1519,6 +1533,7 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 	Instance.new("UICorner", previewColor).CornerRadius = UDim.new(0, 4)
 	local prevStroke = Instance.new("UIStroke", previewColor)
 	prevStroke.Color = Color3.fromRGB(60, 60, 65)
+	prevStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Inset
 
 	local arrowIcon = Instance.new("ImageLabel", header)
 	arrowIcon.AnchorPoint = Vector2.new(1, 0.5)
@@ -1567,7 +1582,9 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 	svCursor.AnchorPoint = Vector2.new(0.5, 0.5)
 	svCursor.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
 	Instance.new("UICorner", svCursor).CornerRadius = UDim.new(1, 0)
-	Instance.new("UIStroke", svCursor).Color = Color3.fromRGB(0, 0, 0)
+	local svCursorStroke = Instance.new("UIStroke", svCursor)
+	svCursorStroke.Color = Color3.fromRGB(0, 0, 0)
+	svCursorStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Inset
 
 	local hueSlider = Instance.new("TextButton", pickerArea)
 	hueSlider.Size = UDim2.new(1, 0, 0, 20)
@@ -1592,7 +1609,9 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 	hueCursor.AnchorPoint = Vector2.new(0.5, 0.5)
 	hueCursor.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
 	Instance.new("UICorner", hueCursor).CornerRadius = UDim.new(1, 0)
-	Instance.new("UIStroke", hueCursor).Color = Color3.fromRGB(0, 0, 0)
+	local hueCursorStroke = Instance.new("UIStroke", hueCursor)
+	hueCursorStroke.Color = Color3.fromRGB(0, 0, 0)
+	hueCursorStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Inset
 
 	local function UpdateColor()
 		color = Color3.fromHSV(h, s, v)
@@ -1707,7 +1726,7 @@ local function CreateKeybindInput(parentFrame, title, defaultKey, callback, flag
 		titleHeight = math.max(16, math.ceil(ts.Y))
 	end
 	
-	local totalHeight = 6 + math.max(titleHeight, 24) + 6
+	local totalHeight = 6 + math.max(titleHeight, 24) + 8
 	
 	local wrapper = Instance.new("Frame")
 	wrapper.Size = UDim2.new(1, 0, 0, 0)
@@ -1736,7 +1755,7 @@ local function CreateKeybindInput(parentFrame, title, defaultKey, callback, flag
 	
 	local paraStroke = Instance.new("UIStroke", paraFrame)
 	paraStroke.Thickness = 1.5
-	paraStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+	paraStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Center
 	StartNeonLoop(paraStroke)
 	
 	local inner = Instance.new("Frame", paraFrame)
@@ -1769,6 +1788,7 @@ local function CreateKeybindInput(parentFrame, title, defaultKey, callback, flag
 	local bindStroke = Instance.new("UIStroke", bindContainer)
 	bindStroke.Thickness = 1
 	bindStroke.Color = Color3.fromRGB(45, 45, 50)
+	bindStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Inset
 	
 	local bindLabel = Instance.new("TextLabel", bindContainer)
 	bindLabel.Size = UDim2.new(1, 0, 1, 0)
@@ -2001,7 +2021,7 @@ CreateCollapsibleSection = function(parentFrame, titleArg)
 
 	local boxStroke = Instance.new("UIStroke", sectionBox)
 	boxStroke.Thickness = 1.5
-	boxStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+	boxStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Center
 	StartNeonLoop(boxStroke)
 
 	local boxLayout = Instance.new("UIListLayout", sectionBox)
@@ -2060,7 +2080,7 @@ CreateCollapsibleSection = function(parentFrame, titleArg)
 
 	local contentPadding = Instance.new("UIPadding", sectionContent)
 	contentPadding.PaddingTop = UDim.new(0, 6)
-	contentPadding.PaddingBottom = UDim.new(0, 8)
+	contentPadding.PaddingBottom = UDim.new(0, 10) -- Stroke-aware bottom padding
 	contentPadding.PaddingLeft = UDim.new(0, 4)
 	contentPadding.PaddingRight = UDim.new(0, 4)
 
@@ -2120,15 +2140,17 @@ function KazeUI:CreateWindow(config)
 
 	local WindowStroke = Instance.new("UIStroke")
 	WindowStroke.Thickness = 2
+	WindowStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Inset -- Safe internal stroke bounding
 	WindowStroke.Parent = Window
 	StartNeonLoop(WindowStroke)
 
-	local ContentClipper = Instance.new("CanvasGroup")
+	-- CRITICAL FIX: Replaced CanvasGroup with normal Frame to prevent deep-scroll outlines/stroke vanishing bugs
+	local ContentClipper = Instance.new("Frame")
 	ContentClipper.Size = UDim2.fromScale(1, 1)
 	ContentClipper.BackgroundTransparency = 1
 	ContentClipper.BorderSizePixel = 0
+	ContentClipper.ClipsDescendants = true
 	ContentClipper.Parent = Window
-	Instance.new("UICorner", ContentClipper).CornerRadius = UDim.new(0, 12)
 
 	local TopBar = Instance.new("Frame")
 	TopBar.Size = UDim2.new(1,0,0,50)
@@ -2138,6 +2160,19 @@ function KazeUI:CreateWindow(config)
 	KazeUI:AddPanel(TopBar, -0.02)
 	KazeUI:AddTransparentElement(TopBar, 0)
 
+	-- Custom corner masking for TopBar rounded edges
+	local TopBarCorner = Instance.new("UICorner", TopBar)
+	TopBarCorner.CornerRadius = UDim.new(0, 12)
+
+	local TopBarMask = Instance.new("Frame")
+	TopBarMask.Size = UDim2.new(1, 0, 0, 15)
+	TopBarMask.Position = UDim2.new(0, 0, 1, -15)
+	TopBarMask.BorderSizePixel = 0
+	TopBarMask.ZIndex = 1
+	TopBarMask.Parent = TopBar
+	KazeUI:AddPanel(TopBarMask, -0.02)
+	KazeUI:AddTransparentElement(TopBarMask, 0)
+
 	local Avatar = Instance.new("ImageButton")
 	Avatar.Size = UDim2.fromOffset(32,32)
 	Avatar.Position = UDim2.fromOffset(10,9)
@@ -2145,11 +2180,13 @@ function KazeUI:CreateWindow(config)
 	Avatar.Image = MainIcon
 	Avatar.ScaleType = Enum.ScaleType.Fit
 	Avatar.AutoButtonColor = false
+	Avatar.ZIndex = 2
 	Avatar.Parent = TopBar
 	Instance.new("UICorner", Avatar).CornerRadius = UDim.new(1,0)
 	
 	local avatarStroke = Instance.new("UIStroke", Avatar)
 	avatarStroke.Thickness = 1
+	avatarStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Inset
 	StartNeonLoop(avatarStroke)
 
 	local TitleLabel = Instance.new("TextLabel")
@@ -2161,6 +2198,7 @@ function KazeUI:CreateWindow(config)
 	TitleLabel.Font = Enum.Font.GothamBold
 	TitleLabel.TextSize = 15
 	TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
+	TitleLabel.ZIndex = 2
 	TitleLabel.Parent = TopBar
 
 	local SubLabel = Instance.new("TextLabel")
@@ -2172,6 +2210,7 @@ function KazeUI:CreateWindow(config)
 	SubLabel.Font = Enum.Font.Gotham
 	SubLabel.TextSize = 12
 	SubLabel.TextXAlignment = Enum.TextXAlignment.Left
+	SubLabel.ZIndex = 2
 	SubLabel.Parent = TopBar
 
 	local TopDivider = Instance.new("Frame")
@@ -2196,9 +2235,14 @@ function KazeUI:CreateWindow(config)
 		btn.BackgroundColor3 = color
 		btn.BorderSizePixel = 0
 		btn.Text = ""
+		btn.ZIndex = 2
 		btn.Parent = TopBar
 		Instance.new("UICorner", btn).CornerRadius = UDim.new(1,0)
-		Instance.new("UIStroke", btn).Color = Color3.fromRGB(0,0,0)
+		
+		local circStroke = Instance.new("UIStroke", btn)
+		circStroke.Color = Color3.fromRGB(0,0,0)
+		circStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Inset
+		
 		return btn
 	end
 
@@ -2230,7 +2274,7 @@ function KazeUI:CreateWindow(config)
 
 	local MiniStroke = Instance.new("UIStroke")
 	MiniStroke.Thickness = WindowStroke.Thickness
-	MiniStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+	MiniStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Inset
 	MiniStroke.Parent = MiniIcon 
 	StartNeonLoop(MiniStroke)
 
@@ -2239,7 +2283,6 @@ function KazeUI:CreateWindow(config)
 		if isMinimized then return end
 		isMinimized = true
 		
-		-- BUG FIX: Don't save size here. Spamming Tween Back Style causes it to overshoot and grow to infinity.
 		if not toggledMaximized then
 			lastNormalPosition = Window.Position
 			lastNormalAnchor = Window.AnchorPoint
@@ -2270,7 +2313,6 @@ function KazeUI:CreateWindow(config)
 
 	BtnYellow.MouseButton1Click:Connect(minimizeWindow)
 
-	-- BUG FIX: Global Dragging to stop slipping off the Mini Button bounds and triggering clicks
 	local miniDragStart
 	local miniDragMoved = false
 	
@@ -2285,13 +2327,12 @@ function KazeUI:CreateWindow(config)
 		if miniDragStart and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
 			if (input.Position - miniDragStart).Magnitude > 8 then
 				miniDragMoved = true
-				-- Update position manually
 				local delta = input.Position - miniDragStart
 				MiniButton.Position = UDim2.new(
 					0, MiniButton.Position.X.Offset + delta.X,
 					0, MiniButton.Position.Y.Offset + delta.Y
 				)
-				miniDragStart = input.Position -- Reset delta step
+				miniDragStart = input.Position
 			end
 		end
 	end)
@@ -2344,6 +2385,7 @@ function KazeUI:CreateWindow(config)
 		Instance.new("UICorner", ConfirmWindow).CornerRadius = UDim.new(0,12)
 		local confirmStroke = Instance.new("UIStroke", ConfirmWindow)
 		confirmStroke.Thickness = 2.5
+		confirmStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Inset
 		StartNeonLoop(confirmStroke)
 
 		local ConfirmText = Instance.new("TextLabel", ConfirmWindow)
@@ -2427,6 +2469,28 @@ function KazeUI:CreateWindow(config)
 	Pages.Parent = Content
 	KazeUI:AddPanel(Pages, -0.01)
 	KazeUI:AddTransparentElement(Pages, 0)
+
+	-- Custom bottom-right corner rounding mask for Pages
+	local PagesCorner = Instance.new("UICorner", Pages)
+	PagesCorner.CornerRadius = UDim.new(0, 12)
+
+	local PagesMask = Instance.new("Frame")
+	PagesMask.Size = UDim2.new(1, 0, 1, -12)
+	PagesMask.Position = UDim2.new(0, 0, 0, 0)
+	PagesMask.BorderSizePixel = 0
+	PagesMask.ZIndex = 1
+	PagesMask.Parent = Pages
+	KazeUI:AddPanel(PagesMask, -0.01)
+	KazeUI:AddTransparentElement(PagesMask, 0)
+
+	local PagesMask2 = Instance.new("Frame")
+	PagesMask2.Size = UDim2.new(1, -12, 0, 12)
+	PagesMask2.Position = UDim2.new(0, 0, 1, -12)
+	PagesMask2.BorderSizePixel = 0
+	PagesMask2.ZIndex = 1
+	PagesMask2.Parent = Pages
+	KazeUI:AddPanel(PagesMask2, -0.01)
+	KazeUI:AddTransparentElement(PagesMask2, 0)
 	
 	local isSidebarOpen = true
 	Avatar.MouseButton1Click:Connect(function()
@@ -2502,7 +2566,6 @@ function KazeUI:CreateWindow(config)
 		local delta = input.Position - resizeStartInput
 		local scale = UIScale.Scale
 
-		-- UIScale.Scale correct delta division to avoid dragging lag on scaled screens
 		local newWidth = math.clamp(resizeStartSize.X + (delta.X / scale), minWidth, maxWidth)
 		local newHeight = math.clamp(resizeStartSize.Y + (delta.Y / scale), minHeight, maxHeight)
 
@@ -2514,7 +2577,6 @@ function KazeUI:CreateWindow(config)
 		if toggledMaximized then return end -- Block resizing if currently maximized
 
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-			-- Save reference to the primary single finger touch or mouse
 			if input.UserInputType == Enum.UserInputType.Touch and resizeTouchInput == nil then
 				resizeTouchInput = input
 			end
@@ -2523,7 +2585,6 @@ function KazeUI:CreateWindow(config)
 			resizeStartSize = Vector2.new(Window.AbsoluteSize.X / UIScale.Scale, Window.AbsoluteSize.Y / UIScale.Scale)
 			resizeStartInput = input.Position
 
-			-- Disable active scrollable ancestors to prevent drag conflicts
 			ToggleScrollingAncestors(ResizeHandle, false)
 			Mouse.Icon = hoverCursor
 		end
@@ -2531,7 +2592,6 @@ function KazeUI:CreateWindow(config)
 
 	UIS.InputChanged:Connect(function(input)
 		if isResizing then
-			-- Multi-touch protection: Ignore other finger touches
 			if input.UserInputType == Enum.UserInputType.Touch and input ~= resizeTouchInput then
 				return
 			end
@@ -2628,14 +2688,13 @@ function KazeUI:CreateWindow(config)
 		end})
 	end
 
-	-- BUG FIX: Theme UI elements missing Flags to save
 	function Win:CreateThemeManager(tab)
 		local sec = tab:SectionUI("Theme & Visuals")
 		
 		sec:ColorPicker({
 			Title = "UI Glow Color",
 			Default = KazeUI.GlowColor,
-			Flag = "KazeUI_Theme_GlowColor", -- Added flag so Config saves it
+			Flag = "KazeUI_Theme_GlowColor",
 			Callback = function(color)
 				KazeUI:SetGlow(color)
 			end
@@ -2646,7 +2705,7 @@ function KazeUI:CreateWindow(config)
 			Min = 0,
 			Max = 100,
 			Default = 0,
-			Flag = "KazeUI_Theme_BackgroundTransparency", -- Added flag so Config saves it
+			Flag = "KazeUI_Theme_BackgroundTransparency",
 			Callback = function(val)
 				KazeUI:SetTransparency(val / 100)
 			end
@@ -2706,6 +2765,7 @@ function KazeUI:CreateWindow(config)
 		page.Size = UDim2.new(1,0,1,0)
 		page.BackgroundTransparency = 1
 		page.Visible = false
+		page.ZIndex = 2
 		page.Parent = self._Pages
 
 		local pageContent = Instance.new("ScrollingFrame", page)
@@ -2719,7 +2779,7 @@ function KazeUI:CreateWindow(config)
 
 		local pagePadding = Instance.new("UIPadding", pageContent)
 		pagePadding.PaddingTop = UDim.new(0, 8)
-		pagePadding.PaddingBottom = UDim.new(0, 8)
+		pagePadding.PaddingBottom = UDim.new(0, 12)
 		pagePadding.PaddingLeft = UDim.new(0, 8)
 		pagePadding.PaddingRight = UDim.new(0, 8)
 
