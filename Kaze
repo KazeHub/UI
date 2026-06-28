@@ -1,6 +1,6 @@
 
 --[[
-	Kaze UI Library
+	Kaze UI Library - Fixed Strokes Edition
 	Optimized: Deep Obsidian Only, Dynamic Tab Text Scaling (No "..." Dots), Wider Sidebar, Safe Close Dialog Margin Padding
 	Added: New Dynamic Keybind Component, Full Config Manager Overhaul, Memory Leak Prevention
 	Fixes: Text Clipping/Overflow fixed globally, Multi-Dropdown Color Hover State Fixed
@@ -8,7 +8,7 @@
 	Added: Smooth & Responsive Continuous Window Resizing with UIScale correction, PC Hover Cursor (↘), and Multi-Touch Protection
 	Updated: Adaptive Device & Monitor Scale Protection Engine (0.85x Mobile / 1.0x Tablet / 1.15x Desktop Wide)
 	Updated: Adjusted Default Window Size to 600x400
-	Visual Patch: Dynamic Manual Height Calculator replacing AutomaticSize on stroked components (SectionUI, Dropdown, ColorPicker) to solve outline rendering bugs
+	Fixed: UIStroke outline clipping by replacing ApplyStrokeMode.Border with Center/Inset, and applying appropriate padding compensation.
 --]]
 
 local KazeUI = {}
@@ -336,6 +336,7 @@ function KazeUI:Notify(config)
 
 	local stroke = Instance.new("UIStroke", notifFrame)
 	stroke.Thickness = 1.5
+	stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Inset
 	StartNeonLoop(stroke)
 
 	local titleLab = Instance.new("TextLabel", notifFrame)
@@ -448,28 +449,33 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 
 	local wrapper = Instance.new("Frame")
 	wrapper.Name = "DropdownWrapper"
-	wrapper.Size = UDim2.new(1, 0, 0, 50)
+	wrapper.Size = UDim2.new(1, 0, 0, 0)
 	wrapper.BackgroundTransparency = 1
 	wrapper.Parent = parentFrame
+	wrapper.AutomaticSize = Enum.AutomaticSize.Y
 
 	local dropFrame = Instance.new("Frame")
 	dropFrame.Name = "DropdownFrame"
 	dropFrame.AnchorPoint = Vector2.new(0.5, 0)
 	dropFrame.Position = UDim2.new(0.5, 0, 0, 3)
-	dropFrame.Size = UDim2.new(0.95, 0, 0, 44)
+	dropFrame.Size = UDim2.new(0.95, 0, 0, 0)
 	dropFrame.BorderSizePixel = 0
+	dropFrame.AutomaticSize = Enum.AutomaticSize.Y
 	Instance.new("UICorner", dropFrame).CornerRadius = UDim.new(0, 8)
 	dropFrame.Parent = wrapper
 	KazeUI:AddPanel(dropFrame, 0.02)
 	KazeUI:AddTransparentElement(dropFrame, 0)
 
+	-- Added extra bottom padding to account for strokes rendering inside bounds
 	local padding = Instance.new("UIPadding", dropFrame)
 	padding.PaddingTop = UDim.new(0, 4)
-	padding.PaddingBottom = UDim.new(0, 4)
+	padding.PaddingBottom = UDim.new(0, 6)
+	padding.PaddingLeft = UDim.new(0, 4)
+	padding.PaddingRight = UDim.new(0, 4)
 
 	local boxStroke = Instance.new("UIStroke", dropFrame)
 	boxStroke.Thickness = 1.5
-	boxStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+	boxStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Center
 	StartNeonLoop(boxStroke)
 
 	local layout = Instance.new("UIListLayout", dropFrame)
@@ -517,6 +523,25 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 	clickBtn.BackgroundTransparency = 1
 	clickBtn.Text = ""
 
+	local function UpdateHeaderVisual()
+		if isMulti then
+			local count = 0
+			local firstVal = ""
+			for k, v in pairs(selectedMulti) do
+				if v then 
+					count = count + 1 
+					if firstVal == "" then firstVal = k end
+				end
+			end
+			if count == 0 then selectedLabel.Text = "None"
+			elseif count == 1 then selectedLabel.Text = firstVal
+			else selectedLabel.Text = count .. " Selected" end
+		else
+			selectedLabel.Text = tostring(selectedSingle)
+		end
+	end
+	UpdateHeaderVisual()
+
 	local searchWrapper = Instance.new("Frame")
 	searchWrapper.Size = UDim2.new(1, -16, 0, 30)
 	searchWrapper.BackgroundTransparency = 1
@@ -543,6 +568,7 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 	local searchStroke = Instance.new("UIStroke", searchBox)
 	searchStroke.Color = Color3.fromRGB(45, 45, 50)
 	searchStroke.Thickness = 1
+	searchStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Inset
 
 	searchBox.Focused:Connect(function() StartNeonLoop(searchStroke) end)
 	searchBox.FocusLost:Connect(function() 
@@ -577,31 +603,13 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 
 	local optionItems = {}
 
-	local function updateDropdownSize()
-		local listHeight = listContainer.Size.Y.Offset
-		if isOpen then
-			local finalHeight = 4 + 36 + 4 + 30 + 4 + 1 + 4 + listHeight + 4
-			dropFrame.Size = UDim2.new(0.95, 0, 0, finalHeight)
-			wrapper.Size = UDim2.new(1, 0, 0, finalHeight + 6)
-		else
-			dropFrame.Size = UDim2.new(0.95, 0, 0, 44)
-			wrapper.Size = UDim2.new(1, 0, 0, 50)
-		end
-		
-		-- Redraw stroke instantly
-		if boxStroke then
-			boxStroke.Enabled = false
-			boxStroke.Enabled = true
-		end
-	end
-
 	local function CalcHeight()
 		local count = 0
 		for _, item in ipairs(optionItems) do if item.Btn.Visible then count = count + 1 end end
 		local height = math.min(count, 4.5) * 32
 		listContainer.Size = UDim2.new(1, -16, 0, height)
-		listContainer.CanvasSize = UDim2.new(0, 0, 0, count * 32)
-		updateDropdownSize()
+		-- Account for bounds by adding custom padding bottom buffer inside ScrollingFrame
+		listContainer.CanvasSize = UDim2.new(0, 0, 0, (count * 32) + 6)
 	end
 
 	local function CloseDropdown()
@@ -611,7 +619,6 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 		divider.Visible = false
 		listContainer.Visible = false
 		TweenService:Create(arrowIcon, TweenInfo.new(0.2), {Rotation = 0}):Play()
-		updateDropdownSize()
 	end
 
 	local function Refresh(newOptions)
@@ -639,7 +646,9 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 				indicator.AnchorPoint = Vector2.new(1, 0.5)
 				indicator.Position = UDim2.new(1, -6, 0.5, 0)
 				indicator.Size = UDim2.fromOffset(14, 14)
-				Instance.new("UIStroke", indicator).Color = Color3.fromRGB(60, 60, 65)
+				local indStroke = Instance.new("UIStroke", indicator)
+				indStroke.Color = Color3.fromRGB(60, 60, 65)
+				indStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Inset
 				Instance.new("UICorner", indicator).CornerRadius = UDim.new(0, 4)
 				KazeUI:AddPanel(indicator, 0.02)
 				KazeUI:AddTransparentElement(indicator, 0)
@@ -707,25 +716,6 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 		CalcHeight()
 	end
 
-	local function UpdateHeaderVisual()
-		if isMulti then
-			local count = 0
-			local firstVal = ""
-			for k, v in pairs(selectedMulti) do
-				if v then 
-					count = count + 1 
-					if firstVal == "" then firstVal = k end
-				end
-			end
-			if count == 0 then selectedLabel.Text = "None"
-			elseif count == 1 then selectedLabel.Text = firstVal
-			else selectedLabel.Text = count .. " Selected" end
-		else
-			selectedLabel.Text = tostring(selectedSingle)
-		end
-	end
-	UpdateHeaderVisual()
-
 	Refresh(options)
 
 	searchBox:GetPropertyChangedSignal("Text"):Connect(function()
@@ -736,7 +726,7 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 		CalcHeight()
 	end)
 
-	clickBtn.MouseButton1Click:Connect(function()
+	clickBtn.MouseButton1Click.Connect(clickBtn, function()
 		isOpen = not isOpen
 		if isOpen then
 			searchWrapper.Visible = true
@@ -814,7 +804,8 @@ local function CreateParagraph(parentFrame, title, body)
 	
 	local bodySize = TextService:GetTextSize(body, 14, Enum.Font.Gotham, Vector2.new(measuredWidth - 24, 2000))
 	local bodyHeight = math.ceil(bodySize.Y)
-	local totalHeight = 6 + titleHeight + 3 + bodyHeight + 6
+	-- Added compensation for strokes rendering inside boundaries
+	local totalHeight = 6 + titleHeight + 3 + bodyHeight + 8
 	
 	local wrapper = Instance.new("Frame")
 	wrapper.Size = UDim2.new(1, 0, 0, 0)
@@ -843,7 +834,7 @@ local function CreateParagraph(parentFrame, title, body)
 	
 	local paraStroke = Instance.new("UIStroke", paraFrame)
 	paraStroke.Thickness = 1.5
-	paraStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+	paraStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Center
 	StartNeonLoop(paraStroke)
 	
 	local inner = Instance.new("Frame", paraFrame)
@@ -902,7 +893,8 @@ local function CreateClickableParagraph(parentFrame, title, body, callback)
 	
 	local bodySize = TextService:GetTextSize(body, 14, Enum.Font.Gotham, Vector2.new(textContainerWidth, 2000))
 	local bodyHeight = body ~= "" and math.ceil(bodySize.Y) or 0
-	local totalHeight = 6 + titleHeight + (body ~= "" and 3 or 0) + bodyHeight + 6
+	-- Added padding compensation for strokes
+	local totalHeight = 6 + titleHeight + (body ~= "" and 3 or 0) + bodyHeight + 8
 	
 	local wrapper = Instance.new("Frame")
 	wrapper.Size = UDim2.new(1, 0, 0, 0)
@@ -931,7 +923,7 @@ local function CreateClickableParagraph(parentFrame, title, body, callback)
 	
 	local paraStroke = Instance.new("UIStroke", paraFrame)
 	paraStroke.Thickness = 1.5
-	paraStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+	paraStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Center
 	StartNeonLoop(paraStroke)
 	
 	local inner = Instance.new("Frame", paraFrame)
@@ -1028,7 +1020,8 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 	
 	local bodySize = TextService:GetTextSize(body, 14, Enum.Font.Gotham, Vector2.new(textContainerWidth, 2000))
 	local bodyHeight = body ~= "" and math.ceil(bodySize.Y) or 0
-	local totalHeight = 6 + titleHeight + (body ~= "" and 3 or 0) + bodyHeight + 6
+	-- Added padding compensation for strokes
+	local totalHeight = 6 + titleHeight + (body ~= "" and 3 or 0) + bodyHeight + 8
 	
 	local wrapper = Instance.new("Frame")
 	wrapper.Size = UDim2.new(1, 0, 0, 0)
@@ -1057,7 +1050,7 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 	
 	local paraStroke = Instance.new("UIStroke", paraFrame)
 	paraStroke.Thickness = 1.5
-	paraStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+	paraStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Center
 	StartNeonLoop(paraStroke)
 	
 	local inner = Instance.new("Frame", paraFrame)
@@ -1180,7 +1173,8 @@ local function CreateTextBoxInput(parentFrame, title, placeholder, defaultVal, c
 		titleHeight = math.max(16, math.ceil(ts.Y))
 	end
 	
-	local totalHeight = 6 + titleHeight + 6 + 32 + 6
+	-- Added stroke margin padding buffer
+	local totalHeight = 6 + titleHeight + 6 + 32 + 8
 	
 	local wrapper = Instance.new("Frame")
 	wrapper.Size = UDim2.new(1, 0, 0, 0)
@@ -1209,7 +1203,7 @@ local function CreateTextBoxInput(parentFrame, title, placeholder, defaultVal, c
 	
 	local paraStroke = Instance.new("UIStroke", paraFrame)
 	paraStroke.Thickness = 1.5
-	paraStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+	paraStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Center
 	StartNeonLoop(paraStroke)
 	
 	local inner = Instance.new("Frame", paraFrame)
@@ -1242,6 +1236,7 @@ local function CreateTextBoxInput(parentFrame, title, placeholder, defaultVal, c
 	local innerStroke = Instance.new("UIStroke", textBoxContainer)
 	innerStroke.Thickness = 1
 	innerStroke.Color = Color3.fromRGB(45, 45, 50)
+	innerStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Inset
 	
 	local textBox = Instance.new("TextBox")
 	textBox.Size = UDim2.new(1, -16, 1, 0)
@@ -1301,7 +1296,8 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 		titleHeight = math.max(16, math.ceil(ts.Y))
 	end
 	
-	local totalHeight = 6 + titleHeight + 6 + 18 + 6
+	-- Added stroke buffer
+	local totalHeight = 6 + titleHeight + 6 + 18 + 8
 	
 	local wrapper = Instance.new("Frame")
 	wrapper.Size = UDim2.new(1, 0, 0, 0)
@@ -1330,7 +1326,7 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 	
 	local paraStroke = Instance.new("UIStroke", paraFrame)
 	paraStroke.Thickness = 1.5
-	paraStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+	paraStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Center
 	StartNeonLoop(paraStroke)
 	
 	local inner = Instance.new("Frame", paraFrame)
@@ -1389,6 +1385,7 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 	
 	local knobStroke = Instance.new("UIStroke", knob)
 	knobStroke.Thickness = 1.5
+	knobStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Inset
 	StartNeonLoop(knobStroke)
 	
 	local modalLock = Instance.new("TextButton")
@@ -1486,15 +1483,17 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 	local isOpen = false
 
 	local wrapper = Instance.new("Frame")
-	wrapper.Size = UDim2.new(1, 0, 0, 50)
+	wrapper.Size = UDim2.new(1, 0, 0, 0)
 	wrapper.BackgroundTransparency = 1
 	wrapper.Parent = parentFrame
+	wrapper.AutomaticSize = Enum.AutomaticSize.Y
 
 	local dropFrame = Instance.new("Frame")
 	dropFrame.AnchorPoint = Vector2.new(0.5, 0)
 	dropFrame.Position = UDim2.new(0.5, 0, 0, 3)
-	dropFrame.Size = UDim2.new(0.95, 0, 0, 44)
+	dropFrame.Size = UDim2.new(0.95, 0, 0, 0)
 	dropFrame.BorderSizePixel = 0
+	dropFrame.AutomaticSize = Enum.AutomaticSize.Y
 	Instance.new("UICorner", dropFrame).CornerRadius = UDim.new(0, 8)
 	dropFrame.Parent = wrapper
 	KazeUI:AddPanel(dropFrame, 0.02)
@@ -1502,10 +1501,13 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 
 	local padding = Instance.new("UIPadding", dropFrame)
 	padding.PaddingTop = UDim.new(0, 4)
-	padding.PaddingBottom = UDim.new(0, 4)
+	padding.PaddingBottom = UDim.new(0, 6)
+	padding.PaddingLeft = UDim.new(0, 4)
+	padding.PaddingRight = UDim.new(0, 4)
 
 	local boxStroke = Instance.new("UIStroke", dropFrame)
 	boxStroke.Thickness = 1.5
+	boxStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Center
 	StartNeonLoop(boxStroke)
 
 	local layout = Instance.new("UIListLayout", dropFrame)
@@ -1536,6 +1538,7 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 	Instance.new("UICorner", previewColor).CornerRadius = UDim.new(0, 4)
 	local prevStroke = Instance.new("UIStroke", previewColor)
 	prevStroke.Color = Color3.fromRGB(60, 60, 65)
+	prevStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Inset
 
 	local arrowIcon = Instance.new("ImageLabel", header)
 	arrowIcon.AnchorPoint = Vector2.new(1, 0.5)
@@ -1584,7 +1587,9 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 	svCursor.AnchorPoint = Vector2.new(0.5, 0.5)
 	svCursor.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
 	Instance.new("UICorner", svCursor).CornerRadius = UDim.new(1, 0)
-	Instance.new("UIStroke", svCursor).Color = Color3.fromRGB(0, 0, 0)
+	local svCursorStroke = Instance.new("UIStroke", svCursor)
+	svCursorStroke.Color = Color3.fromRGB(0, 0, 0)
+	svCursorStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Inset
 
 	local hueSlider = Instance.new("TextButton", pickerArea)
 	hueSlider.Size = UDim2.new(1, 0, 0, 20)
@@ -1609,7 +1614,9 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 	hueCursor.AnchorPoint = Vector2.new(0.5, 0.5)
 	hueCursor.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
 	Instance.new("UICorner", hueCursor).CornerRadius = UDim.new(1, 0)
-	Instance.new("UIStroke", hueCursor).Color = Color3.fromRGB(0, 0, 0)
+	local hueCursorStroke = Instance.new("UIStroke", hueCursor)
+	hueCursorStroke.Color = Color3.fromRGB(0, 0, 0)
+	hueCursorStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Inset
 
 	local function UpdateColor()
 		color = Color3.fromHSV(h, s, v)
@@ -1643,21 +1650,6 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 		h = math.clamp(relativeX / width, 0, 1)
 		SetCursorPositions()
 		UpdateColor()
-	end
-
-	local function updateColorPickerSize()
-		if isOpen then
-			dropFrame.Size = UDim2.new(0.95, 0, 0, 44 + 4 + 150)
-			wrapper.Size = UDim2.new(1, 0, 0, 44 + 4 + 150 + 6)
-		else
-			dropFrame.Size = UDim2.new(0.95, 0, 0, 44)
-			wrapper.Size = UDim2.new(1, 0, 0, 50)
-		end
-
-		if boxStroke then
-			boxStroke.Enabled = false
-			boxStroke.Enabled = true
-		end
 	end
 
 	svMap.InputBegan:Connect(function(input)
@@ -1698,7 +1690,6 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 		isOpen = not isOpen
 		pickerArea.Visible = isOpen
 		TweenService:Create(arrowIcon, TweenInfo.new(0.2), {Rotation = isOpen and 180 or 0}):Play()
-		updateColorPickerSize()
 	end)
 
 	RegisterFlag(flag, function() return color:ToHex() end, function(val)
@@ -1740,7 +1731,8 @@ local function CreateKeybindInput(parentFrame, title, defaultKey, callback, flag
 		titleHeight = math.max(16, math.ceil(ts.Y))
 	end
 	
-	local totalHeight = 6 + math.max(titleHeight, 24) + 6
+	-- Adjusted stroke margin padding buffer
+	local totalHeight = 6 + math.max(titleHeight, 24) + 8
 	
 	local wrapper = Instance.new("Frame")
 	wrapper.Size = UDim2.new(1, 0, 0, 0)
@@ -1769,7 +1761,7 @@ local function CreateKeybindInput(parentFrame, title, defaultKey, callback, flag
 	
 	local paraStroke = Instance.new("UIStroke", paraFrame)
 	paraStroke.Thickness = 1.5
-	paraStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+	paraStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Center
 	StartNeonLoop(paraStroke)
 	
 	local inner = Instance.new("Frame", paraFrame)
@@ -1802,6 +1794,7 @@ local function CreateKeybindInput(parentFrame, title, defaultKey, callback, flag
 	local bindStroke = Instance.new("UIStroke", bindContainer)
 	bindStroke.Thickness = 1
 	bindStroke.Color = Color3.fromRGB(45, 45, 50)
+	bindStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Inset
 	
 	local bindLabel = Instance.new("TextLabel", bindContainer)
 	bindLabel.Size = UDim2.new(1, 0, 1, 0)
@@ -2023,28 +2016,18 @@ CreateCollapsibleSection = function(parentFrame, titleArg)
 	local title = type(titleArg) == "table" and titleArg.Title or tostring(titleArg or "Section")
 	local isOpen = false
 
-	-- Sizing wrapper to cleanly follow layout spacing standard without clipping bounds
-	local sectionWrapper = Instance.new("Frame")
-	sectionWrapper.Name = "SectionWrapper"
-	sectionWrapper.Size = UDim2.new(1, 0, 0, 42) -- Inset margins
-	sectionWrapper.BackgroundTransparency = 1
-	sectionWrapper.BorderSizePixel = 0
-	sectionWrapper.Parent = parentFrame
-
 	local sectionBox = Instance.new("Frame")
-	sectionBox.Name = "SectionBox"
-	sectionBox.AnchorPoint = Vector2.new(0.5, 0)
-	sectionBox.Position = UDim2.new(0.5, 0, 0, 3)
-	sectionBox.Size = UDim2.new(0.95, 0, 0, 36)
+	sectionBox.Size = UDim2.new(0.95, 0, 0, 0)
 	sectionBox.BorderSizePixel = 0
+	sectionBox.Parent = parentFrame
+	sectionBox.AutomaticSize = Enum.AutomaticSize.Y
 	Instance.new("UICorner", sectionBox).CornerRadius = UDim.new(0, 8)
-	sectionBox.Parent = sectionWrapper
 	KazeUI:AddPanel(sectionBox, 0.02)
 	KazeUI:AddTransparentElement(sectionBox, 0)
 
 	local boxStroke = Instance.new("UIStroke", sectionBox)
 	boxStroke.Thickness = 1.5
-	boxStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+	boxStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Center
 	StartNeonLoop(boxStroke)
 
 	local boxLayout = Instance.new("UIListLayout", sectionBox)
@@ -2092,6 +2075,7 @@ CreateCollapsibleSection = function(parentFrame, titleArg)
 	sectionContent.BackgroundTransparency = 1
 	sectionContent.BorderSizePixel = 0
 	sectionContent.Visible = isOpen
+	sectionContent.AutomaticSize = Enum.AutomaticSize.Y
 	sectionContent.LayoutOrder = 3
 	sectionContent.Parent = sectionBox
 
@@ -2102,35 +2086,9 @@ CreateCollapsibleSection = function(parentFrame, titleArg)
 
 	local contentPadding = Instance.new("UIPadding", sectionContent)
 	contentPadding.PaddingTop = UDim.new(0, 6)
-	contentPadding.PaddingBottom = UDim.new(0, 8)
+	contentPadding.PaddingBottom = UDim.new(0, 10) -- Stroke-aware bottom padding
 	contentPadding.PaddingLeft = UDim.new(0, 4)
 	contentPadding.PaddingRight = UDim.new(0, 4)
-
-	local function updateSectionSize()
-		local contentHeight = contentLayout.AbsoluteContentSize.Y
-		local paddingHeight = contentPadding.PaddingTop.Offset + contentPadding.PaddingBottom.Offset
-		
-		if isOpen then
-			sectionContent.Size = UDim2.new(1, 0, 0, contentHeight + paddingHeight)
-			local totalHeight = 36 + 1 + contentHeight + paddingHeight
-			sectionBox.Size = UDim2.new(0.95, 0, 0, totalHeight)
-			sectionWrapper.Size = UDim2.new(1, 0, 0, totalHeight + 6)
-		else
-			sectionContent.Size = UDim2.new(1, 0, 0, 0)
-			sectionBox.Size = UDim2.new(0.95, 0, 0, 36)
-			sectionWrapper.Size = UDim2.new(1, 0, 0, 42)
-		end
-
-		-- Instantly force visual outline repaint
-		if boxStroke then
-			boxStroke.Enabled = false
-			boxStroke.Enabled = true
-		end
-	end
-
-	contentLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(updateSectionSize)
-	sectionContent.ChildAdded:Connect(updateSectionSize)
-	sectionContent.ChildRemoved:Connect(updateSectionSize)
 
 	local toggleDetector = Instance.new("TextButton")
 	toggleDetector.Size = UDim2.fromScale(1, 1)
@@ -2146,12 +2104,9 @@ CreateCollapsibleSection = function(parentFrame, titleArg)
 		TweenService:Create(arrowIcon, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
 			Rotation = isOpen and 0 or -90
 		}):Play()
-		updateSectionSize()
 	end)
 
-	updateSectionSize()
-
-	local sectionPublic = { Frame = sectionWrapper, ContentFrame = sectionContent, Header = headerFrame }
+	local sectionPublic = { Frame = sectionBox, ContentFrame = sectionContent, Header = headerFrame }
 	AttachElementsToAPI(sectionPublic, sectionContent)
 	function sectionPublic:SetText(newText)
 		titleLabel.Text = newText
@@ -2191,6 +2146,7 @@ function KazeUI:CreateWindow(config)
 
 	local WindowStroke = Instance.new("UIStroke")
 	WindowStroke.Thickness = 2
+	WindowStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Inset -- Safe internal stroke bounding
 	WindowStroke.Parent = Window
 	StartNeonLoop(WindowStroke)
 
@@ -2221,6 +2177,7 @@ function KazeUI:CreateWindow(config)
 	
 	local avatarStroke = Instance.new("UIStroke", Avatar)
 	avatarStroke.Thickness = 1
+	avatarStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Inset
 	StartNeonLoop(avatarStroke)
 
 	local TitleLabel = Instance.new("TextLabel")
@@ -2269,7 +2226,11 @@ function KazeUI:CreateWindow(config)
 		btn.Text = ""
 		btn.Parent = TopBar
 		Instance.new("UICorner", btn).CornerRadius = UDim.new(1,0)
-		Instance.new("UIStroke", btn).Color = Color3.fromRGB(0,0,0)
+		
+		local circStroke = Instance.new("UIStroke", btn)
+		circStroke.Color = Color3.fromRGB(0,0,0)
+		circStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Inset
+		
 		return btn
 	end
 
@@ -2301,7 +2262,7 @@ function KazeUI:CreateWindow(config)
 
 	local MiniStroke = Instance.new("UIStroke")
 	MiniStroke.Thickness = WindowStroke.Thickness
-	MiniStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+	MiniStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Inset
 	MiniStroke.Parent = MiniIcon 
 	StartNeonLoop(MiniStroke)
 
@@ -2415,6 +2376,7 @@ function KazeUI:CreateWindow(config)
 		Instance.new("UICorner", ConfirmWindow).CornerRadius = UDim.new(0,12)
 		local confirmStroke = Instance.new("UIStroke", ConfirmWindow)
 		confirmStroke.Thickness = 2.5
+		confirmStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Inset
 		StartNeonLoop(confirmStroke)
 
 		local ConfirmText = Instance.new("TextLabel", ConfirmWindow)
@@ -2790,7 +2752,7 @@ function KazeUI:CreateWindow(config)
 
 		local pagePadding = Instance.new("UIPadding", pageContent)
 		pagePadding.PaddingTop = UDim.new(0, 8)
-		pagePadding.PaddingBottom = UDim.new(0, 8)
+		pagePadding.PaddingBottom = UDim.new(0, 12) -- Added compensation for layout margins and strokes
 		pagePadding.PaddingLeft = UDim.new(0, 8)
 		pagePadding.PaddingRight = UDim.new(0, 8)
 
