@@ -1,21 +1,19 @@
 
 --[[
-	Kaze UI Library - Redesigned Premium Desktop Edition
-	
-	Optimizations & Features:
-	- Desktop Premium Layout: Sticky header system, spacious modern padding, precise typography.
-	- Visual Enhancements: High-fidelity color pulse transitions (no intrusive physical bounce).
-	- Reusable Dividers: Dynamic multi-style divider component (Minimal, Dot, Accent, Full).
-	- Category Sections: Clean interactive sections with optional status badges, icons, and subtitles.
-	- Dynamic Keybind Component & Full Config Manager Overhaul.
-	- Separate Notification Layer: Safe on-top drawing via DisplayOrder = 999999.
-	- Responsive Scale Protection Engine with UIScale & Continuous Window Resizing.
+	Kaze UI Library
+	Optimized: Deep Obsidian Lamang, Dynamic Tab Text Scaling (Walang "..." Dots), Wider Sidebar, Safe Close Dialog Margin Padding
+	Added: Bagong Dynamic Keybind Component, Full Config Manager Overhaul, Memory Leak Prevention
+	Fixes: Text Clipping/Overflow naayos sa pangkalahatan, Multi-Dropdown Color Hover State Inayos
+	Critical Fix: Notification rendering inilipat sa hiwalay na ScreenGui na may DisplayOrder = 999999 upang hindi ito matakpan ng main Window
+	Added: Smooth & Responsive Continuous Window Resizing na may UIScale correction, PC Hover Cursor (↘), at Multi-Touch Protection
+	Updated: Adaptive Device & Monitor Scale Protection Engine (0.85x Mobile / 1.0x Tablet / 1.15x Desktop Wide)
+	Updated: Adjusted Default Window Size sa 600x400
 --]]
 
 local KazeUI = {}
 KazeUI.__index = KazeUI
 
--- Roblox Services
+-- Mga Serbisyo ng Roblox
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local UIS = game:GetService("UserInputService")
@@ -24,9 +22,9 @@ local HttpService = game:GetService("HttpService")
 local LP = Players.LocalPlayer
 local Mouse = LP:GetMouse()
 
--- Global State & Managers
+-- Pandaigdigang Estado at Tagapamahala
 KazeUI.GlowColor = Color3.fromRGB(0, 160, 255)
-KazeUI.BackgroundColor = Color3.fromRGB(10, 10, 12) -- Locked to Deep Obsidian
+KazeUI.BackgroundColor = Color3.fromRGB(10, 10, 12) -- Naka-lock sa Deep Obsidian
 KazeUI.Flags = {}
 KazeUI.ActiveWindows = {} 
 
@@ -42,12 +40,12 @@ local function RegisterFlag(flag, getFunc, setFunc)
 	end
 end
 
--- ScreenGui Setup (Supports CoreGui & PlayerGui Fallback)
+-- ScreenGui Setup (Suportado ang CoreGui at PlayerGui Fallback)
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "KazeUI"
 ScreenGui.ResetOnSpawn = false
 ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-ScreenGui.DisplayOrder = 10
+ScreenGui.DisplayOrder = 10 -- Base window layer
 
 local success, parent = pcall(function() return game:GetService("CoreGui") end)
 if not success or not parent then
@@ -55,15 +53,15 @@ if not success or not parent then
 end
 ScreenGui.Parent = parent
 
--- Separate Notification layer
+-- HIWALAY NA NOTIFICATION SCREEN GUI (KRITIKAL NA BUG FIX)
 local NotifScreenGui = Instance.new("ScreenGui")
 NotifScreenGui.Name = "KazeUINotifications"
 NotifScreenGui.ResetOnSpawn = false
 NotifScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-NotifScreenGui.DisplayOrder = 999999
+NotifScreenGui.DisplayOrder = 999999 -- Pinupuwersa ang mga notification na lumabas sa ibabaw ng lahat
 NotifScreenGui.Parent = parent
 
--- Notification Container
+-- Notification Container Setup
 local NotifContainer = Instance.new("Frame")
 local notifLayout = Instance.new("UIListLayout", NotifContainer)
 notifLayout.SortOrder = Enum.SortOrder.LayoutOrder
@@ -77,12 +75,13 @@ NotifContainer.Name = "NotifContainer"
 NotifContainer.Size = UDim2.new(0, 300, 1, 0)
 NotifContainer.Position = UDim2.new(1, -320, 0, 0)
 NotifContainer.BackgroundTransparency = 1
-NotifContainer.Parent = NotifScreenGui
+NotifContainer.Parent = NotifScreenGui -- Nakakabit sa NotifScreenGui imbes na sa main ScreenGui
 
--- Responsive Scale Controller
+-- Screen Scale Controller
 local UIScale = Instance.new("UIScale")
 UIScale.Parent = ScreenGui
 
+-- DEVICE & SCREEN ADAPTIVE SCALING ENGINE
 local function UpdateScale()
 	local size = workspace.CurrentCamera.ViewportSize
 	local width = size.X
@@ -92,17 +91,24 @@ local function UpdateScale()
 	local targetScale = 1.0
 
 	if UIS.TouchEnabled then
+		-- Mobile Devices (Telepono laban sa Tablet)
 		if minAxis < 500 then
+			-- Phone Resolution Layouts
 			targetScale = 0.85
 		else
+			-- Tablet Layouts
 			targetScale = 1.0
 		end
 	else
+		-- Desktop / PC Layouts
 		if width >= 1920 or height >= 1080 then
+			-- Malalaking Monitor Resolution
 			targetScale = 1.15
 		elseif width <= 1366 then
+			-- Mababang laptop screen resolutions / mas maliit na physical monitors
 			targetScale = 0.95
 		else
+			-- Standard PC Desktop Size
 			targetScale = 1.0
 		end
 	end
@@ -114,7 +120,7 @@ end
 UpdateScale()
 workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(UpdateScale)
 
--- Asset mapping
+-- Auto-Icon Fetcher gamit ang HttpGet
 local IconsMap = {}
 pcall(function()
 	if game and game.HttpGet then
@@ -155,6 +161,7 @@ local function FormatImage(id)
 	return "rbxassetid://" .. clean
 end
 
+-- Threshold dragging upang maiwasan ang maling click sa minimize
 local function MakeDraggable(dragPart, targetPart)
 	local dragging = false
 	local dragInput, dragStart, startPos
@@ -201,7 +208,9 @@ local function MakeDraggable(dragPart, targetPart)
 	end)
 end
 
--- Visual Control Methods
+-- ==========================================
+-- Smart Color & Transparency Engines
+-- ==========================================
 function KazeUI.GetColor(elevation)
 	local h, s, v = Color3.toHSV(KazeUI.BackgroundColor)
 	local offset = v > 0.5 and -elevation or elevation
@@ -212,6 +221,7 @@ function KazeUI:AddPanel(inst, elevation)
 	table.insert(KazeUI.PanelElements, {Inst = inst, Elevation = elevation or 0})
 	if inst and inst:IsA("GuiObject") then
 		inst.BackgroundColor3 = KazeUI.GetColor(elevation or 0)
+		-- Iwasan ang Memory Leak
 		inst.Destroying:Connect(function()
 			for i = #KazeUI.PanelElements, 1, -1 do
 				if KazeUI.PanelElements[i].Inst == inst then table.remove(KazeUI.PanelElements, i) end
@@ -222,6 +232,7 @@ end
 
 function KazeUI:AddTransparentElement(inst, defaultTrans)
 	table.insert(KazeUI.TransparentElements, {Inst = inst, Default = defaultTrans or inst.BackgroundTransparency})
+	-- Iwasan ang Memory Leak
 	inst.Destroying:Connect(function()
 		for i = #KazeUI.TransparentElements, 1, -1 do
 			if KazeUI.TransparentElements[i].Inst == inst then table.remove(KazeUI.TransparentElements, i) end
@@ -297,7 +308,7 @@ function KazeUI:SetGlow(color)
 	end
 end
 
--- Core Notifications
+-- Maayos na Notification Animation Sequence
 function KazeUI:Notify(config)
 	config = config or {}
 	local title = tostring(config.Title or "Notification")
@@ -366,7 +377,6 @@ function KazeUI:Notify(config)
 	end)
 end
 
--- Configuration Engine
 function KazeUI:SaveConfig(name)
 	if not name or name == "" then
 		KazeUI:Notify({Title = "Config Error", Content = "Config name cannot be empty.", Duration = 3})
@@ -416,75 +426,7 @@ local function ToggleScrollingAncestors(element, state)
 	end
 end
 
--- ====================================================================
--- NEW DESIGN COMPONENT: REUSABLE PREMIUM DIVIDERS
--- ====================================================================
-local function CreateVisualDivider(parentFrame, config)
-	config = config or {}
-	local style = config.Style or "Minimal" -- Options: Minimal, Dot, Accent, Full
-	
-	local dividerWrapper = Instance.new("Frame")
-	dividerWrapper.Name = "PremiumDivider_" .. style
-	dividerWrapper.Size = UDim2.new(1, 0, 0, 16)
-	dividerWrapper.BackgroundTransparency = 1
-	dividerWrapper.Parent = parentFrame
-	
-	local line = Instance.new("Frame", dividerWrapper)
-	line.AnchorPoint = Vector2.new(0.5, 0.5)
-	line.Position = UDim2.new(0.5, 0, 0.5, 0)
-	line.BorderSizePixel = 0
-	
-	if style == "Minimal" then
-		line.Size = UDim2.new(0.95, 0, 0, 1)
-		line.BackgroundColor3 = Color3.fromRGB(35, 35, 38)
-		KazeUI:AddPanel(line, -0.01)
-		
-	elseif style == "Dot" then
-		line.Size = UDim2.new(0.95, 0, 0, 1)
-		line.BackgroundColor3 = Color3.fromRGB(30, 30, 33)
-		KazeUI:AddPanel(line, -0.02)
-		
-		local dot = Instance.new("Frame", dividerWrapper)
-		dot.AnchorPoint = Vector2.new(0.5, 0.5)
-		dot.Position = UDim2.new(0.5, 0, 0.5, 0)
-		dot.Size = UDim2.fromOffset(6, 6)
-		dot.BorderSizePixel = 0
-		Instance.new("UICorner", dot).CornerRadius = UDim.new(1, 0)
-		StartNeonLoop(dot)
-		
-	elseif style == "Accent" then
-		line.Size = UDim2.new(0.95, 0, 0, 1)
-		line.BackgroundColor3 = Color3.fromRGB(35, 35, 38)
-		KazeUI:AddPanel(line, -0.01)
-		
-		local accent = Instance.new("Frame", dividerWrapper)
-		accent.AnchorPoint = Vector2.new(0, 0.5)
-		accent.Position = UDim2.new(0.025, 0, 0.5, 0)
-		accent.Size = UDim2.new(0, 45, 0, 2)
-		accent.BorderSizePixel = 0
-		StartNeonLoop(accent)
-		
-	elseif style == "Full" then
-		line.Size = UDim2.new(0.98, 0, 0, 1.5)
-		line.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-		
-		local gradient = Instance.new("UIGradient", line)
-		gradient.Color = ColorSequence.new{
-			ColorSequenceKeypoint.new(0, Color3.fromRGB(20, 20, 22)),
-			ColorSequenceKeypoint.new(0.5, Color3.fromRGB(255, 255, 255)),
-			ColorSequenceKeypoint.new(1, Color3.fromRGB(20, 20, 22))
-		}
-		StartNeonLoop(line)
-	end
-	
-	-- Snappy elegant scale-in animation on creation
-	dividerWrapper.Size = UDim2.new(1, 0, 0, 0)
-	TweenService:Create(dividerWrapper, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Size = UDim2.new(1, 0, 0, 22)}):Play()
-	
-	return dividerWrapper
-end
-
--- Dropdown UI Component
+-- Mga Component Factories
 local function CreateDropdown(parentFrame, title, options, defaultOption, callback, isMulti, flag)
 	title = tostring(title or "Dropdown")
 	options = type(options) == "table" and options or {}
@@ -549,7 +491,7 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 	titleLabel.Text = title
 	titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
 	titleLabel.Font = Enum.Font.GothamBold
-	titleLabel.TextSize = 13
+	titleLabel.TextSize = 14
 	titleLabel.TextXAlignment = Enum.TextXAlignment.Left
 
 	local arrowIcon = Instance.new("ImageLabel", header)
@@ -575,6 +517,7 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 	clickBtn.Size = UDim2.fromScale(1, 1)
 	clickBtn.BackgroundTransparency = 1
 	clickBtn.Text = ""
+	clickBtn.AutoButtonColor = false -- INAYOS: Inalis ang madilim na click overlay ng Roblox
 
 	local function UpdateHeaderVisual()
 		if isMulti then
@@ -686,6 +629,7 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 			btn.Font = Enum.Font.Gotham
 			btn.TextSize = 13
 			btn.TextXAlignment = Enum.TextXAlignment.Left
+			btn.AutoButtonColor = false -- INAYOS: Smooth hover/click transition nang walang glitches
 			btn.Parent = listContainer
 			Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 4)
 			KazeUI:AddPanel(btn, 0.02)
@@ -788,6 +732,7 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 		end
 	end)
 
+	-- Save & Load Registry Hook
 	RegisterFlag(flag, function()
 		if isMulti then
 			local ret = {}
@@ -807,6 +752,7 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 		UpdateHeaderVisual()
 		Refresh(options)
 		
+		-- Hook properly into config applying state
 		if typeof(callback) == "function" then
 			if isMulti then
 				local ret = {}
@@ -836,7 +782,6 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 	}
 end
 
--- Premium Paragraph View
 local function CreateParagraph(parentFrame, title, body)
 	title = tostring(title or "")
 	body = tostring(body or "")
@@ -897,7 +842,7 @@ local function CreateParagraph(parentFrame, title, body)
 		ptitleLabel.Text = title
 		ptitleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
 		ptitleLabel.Font = Enum.Font.GothamBold
-		ptitleLabel.TextSize = 14
+		ptitleLabel.TextSize = 15
 		ptitleLabel.TextXAlignment = Enum.TextXAlignment.Left
 		ptitleLabel.TextWrapped = true
 	end
@@ -907,9 +852,9 @@ local function CreateParagraph(parentFrame, title, body)
 	bodyLabel.Position = UDim2.fromOffset(0, titleHeight + 3)
 	bodyLabel.BackgroundTransparency = 1
 	bodyLabel.Text = body
-	bodyLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+	bodyLabel.TextColor3 = Color3.fromRGB(220, 220, 220)
 	bodyLabel.Font = Enum.Font.Gotham
-	bodyLabel.TextSize = 12
+	bodyLabel.TextSize = 13
 	bodyLabel.TextWrapped = true
 	bodyLabel.TextXAlignment = Enum.TextXAlignment.Left
 	bodyLabel.TextYAlignment = Enum.TextYAlignment.Top
@@ -924,7 +869,6 @@ local function CreateParagraph(parentFrame, title, body)
 	}
 end
 
--- Premium Button Component
 local function CreateClickableParagraph(parentFrame, title, body, callback)
 	title = tostring(title or "Button")
 	body = tostring(body or "")
@@ -995,7 +939,7 @@ local function CreateClickableParagraph(parentFrame, title, body, callback)
 		ptitleLabel.Text = title
 		ptitleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
 		ptitleLabel.Font = Enum.Font.GothamBold
-		ptitleLabel.TextSize = 13
+		ptitleLabel.TextSize = 14
 		ptitleLabel.TextWrapped = true
 		ptitleLabel.TextXAlignment = Enum.TextXAlignment.Left
 		if body == "" then ptitleLabel.AnchorPoint = Vector2.new(0, 0.5); ptitleLabel.Position = UDim2.new(0, 0, 0.5, 0) end
@@ -1021,9 +965,9 @@ local function CreateClickableParagraph(parentFrame, title, body, callback)
 	clickDetector.BackgroundTransparency = 1
 	clickDetector.Text = ""
 	clickDetector.ZIndex = 10
+	clickDetector.AutoButtonColor = false -- INAYOS: Inalis ang madilim na click overlay ng Roblox
 	clickDetector.Parent = paraFrame
 
-	-- Elegant hover & click pulses (Replaced bounce offsets to prevent page shifting/flickering)
 	clickDetector.MouseEnter:Connect(function()
 		TweenService:Create(paraFrame, TweenInfo.new(0.12), { BackgroundColor3 = KazeUI.GetColor(0.04) }):Play()
 		TweenService:Create(glow, TweenInfo.new(0.12), { BackgroundTransparency = 0.92 }):Play()
@@ -1052,7 +996,6 @@ local function CreateClickableParagraph(parentFrame, title, body, callback)
 	}
 end
 
--- Premium Interactive Toggle Switch
 local function CreateToggleSwitch(parentFrame, title, body, defaultState, callback, flag)
 	title = tostring(title or "Toggle Switch")
 	body = tostring(body or "")
@@ -1133,7 +1076,7 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 		ptitleLabel.Text = title
 		ptitleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
 		ptitleLabel.Font = Enum.Font.GothamBold
-		ptitleLabel.TextSize = 13
+		ptitleLabel.TextSize = 15
 		ptitleLabel.TextWrapped = true
 		ptitleLabel.TextXAlignment = Enum.TextXAlignment.Left
 		if body == "" then ptitleLabel.AnchorPoint = Vector2.new(0, 0.5); ptitleLabel.Position = UDim2.new(0, 0, 0.5, 0) end
@@ -1146,9 +1089,9 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 		bodyLabel.Position = UDim2.fromOffset(0, titleHeight + 3)
 		bodyLabel.BackgroundTransparency = 1
 		bodyLabel.Text = body
-		bodyLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+		bodyLabel.TextColor3 = Color3.fromRGB(220, 220, 220)
 		bodyLabel.Font = Enum.Font.Gotham
-		bodyLabel.TextSize = 12
+		bodyLabel.TextSize = 13
 		bodyLabel.TextWrapped = true
 		bodyLabel.TextXAlignment = Enum.TextXAlignment.Left
 		bodyLabel.TextYAlignment = Enum.TextYAlignment.Top
@@ -1159,6 +1102,7 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 	clickDetector.BackgroundTransparency = 1
 	clickDetector.Text = ""
 	clickDetector.ZIndex = 10
+	clickDetector.AutoButtonColor = false -- INAYOS: Inalis ang madilim na click overlay ng Roblox
 	clickDetector.Parent = paraFrame
 
 	local function setToggleState(newState, instant)
@@ -1209,7 +1153,6 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 	}
 end
 
--- Premium TextBox Input
 local function CreateTextBoxInput(parentFrame, title, placeholder, defaultVal, callback, flag)
 	title = tostring(title or "Input Text")
 	placeholder = tostring(placeholder or "Type here...")
@@ -1269,7 +1212,7 @@ local function CreateTextBoxInput(parentFrame, title, placeholder, defaultVal, c
 		ptitleLabel.Text = title
 		ptitleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
 		ptitleLabel.Font = Enum.Font.GothamBold
-		ptitleLabel.TextSize = 13
+		ptitleLabel.TextSize = 14
 		ptitleLabel.TextWrapped = true
 		ptitleLabel.TextXAlignment = Enum.TextXAlignment.Left
 	end
@@ -1328,7 +1271,6 @@ local function CreateTextBoxInput(parentFrame, title, placeholder, defaultVal, c
 	}
 end
 
--- Premium Slider View
 local function CreateSliderInput(parentFrame, title, min, max, default, callback, flag)
 	title = tostring(title or "Slider")
 	min = tonumber(min) or 0
@@ -1391,7 +1333,7 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 		ptitleLabel.Text = title
 		ptitleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
 		ptitleLabel.Font = Enum.Font.GothamBold
-		ptitleLabel.TextSize = 13
+		ptitleLabel.TextSize = 14
 		ptitleLabel.TextWrapped = true
 		ptitleLabel.TextXAlignment = Enum.TextXAlignment.Left
 	end
@@ -1403,7 +1345,7 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 	valueLabel.Text = tostring(value)
 	valueLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
 	valueLabel.Font = Enum.Font.GothamBold
-	valueLabel.TextSize = 12
+	valueLabel.TextSize = 13
 	valueLabel.TextXAlignment = Enum.TextXAlignment.Right
 	
 	local track = Instance.new("Frame")
@@ -1451,6 +1393,7 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 	clickDetector.BackgroundTransparency = 1
 	clickDetector.Text = ""
 	clickDetector.ZIndex = 10
+	clickDetector.AutoButtonColor = false -- INAYOS: Inalis ang madilim na click overlay ng Roblox
 	clickDetector.Parent = track
 	
 	local isDragging = false
@@ -1524,7 +1467,6 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 	return api
 end
 
--- Premium Color Picker
 local function CreateColorPicker(parentFrame, title, defaultColor, callback, flag)
 	title = tostring(title or "Color Picker")
 	local color = defaultColor or Color3.fromRGB(255, 255, 255)
@@ -1573,7 +1515,7 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 	titleLabel.Text = title
 	titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
 	titleLabel.Font = Enum.Font.GothamBold
-	titleLabel.TextSize = 13
+	titleLabel.TextSize = 14
 	titleLabel.TextXAlignment = Enum.TextXAlignment.Left
 
 	local previewColor = Instance.new("Frame", header)
@@ -1598,6 +1540,7 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 	clickBtn.Size = UDim2.fromScale(1, 1)
 	clickBtn.BackgroundTransparency = 1
 	clickBtn.Text = ""
+	clickBtn.AutoButtonColor = false -- INAYOS: Inalis ang madilim na click overlay ng Roblox
 
 	local pickerArea = Instance.new("Frame", dropFrame)
 	pickerArea.Size = UDim2.new(1, -16, 0, 150)
@@ -1757,7 +1700,6 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 	}
 end
 
--- Premium Keybind Component
 local function CreateKeybindInput(parentFrame, title, defaultKey, callback, flag)
 	title = tostring(title or "Keybind")
 	local currentKey = defaultKey or Enum.KeyCode.Unknown
@@ -1818,7 +1760,7 @@ local function CreateKeybindInput(parentFrame, title, defaultKey, callback, flag
 		ptitleLabel.Text = title
 		ptitleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
 		ptitleLabel.Font = Enum.Font.GothamBold
-		ptitleLabel.TextSize = 13
+		ptitleLabel.TextSize = 14
 		ptitleLabel.TextWrapped = true
 		ptitleLabel.TextXAlignment = Enum.TextXAlignment.Left
 	end
@@ -1842,7 +1784,7 @@ local function CreateKeybindInput(parentFrame, title, defaultKey, callback, flag
 	bindLabel.Text = currentKey == Enum.KeyCode.Unknown and "None" or currentKey.Name
 	bindLabel.TextColor3 = Color3.fromRGB(220, 220, 220)
 	bindLabel.Font = Enum.Font.GothamBold
-	bindLabel.TextSize = 12
+	bindLabel.TextSize = 13
 	
 	bindContainer.MouseEnter:Connect(function()
 		if not isBinding then bindStroke.Color = Color3.fromRGB(80, 80, 85) end
@@ -1866,7 +1808,7 @@ local function CreateKeybindInput(parentFrame, title, defaultKey, callback, flag
 				if isKey then
 					local key = input.KeyCode
 					if key == Enum.KeyCode.Escape then
-						-- Cancel bind
+						-- I-cancel ang binding, panatilihin ang lumang susi
 					elseif key == Enum.KeyCode.Backspace or key == Enum.KeyCode.Delete then
 						currentKey = Enum.KeyCode.Unknown
 					else
@@ -1879,6 +1821,7 @@ local function CreateKeybindInput(parentFrame, title, defaultKey, callback, flag
 				bindStroke.Color = Color3.fromRGB(45, 45, 50)
 				conn:Disconnect()
 
+				-- BUG FIX: May kaunting delay bago bitawan para maiwasan ang global catch event
 				task.delay(0.15, function() isBinding = false end)
 			end
 		end)
@@ -1911,101 +1854,33 @@ local function CreateKeybindInput(parentFrame, title, defaultKey, callback, flag
 	}
 end
 
--- ====================================================================
--- NEW DESIGN COMPONENT: PREMIUM VISUAL SECTION HEADER (No box enclosure)
--- ====================================================================
-local function CreateVisualSectionDivider(parentFrame, config)
-	config = type(config) == "table" and config or { Title = tostring(config) }
-	local title = tostring(config.Title or "Section")
-	local icon = config.Icon and FormatImage(config.Icon) or ""
-	local subtitle = config.Subtitle or ""
-	local badgeText = config.Badge or ""
+local function CreateVisualSectionDivider(parentFrame, titleArg)
+	local title = tostring(titleArg or "Section")
 
 	local wrapper = Instance.new("Frame")
-	wrapper.Name = "PremiumCategory_" .. title
-	wrapper.Size = UDim2.new(0.95, 0, 0, 52)
+	wrapper.Size = UDim2.new(0.95, 0, 0, 32)
 	wrapper.BackgroundTransparency = 1
 	wrapper.Parent = parentFrame
 
-	-- Top & Bottom padding constraints to maintain spacing hierarchy
-	local layoutPadding = Instance.new("UIPadding", wrapper)
-	layoutPadding.PaddingTop = UDim.new(0, 12)
-	layoutPadding.PaddingBottom = UDim.new(0, 6)
-
-	-- Accent Bar indicator
-	local leftLine = Instance.new("Frame", wrapper)
-	leftLine.Size = UDim2.new(0, 3, 0, 18)
-	leftLine.Position = UDim2.new(0, 0, 0.5, -9)
-	leftLine.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-	leftLine.BorderSizePixel = 0
-	Instance.new("UICorner", leftLine).CornerRadius = UDim.new(1, 0)
-	StartNeonLoop(leftLine)
-
-	-- Optional monochrome icon
-	local iconLabel
-	local textOffset = 12
-	if icon ~= "" then
-		iconLabel = Instance.new("ImageLabel", wrapper)
-		iconLabel.Size = UDim2.fromOffset(18, 18)
-		iconLabel.Position = UDim2.fromOffset(12, 10)
-		iconLabel.BackgroundTransparency = 1
-		iconLabel.Image = icon
-		iconLabel.ImageColor3 = Color3.fromRGB(220, 220, 225)
-		iconLabel.ScaleType = Enum.ScaleType.Fit
-		textOffset = 36
-	end
-
-	-- Category Title
-	local label = Instance.new("TextLabel", wrapper)
-	label.Size = UDim2.new(0.6, -textOffset, 0, 18)
-	label.Position = UDim2.fromOffset(textOffset, subtitle ~= "" and 2 or 10)
+	local label = Instance.new("TextLabel")
+	label.Size = UDim2.new(1, -12, 1, 0)
+	label.Position = UDim2.fromOffset(12, 0)
 	label.BackgroundTransparency = 1
 	label.Text = title
 	label.TextColor3 = Color3.fromRGB(255, 255, 255)
 	label.Font = Enum.Font.GothamBold
-	label.TextSize = 13
+	label.TextSize = 14
 	label.TextXAlignment = Enum.TextXAlignment.Left
-
-	-- Optional subtitle
-	if subtitle ~= "" then
-		local sub = Instance.new("TextLabel", wrapper)
-		sub.Size = UDim2.new(0.6, -textOffset, 0, 14)
-		sub.Position = UDim2.fromOffset(textOffset, 20)
-		sub.BackgroundTransparency = 1
-		sub.Text = subtitle
-		sub.TextColor3 = Color3.fromRGB(150, 150, 155)
-		sub.Font = Enum.Font.Gotham
-		sub.TextSize = 10
-		sub.TextXAlignment = Enum.TextXAlignment.Left
-	end
-
-	-- Optional premium status badge
-	if badgeText ~= "" then
-		local badge = Instance.new("Frame", wrapper)
-		badge.AutomaticSize = Enum.AutomaticSize.X
-		badge.Size = UDim2.fromOffset(0, 18)
-		badge.AnchorPoint = Vector2.new(1, 0.5)
-		badge.Position = UDim2.new(1, -6, 0.5, 0)
-		badge.BackgroundColor3 = KazeUI.GetColor(0.04)
-		Instance.new("UICorner", badge).CornerRadius = UDim.new(0, 4)
-		
-		local bStroke = Instance.new("UIStroke", badge)
-		bStroke.Thickness = 1
-		bStroke.Color = Color3.fromRGB(50, 50, 55)
-
-		local bLabel = Instance.new("TextLabel", badge)
-		bLabel.Size = UDim2.fromScale(1, 1)
-		bLabel.BackgroundTransparency = 1
-		bLabel.Text = " " .. badgeText:upper() .. " "
-		bLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-		bLabel.Font = Enum.Font.GothamBold
-		bLabel.TextSize = 9
-		bLabel.TextXAlignment = Enum.TextXAlignment.Center
-	end
-
-	-- Snappy entrance animation
-	wrapper.Size = UDim2.new(0.95, 0, 0, 0)
-	TweenService:Create(wrapper, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Size = UDim2.new(0.95, 0, 0, 52)}):Play()
+	label.Parent = wrapper
+	
+	local leftLine = Instance.new("Frame")
+	leftLine.Size = UDim2.new(0, 3, 0, 14)
+	leftLine.Position = UDim2.new(0, 0, 0.5, -7)
+	leftLine.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+	leftLine.BorderSizePixel = 0
+	leftLine.Parent = wrapper
+	Instance.new("UICorner", leftLine).CornerRadius = UDim.new(1, 0)
+	StartNeonLoop(leftLine)
 
 	return {
 		Label = label,
@@ -2079,7 +1954,7 @@ AttachElementsToAPI = function(apiTable, parentFrame)
 	end
 
 	function apiTable:Dropdown(arg1, arg2, arg3, arg4, arg5, arg6)
-		local title, vals, def, callback, multi, flag
+		local title, vals, def, multi, callback, flag
 		if type(arg1) == "table" then
 			title, vals, def, multi, callback, flag = arg1.Title, (arg1.Values or arg1.Options), arg1.Default, (arg1.Multi or false), arg1.Callback, arg1.Flag
 		else
@@ -2109,27 +1984,21 @@ AttachElementsToAPI = function(apiTable, parentFrame)
 	end
 
 	function apiTable:SectionUI(arg1)
-		return CreateCollapsibleSection(parentFrame, arg1)
+		local title = type(arg1) == "table" and arg1.Title or arg1
+		return CreateCollapsibleSection(parentFrame, title)
 	end
 	
 	function apiTable:Section(arg1)
-		return CreateVisualSectionDivider(parentFrame, arg1)
-	end
-
-	function apiTable:Divider(style)
-		return CreateVisualDivider(parentFrame, { Style = style or "Minimal" })
+		local title = type(arg1) == "table" and arg1.Title or arg1
+		return CreateVisualSectionDivider(parentFrame, title)
 	end
 end
 
--- Re-architected Collapsible Section Component
 CreateCollapsibleSection = function(parentFrame, titleArg)
 	local title = type(titleArg) == "table" and titleArg.Title or tostring(titleArg or "Section")
-	local subtitle = type(titleArg) == "table" and titleArg.Subtitle or ""
-	local icon = type(titleArg) == "table" and titleArg.Icon or ""
-	local badge = type(titleArg) == "table" and titleArg.Badge or ""
 	local isOpen = false
 
-	-- Content wrapper Frame
+	-- Outer Container
 	local sectionBox = Instance.new("Frame")
 	sectionBox.Name = "CollapsibleSection_" .. title
 	sectionBox.Size = UDim2.new(0.95, 0, 0, 0)
@@ -2140,26 +2009,26 @@ CreateCollapsibleSection = function(parentFrame, titleArg)
 	KazeUI:AddPanel(sectionBox, 0.02)
 	KazeUI:AddTransparentElement(sectionBox, 0)
 
-	-- Modernized category container stroke
+	-- Stroke Outline (Inilapat bilang isang non-GuiObject, ligtas para sa mga layout)
 	local boxStroke = Instance.new("UIStroke", sectionBox)
 	boxStroke.Thickness = 1.5
 	boxStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-	boxStroke.Color = Color3.fromRGB(38, 38, 42)
+	boxStroke.Color = Color3.fromRGB(38, 38, 42) -- Malinis na kulay-abo kapag nakasara
 
 	local boxLayout = Instance.new("UIListLayout", sectionBox)
 	boxLayout.SortOrder = Enum.SortOrder.LayoutOrder
 	boxLayout.Padding = UDim.new(0, 0)
 	boxLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 
-	-- High-Fidelity Responsive Interactive Header (Fixed height)
+	-- Magarang Interactive Header
 	local headerFrame = Instance.new("Frame")
 	headerFrame.Name = "Header"
-	headerFrame.Size = UDim2.new(1, 0, 0, 46)
+	headerFrame.Size = UDim2.new(1, 0, 0, 42)
 	headerFrame.BackgroundTransparency = 1
 	headerFrame.LayoutOrder = 1
 	headerFrame.Parent = sectionBox
 
-	-- Accent left-accent line indicator
+	-- Kaliwang Pandekorasyon na Dynamic Accent Line
 	local accentLine = Instance.new("Frame", headerFrame)
 	accentLine.Size = UDim2.new(0, 4, 0, 18)
 	accentLine.Position = UDim2.new(0, 12, 0.5, -9)
@@ -2167,67 +2036,16 @@ CreateCollapsibleSection = function(parentFrame, titleArg)
 	accentLine.BackgroundColor3 = Color3.fromRGB(150, 150, 150)
 	Instance.new("UICorner", accentLine).CornerRadius = UDim.new(1, 0)
 
-	-- Dynamic icon mapping
-	local textOffset = 26
-	if icon ~= "" then
-		local iconLabel = Instance.new("ImageLabel", headerFrame)
-		iconLabel.Size = UDim2.fromOffset(18, 18)
-		iconLabel.Position = UDim2.fromOffset(26, 14)
-		iconLabel.BackgroundTransparency = 1
-		iconLabel.Image = FormatImage(icon)
-		iconLabel.ImageColor3 = Color3.fromRGB(220, 220, 225)
-		iconLabel.ScaleType = Enum.ScaleType.Fit
-		textOffset = 50
-	end
-
-	-- Title and optional subtitles
 	local titleLabel = Instance.new("TextLabel")
-	titleLabel.Size = UDim2.new(0.65, -textOffset, 1, 0)
-	titleLabel.Position = UDim2.fromOffset(textOffset, subtitle ~= "" and -4 or 0)
+	titleLabel.Size = UDim2.new(1, -40, 1, 0)
+	titleLabel.Position = UDim2.fromOffset(26, 0)
 	titleLabel.BackgroundTransparency = 1
 	titleLabel.Text = title
 	titleLabel.TextColor3 = Color3.fromRGB(240, 240, 245)
 	titleLabel.Font = Enum.Font.GothamBold
-	titleLabel.TextSize = 13
+	titleLabel.TextSize = 14
 	titleLabel.TextXAlignment = Enum.TextXAlignment.Left
 	titleLabel.Parent = headerFrame
-
-	if subtitle ~= "" then
-		local subLabel = Instance.new("TextLabel", headerFrame)
-		subLabel.Size = UDim2.new(0.65, -textOffset, 0, 14)
-		subLabel.Position = UDim2.fromOffset(textOffset, 24)
-		subLabel.BackgroundTransparency = 1
-		subLabel.Text = subtitle
-		subLabel.TextColor3 = Color3.fromRGB(140, 140, 145)
-		subLabel.Font = Enum.Font.Gotham
-		subLabel.TextSize = 10
-		subLabel.TextXAlignment = Enum.TextXAlignment.Left
-	end
-
-	-- Optional badge layout
-	local badgeContainer
-	if badge ~= "" then
-		badgeContainer = Instance.new("Frame", headerFrame)
-		badgeContainer.AutomaticSize = Enum.AutomaticSize.X
-		badgeContainer.Size = UDim2.fromOffset(0, 18)
-		badgeContainer.AnchorPoint = Vector2.new(1, 0.5)
-		badgeContainer.Position = UDim2.new(1, -38, 0.5, 0)
-		badgeContainer.BackgroundColor3 = KazeUI.GetColor(0.04)
-		Instance.new("UICorner", badgeContainer).CornerRadius = UDim.new(0, 4)
-		
-		local bStroke = Instance.new("UIStroke", badgeContainer)
-		bStroke.Thickness = 1
-		bStroke.Color = Color3.fromRGB(50, 50, 55)
-
-		local bLabel = Instance.new("TextLabel", badgeContainer)
-		bLabel.Size = UDim2.fromScale(1, 1)
-		bLabel.BackgroundTransparency = 1
-		bLabel.Text = " " .. badge:upper() .. " "
-		bLabel.TextColor3 = Color3.fromRGB(240, 240, 240)
-		bLabel.Font = Enum.Font.GothamBold
-		bLabel.TextSize = 9
-		bLabel.TextXAlignment = Enum.TextXAlignment.Center
-	end
 
 	local arrowIcon = Instance.new("ImageLabel")
 	arrowIcon.AnchorPoint = Vector2.new(1, 0.5)
@@ -2247,6 +2065,7 @@ CreateCollapsibleSection = function(parentFrame, titleArg)
 	divider.Visible = false
 	divider.Parent = sectionBox
 
+	-- Matatag na Content Container
 	local sectionContent = Instance.new("Frame")
 	sectionContent.Name = "Content"
 	sectionContent.Size = UDim2.new(1, 0, 0, 0)
@@ -2273,6 +2092,7 @@ CreateCollapsibleSection = function(parentFrame, titleArg)
 	toggleDetector.BackgroundTransparency = 1
 	toggleDetector.Text = ""
 	toggleDetector.ZIndex = 10
+	toggleDetector.AutoButtonColor = false -- KRITIKAL NA SOLUSYON: Inalis ang pangit na awtomatikong itim na overlay kapag pinindot ang SectionUI
 	toggleDetector.Parent = headerFrame
 
 	local function toggleSection()
@@ -2309,7 +2129,7 @@ CreateCollapsibleSection = function(parentFrame, titleArg)
 		end
 	end
 
-	-- Clean, flat hover & color shift triggers (Switched hold state bounce to a flat color overlay)
+	-- Hover at Click Feedback Animations nang walang kahit anong glitches
 	toggleDetector.MouseEnter:Connect(function()
 		TweenService:Create(headerFrame, TweenInfo.new(0.15), { BackgroundColor3 = Color3.fromRGB(20, 20, 25), BackgroundTransparency = 0.4 }):Play()
 		TweenService:Create(titleLabel, TweenInfo.new(0.15), { TextColor3 = Color3.fromRGB(255, 255, 255) }):Play()
@@ -2335,7 +2155,7 @@ CreateCollapsibleSection = function(parentFrame, titleArg)
 	return sectionPublic
 end
 
--- Main Window Initialization
+-- Paggawa ng Window Initialization
 function KazeUI:CreateWindow(config)
 	config = config or {}
 	local Title = config.Title or "Kaze UI"
@@ -2344,18 +2164,19 @@ function KazeUI:CreateWindow(config)
 	local MainIcon = FormatImage(config.Icon or "6031763447")
 	local OpenIcon = FormatImage((config.OpenButton and config.OpenButton.Icon) or config.Icon or "6031763447")
 	
+	-- Mga adjustable na resizing settings na may default fallback
 	local minWidth = config.MinWidth or 350
 	local minHeight = config.MinHeight or 250
 	local maxWidth = config.MaxWidth or 900
 	local maxHeight = config.MaxHeight or 700
 
-	KazeUI.BackgroundColor = Color3.fromRGB(10, 10, 12)
+	KazeUI.BackgroundColor = Color3.fromRGB(10, 10, 12) -- permanenteng Deep Obsidian background
 	if config.GlowColor then KazeUI.GlowColor = config.GlowColor end
 
 	local MiniButtonSize = UDim2.fromOffset(46, 46)
 
 	local Window = Instance.new("Frame")
-	Window.Size = UDim2.fromOffset(600, 400)
+	Window.Size = UDim2.fromOffset(600, 400) -- Default na Sukat ng Window 600x400
 	Window.Position = UDim2.fromScale(0.5, 0.5)
 	Window.AnchorPoint = Vector2.new(0.5, 0.5)
 	Window.BorderSizePixel = 0
@@ -2405,7 +2226,7 @@ function KazeUI:CreateWindow(config)
 	TitleLabel.Text = Title
 	TitleLabel.TextColor3 = Color3.fromRGB(235, 235, 235)
 	TitleLabel.Font = Enum.Font.GothamBold
-	TitleLabel.TextSize = 14
+	TitleLabel.TextSize = 15
 	TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
 	TitleLabel.Parent = TopBar
 
@@ -2416,7 +2237,7 @@ function KazeUI:CreateWindow(config)
 	SubLabel.Text = Author .. " | v" .. Version
 	SubLabel.TextColor3 = Color3.fromRGB(160, 160, 160)
 	SubLabel.Font = Enum.Font.Gotham
-	SubLabel.TextSize = 11
+	SubLabel.TextSize = 12
 	SubLabel.TextXAlignment = Enum.TextXAlignment.Left
 	SubLabel.Parent = TopBar
 
@@ -2429,7 +2250,7 @@ function KazeUI:CreateWindow(config)
 	TopDivider.Parent = TopBar
 	StartNeonLoop(TopDivider)
 
-	local defaultWindowSize = UDim2.fromOffset(600, 400)
+	local defaultWindowSize = UDim2.fromOffset(600, 400) -- Default Window Size 600x400
 	local lastNormalSize = defaultWindowSize
 	local lastNormalPosition = UDim2.fromScale(0.5,0.5)
 	local lastNormalAnchor = Vector2.new(0.5,0.5)
@@ -2485,6 +2306,7 @@ function KazeUI:CreateWindow(config)
 		if isMinimized then return end
 		isMinimized = true
 		
+		-- BUG FIX: Huwag mag-save ng size dito para hindi lumaki sa kawalang-hanggan
 		if not toggledMaximized then
 			lastNormalPosition = Window.Position
 			lastNormalAnchor = Window.AnchorPoint
@@ -2515,6 +2337,7 @@ function KazeUI:CreateWindow(config)
 
 	BtnYellow.MouseButton1Click:Connect(minimizeWindow)
 
+	-- BUG FIX: Global Dragging para sa Mini Button upang hindi mawala ang focus
 	local miniDragStart
 	local miniDragMoved = false
 	
@@ -2596,7 +2419,7 @@ function KazeUI:CreateWindow(config)
 		ConfirmText.Text = "Are you sure you want to close the UI?"
 		ConfirmText.TextColor3 = Color3.fromRGB(235,235,235)
 		ConfirmText.Font = Enum.Font.GothamBold
-		ConfirmText.TextSize = 14
+		ConfirmText.TextSize = 15
 		ConfirmText.TextWrapped = true
 		ConfirmText.ZIndex = 53
 
@@ -2617,7 +2440,7 @@ function KazeUI:CreateWindow(config)
 		ConfirmBtn.Text = "Confirm"
 		ConfirmBtn.TextColor3 = Color3.fromRGB(230,230,230)
 		ConfirmBtn.Font = Enum.Font.GothamBold
-		ConfirmBtn.TextSize = 14
+		ConfirmBtn.TextSize = 15
 		ConfirmBtn.ZIndex = 54
 		Instance.new("UICorner", ConfirmBtn).CornerRadius = UDim.new(0,8)
 
@@ -2627,7 +2450,7 @@ function KazeUI:CreateWindow(config)
 		CancelBtn.Text = "Cancel"
 		CancelBtn.TextColor3 = Color3.fromRGB(220,220,220)
 		CancelBtn.Font = Enum.Font.GothamBold
-		CancelBtn.TextSize = 14
+		CancelBtn.TextSize = 15
 		CancelBtn.ZIndex = 54
 		Instance.new("UICorner", CancelBtn).CornerRadius = UDim.new(0,8)
 
@@ -2706,12 +2529,15 @@ function KazeUI:CreateWindow(config)
 	tabsLayout.SortOrder = Enum.SortOrder.LayoutOrder
 	tabsLayout.Padding = UDim.new(0,4)
 
+	-- ==========================================
+	-- SMOOTH & ACCURATE CONTINUOUS WINDOW RESIZING
+	-- ==========================================
 	local ResizeHandle = Instance.new("ImageLabel")
 	ResizeHandle.Name = "ResizeHandle"
 	ResizeHandle.Size = UDim2.fromOffset(18, 18)
 	ResizeHandle.Position = UDim2.new(1, -18, 1, -18)
 	ResizeHandle.BackgroundTransparency = 1
-	ResizeHandle.Image = "rbxassetid://10747373117"
+	ResizeHandle.Image = "rbxassetid://10747373117" -- Diagonal resize design mark (↘)
 	ResizeHandle.ImageColor3 = Color3.fromRGB(150, 150, 150)
 	ResizeHandle.ZIndex = 99
 	ResizeHandle.Parent = Window
@@ -2721,7 +2547,8 @@ function KazeUI:CreateWindow(config)
 	local resizeStartInput = Vector3.new(0, 0, 0)
 	local resizeTouchInput = nil
 
-	local hoverCursor = "rbxassetid://10747373117"
+	-- PC Hover State Change
+	local hoverCursor = "rbxassetid://10747373117" -- Resize diagonal cursor asset ID
 	ResizeHandle.MouseEnter:Connect(function()
 		if not isResizing and not toggledMaximized then
 			Mouse.Icon = hoverCursor
@@ -2814,7 +2641,7 @@ function KazeUI:CreateWindow(config)
 	}
 
 	function Win:CreateConfigManager(tab)
-		local sec = tab:SectionUI({Title = "Config Manager", Subtitle = "Save and load custom setups", Icon = "settings"})
+		local sec = tab:SectionUI("Config Manager")
 
 		local cfgName = "Default"
 
@@ -2864,12 +2691,12 @@ function KazeUI:CreateWindow(config)
 	end
 
 	function Win:CreateThemeManager(tab)
-		local sec = tab:SectionUI({Title = "Theme & Visuals", Subtitle = "Customize the user interface aesthetic", Icon = "palette"})
+		local sec = tab:SectionUI("Theme & Visuals")
 		
 		sec:ColorPicker({
 			Title = "UI Glow Color",
 			Default = KazeUI.GlowColor,
-			Flag = "KazeUI_Theme_GlowColor",
+			Flag = "KazeUI_Theme_GlowColor", -- Idinagdag ang flag para ma-save ng Config
 			Callback = function(color)
 				KazeUI:SetGlow(color)
 			end
@@ -2880,21 +2707,18 @@ function KazeUI:CreateWindow(config)
 			Min = 0,
 			Max = 100,
 			Default = 0,
-			Flag = "KazeUI_Theme_BackgroundTransparency",
+			Flag = "KazeUI_Theme_BackgroundTransparency", -- Idinagdag ang flag para ma-save ng Config
 			Callback = function(val)
 				KazeUI:SetTransparency(val / 100)
 			end
 		})
 	end
 
-	-- Redesigned Tab Activation utilizing fixed sticky premium headers
 	function Win:CreateTab(arg1, arg2)
 		local name = tostring(type(arg1) == "table" and (arg1.Title or arg1.Name) or arg1 or "Tab")
 		local iconId = type(arg1) == "table" and arg1.Icon or arg2
-		local subtitle = type(arg1) == "table" and arg1.Subtitle or "Settings and Features"
 		local formattedIcon = FormatImage(iconId or "")
 		
-		-- Sidebar tab button
 		local btn = Instance.new("TextButton")
 		btn.Size = UDim2.new(1, -12, 0, 40)
 		btn.BorderSizePixel = 0
@@ -2939,81 +2763,14 @@ function KazeUI:CreateWindow(config)
 		txt.TextXAlignment = Enum.TextXAlignment.Left
 		txt.Parent = btn
 
-		-- Tab container Frame
 		local page = Instance.new("Frame")
 		page.Size = UDim2.new(1,0,1,0)
 		page.BackgroundTransparency = 1
 		page.Visible = false
 		page.Parent = self._Pages
 
-		-- ====================================================================
-		-- NEW COMPONENT: FIXED STICKY TAB HEADER
-		-- ====================================================================
-		local headerHeight = 56
-		local TabHeaderFrame = Instance.new("Frame")
-		TabHeaderFrame.Name = "PremiumTabHeader"
-		TabHeaderFrame.Size = UDim2.new(1, 0, 0, headerHeight)
-		TabHeaderFrame.BackgroundTransparency = 1
-		TabHeaderFrame.BorderSizePixel = 0
-		TabHeaderFrame.Parent = page
-
-		-- Decorative Left Header Accent Line
-		local headerAccent = Instance.new("Frame", TabHeaderFrame)
-		headerAccent.Size = UDim2.new(0, 3, 0, 22)
-		headerAccent.Position = UDim2.new(0, 12, 0.5, -11)
-		headerAccent.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-		headerAccent.BorderSizePixel = 0
-		Instance.new("UICorner", headerAccent).CornerRadius = UDim.new(1, 0)
-		StartNeonLoop(headerAccent)
-
-		-- Optional Monochrome Title Icon
-		local headerIcon
-		local headerTextOffset = 22
-		if formattedIcon ~= "" then
-			headerIcon = Instance.new("ImageLabel", TabHeaderFrame)
-			headerIcon.Size = UDim2.fromOffset(22, 22)
-			headerIcon.Position = UDim2.fromOffset(22, 17)
-			headerIcon.BackgroundTransparency = 1
-			headerIcon.Image = formattedIcon
-			headerIcon.ImageColor3 = Color3.fromRGB(255, 255, 255)
-			headerIcon.ScaleType = Enum.ScaleType.Fit
-			headerTextOffset = 52
-		end
-
-		-- Large Bold Title Label
-		local headerTitle = Instance.new("TextLabel", TabHeaderFrame)
-		headerTitle.Size = UDim2.new(1, -headerTextOffset - 12, 0, 20)
-		headerTitle.Position = UDim2.fromOffset(headerTextOffset, 12)
-		headerTitle.BackgroundTransparency = 1
-		headerTitle.Text = name
-		headerTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
-		headerTitle.Font = Enum.Font.GothamBold
-		headerTitle.TextSize = 16
-		headerTitle.TextXAlignment = Enum.TextXAlignment.Left
-
-		-- Subtitle Label
-		local headerSubtitle = Instance.new("TextLabel", TabHeaderFrame)
-		headerSubtitle.Size = UDim2.new(1, -headerTextOffset - 12, 0, 14)
-		headerSubtitle.Position = UDim2.fromOffset(headerTextOffset, 32)
-		headerSubtitle.BackgroundTransparency = 1
-		headerSubtitle.Text = subtitle
-		headerSubtitle.TextColor3 = Color3.fromRGB(150, 150, 155)
-		headerSubtitle.Font = Enum.Font.Gotham
-		headerSubtitle.TextSize = 11
-		headerSubtitle.TextXAlignment = Enum.TextXAlignment.Left
-
-		-- Bottom Left-to-Right Animated Divider Line
-		local headerDivider = Instance.new("Frame", TabHeaderFrame)
-		headerDivider.Size = UDim2.new(0, 0, 0, 1.5)
-		headerDivider.Position = UDim2.new(0, 12, 1, -1)
-		headerDivider.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-		headerDivider.BorderSizePixel = 0
-		StartNeonLoop(headerDivider)
-
-		-- Content scrolling frame (Pushed down to allow header to remain sticky)
 		local pageContent = Instance.new("ScrollingFrame", page)
-		pageContent.Position = UDim2.new(0, 0, 0, headerHeight + 4)
-		pageContent.Size = UDim2.new(1, 0, 1, -headerHeight - 4)
+		pageContent.Size = UDim2.new(1, 0, 1, 0)
 		pageContent.BackgroundTransparency = 1
 		pageContent.BorderSizePixel = 0
 		pageContent.ScrollBarThickness = 5
@@ -3029,10 +2786,10 @@ function KazeUI:CreateWindow(config)
 
 		local contentLayout = Instance.new("UIListLayout", pageContent)
 		contentLayout.SortOrder = Enum.SortOrder.LayoutOrder
-		contentLayout.Padding = UDim.new(0,6)
+		contentLayout.Padding = UDim.new(0,4)
 		contentLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 
-		table.insert(self._Tabs, { Button = btn, Indicator = leftIndicator, Label = txt, Page = page, Divider = headerDivider })
+		table.insert(self._Tabs, { Button = btn, Indicator = leftIndicator, Label = txt, Page = page })
 
 		local function activate()
 			for _, t in ipairs(self._Tabs) do
@@ -3041,18 +2798,12 @@ function KazeUI:CreateWindow(config)
 				t.Page.Visible = false
 				t.Label.TextColor3 = Color3.fromRGB(200, 200, 200)
 				t.Label.Font = Enum.Font.Gotham
-				t.Divider.Size = UDim2.new(0, 0, 0, 1.5) -- Reset other dividers
 			end
 			TweenService:Create(btn, TweenInfo.new(0.12), { BackgroundColor3 = KazeUI.GetColor(0.06) }):Play()
 			leftIndicator.Visible = true
 			page.Visible = true
 			txt.TextColor3 = Color3.fromRGB(255, 255, 255)
 			txt.Font = Enum.Font.GothamBold
-			
-			-- Expanding left-to-right neon divider animation
-			TweenService:Create(headerDivider, TweenInfo.new(0.45, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-				Size = UDim2.new(1, -24, 0, 1.5)
-			}):Play()
 		end
 
 		btn.MouseEnter:Connect(function()
