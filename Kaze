@@ -1,9 +1,11 @@
+
 --[[
 	Kaze UI Library v2.0
 	Redesigned: High-End Desktop Software Aesthetic (Arc, Figma, Linear, macOS)
 	Retained: 100% Backwards Compatibility with Version 1 APIs
 	Locked: Deep Obsidian Theme Engine (Visuals Elevated)
 	Preserved: SectionUI remains unchanged.
+	MOBILE TOUCH FIXED: Nagdagdag ng centralized 0x0 Modal Camera Locker para hindi umikot ang camera sa mobile habang nag-da-drag, nag-re-resize, sliders, at color picker.
 --]]
 
 local KazeUI = {}
@@ -54,6 +56,26 @@ if not success or not parent then
 	parent = LP:WaitForChild("PlayerGui", 15)
 end
 ScreenGui.Parent = parent
+
+-- CENTRALIZED CAMERA LOCKER SETUP PARA SA MOBILE TOUCH AT PC
+-- Ang sukat na 0x0 ay nagpapagana sa Modal lock nang hindi hinaharangan ang touch events mo sa laro.
+local CameraLocker = Instance.new("TextButton")
+CameraLocker.Name = "CameraLocker"
+CameraLocker.Size = UDim2.fromOffset(0, 0)
+CameraLocker.Position = UDim2.fromOffset(0, 0)
+CameraLocker.BackgroundTransparency = 1
+CameraLocker.Text = ""
+CameraLocker.Modal = false
+CameraLocker.Visible = true
+CameraLocker.Parent = ScreenGui
+
+local function LockCamera()
+	CameraLocker.Modal = true
+end
+
+local function UnlockCamera()
+	CameraLocker.Modal = false
+end
 
 -- Separate Notification layer
 local NotifScreenGui = Instance.new("ScreenGui")
@@ -180,10 +202,15 @@ local function MakeDraggable(dragPart, targetPart)
 	local dragging = false
 	local dragStart, startPos, dragInput
 	
+	dragPart.Active = true
+	
 	dragPart.InputBegan:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 			dragging = true
 			dragStart = input.Position
+			
+			-- Lock 3D camera spinning on mobile drag
+			LockCamera()
 			
 			-- Instantly convert to pure Offset (0,0) based system relative to Scale to avoid teleportation/jitter
 			local scale = UIScale.Scale
@@ -193,10 +220,13 @@ local function MakeDraggable(dragPart, targetPart)
 			
 			startPos = targetPart.Position
 			
-			input.Changed:Connect(function()
+			local releaseCon
+			releaseCon = input.Changed:Connect(function()
 				if input.UserInputState == Enum.UserInputState.End then
 					dragging = false
 					dragInput = nil
+					UnlockCamera() -- Restore camera rotation on finger release
+					if releaseCon then releaseCon:Disconnect() end
 				end
 			end)
 		end
@@ -989,11 +1019,11 @@ local function CreateClickableParagraph(parentFrame, title, body, callback)
 	
 	local rightIcon = Instance.new("ImageLabel")
 	rightIcon.AnchorPoint = Vector2.new(1, 0.5)
-	rightIcon.Position = UDim2.new(1, -12, 0.5, 0) -- Permanently offset on the right, centered vertically
+	rightIcon.Position = UDim2.new(1, -12, 0.5, 0) 
 	rightIcon.Size = UDim2.fromOffset(20, 20)
 	rightIcon.BackgroundTransparency = 1
 	rightIcon.ImageColor3 = Color3.fromRGB(150, 150, 155)
-	rightIcon.Image = "rbxassetid://107150227368485" -- Restored high-end custom chevron
+	rightIcon.Image = "rbxassetid://107150227368485" 
 	rightIcon.ScaleType = Enum.ScaleType.Fit
 	rightIcon.Parent = inner
 	
@@ -1049,7 +1079,6 @@ local function CreateClickableParagraph(parentFrame, title, body, callback)
 	end)
 	
 	clickDetector.MouseButton1Down:Connect(function()
-		-- Spring button depression
 		TweenService:Create(paraFrame, TweenInfo.new(0.1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { 
 			Size = UDim2.new(0.93, 0, 0, totalHeight - 2), 
 			Position = UDim2.new(0.5, 0, 0, 4) 
@@ -1456,15 +1485,6 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 	local knobStroke = Instance.new("UIStroke", knob)
 	knobStroke.Thickness = 1.2
 	knobStroke.Color = KazeUI.GlowColor
-	
-	local modalLock = Instance.new("TextButton")
-	modalLock.Size = UDim2.fromScale(1, 1)
-	modalLock.BackgroundTransparency = 1
-	modalLock.Text = ""
-	modalLock.Visible = false
-	modalLock.Modal = false
-	modalLock.ZIndex = 9999
-	modalLock.Parent = ScreenGui
 
 	local clickDetector = Instance.new("TextButton")
 	clickDetector.Size = UDim2.new(1, 0, 1, 14)
@@ -1503,8 +1523,7 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 			isDragging = true
 			ToggleScrollingAncestors(track, false)
-			modalLock.Visible = true
-			modalLock.Modal = true
+			LockCamera() -- Locks touch camera globally via 0x0 button without layout blocking
 			UpdateValueFromInput(input)
 			
 			TweenService:Create(knob, TWEEN_FAST, {Size = UDim2.fromOffset(16, 16)}):Play()
@@ -1520,8 +1539,7 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 				if endInput.UserInputType == Enum.UserInputType.MouseButton1 or endInput.UserInputType == Enum.UserInputType.Touch then
 					isDragging = false
 					ToggleScrollingAncestors(track, true)
-					modalLock.Visible = false
-					modalLock.Modal = false
+					UnlockCamera() -- Unlock touch camera
 					TweenService:Create(knob, TWEEN_FAST, {Size = UDim2.fromOffset(12, 12)}):Play()
 					TweenService:Create(paraStroke, TWEEN_FAST, {Color = Color3.fromRGB(45, 45, 50)}):Play()
 					if moveCon then moveCon:Disconnect() end
@@ -1541,8 +1559,6 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 			paraStroke.Color = c
 		end
 	end)
-
-	wrapper.Destroying:Connect(function() modalLock:Destroy() end)
 
 	local api = {
 		Wrapper = wrapper,
@@ -1735,6 +1751,7 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 			draggingMap = true
 			ToggleScrollingAncestors(svMap, false)
+			LockCamera() -- Prevent camera from moving on touch drag
 			updateSV(input)
 		end
 	end)
@@ -1743,6 +1760,7 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 			draggingHue = true
 			ToggleScrollingAncestors(hueSlider, false)
+			LockCamera() -- Prevent camera from moving on touch drag
 			updateHue(input)
 		end
 	end)
@@ -1761,6 +1779,7 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 			draggingMap = false
 			draggingHue = false
+			UnlockCamera() -- Restore camera movement on release
 			ToggleScrollingAncestors(svMap, true)
 		end
 	end)
@@ -1997,7 +2016,7 @@ local function CreateVisualSectionDivider(parentFrame, titleArg)
 end
 
 -- ==========================================
--- SectionUI is untouched (Design requirement)
+-- SectionUI remains untouched (Design requirement)
 -- ==========================================
 local CreateCollapsibleSection
 local AttachElementsToAPI
@@ -2118,11 +2137,11 @@ CreateCollapsibleSection = function(parentFrame, titleArg)
 	KazeUI:AddPanel(sectionBox, 0.02)
 	KazeUI:AddTransparentElement(sectionBox, 0)
 
-	-- Stroke Outline (Applied as a non-GuiObject, safe for layouts)
+	-- Stroke Outline
 	local boxStroke = Instance.new("UIStroke", sectionBox)
 	boxStroke.Thickness = 1.5
 	boxStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-	boxStroke.Color = Color3.fromRGB(38, 38, 42) -- Clean closed gray border
+	boxStroke.Color = Color3.fromRGB(38, 38, 42)
 
 	local boxLayout = Instance.new("UIListLayout", sectionBox)
 	boxLayout.SortOrder = Enum.SortOrder.LayoutOrder
@@ -2136,14 +2155,14 @@ CreateCollapsibleSection = function(parentFrame, titleArg)
 	headerFrame.BackgroundTransparency = 1
 	headerFrame.LayoutOrder = 1
 	headerFrame.Parent = sectionBox
-	Instance.new("UICorner", headerFrame).CornerRadius = UDim.new(0, 10) -- FIXED: Rounded the header hover highlight boundaries to prevent rectangles
+	Instance.new("UICorner", headerFrame).CornerRadius = UDim.new(0, 10)
 
 	-- Left Decorative Dynamic Dynamic Accent Line
 	local accentLine = Instance.new("Frame", headerFrame)
 	accentLine.Size = UDim2.new(0, 4, 0, 18)
 	accentLine.Position = UDim2.new(0, 12, 0.5, -9)
 	accentLine.BorderSizePixel = 0
-	accentLine.BackgroundColor3 = Color3.fromRGB(150, 150, 150)
+	accentLine.BackgroundColor3 = Color3.fromRGB(150, 150, 155)
 	Instance.new("UICorner", accentLine).CornerRadius = UDim.new(1, 0)
 
 	local titleLabel = Instance.new("TextLabel")
@@ -2234,7 +2253,7 @@ CreateCollapsibleSection = function(parentFrame, titleArg)
 			StopNeonLoop(boxStroke)
 			StopNeonLoop(accentLine)
 			boxStroke.Color = Color3.fromRGB(38, 38, 42)
-			accentLine.BackgroundColor3 = Color3.fromRGB(150, 150, 150)
+			accentLine.BackgroundColor3 = Color3.fromRGB(150, 150, 155)
 		end
 	end
 
@@ -2291,6 +2310,7 @@ function KazeUI:CreateWindow(config)
 	Window.Position = UDim2.fromScale(0.5, 0.5)
 	Window.AnchorPoint = Vector2.new(0.5, 0.5)
 	Window.BorderSizePixel = 0
+	Window.Active = true -- Block touches from hitting workspace on mobile touch dragging
 	Window.Parent = ScreenGui
 	Instance.new("UICorner", Window).CornerRadius = UDim.new(0, 12)
 	KazeUI:AddPanel(Window, 0)
@@ -2329,6 +2349,7 @@ function KazeUI:CreateWindow(config)
 	local TopBar = Instance.new("Frame")
 	TopBar.Size = UDim2.new(1,0,0,50)
 	TopBar.BorderSizePixel = 0
+	TopBar.Active = true
 	TopBar.Parent = ContentClipper
 	MakeDraggable(TopBar, Window)
 	KazeUI:AddPanel(TopBar, -0.01)
@@ -2627,8 +2648,8 @@ function KazeUI:CreateWindow(config)
 	Pages.Size = UDim2.new(1, -191, 1, 0)
 	Pages.BorderSizePixel = 0
 	Pages.Parent = Content
-	KazeUI:AddPanel(Pages, 0)
-	
+	KazeUI:AddPanel(Pages, -0.01)
+
 	local isSidebarOpen = true
 	Avatar.MouseButton1Click:Connect(function()
 		isSidebarOpen = not isSidebarOpen
@@ -2646,10 +2667,10 @@ function KazeUI:CreateWindow(config)
 
 	local TabsScroller = Instance.new("ScrollingFrame")
 	TabsScroller.Parent = SideBar
-	TabsScroller.Position = UDim2.fromOffset(6,10)
-	TabsScroller.Size = UDim2.new(1, -12, 1, -20)
+	TabsScroller.Position = UDim2.fromOffset(6,6)
+	TabsScroller.Size = UDim2.new(1, -12, 1, -12)
 	TabsScroller.BackgroundTransparency = 1
-	TabsScroller.ScrollBarThickness = 2
+	TabsScroller.ScrollBarThickness = 4
 	TabsScroller.CanvasSize = UDim2.new(0, 0, 0, 0)
 	TabsScroller.AutomaticCanvasSize = Enum.AutomaticSize.Y
 	TabsScroller.ScrollBarImageColor3 = Color3.fromRGB(40,40,45)
@@ -2672,28 +2693,30 @@ function KazeUI:CreateWindow(config)
 	ResizeHandle.Size = UDim2.fromOffset(18, 18)
 	ResizeHandle.Position = UDim2.new(1, -18, 1, -18)
 	ResizeHandle.BackgroundTransparency = 1
-	ResizeHandle.Image = "rbxassetid://10747373117"
+	ResizeHandle.Image = "rbxassetid://10747373117" -- Diagonal resize design mark (↘)
 	ResizeHandle.ImageColor3 = Color3.fromRGB(150, 150, 155)
+	ResizeHandle.Active = true
 	ResizeHandle.ZIndex = 99
 	ResizeHandle.Parent = Window
 
 	local isResizing = false
 	local resizeStartSize = Vector2.new(0, 0)
 	local resizeStartInput = Vector3.new(0, 0, 0)
-	local resizeTouchInput = nil
+	local resizeTouchInput = nil -- Multi-touch protector
 
+	-- PC Hover State Change
 	local hoverCursor = "rbxassetid://10747373117"
 	ResizeHandle.MouseEnter:Connect(function()
 		if not isResizing and not toggledMaximized then
 			Mouse.Icon = hoverCursor
-			TweenService:Create(ResizeHandle, TWEEN_FAST, {ImageColor3 = KazeUI.GlowColor}):Play()
+			TweenService:Create(ResizeHandle, TweenInfo.new(0.12), {ImageColor3 = KazeUI.GlowColor}):Play()
 		end
 	end)
 
 	ResizeHandle.MouseLeave:Connect(function()
 		if not isResizing then
 			Mouse.Icon = ""
-			TweenService:Create(ResizeHandle, TWEEN_FAST, {ImageColor3 = Color3.fromRGB(150, 150, 150)}):Play()
+			TweenService:Create(ResizeHandle, TweenInfo.new(0.12), {ImageColor3 = Color3.fromRGB(150, 150, 155)}):Play()
 		end
 	end)
 
@@ -2721,6 +2744,8 @@ function KazeUI:CreateWindow(config)
 			resizeStartSize = Vector2.new(Window.AbsoluteSize.X / UIScale.Scale, Window.AbsoluteSize.Y / UIScale.Scale)
 			resizeStartInput = input.Position
 
+			LockCamera() -- Core Mobile locker
+
 			ToggleScrollingAncestors(ResizeHandle, false)
 			Mouse.Icon = hoverCursor
 		end
@@ -2744,9 +2769,12 @@ function KazeUI:CreateWindow(config)
 			end
 			isResizing = false
 			resizeTouchInput = nil
+			
+			UnlockCamera() -- Restore normal camera settings
+			
 			ToggleScrollingAncestors(ResizeHandle, true)
 			Mouse.Icon = ""
-			TweenService:Create(ResizeHandle, TWEEN_FAST, {ImageColor3 = Color3.fromRGB(150, 150, 150)}):Play()
+			TweenService:Create(ResizeHandle, TweenInfo.new(0.12), {ImageColor3 = Color3.fromRGB(150, 150, 155)}):Play()
 		end
 	end)
 
@@ -2830,7 +2858,7 @@ function KazeUI:CreateWindow(config)
 		sec:ColorPicker({
 			Title = "UI Glow Color",
 			Default = KazeUI.GlowColor,
-			Flag = "KazeUI_Theme_GlowColor",
+			Flag = "KazeUI_Theme_GlowColor", 
 			Callback = function(color)
 				KazeUI:SetGlow(color)
 			end
@@ -2839,11 +2867,11 @@ function KazeUI:CreateWindow(config)
 		sec:Slider({
 			Title = "UI Background Transparency",
 			Min = 0,
-			Max = 10, -- Corrected limit boundary to 10 for fine transitions
+			Max = 100,
 			Default = 0,
-			Flag = "KazeUI_Theme_BackgroundTransparency",
+			Flag = "KazeUI_Theme_BackgroundTransparency", 
 			Callback = function(val)
-				KazeUI:SetTransparency(val / 10)
+				KazeUI:SetTransparency(val / 100)
 			end
 		})
 	end
@@ -2864,22 +2892,23 @@ function KazeUI:CreateWindow(config)
 		Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
 		KazeUI:AddPanel(btn, 0.02)
 
-		-- Elegant Pill Indicator Line
 		local leftIndicator = Instance.new("Frame", btn)
-		leftIndicator.Size = UDim2.new(0,3,1,-12)
-		leftIndicator.Position = UDim2.new(0,1,0.5,0)
-		leftIndicator.AnchorPoint = Vector2.new(0, 0.5)
+		leftIndicator.Size = UDim2.new(0,3,1,0)
 		leftIndicator.BackgroundColor3 = KazeUI.GlowColor
 		leftIndicator.BorderSizePixel = 0
 		leftIndicator.Visible = false
-		Instance.new("UICorner", leftIndicator).CornerRadius = UDim.new(0,3)
+		Instance.new("UICorner", leftIndicator).CornerRadius = UDim.new(0,6)
+
+		KazeUI:OnGlowChanged(leftIndicator, function(c)
+			leftIndicator.BackgroundColor3 = c
+		end)
 
 		local iconLabel = Instance.new("ImageLabel", btn)
-		iconLabel.Size = UDim2.fromOffset(18,18)
-		iconLabel.Position = UDim2.new(0,12,0.5,-9)
+		iconLabel.Size = UDim2.fromOffset(20,20)
+		iconLabel.Position = UDim2.new(0,12,0.5,-10)
 		iconLabel.BackgroundTransparency = 1
+		iconLabel.ImageColor3 = Color3.fromRGB(150, 150, 155)
 		iconLabel.Image = formattedIcon
-		iconLabel.ImageColor3 = Color3.fromRGB(160, 160, 165)
 		iconLabel.ScaleType = Enum.ScaleType.Fit
 		iconLabel.Parent = btn
 		
@@ -2888,13 +2917,13 @@ function KazeUI:CreateWindow(config)
 		txt.Position = UDim2.fromOffset(40,0)
 		txt.BackgroundTransparency = 1
 		txt.Text = name
-		txt.TextColor3 = Color3.fromRGB(170, 170, 175)
+		txt.TextColor3 = Color3.fromRGB(160, 160, 165)
 		txt.Font = Enum.Font.Gotham
 		txt.TextScaled = true 
 		txt.TextWrapped = true 
 		
 		local textConstraint = Instance.new("UITextSizeConstraint", txt)
-		textConstraint.MaxTextSize = 13
+		textConstraint.MaxTextSize = 12
 		textConstraint.MinTextSize = 8
 		
 		txt.TextXAlignment = Enum.TextXAlignment.Left
@@ -2916,66 +2945,52 @@ function KazeUI:CreateWindow(config)
 		pageContent.ScrollBarImageColor3 = Color3.fromRGB(40,40,45)
 
 		local pagePadding = Instance.new("UIPadding", pageContent)
-		pagePadding.PaddingTop = UDim.new(0, 12)
-		pagePadding.PaddingBottom = UDim.new(0, 12)
-		pagePadding.PaddingLeft = UDim.new(0, 12)
-		pagePadding.PaddingRight = UDim.new(0, 12)
+		pagePadding.PaddingTop = UDim.new(0, 8)
+		pagePadding.PaddingBottom = UDim.new(0, 8)
+		pagePadding.PaddingLeft = UDim.new(0, 8)
+		pagePadding.PaddingRight = UDim.new(0, 8)
 
 		local contentLayout = Instance.new("UIListLayout", pageContent)
 		contentLayout.SortOrder = Enum.SortOrder.LayoutOrder
-		contentLayout.Padding = UDim.new(0,5)
+		contentLayout.Padding = UDim.new(0,4)
 		contentLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 
-		table.insert(self._Tabs, { Button = btn, Indicator = leftIndicator, Icon = iconLabel, Label = txt, Page = page })
+		table.insert(self._Tabs, { Button = btn, Indicator = leftIndicator, Label = txt, Page = page, Icon = iconLabel })
 
-		-- Page slide & fade animator
 		local function activate()
 			for _, t in ipairs(self._Tabs) do
 				TweenService:Create(t.Button, TWEEN_FAST, { BackgroundColor3 = KazeUI.GetColor(0.02) }):Play()
-				TweenService:Create(t.Icon, TWEEN_FAST, { ImageColor3 = Color3.fromRGB(160, 160, 165) }):Play()
 				t.Indicator.Visible = false
 				t.Page.Visible = false
-				t.Label.TextColor3 = Color3.fromRGB(170, 170, 175)
+				t.Label.TextColor3 = Color3.fromRGB(160, 160, 165)
+				t.Icon.ImageColor3 = Color3.fromRGB(150, 150, 155)
 				t.Label.Font = Enum.Font.Gotham
 			end
-			TweenService:Create(btn, TWEEN_FAST, { BackgroundColor3 = KazeUI.GetColor(0.05) }):Play()
-			TweenService:Create(iconLabel, TWEEN_FAST, { ImageColor3 = KazeUI.GlowColor }):Play()
+			TweenService:Create(btn, TWEEN_FAST, { BackgroundColor3 = KazeUI.GetColor(0.04) }):Play()
 			leftIndicator.Visible = true
-			
-			-- Slide reveal of newly selected page
 			page.Visible = true
-			pageContent.CanvasPosition = Vector2.new(0, 0)
-			page.Position = UDim2.fromOffset(15, 0)
-			page.Size = UDim2.new(1, -15, 1, 0)
-			TweenService:Create(page, TWEEN_SMOOTH, {Position = UDim2.fromOffset(0, 0), Size = UDim2.new(1, 0, 1, 0)}):Play()
-
 			txt.TextColor3 = Color3.fromRGB(255, 255, 255)
 			txt.Font = Enum.Font.GothamBold
+			
+			TweenService:Create(iconLabel, TWEEN_FAST, { ImageColor3 = KazeUI.GlowColor }):Play()
 		end
 
 		btn.MouseEnter:Connect(function()
 			if not leftIndicator.Visible then
-				TweenService:Create(btn, TWEEN_FAST, { BackgroundColor3 = KazeUI.GetColor(0.04) }):Play()
-				TweenService:Create(iconLabel, TWEEN_FAST, { ImageColor3 = Color3.fromRGB(230, 230, 235) }):Play()
-				txt.TextColor3 = Color3.fromRGB(220, 220, 225)
+				TweenService:Create(btn, TWEEN_FAST, { BackgroundColor3 = KazeUI.GetColor(0.03) }):Play()
+				TweenService:Create(txt, TWEEN_FAST, { TextColor3 = Color3.fromRGB(220, 220, 225) }):Play()
+				TweenService:Create(iconLabel, TWEEN_FAST, { ImageColor3 = Color3.fromRGB(200, 200, 205) }):Play()
 			end
 		end)
 		btn.MouseLeave:Connect(function()
 			if not leftIndicator.Visible then
 				TweenService:Create(btn, TWEEN_FAST, { BackgroundColor3 = KazeUI.GetColor(0.02) }):Play()
-				TweenService:Create(iconLabel, TWEEN_FAST, { ImageColor3 = Color3.fromRGB(160, 160, 165) }):Play()
-				txt.TextColor3 = Color3.fromRGB(170, 170, 175)
+				TweenService:Create(txt, TWEEN_FAST, { TextColor3 = Color3.fromRGB(160, 160, 165) }):Play()
+				TweenService:Create(iconLabel, TWEEN_FAST, { ImageColor3 = Color3.fromRGB(150, 150, 155) }):Play()
 			end
 		end)
 		btn.MouseButton1Click:Connect(activate)
 		if #self._Tabs == 1 then activate() end
-		
-		KazeUI:OnGlowChanged(leftIndicator, function(c)
-			if leftIndicator.Visible then
-				leftIndicator.BackgroundColor3 = c
-				iconLabel.ImageColor3 = c
-			end
-		end)
 
 		local public = { Button = btn, Page = page }
 		AttachElementsToAPI(public, pageContent)
