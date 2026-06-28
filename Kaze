@@ -1,4 +1,3 @@
-
 --[[
 	Kaze UI Library v2.0
 	Redesigned: High-End Desktop Software Aesthetic (Arc, Figma, Linear, macOS)
@@ -30,6 +29,7 @@ KazeUI.GlowElements = {}
 KazeUI.NeonTweens = {}
 KazeUI.PanelElements = {} 
 KazeUI.TransparentElements = {}
+KazeUI.GlowCallbacks = {} -- Registry to dynamically sync static colors instantly
 
 -- Utility spring-like configs
 local TWEEN_FAST = TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
@@ -164,32 +164,33 @@ local function FormatImage(id)
 	return "rbxassetid://" .. clean
 end
 
--- Smooth Window Dragging Mechanics
+-- ==========================================
+-- V2 Dynamic Color Sync & Subscriptions
+-- ==========================================
+function KazeUI:OnGlowChanged(inst, callback)
+	table.insert(KazeUI.GlowCallbacks, {Inst = inst, Callback = callback})
+	task.spawn(callback, KazeUI.GlowColor)
+end
+
+-- Smooth Window Dragging Mechanics (Offset-Based, Jitter-Free)
+local lastNormalPosition = UDim2.fromScale(0.5, 0.5)
+local lastNormalAnchor = Vector2.new(0.5, 0.5)
+
 local function MakeDraggable(dragPart, targetPart)
 	local dragging = false
-	local dragInput, dragStart, startPos
-	local dragActive = false
-	
-	local function update(input)
-		if not dragStart or not startPos then return end
-		local delta = input.Position - dragStart
-		local scale = UIScale.Scale
-		
-		if dragActive or delta.Magnitude > 6 then
-			dragActive = true
-			local targetPosition = UDim2.new(
-				startPos.X.Scale, startPos.X.Offset + (delta.X / scale),
-				startPos.Y.Scale, startPos.Y.Offset + (delta.Y / scale)
-			)
-			TweenService:Create(targetPart, TweenInfo.new(0.1, Enum.EasingStyle.OutQuad), {Position = targetPosition}):Play()
-		end
-	end
+	local dragStart, startPos, dragInput
 	
 	dragPart.InputBegan:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 			dragging = true
-			dragActive = false
 			dragStart = input.Position
+			
+			-- Instantly convert to pure Offset (0,0) based system relative to Scale to avoid teleportation/jitter
+			local scale = UIScale.Scale
+			local currentAbsolute = targetPart.AbsolutePosition
+			targetPart.AnchorPoint = Vector2.new(0, 0)
+			targetPart.Position = UDim2.fromOffset(currentAbsolute.X / scale, currentAbsolute.Y / scale)
+			
 			startPos = targetPart.Position
 			
 			input.Changed:Connect(function()
@@ -208,7 +209,23 @@ local function MakeDraggable(dragPart, targetPart)
 	end)
 	
 	UIS.InputChanged:Connect(function(input)
-		if input == dragInput and dragging then update(input) end
+		if input == dragInput and dragging then
+			local delta = input.Position - dragStart
+			local scale = UIScale.Scale
+			
+			local targetPosition = UDim2.fromOffset(
+				startPos.X.Offset + (delta.X / scale),
+				startPos.Y.Offset + (delta.Y / scale)
+			)
+			
+			TweenService:Create(targetPart, TweenInfo.new(0.08, Enum.EasingStyle.OutQuad), {Position = targetPosition}):Play()
+			
+			-- Track drag position to restore perfectly on un-minimize
+			if targetPart.Name == "Frame" or targetPart:IsA("Frame") then
+				lastNormalPosition = targetPosition
+				lastNormalAnchor = Vector2.new(0, 0)
+			end
+		end
 	end)
 end
 
@@ -292,6 +309,8 @@ end
 
 function KazeUI:SetGlow(color)
 	KazeUI.GlowColor = color
+	
+	-- Update Neon loop elements
 	for _, data in ipairs(KazeUI.GlowElements) do
 		local target = data.Target
 		local propName = data.Prop
@@ -306,6 +325,16 @@ function KazeUI:SetGlow(color)
 			KazeUI.NeonTweens[target] = newTween
 		else
 			KazeUI.NeonTweens[target] = nil
+		end
+	end
+	
+	-- Instantly push glow updates to all registered static elements
+	for i = #KazeUI.GlowCallbacks, 1, -1 do
+		local data = KazeUI.GlowCallbacks[i]
+		if data.Inst and data.Inst.Parent then
+			task.spawn(data.Callback, color)
+		else
+			table.remove(KazeUI.GlowCallbacks, i)
 		end
 	end
 end
@@ -383,6 +412,10 @@ function KazeUI:Notify(config)
 	progressBar.BorderSizePixel = 0
 	Instance.new("UICorner", progressBar).CornerRadius = UDim.new(1, 0)
 	StartNeonLoop(progressBar)
+	
+	KazeUI:OnGlowChanged(progressBar, function(c)
+		progressBar.BackgroundColor3 = c
+	end)
 
 	-- Animations
 	TweenService:Create(notifHolder, TweenInfo.new(0.4, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {Size = UDim2.new(1, 0, 0, 74)}):Play()
@@ -738,6 +771,10 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 			end)
 
 			table.insert(optionItems, { Btn = btn, Text = optStr, Update = function(instant) UpdateVisuals(instant) end })
+			
+			KazeUI:OnGlowChanged(btn, function()
+				UpdateVisuals(true)
+			end)
 		end
 		CalcHeight()
 	end
@@ -763,6 +800,18 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 			TweenService:Create(boxStroke, TWEEN_FAST, {Color = KazeUI.GlowColor}):Play()
 		else
 			CloseDropdown()
+		end
+	end)
+	
+	KazeUI:OnGlowChanged(boxStroke, function(c)
+		if isOpen then
+			boxStroke.Color = c
+		end
+	end)
+	
+	KazeUI:OnGlowChanged(searchStroke, function(c)
+		if searchBox:IsFocused() then
+			searchStroke.Color = c
 		end
 	end)
 
@@ -940,11 +989,11 @@ local function CreateClickableParagraph(parentFrame, title, body, callback)
 	
 	local rightIcon = Instance.new("ImageLabel")
 	rightIcon.AnchorPoint = Vector2.new(1, 0.5)
-	rightIcon.Position = UDim2.new(1, -4, 0.5, 0)
+	rightIcon.Position = UDim2.new(1, -12, 0.5, 0) -- Permanently offset on the right, centered vertically
 	rightIcon.Size = UDim2.fromOffset(20, 20)
 	rightIcon.BackgroundTransparency = 1
 	rightIcon.ImageColor3 = Color3.fromRGB(150, 150, 155)
-	rightIcon.Image = "rbxassetid://10723415693" -- Smooth chevron indicator
+	rightIcon.Image = "rbxassetid://107150227368485" -- Restored high-end custom chevron
 	rightIcon.ScaleType = Enum.ScaleType.Fit
 	rightIcon.Parent = inner
 	
@@ -984,15 +1033,19 @@ local function CreateClickableParagraph(parentFrame, title, body, callback)
 	clickDetector.ZIndex = 10
 	clickDetector.Parent = paraFrame
 
+	local isHovering = false
+
 	clickDetector.MouseEnter:Connect(function()
+		isHovering = true
 		TweenService:Create(paraFrame, TWEEN_FAST, { BackgroundColor3 = KazeUI.GetColor(0.04) }):Play()
 		TweenService:Create(paraStroke, TWEEN_FAST, { Color = KazeUI.GlowColor }):Play()
-		TweenService:Create(rightIcon, TWEEN_FAST, { ImageColor3 = Color3.fromRGB(255, 255, 255), Position = UDim2.new(1, -2, 0.5, 0) }):Play()
+		TweenService:Create(rightIcon, TWEEN_FAST, { ImageColor3 = Color3.fromRGB(255, 255, 255), Position = UDim2.new(1, -10, 0.5, 0) }):Play()
 	end)
 	clickDetector.MouseLeave:Connect(function()
+		isHovering = false
 		TweenService:Create(paraFrame, TWEEN_FAST, { BackgroundColor3 = KazeUI.GetColor(0.02) }):Play()
 		TweenService:Create(paraStroke, TWEEN_FAST, { Color = Color3.fromRGB(45, 45, 50) }):Play()
-		TweenService:Create(rightIcon, TWEEN_FAST, { ImageColor3 = Color3.fromRGB(150, 150, 155), Position = UDim2.new(1, -4, 0.5, 0) }):Play()
+		TweenService:Create(rightIcon, TWEEN_FAST, { ImageColor3 = Color3.fromRGB(150, 150, 155), Position = UDim2.new(1, -12, 0.5, 0) }):Play()
 	end)
 	
 	clickDetector.MouseButton1Down:Connect(function()
@@ -1008,6 +1061,12 @@ local function CreateClickableParagraph(parentFrame, title, body, callback)
 			Position = UDim2.new(0.5, 0, 0, 3) 
 		}):Play()
 		if typeof(callback) == "function" then task.spawn(callback) end
+	end)
+	
+	KazeUI:OnGlowChanged(paraStroke, function(c)
+		if isHovering then
+			paraStroke.Color = c
+		end
 	end)
 	
 	return { 
@@ -1136,11 +1195,15 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 		end
 	end
 
+	local isHovering = false
+
 	clickDetector.MouseEnter:Connect(function()
+		isHovering = true
 		TweenService:Create(paraFrame, TWEEN_FAST, { BackgroundColor3 = KazeUI.GetColor(0.04) }):Play()
 		TweenService:Create(paraStroke, TWEEN_FAST, { Color = KazeUI.GlowColor }):Play()
 	end)
 	clickDetector.MouseLeave:Connect(function()
+		isHovering = false
 		TweenService:Create(paraFrame, TWEEN_FAST, { BackgroundColor3 = KazeUI.GetColor(0.02) }):Play()
 		TweenService:Create(paraStroke, TWEEN_FAST, { Color = Color3.fromRGB(45, 45, 50) }):Play()
 	end)
@@ -1151,6 +1214,18 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 		TweenService:Create(paraFrame, TWEEN_SPRING, { Size = UDim2.new(0.95, 0, 0, totalHeight), Position = UDim2.new(0.5, 0, 0, 3) }):Play()
 		setToggleState(not state, false)
 		if typeof(callback) == "function" then task.spawn(callback, state) end
+	end)
+
+	KazeUI:OnGlowChanged(switchContainer, function(c)
+		if state then
+			switchContainer.BackgroundColor3 = c
+		end
+	end)
+
+	KazeUI:OnGlowChanged(paraStroke, function(c)
+		if isHovering then
+			paraStroke.Color = c
+		end
 	end)
 
 	RegisterFlag(flag, function() return state end, function(val)
@@ -1248,17 +1323,28 @@ local function CreateTextBoxInput(parentFrame, title, placeholder, defaultVal, c
 	textBox.ClearTextOnFocus = false
 	textBox.Parent = textBoxContainer
 
+	local isFocused = false
+
 	textBox.Focused:Connect(function()
+		isFocused = true
 		TweenService:Create(innerStroke, TWEEN_FAST, {Color = KazeUI.GlowColor}):Play()
 		TweenService:Create(paraFrame, TWEEN_FAST, { BackgroundColor3 = KazeUI.GetColor(0.04) }):Play()
 		TweenService:Create(paraStroke, TWEEN_FAST, { Color = KazeUI.GlowColor }):Play()
 	end)
 
 	textBox.FocusLost:Connect(function(enterPressed)
+		isFocused = false
 		TweenService:Create(innerStroke, TWEEN_FAST, { Color = Color3.fromRGB(45, 45, 50) }):Play()
 		TweenService:Create(paraFrame, TWEEN_FAST, { BackgroundColor3 = KazeUI.GetColor(0.02) }):Play()
 		TweenService:Create(paraStroke, TWEEN_FAST, { Color = Color3.fromRGB(45, 45, 50) }):Play()
 		if typeof(callback) == "function" then task.spawn(callback, textBox.Text, enterPressed) end
+	end)
+	
+	KazeUI:OnGlowChanged(innerStroke, function(c)
+		if isFocused then
+			innerStroke.Color = c
+			paraStroke.Color = c
+		end
 	end)
 	
 	RegisterFlag(flag, function() return textBox.Text end, function(val)
@@ -1442,6 +1528,17 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 					if endCon then endCon:Disconnect() end
 				end
 			end)
+		end
+	end)
+
+	KazeUI:OnGlowChanged(fill, function(c)
+		fill.BackgroundColor3 = c
+		knobStroke.Color = c
+	end)
+
+	KazeUI:OnGlowChanged(paraStroke, function(c)
+		if isDragging then
+			paraStroke.Color = c
 		end
 	end)
 
@@ -1674,6 +1771,12 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 		TweenService:Create(arrowIcon, TWEEN_SPRING, {Rotation = isOpen and 180 or 0}):Play()
 		TweenService:Create(boxStroke, TWEEN_FAST, {Color = isOpen and KazeUI.GlowColor or Color3.fromRGB(45, 45, 50)}):Play()
 	end)
+	
+	KazeUI:OnGlowChanged(boxStroke, function(c)
+		if isOpen then
+			boxStroke.Color = c
+		end
+	end)
 
 	RegisterFlag(flag, function() return color:ToHex() end, function(val)
 		local success, parsed = pcall(function() return Color3.fromHex(val) end)
@@ -1774,13 +1877,17 @@ local function CreateKeybindInput(parentFrame, title, defaultKey, callback, flag
 	bindLabel.TextColor3 = Color3.fromRGB(220, 220, 225)
 	bindLabel.Font = Enum.Font.GothamBold
 	bindLabel.TextSize = 11
+
+	local isHovering = false
 	
 	bindContainer.MouseEnter:Connect(function()
+		isHovering = true
 		if not isBinding then 
 			TweenService:Create(bindStroke, TWEEN_FAST, {Color = KazeUI.GlowColor}):Play()
 		end
 	end)
 	bindContainer.MouseLeave:Connect(function()
+		isHovering = false
 		if not isBinding then 
 			TweenService:Create(bindStroke, TWEEN_FAST, {Color = Color3.fromRGB(45, 45, 50)}):Play()
 		end
@@ -1821,6 +1928,12 @@ local function CreateKeybindInput(parentFrame, title, defaultKey, callback, flag
 			if typeof(callback) == "function" then
 				task.spawn(callback, currentKey)
 			end
+		end
+	end)
+
+	KazeUI:OnGlowChanged(bindStroke, function(c)
+		if isBinding or isHovering then
+			bindStroke.Color = c
 		end
 	end)
 
@@ -1869,6 +1982,10 @@ local function CreateVisualSectionDivider(parentFrame, titleArg)
 	leftLine.BorderSizePixel = 0
 	leftLine.Parent = wrapper
 	Instance.new("UICorner", leftLine).CornerRadius = UDim.new(1, 0)
+
+	KazeUI:OnGlowChanged(leftLine, function(c)
+		leftLine.BackgroundColor3 = c
+	end)
 
 	return {
 		Label = label,
@@ -2021,7 +2138,7 @@ CreateCollapsibleSection = function(parentFrame, titleArg)
 	headerFrame.Parent = sectionBox
 	Instance.new("UICorner", headerFrame).CornerRadius = UDim.new(0, 10) -- FIXED: Rounded the header hover highlight boundaries to prevent rectangles
 
-	-- Left Decorative Dynamic Accent Line
+	-- Left Decorative Dynamic Dynamic Accent Line
 	local accentLine = Instance.new("Frame", headerFrame)
 	accentLine.Size = UDim2.new(0, 4, 0, 18)
 	accentLine.Position = UDim2.new(0, 12, 0.5, -9)
@@ -2262,8 +2379,6 @@ function KazeUI:CreateWindow(config)
 
 	local defaultWindowSize = UDim2.fromOffset(600, 400)
 	local lastNormalSize = defaultWindowSize
-	local lastNormalPosition = UDim2.fromScale(0.5,0.5)
-	local lastNormalAnchor = Vector2.new(0.5,0.5)
 	local toggledMaximized = false
 
 	local function createCircleButton(name, offsetX, color)
@@ -2558,7 +2673,7 @@ function KazeUI:CreateWindow(config)
 	ResizeHandle.Position = UDim2.new(1, -18, 1, -18)
 	ResizeHandle.BackgroundTransparency = 1
 	ResizeHandle.Image = "rbxassetid://10747373117"
-	ResizeHandle.ImageColor3 = Color3.fromRGB(150, 150, 150)
+	ResizeHandle.ImageColor3 = Color3.fromRGB(150, 150, 155)
 	ResizeHandle.ZIndex = 99
 	ResizeHandle.Parent = Window
 
@@ -2724,11 +2839,11 @@ function KazeUI:CreateWindow(config)
 		sec:Slider({
 			Title = "UI Background Transparency",
 			Min = 0,
-			Max = 100,
+			Max = 10, -- Corrected limit boundary to 10 for fine transitions
 			Default = 0,
 			Flag = "KazeUI_Theme_BackgroundTransparency",
 			Callback = function(val)
-				KazeUI:SetTransparency(val / 100)
+				KazeUI:SetTransparency(val / 10)
 			end
 		})
 	end
@@ -2854,6 +2969,13 @@ function KazeUI:CreateWindow(config)
 		end)
 		btn.MouseButton1Click:Connect(activate)
 		if #self._Tabs == 1 then activate() end
+		
+		KazeUI:OnGlowChanged(leftIndicator, function(c)
+			if leftIndicator.Visible then
+				leftIndicator.BackgroundColor3 = c
+				iconLabel.ImageColor3 = c
+			end
+		end)
 
 		local public = { Button = btn, Page = page }
 		AttachElementsToAPI(public, pageContent)
