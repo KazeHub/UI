@@ -1,9 +1,11 @@
 
 --[[
-	Kaze UI Library v2.0
+	Kaze UI Library v2.1
 	Redesigned: High-End Desktop Software Aesthetic (Arc, Figma, Linear, macOS)
+	Fixed: Dragging bug fixed by forcing dragPart.Active = true
+	Added: "Nag-hahabulan" (Chasing/Rotating laser light outline glow)
+	Added: Support for config properties "Glow" (presets) and "Theme" directly inside CreateWindow
 	Retained: 100% Backwards Compatibility with Version 1 APIs
-	Locked: Deep Obsidian Theme Engine (Visuals Elevated)
 	Preserved: SectionUI remains unchanged.
 --]]
 
@@ -16,12 +18,13 @@ local TweenService = game:GetService("TweenService")
 local UIS = game:GetService("UserInputService")
 local TextService = game:GetService("TextService")
 local HttpService = game:GetService("HttpService")
+local RunService = game:GetService("RunService")
 local LP = Players.LocalPlayer
 local Mouse = LP:GetMouse()
 
 -- Global State & Managers
 KazeUI.GlowColor = Color3.fromRGB(0, 160, 255)
-KazeUI.BackgroundColor = Color3.fromRGB(10, 10, 12) -- Dark Obsidian
+KazeUI.BackgroundColor = Color3.fromRGB(10, 10, 12) -- Dark Obsidian default
 KazeUI.Flags = {}
 KazeUI.ActiveWindows = {} 
 
@@ -31,7 +34,28 @@ KazeUI.NeonTweens = {}
 KazeUI.PanelElements = {} 
 KazeUI.TransparentElements = {}
 
--- Utility spring-like configs
+-- Preset Color Maps
+local ColorPresets = {
+	red = Color3.fromRGB(255, 50, 50),
+	blue = Color3.fromRGB(0, 160, 255),
+	green = Color3.fromRGB(50, 255, 50),
+	yellow = Color3.fromRGB(255, 200, 0),
+	purple = Color3.fromRGB(180, 50, 255),
+	pink = Color3.fromRGB(255, 50, 180),
+	orange = Color3.fromRGB(255, 100, 0),
+	white = Color3.fromRGB(255, 255, 255),
+	black = Color3.fromRGB(0, 0, 0)
+}
+
+-- Preset Background Themes
+local ThemePresets = {
+	black = Color3.fromRGB(5, 5, 5),
+	dark = Color3.fromRGB(14, 14, 16),
+	gray = Color3.fromRGB(24, 24, 28),
+	obsidian = Color3.fromRGB(10, 10, 12)
+}
+
+-- Spring-like Tween Configs
 local TWEEN_FAST = TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 local TWEEN_SPRING = TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
 local TWEEN_SMOOTH = TweenInfo.new(0.3, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
@@ -164,8 +188,9 @@ local function FormatImage(id)
 	return "rbxassetid://" .. clean
 end
 
--- Smooth Window Dragging Mechanics
+-- Smooth Window Dragging Mechanics (Fixed Drag Bug)
 local function MakeDraggable(dragPart, targetPart)
+	dragPart.Active = true -- CRITICAL FIX: Forces Roblox frame layout layers to receive drag inputs
 	local dragging = false
 	local dragInput, dragStart, startPos
 	local dragActive = false
@@ -181,7 +206,7 @@ local function MakeDraggable(dragPart, targetPart)
 				startPos.X.Scale, startPos.X.Offset + (delta.X / scale),
 				startPos.Y.Scale, startPos.Y.Offset + (delta.Y / scale)
 			)
-			TweenService:Create(targetPart, TweenInfo.new(0.1, Enum.EasingStyle.OutQuad), {Position = targetPosition}):Play()
+			TweenService:Create(targetPart, TweenInfo.new(0.08, Enum.EasingStyle.OutQuad), {Position = targetPosition}):Play()
 		end
 	end
 	
@@ -259,6 +284,20 @@ function KazeUI:SetTransparency(alpha)
 	end
 end
 
+-- Helper to make chasing/rotating gradients
+local function GetChasingGradient(color)
+	local h, s, v = color:ToHSV()
+	local brightColor = Color3.fromHSV(h, s, 1)
+	local darkColor = Color3.fromHSV(h, s, 0.15)
+	return ColorSequence.new({
+		ColorSequenceKeypoint.new(0, darkColor),
+		ColorSequenceKeypoint.new(0.2, brightColor),
+		ColorSequenceKeypoint.new(0.5, darkColor),
+		ColorSequenceKeypoint.new(0.8, brightColor),
+		ColorSequenceKeypoint.new(1, darkColor)
+	})
+end
+
 local function StartNeonLoop(target)
 	if not target then return end
 	local propName = pcall(function() return target.Color end) and "Color" or "BackgroundColor3"
@@ -296,14 +335,18 @@ function KazeUI:SetGlow(color)
 		local target = data.Target
 		local propName = data.Prop
 		if target and target.Parent then
-			if KazeUI.NeonTweens[target] then KazeUI.NeonTweens[target]:Cancel() end
-			target[propName] = color
-			local tweenInfo = TweenInfo.new(2.5, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true)
-			local h, s, v = Color3.toHSV(color)
-			local targetColor = Color3.fromHSV(h, s * 0.8, math.clamp(v * 1.1, 0, 1))
-			local newTween = TweenService:Create(target, tweenInfo, { [propName] = targetColor })
-			newTween:Play()
-			KazeUI.NeonTweens[target] = newTween
+			if target:IsA("UIGradient") then
+				target.Color = GetChasingGradient(color)
+			else
+				if KazeUI.NeonTweens[target] then KazeUI.NeonTweens[target]:Cancel() end
+				target[propName] = color
+				local tweenInfo = TweenInfo.new(2.5, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true)
+				local h, s, v = Color3.toHSV(color)
+				local targetColor = Color3.fromHSV(h, s * 0.8, math.clamp(v * 1.1, 0, 1))
+				local newTween = TweenService:Create(target, tweenInfo, { [propName] = targetColor })
+				newTween:Play()
+				KazeUI.NeonTweens[target] = newTween
+			end
 		else
 			KazeUI.NeonTweens[target] = nil
 		end
@@ -716,7 +759,6 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 			end)
 
 			btn.MouseButton1Click:Connect(function()
-				-- Click bounce animation
 				TweenService:Create(btn, TweenInfo.new(0.1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, 0, true), {Size = UDim2.new(1, -8, 0, 28)}):Play()
 
 				if isMulti then
@@ -766,7 +808,6 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 		end
 	end)
 
-	-- Register Config Save/Load Hook
 	RegisterFlag(flag, function()
 		if isMulti then
 			local ret = {}
@@ -944,7 +985,7 @@ local function CreateClickableParagraph(parentFrame, title, body, callback)
 	rightIcon.Size = UDim2.fromOffset(20, 20)
 	rightIcon.BackgroundTransparency = 1
 	rightIcon.ImageColor3 = Color3.fromRGB(150, 150, 155)
-	rightIcon.Image = "rbxassetid://10723415693" -- Smooth chevron indicator
+	rightIcon.Image = "rbxassetid://10723415693"
 	rightIcon.ScaleType = Enum.ScaleType.Fit
 	rightIcon.Parent = inner
 	
@@ -996,7 +1037,6 @@ local function CreateClickableParagraph(parentFrame, title, body, callback)
 	end)
 	
 	clickDetector.MouseButton1Down:Connect(function()
-		-- Spring button depression
 		TweenService:Create(paraFrame, TweenInfo.new(0.1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { 
 			Size = UDim2.new(0.93, 0, 0, totalHeight - 2), 
 			Position = UDim2.new(0.5, 0, 0, 4) 
@@ -2012,16 +2052,16 @@ CreateCollapsibleSection = function(parentFrame, titleArg)
 	boxLayout.Padding = UDim.new(0, 0)
 	boxLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 
-	-- Stylish Interactive Header
+	-- Interactive Header
 	local headerFrame = Instance.new("Frame")
 	headerFrame.Name = "Header"
 	headerFrame.Size = UDim2.new(1, 0, 0, 42)
 	headerFrame.BackgroundTransparency = 1
 	headerFrame.LayoutOrder = 1
 	headerFrame.Parent = sectionBox
-	Instance.new("UICorner", headerFrame).CornerRadius = UDim.new(0, 10) -- FIXED: Rounded the header hover highlight boundaries to prevent rectangles
+	Instance.new("UICorner", headerFrame).CornerRadius = UDim.new(0, 10)
 
-	-- Left Decorative Dynamic Accent Line
+	-- Accent Line
 	local accentLine = Instance.new("Frame", headerFrame)
 	accentLine.Size = UDim2.new(0, 4, 0, 18)
 	accentLine.Position = UDim2.new(0, 12, 0.5, -9)
@@ -2058,7 +2098,6 @@ CreateCollapsibleSection = function(parentFrame, titleArg)
 	divider.Visible = false
 	divider.Parent = sectionBox
 
-	-- Robust standard Frame Content Container
 	local sectionContent = Instance.new("Frame")
 	sectionContent.Name = "Content"
 	sectionContent.Size = UDim2.new(1, 0, 0, 0)
@@ -2121,7 +2160,6 @@ CreateCollapsibleSection = function(parentFrame, titleArg)
 		end
 	end
 
-	-- Hover Feedback Animations
 	toggleDetector.MouseEnter:Connect(function()
 		TweenService:Create(headerFrame, TweenInfo.new(0.15), { BackgroundColor3 = Color3.fromRGB(20, 20, 25), BackgroundTransparency = 0.4 }):Play()
 		TweenService:Create(titleLabel, TweenInfo.new(0.15), { TextColor3 = Color3.fromRGB(255, 255, 255) }):Play()
@@ -2163,8 +2201,30 @@ function KazeUI:CreateWindow(config)
 	local maxWidth = config.MaxWidth or 900
 	local maxHeight = config.MaxHeight or 700
 
-	KazeUI.BackgroundColor = Color3.fromRGB(10, 10, 12) 
-	if config.GlowColor then KazeUI.GlowColor = config.GlowColor end
+	-- Configurable properties parser (Theme & Glow)
+	if config.Theme then
+		local lowerTheme = string.lower(tostring(config.Theme))
+		if ThemePresets[lowerTheme] then
+			KazeUI.BackgroundColor = ThemePresets[lowerTheme]
+		elseif typeof(config.Theme) == "Color3" then
+			KazeUI.BackgroundColor = config.Theme
+		end
+	else
+		KazeUI.BackgroundColor = Color3.fromRGB(10, 10, 12) 
+	end
+
+	if config.Glow then
+		local lowerGlow = string.lower(tostring(config.Glow))
+		if ColorPresets[lowerGlow] then
+			KazeUI.GlowColor = ColorPresets[lowerGlow]
+		elseif typeof(config.Glow) == "Color3" then
+			KazeUI.GlowColor = config.Glow
+		end
+	elseif config.GlowColor then
+		KazeUI.GlowColor = config.GlowColor
+	else
+		KazeUI.GlowColor = Color3.fromRGB(0, 160, 255)
+	end
 
 	local MiniButtonSize = UDim2.fromOffset(46, 46)
 
@@ -2178,7 +2238,7 @@ function KazeUI:CreateWindow(config)
 	Instance.new("UICorner", Window).CornerRadius = UDim.new(0, 12)
 	KazeUI:AddPanel(Window, 0)
 
-	-- Window Depth shadows & lighting borders
+	-- Window Depth shadows
 	local outerShadow = Instance.new("Frame", Window)
 	outerShadow.Size = UDim2.new(1, 10, 1, 10)
 	outerShadow.Position = UDim2.fromOffset(-5, -5)
@@ -2191,10 +2251,26 @@ function KazeUI:CreateWindow(config)
 	shStroke.Color = Color3.fromRGB(0, 0, 0)
 	shStroke.Transparency = 0.85
 
+	-- OUTLINE STROKE & "NAG-HAHABULAN" CHASING GRADIENT
 	local WindowStroke = Instance.new("UIStroke")
 	WindowStroke.Thickness = 1.5
-	WindowStroke.Color = Color3.fromRGB(45, 45, 50)
+	WindowStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 	WindowStroke.Parent = Window
+
+	local WindowGradient = Instance.new("UIGradient")
+	WindowGradient.Color = GetChasingGradient(KazeUI.GlowColor)
+	WindowGradient.Rotation = 0
+	WindowGradient.Parent = WindowStroke
+
+	-- Seamless chasing speed loop using RunService
+	task.spawn(function()
+		while Window and Window.Parent do
+			if WindowGradient then
+				WindowGradient.Rotation = (WindowGradient.Rotation + 1.5) % 360
+			end
+			RunService.RenderStepped:Wait()
+		end
+	end)
 
 	local ContentClipper = Instance.new("CanvasGroup")
 	ContentClipper.Size = UDim2.fromScale(1, 1)
@@ -2635,6 +2711,8 @@ function KazeUI:CreateWindow(config)
 		end
 	end)
 
+	table.insert(KazeUI.GlowElements, {Target = WindowGradient, Prop = "Color"})
+
 	local Win = {
 		Window = Window,
 		ScreenGui = ScreenGui,
@@ -2758,6 +2836,7 @@ function KazeUI:CreateWindow(config)
 		leftIndicator.BorderSizePixel = 0
 		leftIndicator.Visible = false
 		Instance.new("UICorner", leftIndicator).CornerRadius = UDim.new(0,3)
+		table.insert(KazeUI.GlowElements, {Target = leftIndicator, Prop = "BackgroundColor3"})
 
 		local iconLabel = Instance.new("ImageLabel", btn)
 		iconLabel.Size = UDim2.fromOffset(18,18)
@@ -2813,7 +2892,6 @@ function KazeUI:CreateWindow(config)
 
 		table.insert(self._Tabs, { Button = btn, Indicator = leftIndicator, Icon = iconLabel, Label = txt, Page = page })
 
-		-- Page slide & fade animator
 		local function activate()
 			for _, t in ipairs(self._Tabs) do
 				TweenService:Create(t.Button, TWEEN_FAST, { BackgroundColor3 = KazeUI.GetColor(0.02) }):Play()
