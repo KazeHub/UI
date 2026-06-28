@@ -8,7 +8,7 @@
 	Added: Smooth & Responsive Continuous Window Resizing with UIScale correction, PC Hover Cursor (↘), and Multi-Touch Protection
 	Updated: Adaptive Device & Monitor Scale Protection Engine (0.85x Mobile / 1.0x Tablet / 1.15x Desktop Wide)
 	Updated: Adjusted Default Window Size to 600x400
-	Bug Fix: Fixed SectionUI / SectionBox rendering pipeline layout bugs for CanvasGroups/ScrollingFrames
+	Recreated: Re-engineered SectionUI from scratch to bypass Roblox CanvasGroup / UIStroke dynamic rasterization bugs (100% stable outlines)
 --]]
 
 local KazeUI = {}
@@ -653,7 +653,7 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 				local active = isMulti and selectedMulti[optStr] or (not isMulti and selectedSingle == optStr)
 				
 				local targetBg = active and KazeUI.GetColor(0.06) or KazeUI.GetColor(0.02)
-				local targetTxt = active and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(200, 200, 200)
+				local targetTxt = active advisors and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(200, 200, 200)
 				local indTargetBg = active and Color3.fromRGB(255, 255, 255) or KazeUI.GetColor(0.02)
 				
 				if isHovering then
@@ -1142,7 +1142,7 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 		Wrapper = wrapper, 
 		SetState = function(self, newState, instant) setToggleState(newState, instant) end,
 		SetText = function(self, newTitle, newBody)
-			if ptitleLabel wins and newTitle then ptitleLabel.Text = newTitle end
+			if ptitleLabel and newTitle then ptitleLabel.Text = newTitle end
 			if bodyLabel and newBody then bodyLabel.Text = newBody end
 		end
 	}
@@ -1987,95 +1987,88 @@ AttachElementsToAPI = function(apiTable, parentFrame)
 	end
 end
 
+-- =========================================================================
+-- RECREATION: Clean Collapsible Section Engine (Eliminates CanvasGroup Bugs)
+-- =========================================================================
 CreateCollapsibleSection = function(parentFrame, titleArg)
 	local title = type(titleArg) == "table" and titleArg.Title or tostring(titleArg or "Section")
 	local isOpen = false
 
-	local sectionBox = Instance.new("Frame")
-	sectionBox.Size = UDim2.new(0.95, 0, 0, 36) -- Fixed initial rendering height (36px offset prevents zero-height geometry drawing bugs)
-	sectionBox.BorderSizePixel = 0
-	sectionBox.Parent = parentFrame
-	sectionBox.AutomaticSize = Enum.AutomaticSize.Y
-	Instance.new("UICorner", sectionBox).CornerRadius = UDim.new(0, 8)
-	KazeUI:AddPanel(sectionBox, 0.02)
-	KazeUI:AddTransparentElement(sectionBox, 0)
+	-- Master container of the collapsible section hierarchy
+	local sectionContainer = Instance.new("Frame")
+	sectionContainer.Name = "CollapsibleSection"
+	sectionContainer.Size = UDim2.new(0.95, 0, 0, 0)
+	sectionContainer.BackgroundTransparency = 1
+	sectionContainer.BorderSizePixel = 0
+	sectionContainer.Parent = parentFrame
+	sectionContainer.AutomaticSize = Enum.AutomaticSize.Y
 
-	local boxStroke = Instance.new("UIStroke", sectionBox)
-	boxStroke.Thickness = 1.5
-	boxStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-	StartNeonLoop(boxStroke)
-
-	-- FORCED REDRAW MECHANISM (Guarantees outline draws initially & dynamically inside CanvasGroups/ScrollingFrames)
-	local function forceRedrawStroke()
-		task.spawn(function()
-			boxStroke.Enabled = false
-			task.wait(0.05)
-			if boxStroke and boxStroke.Parent then
-				boxStroke.Enabled = true
-			end
-		end)
-	end
-	forceRedrawStroke()
-
-	local boxLayout = Instance.new("UIListLayout", sectionBox)
+	local boxLayout = Instance.new("UIListLayout", sectionContainer)
 	boxLayout.SortOrder = Enum.SortOrder.LayoutOrder
-	boxLayout.Padding = UDim.new(0, 0)
+	boxLayout.Padding = UDim.new(0, 4)
 	boxLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 
+	-- STANDALONE ACCENTED HEADER (Fixed size to guarantee 100% stable border rendering)
 	local headerFrame = Instance.new("Frame")
+	headerFrame.Name = "SectionHeader"
 	headerFrame.Size = UDim2.new(1, 0, 0, 36)
-	headerFrame.BackgroundTransparency = 1
+	headerFrame.BorderSizePixel = 0
 	headerFrame.LayoutOrder = 1
-	headerFrame.Parent = sectionBox
+	headerFrame.Parent = sectionContainer
+	KazeUI:AddPanel(headerFrame, 0.02)
+	KazeUI:AddTransparentElement(headerFrame, 0)
+	Instance.new("UICorner", headerFrame).CornerRadius = UDim.new(0, 8)
+
+	local headerStroke = Instance.new("UIStroke", headerFrame)
+	headerStroke.Thickness = 1.5
+	headerStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+	StartNeonLoop(headerStroke)
+
+	-- Neon vertical bar on the left of the header
+	local leftAccent = Instance.new("Frame", headerFrame)
+	leftAccent.Size = UDim2.new(0, 3, 0, 16)
+	leftAccent.Position = UDim2.new(0, 8, 0.5, -8)
+	leftAccent.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+	leftAccent.BorderSizePixel = 0
+	Instance.new("UICorner", leftAccent).CornerRadius = UDim.new(1, 0)
+	StartNeonLoop(leftAccent)
 
 	local titleLabel = Instance.new("TextLabel")
-	titleLabel.Size = UDim2.new(1, -40, 1, 0)
-	titleLabel.Position = UDim2.fromOffset(12, 0)
+	titleLabel.Size = UDim2.new(1, -50, 1, 0)
+	titleLabel.Position = UDim2.fromOffset(18, 0)
 	titleLabel.BackgroundTransparency = 1
 	titleLabel.Text = title
 	titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
 	titleLabel.Font = Enum.Font.GothamBold
-	titleLabel.TextSize = 14
+	titleLabel.TextSize = 13
 	titleLabel.TextXAlignment = Enum.TextXAlignment.Left
 	titleLabel.Parent = headerFrame
 
 	local arrowIcon = Instance.new("ImageLabel")
 	arrowIcon.AnchorPoint = Vector2.new(1, 0.5)
 	arrowIcon.Position = UDim2.new(1, -12, 0.5, 0)
-	arrowIcon.Size = UDim2.fromOffset(16, 16)
+	arrowIcon.Size = UDim2.fromOffset(14, 14)
 	arrowIcon.BackgroundTransparency = 1
 	arrowIcon.Image = "rbxassetid://6031091004" 
 	arrowIcon.Rotation = isOpen and 0 or -90
 	arrowIcon.Parent = headerFrame
 	StartNeonLoop(arrowIcon)
 
-	local divider = Instance.new("Frame")
-	divider.Size = UDim2.new(0.95, 0, 0, 1)
-	divider.BackgroundColor3 = Color3.fromRGB(38, 38, 42)
-	divider.BorderSizePixel = 0
-	divider.LayoutOrder = 2
-	divider.Visible = isOpen
-	divider.Parent = sectionBox
-
+	-- Seamless content wrapper (Displays child elements elegantly without layout clip errors)
 	local sectionContent = Instance.new("Frame")
-	sectionContent.Size = UDim2.new(1, 0, 0, 0)
+	sectionContent.Name = "SectionContent"
+	sectionContent.Size = UDim2.new(0.98, 0, 0, 0)
 	sectionContent.BackgroundTransparency = 1
 	sectionContent.BorderSizePixel = 0
 	sectionContent.Visible = isOpen
 	sectionContent.AutomaticSize = Enum.AutomaticSize.Y
-	sectionContent.LayoutOrder = 3
-	sectionContent.Parent = sectionBox
+	sectionContent.LayoutOrder = 2
+	sectionContent.Parent = sectionContainer
 
 	local contentLayout = Instance.new("UIListLayout", sectionContent)
 	contentLayout.SortOrder = Enum.SortOrder.LayoutOrder
-	contentLayout.Padding = UDim.new(0, 4)
+	contentLayout.Padding = UDim.new(0, 6)
 	contentLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-
-	local contentPadding = Instance.new("UIPadding", sectionContent)
-	contentPadding.PaddingTop = UDim.new(0, 6)
-	contentPadding.PaddingBottom = UDim.new(0, 8)
-	contentPadding.PaddingLeft = UDim.new(0, 4)
-	contentPadding.PaddingRight = UDim.new(0, 4)
 
 	local toggleDetector = Instance.new("TextButton")
 	toggleDetector.Size = UDim2.fromScale(1, 1)
@@ -2087,14 +2080,12 @@ CreateCollapsibleSection = function(parentFrame, titleArg)
 	toggleDetector.MouseButton1Click:Connect(function()
 		isOpen = not isOpen
 		sectionContent.Visible = isOpen
-		divider.Visible = isOpen
 		TweenService:Create(arrowIcon, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
 			Rotation = isOpen and 0 or -90
 		}):Play()
-		forceRedrawStroke() -- Refreshes stroke pipeline rendering constraints on fold/unfold state modifications
 	end)
 
-	local sectionPublic = { Frame = sectionBox, ContentFrame = sectionContent, Header = headerFrame }
+	local sectionPublic = { Frame = sectionContainer, ContentFrame = sectionContent, Header = headerFrame }
 	AttachElementsToAPI(sectionPublic, sectionContent)
 	function sectionPublic:SetText(newText)
 		titleLabel.Text = newText
