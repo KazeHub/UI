@@ -8,7 +8,6 @@
 	Added: Smooth & Responsive Continuous Window Resizing with UIScale correction, PC Hover Cursor (↘), and Multi-Touch Protection
 	Updated: Adaptive Device & Monitor Scale Protection Engine (0.85x Mobile / 1.0x Tablet / 1.15x Desktop Wide)
 	Updated: Adjusted Default Window Size to 600x400
-	Remade: Recreated SectionUI with a premium nested tree-view card layout (Fixes CanvasGroup rendering cache bugs)
 --]]
 
 local KazeUI = {}
@@ -400,7 +399,6 @@ function KazeUI:SaveConfig(name)
 	end
 end
 
--- Config loader function
 function KazeUI:LoadConfig(name)
 	if readfile then
 		local s, res = pcall(function() return readfile("KazeUI_"..name..".json") end)
@@ -458,7 +456,7 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 	dropFrame.Name = "DropdownFrame"
 	dropFrame.AnchorPoint = Vector2.new(0.5, 0)
 	dropFrame.Position = UDim2.new(0.5, 0, 0, 3)
-	dropFrame.Size = UDim2.new(0.95, 0, 0, 36) -- Optimized base height offset to fix stroke rendering caches
+	dropFrame.Size = UDim2.new(0.95, 0, 0, 0)
 	dropFrame.BorderSizePixel = 0
 	dropFrame.AutomaticSize = Enum.AutomaticSize.Y
 	Instance.new("UICorner", dropFrame).CornerRadius = UDim.new(0, 8)
@@ -719,7 +717,6 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 		CalcHeight()
 	end)
 
-	-- CRITICAL FIX: Changed from .Connect(...) to :Connect(...) to fix local engine crashes
 	clickBtn.MouseButton1Click:Connect(function()
 		isOpen = not isOpen
 		if isOpen then
@@ -1477,7 +1474,7 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 	local dropFrame = Instance.new("Frame")
 	dropFrame.AnchorPoint = Vector2.new(0.5, 0)
 	dropFrame.Position = UDim2.new(0.5, 0, 0, 3)
-	dropFrame.Size = UDim2.new(0.95, 0, 0, 36) -- Optimized base height offset to fix stroke rendering caches
+	dropFrame.Size = UDim2.new(0.95, 0, 0, 0)
 	dropFrame.BorderSizePixel = 0
 	dropFrame.AutomaticSize = Enum.AutomaticSize.Y
 	Instance.new("UICorner", dropFrame).CornerRadius = UDim.new(0, 8)
@@ -1988,105 +1985,132 @@ AttachElementsToAPI = function(apiTable, parentFrame)
 	end
 end
 
--- =========================================================================
--- RECREATION: Clean Collapsible Section Engine (Eliminates CanvasGroup Bugs)
--- =========================================================================
 CreateCollapsibleSection = function(parentFrame, titleArg)
 	local title = type(titleArg) == "table" and titleArg.Title or tostring(titleArg or "Section")
 	local isOpen = false
 
-	-- Master container of the collapsible section hierarchy
-	local sectionContainer = Instance.new("Frame")
-	sectionContainer.Name = "CollapsibleSection"
-	sectionContainer.Size = UDim2.new(0.95, 0, 0, 0)
-	sectionContainer.BackgroundTransparency = 1
-	sectionContainer.BorderSizePixel = 0
-	sectionContainer.Parent = parentFrame
-	sectionContainer.AutomaticSize = Enum.AutomaticSize.Y
+	-- Enhanced Outer Container
+	local sectionBox = Instance.new("Frame")
+	sectionBox.Name = "CollapsibleSection_" .. title
+	sectionBox.Size = UDim2.new(0.95, 0, 0, 0)
+	sectionBox.BorderSizePixel = 0
+	sectionBox.Parent = parentFrame
+	sectionBox.AutomaticSize = Enum.AutomaticSize.Y
+	Instance.new("UICorner", sectionBox).CornerRadius = UDim.new(0, 10)
+	KazeUI:AddPanel(sectionBox, 0.02)
+	KazeUI:AddTransparentElement(sectionBox, 0)
 
-	local boxLayout = Instance.new("UIListLayout", sectionContainer)
+	-- Aesthetic drop shadow glow
+	local glowFrame = Instance.new("Frame")
+	glowFrame.Name = "SectionGlow"
+	glowFrame.AnchorPoint = Vector2.new(0.5, 0.5)
+	glowFrame.Position = UDim2.fromScale(0.5, 0.5)
+	glowFrame.Size = UDim2.new(1, 6, 1, 6)
+	glowFrame.BackgroundTransparency = 0.98
+	glowFrame.ZIndex = -1
+	Instance.new("UICorner", glowFrame).CornerRadius = UDim.new(0, 12)
+	glowFrame.Parent = sectionBox
+	StartNeonLoop(glowFrame)
+
+	-- Modern dynamic outer stroke
+	local boxStroke = Instance.new("UIStroke", sectionBox)
+	boxStroke.Thickness = 1.5
+	boxStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+	boxStroke.Color = Color3.fromRGB(38, 38, 42) -- Deep obsidian outline when closed
+	
+	local boxLayout = Instance.new("UIListLayout", sectionBox)
 	boxLayout.SortOrder = Enum.SortOrder.LayoutOrder
-	boxLayout.Padding = UDim.new(0, 4)
+	boxLayout.Padding = UDim.new(0, 0)
 	boxLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 
-	-- STANDALONE ACCENTED HEADER (Fixed size to guarantee 100% stable border rendering)
+	-- Stylish Interactive Header
 	local headerFrame = Instance.new("Frame")
-	headerFrame.Name = "SectionHeader"
-	headerFrame.Size = UDim2.new(1, 0, 0, 36)
-	headerFrame.BorderSizePixel = 0
+	headerFrame.Name = "Header"
+	headerFrame.Size = UDim2.new(1, 0, 0, 42)
+	headerFrame.BackgroundTransparency = 1
 	headerFrame.LayoutOrder = 1
-	headerFrame.Parent = sectionContainer
-	KazeUI:AddPanel(headerFrame, 0.02)
-	KazeUI:AddTransparentElement(headerFrame, 0)
-	Instance.new("UICorner", headerFrame).CornerRadius = UDim.new(0, 8)
+	headerFrame.Parent = sectionBox
 
-	local headerStroke = Instance.new("UIStroke", headerFrame)
-	headerStroke.Thickness = 1.5
-	headerStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-	StartNeonLoop(headerStroke)
-
-	-- Neon vertical bar on the left of the header
-	local leftAccent = Instance.new("Frame", headerFrame)
-	leftAccent.Size = UDim2.new(0, 3, 0, 16)
-	leftAccent.Position = UDim2.new(0, 8, 0.5, -8)
-	leftAccent.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-	leftAccent.BorderSizePixel = 0
-	Instance.new("UICorner", leftAccent).CornerRadius = UDim.new(1, 0)
-	StartNeonLoop(leftAccent)
+	-- Accent Glow Line 
+	local accentLine = Instance.new("Frame", headerFrame)
+	accentLine.Size = UDim2.new(0, 4, 0, 18)
+	accentLine.Position = UDim2.new(0, 12, 0.5, -9)
+	accentLine.BorderSizePixel = 0
+	Instance.new("UICorner", accentLine).CornerRadius = UDim.new(1, 0)
+	accentLine.BackgroundColor3 = KazeUI.GlowColor
+	StartNeonLoop(accentLine)
 
 	local titleLabel = Instance.new("TextLabel")
-	titleLabel.Size = UDim2.new(1, -50, 1, 0)
-	titleLabel.Position = UDim2.fromOffset(18, 0)
+	titleLabel.Size = UDim2.new(1, -64, 1, 0)
+	titleLabel.Position = UDim2.fromOffset(26, 0)
 	titleLabel.BackgroundTransparency = 1
 	titleLabel.Text = title
-	titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+	titleLabel.TextColor3 = Color3.fromRGB(240, 240, 245)
 	titleLabel.Font = Enum.Font.GothamBold
-	titleLabel.TextSize = 13
+	titleLabel.TextSize = 14
 	titleLabel.TextXAlignment = Enum.TextXAlignment.Left
 	titleLabel.Parent = headerFrame
 
+	-- Element density tracker badge
+	local elementCountBadge = Instance.new("TextLabel")
+	elementCountBadge.Name = "Badge"
+	elementCountBadge.Size = UDim2.fromOffset(24, 18)
+	elementCountBadge.Position = UDim2.new(1, -56, 0.5, -9)
+	elementCountBadge.BackgroundTransparency = 0.9
+	elementCountBadge.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+	elementCountBadge.Text = "0"
+	elementCountBadge.TextColor3 = Color3.fromRGB(160, 160, 165)
+	elementCountBadge.Font = Enum.Font.GothamBold
+	elementCountBadge.TextSize = 10
+	elementCountBadge.Visible = false
+	elementCountBadge.Parent = headerFrame
+	local badgeCorner = Instance.new("UICorner", elementCountBadge)
+	badgeCorner.CornerRadius = UDim.new(1, 0)
+	local badgeStroke = Instance.new("UIStroke", elementCountBadge)
+	badgeStroke.Thickness = 1
+	badgeStroke.Color = Color3.fromRGB(45, 45, 50)
+
 	local arrowIcon = Instance.new("ImageLabel")
 	arrowIcon.AnchorPoint = Vector2.new(1, 0.5)
-	arrowIcon.Position = UDim2.new(1, -12, 0.5, 0)
-	arrowIcon.Size = UDim2.fromOffset(14, 14)
+	arrowIcon.Position = UDim2.new(1, -16, 0.5, 0)
+	arrowIcon.Size = UDim2.fromOffset(16, 16)
 	arrowIcon.BackgroundTransparency = 1
 	arrowIcon.Image = "rbxassetid://6031091004" 
-	arrowIcon.Rotation = isOpen and 0 or -90
+	arrowIcon.ImageColor3 = Color3.fromRGB(180, 180, 185)
+	arrowIcon.Rotation = -90
 	arrowIcon.Parent = headerFrame
 	StartNeonLoop(arrowIcon)
 
-	-- Seamless content wrapper (Displays child elements elegantly without layout clip errors)
-	local sectionContent = Instance.new("Frame")
-	sectionContent.Name = "SectionContent"
-	sectionContent.Size = UDim2.new(0.98, 0, 0, 0)
+	local divider = Instance.new("Frame")
+	divider.Size = UDim2.new(0.95, 0, 0, 1)
+	divider.BackgroundColor3 = Color3.fromRGB(28, 28, 30)
+	divider.BorderSizePixel = 0
+	divider.LayoutOrder = 2
+	divider.Visible = false
+	divider.Parent = sectionBox
+
+	-- Section content container as a CanvasGroup to handle luxury smooth fading transparency transitions
+	local sectionContent = Instance.new("CanvasGroup")
+	sectionContent.Name = "Content"
+	sectionContent.Size = UDim2.new(1, 0, 0, 0)
 	sectionContent.BackgroundTransparency = 1
 	sectionContent.BorderSizePixel = 0
-	sectionContent.Visible = isOpen
+	sectionContent.Visible = false
 	sectionContent.AutomaticSize = Enum.AutomaticSize.Y
-	sectionContent.LayoutOrder = 2
-	sectionContent.Parent = sectionContainer
+	sectionContent.LayoutOrder = 3
+	sectionContent.GroupTransparency = 1
+	sectionContent.Parent = sectionBox
 
 	local contentLayout = Instance.new("UIListLayout", sectionContent)
 	contentLayout.SortOrder = Enum.SortOrder.LayoutOrder
-	contentLayout.Padding = UDim.new(0, 6)
+	contentLayout.Padding = UDim.new(0, 5)
 	contentLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 
-	-- Premium nesting indicator line: A vertical track line on the left side of children elements
-	local nestLine = Instance.new("Frame")
-	nestLine.Name = "NestingIndicator"
-	nestLine.Size = UDim2.new(0, 2, 1, -8)
-	nestLine.Position = UDim2.new(0, 10, 0, 4)
-	nestLine.BackgroundColor3 = Color3.fromRGB(35, 35, 40)
-	nestLine.BorderSizePixel = 0
-	nestLine.Parent = sectionContent
-	Instance.new("UICorner", nestLine).CornerRadius = UDim.new(1, 0)
-
-	-- Indent elements inside the section content so they align beautifully to the right of the nesting indicator
 	local contentPadding = Instance.new("UIPadding", sectionContent)
-	contentPadding.PaddingLeft = UDim.new(0, 20)
+	contentPadding.PaddingTop = UDim.new(0, 8)
+	contentPadding.PaddingBottom = UDim.new(0, 10)
+	contentPadding.PaddingLeft = UDim.new(0, 4)
 	contentPadding.PaddingRight = UDim.new(0, 4)
-	contentPadding.PaddingTop = UDim.new(0, 2)
-	contentPadding.PaddingBottom = UDim.new(0, 4)
 
 	local toggleDetector = Instance.new("TextButton")
 	toggleDetector.Size = UDim2.fromScale(1, 1)
@@ -2095,22 +2119,114 @@ CreateCollapsibleSection = function(parentFrame, titleArg)
 	toggleDetector.ZIndex = 10
 	toggleDetector.Parent = headerFrame
 
+	-- Function to dynamically update nested count badge
+	local function updateCount()
+		local count = 0
+		for _, child in ipairs(sectionContent:GetChildren()) do
+			if child:IsA("Frame") and child.Name ~= "UIPadding" and child.Name ~= "UIListLayout" then
+				count = count + 1
+			end
+		end
+		elementCountBadge.Text = tostring(count)
+		elementCountBadge.Visible = count > 0
+	end
+
+	sectionContent.ChildAdded:Connect(function()
+		task.defer(updateCount)
+	end)
+	sectionContent.ChildRemoved:Connect(function()
+		task.defer(updateCount)
+	end)
+
+	local animating = false
+	local function toggleSection()
+		if animating then return end
+		animating = true
+		isOpen = not isOpen
+
+		local animDuration = 0.25
+		local easeStyle = Enum.EasingStyle.Quad
+		local easeDir = Enum.EasingDirection.Out
+
+		if isOpen then
+			divider.Visible = true
+			sectionContent.Visible = true
+			
+			-- Rotate arrow downward with neon focus
+			TweenService:Create(arrowIcon, TweenInfo.new(animDuration, easeStyle, easeDir), {
+				Rotation = 0,
+				ImageColor3 = KazeUI.GlowColor
+			}):Play()
+			
+			-- Activate active border neon color loop
+			StartNeonLoop(boxStroke)
+			TweenService:Create(elementCountBadge, TweenInfo.new(animDuration, easeStyle, easeDir), {
+				TextColor3 = Color3.fromRGB(255, 255, 255),
+				BackgroundTransparency = 0.8
+			}):Play()
+			badgeStroke.Color = KazeUI.GlowColor
+
+			-- Fade content group in
+			local fadeTween = TweenService:Create(sectionContent, TweenInfo.new(animDuration, easeStyle, easeDir), {
+				GroupTransparency = 0
+			})
+			fadeTween:Play()
+			fadeTween.Completed:Wait()
+		else
+			-- Rotate arrow sideways
+			TweenService:Create(arrowIcon, TweenInfo.new(animDuration, easeStyle, easeDir), {
+				Rotation = -90,
+				ImageColor3 = Color3.fromRGB(180, 180, 185)
+			}):Play()
+			
+			-- Reset border color to elegant silent dark outline
+			StopNeonLoop(boxStroke)
+			TweenService:Create(boxStroke, TweenInfo.new(animDuration, easeStyle, easeDir), {
+				Color = Color3.fromRGB(38, 38, 42)
+			}):Play()
+			
+			TweenService:Create(elementCountBadge, TweenInfo.new(animDuration, easeStyle, easeDir), {
+				TextColor3 = Color3.fromRGB(160, 160, 165),
+				BackgroundTransparency = 0.9
+			}):Play()
+			badgeStroke.Color = Color3.fromRGB(45, 45, 50)
+
+			-- Fade content group out
+			local fadeTween = TweenService:Create(sectionContent, TweenInfo.new(animDuration, easeStyle, easeDir), {
+				GroupTransparency = 1
+			})
+			fadeTween:Play()
+			fadeTween.Completed:Wait()
+
+			-- Hide elements post fade to release layout math overhead
+			if not isOpen then
+				sectionContent.Visible = false
+				divider.Visible = false
+			end
+		end
+		animating = false
+	end
+
+	-- Visual Feedback Hover Engine
 	toggleDetector.MouseEnter:Connect(function()
-		TweenService:Create(headerFrame, TweenInfo.new(0.12), { BackgroundColor3 = KazeUI.GetColor(0.04) }):Play()
+		TweenService:Create(headerFrame, TweenInfo.new(0.15), { BackgroundColor3 = Color3.fromRGB(20, 20, 25), BackgroundTransparency = 0.4 }):Play()
+		TweenService:Create(titleLabel, TweenInfo.new(0.15), { TextColor3 = Color3.fromRGB(255, 255, 255) }):Play()
 	end)
 	toggleDetector.MouseLeave:Connect(function()
-		TweenService:Create(headerFrame, TweenInfo.new(0.12), { BackgroundColor3 = KazeUI.GetColor(0.02) }):Play()
+		TweenService:Create(headerFrame, TweenInfo.new(0.15), { BackgroundTransparency = 1 }):Play()
+		TweenService:Create(titleLabel, TweenInfo.new(0.15), { TextColor3 = Color3.fromRGB(240, 240, 245) }):Play()
 	end)
 
-	toggleDetector.MouseButton1Click:Connect(function()
-		isOpen = not isOpen
-		sectionContent.Visible = isOpen
-		TweenService:Create(arrowIcon, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-			Rotation = isOpen and 0 or -90
-		}):Play()
+	toggleDetector.MouseButton1Down:Connect(function()
+		-- Smooth physics-inspired springy scale compression
+		TweenService:Create(sectionBox, TweenInfo.new(0.1), { Size = UDim2.new(0.93, 0, 0, 0) }):Play()
+	end)
+	toggleDetector.MouseButton1Up:Connect(function()
+		TweenService:Create(sectionBox, TweenInfo.new(0.1), { Size = UDim2.new(0.95, 0, 0, 0) }):Play()
+		toggleSection()
 	end)
 
-	local sectionPublic = { Frame = sectionContainer, ContentFrame = sectionContent, Header = headerFrame }
+	local sectionPublic = { Frame = sectionBox, ContentFrame = sectionContent, Header = headerFrame }
 	AttachElementsToAPI(sectionPublic, sectionContent)
 	function sectionPublic:SetText(newText)
 		titleLabel.Text = newText
