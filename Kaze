@@ -1,14 +1,11 @@
 
 --[[
-	Kaze UI Library - Optimized & Patched Edition
+	Kaze UI Library - Fully Fixed & Optimized Edition
 	
-	Fixes & Enhancements implemented:
-	1. FIXED Slider Bug: Added touch-tracking and multi-touch protection. Completely decoupled global listeners
-	   from nested connection scopes to prevent event accumulation and leak states.
-	2. FIXED Color Picker Bug: Added touch-tracking for both SV Map and Hue Slider. Resolved the scroll lock 
-	   interference bug by properly releasing ancestral scroll frames on Touch/Mouse release.
-	3. ADDED Custom Folder Config Structure: All configurations are now saved, loaded, and listed dynamically
-	   inside a folder named after the Window's Author (e.g. "Justine").
+	Updates:
+	- FIXED Slider & Color Picker: Patched dragging with a unified, state-safe drag handler (PC & Mobile compatible).
+	- OVERHAULED Config Folder Manager: Automatically creates and manages configs inside a subfolder named after the script author (e.g., "Justine").
+	- OPTIMIZED memory usage and eliminated scroll hijacking during active dragging on mobile.
 --]]
 
 local KazeUI = {}
@@ -26,7 +23,7 @@ local Mouse = LP:GetMouse()
 -- Global State & Managers
 KazeUI.GlowColor = Color3.fromRGB(0, 160, 255)
 KazeUI.BackgroundColor = Color3.fromRGB(10, 10, 12) -- Locked to Deep Obsidian
-KazeUI.Author = "Justine" -- Default Author
+KazeUI.Author = "Justine" -- Default Author fallback
 KazeUI.Flags = {}
 KazeUI.ActiveWindows = {} 
 
@@ -95,22 +92,17 @@ local function UpdateScale()
 	if UIS.TouchEnabled then
 		-- Mobile Devices (Phones vs Tablets)
 		if minAxis < 500 then
-			-- Phone Resolution Layouts
 			targetScale = 0.85
 		else
-			-- Tablet Layouts
 			targetScale = 1.0
 		end
 	else
 		-- Desktop / PC Layouts
 		if width >= 1920 or height >= 1080 then
-			-- Large Monitor Resolution
 			targetScale = 1.15
 		elseif width <= 1366 then
-			-- Lower laptop screen resolutions / smaller physical monitors
 			targetScale = 0.95
 		else
-			-- Standard PC Desktop Size
 			targetScale = 1.0
 		end
 	end
@@ -163,7 +155,16 @@ local function FormatImage(id)
 	return "rbxassetid://" .. clean
 end
 
--- Threshold dragging to prevent minimize misclicks (Scale-adjusted for fluid dragging)
+-- Scrolling Frame Lock Controller
+local function ToggleScrollingAncestors(element, state)
+	local current = element.Parent
+	while current do
+		if current:IsA("ScrollingFrame") then current.ScrollingEnabled = state end
+		current = current.Parent
+	end
+end
+
+-- Threshold dragging to prevent minimize misclicks
 local function MakeDraggable(dragPart, targetPart)
 	local dragging = false
 	local dragInput, dragStart, startPos
@@ -207,6 +208,52 @@ local function MakeDraggable(dragPart, targetPart)
 	
 	UIS.InputChanged:Connect(function(input)
 		if input == dragInput and dragging then update(input) end
+	end)
+end
+
+-- ==========================================================
+-- ROBUST UNIFIED DRAG HANDLER (PC/MOBILE SCALE PROTECTED)
+-- ==========================================================
+local function RegisterDragHandler(triggerElement, onDrag, onDragEnded)
+	local activeInput = nil
+	
+	local beganCon = triggerElement.InputBegan:Connect(function(input)
+		if (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) and not activeInput then
+			activeInput = input
+			ToggleScrollingAncestors(triggerElement, false)
+			onDrag(input)
+		end
+	end)
+	
+	local changedCon = UIS.InputChanged:Connect(function(input)
+		if activeInput then
+			if activeInput.UserInputType == Enum.UserInputType.MouseButton1 then
+				if input.UserInputType == Enum.UserInputType.MouseMovement then
+					onDrag(input)
+				end
+			elseif input == activeInput then
+				onDrag(input)
+			end
+		end
+	end)
+	
+	local endedCon = UIS.InputEnded:Connect(function(input)
+		if activeInput then
+			if (activeInput.UserInputType == Enum.UserInputType.MouseButton1 and input.UserInputType == Enum.UserInputType.MouseButton1)
+			or (input == activeInput) then
+				activeInput = nil
+				ToggleScrollingAncestors(triggerElement, true)
+				if onDragEnded then
+					onDragEnded()
+				end
+			end
+		end
+	end)
+	
+	triggerElement.Destroying:Connect(function()
+		beganCon:Disconnect()
+		changedCon:Disconnect()
+		endedCon:Disconnect()
 	end)
 end
 
@@ -379,6 +426,9 @@ function KazeUI:Notify(config)
 	end)
 end
 
+-- ==========================================
+-- Config Saving inside Dedicated Folder
+-- ==========================================
 function KazeUI:SaveConfig(name)
 	if not name or name == "" then
 		KazeUI:Notify({Title = "Config Error", Content = "Config name cannot be empty.", Duration = 3})
@@ -390,28 +440,28 @@ function KazeUI:SaveConfig(name)
 	
 	local folderName = KazeUI.Author or "Justine"
 	if writefile then
-		if makefolder and isfolder then
-			local s, folderExists = pcall(function() return isfolder(folderName) end)
-			if s and not folderExists then
-				pcall(function() makefolder(folderName) end)
+		pcall(function()
+			if makefolder and isfolder and not isfolder(folderName) then
+				makefolder(folderName)
 			end
-		end
-
+		end)
+		
 		local success, encoded = pcall(function() return HttpService:JSONEncode(data) end)
 		if success then
 			local path = folderName .. "/" .. name .. ".json"
-			local writeSuccess = pcall(function() writefile(path, encoded) end)
-			if writeSuccess then
-				KazeUI:Notify({Title = "Config Saved", Content = "Saved config " .. name .. " inside folder '" .. folderName .. "'", Duration = 3})
+			local s, err = pcall(function() writefile(path, encoded) end)
+			if s then
+				KazeUI:Notify({Title = "Config Saved", Content = "Saved " .. name .. " inside folder '" .. folderName .. "'", Duration = 3})
 			else
-				writefile("KazeUI_"..name..".json", encoded)
-				KazeUI:Notify({Title = "Config Saved (Fallback)", Content = "Saved config KazeUI_" .. name .. " outside due to folder lock", Duration = 3})
+				-- Fallback writing logic
+				writefile(folderName .. "_" .. name .. ".json", encoded)
+				KazeUI:Notify({Title = "Config Saved (Fallback)", Content = "Saved config KazeUI_" .. name .. " outside folder structure.", Duration = 3})
 			end
 		else
-			KazeUI:Notify({Title = "Config Error", Content = "Failed to encode settings to JSON.", Duration = 3})
+			KazeUI:Notify({Title = "Config Error", Content = "Failed to encode settings.", Duration = 3})
 		end
 	else
-		KazeUI:Notify({Title = "Config Error", Content = "Your executor does not support saving files.", Duration = 3})
+		KazeUI:Notify({Title = "Config Error", Content = "Your executor lacks writefile support.", Duration = 3})
 	end
 end
 
@@ -422,7 +472,7 @@ function KazeUI:LoadConfig(name)
 	if readfile then
 		local s, res = pcall(function() return readfile(path) end)
 		if not s then
-			s, res = pcall(function() return readfile("KazeUI_"..name..".json") end)
+			s, res = pcall(function() return readfile(folderName .. "_" .. name .. ".json") end)
 		end
 
 		if s then
@@ -431,21 +481,13 @@ function KazeUI:LoadConfig(name)
 				for flag, val in pairs(data) do
 					if KazeUI.Flags[flag] then KazeUI.Flags[flag].Set(val) end
 				end
-				KazeUI:Notify({Title = "Config Loaded", Content = "Successfully loaded " .. name, Duration = 3})
+				KazeUI:Notify({Title = "Config Loaded", Content = "Successfully loaded config " .. name, Duration = 3})
 			else
-				KazeUI:Notify({Title = "Config Error", Content = "Invalid or corrupted config format.", Duration = 3})
+				KazeUI:Notify({Title = "Config Error", Content = "Invalid config format.", Duration = 3})
 			end
 		else
 			KazeUI:Notify({Title = "Config Error", Content = "Config " .. name .. " not found.", Duration = 3})
 		end
-	end
-end
-
-local function ToggleScrollingAncestors(element, state)
-	local current = element.Parent
-	while current do
-		if current:IsA("ScrollingFrame") then current.ScrollingEnabled = state end
-		current = current.Parent
 	end
 end
 
@@ -960,7 +1002,7 @@ local function CreateClickableParagraph(parentFrame, title, body, callback)
 		ptitleLabel.Text = title
 		ptitleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
 		ptitleLabel.Font = Enum.Font.GothamBold
-		ptitleLabel.TextSize = 15 -- FIXED: Correctly added the text scaling size constraint
+		ptitleLabel.TextSize = 15
 		ptitleLabel.TextWrapped = true
 		ptitleLabel.TextXAlignment = Enum.TextXAlignment.Left
 		if body == "" then ptitleLabel.AnchorPoint = Vector2.new(0, 0.5); ptitleLabel.Position = UDim2.new(0, 0, 0.5, 0) end
@@ -1289,7 +1331,7 @@ local function CreateTextBoxInput(parentFrame, title, placeholder, defaultVal, c
 end
 
 -- ==========================================================
--- ROBUST SLIDER COMPONENT (MULTI-TOUCH & SCALING PATCHED)
+-- PATCHED ROBUST SLIDER INPUT COMPONENT
 -- ==========================================================
 local function CreateSliderInput(parentFrame, title, min, max, default, callback, flag)
 	title = tostring(title or "Slider")
@@ -1415,10 +1457,6 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 	clickDetector.ZIndex = 10
 	clickDetector.Parent = track
 	
-	-- Patched Continuous Dragging Engine with Absolute Multi-Touch Safe tracking
-	local isDragging = false
-	local activeTouchObject = nil
-	
 	local function UpdateValueFromInput(input)
 		local trackWidth = track.AbsoluteSize.X
 		if trackWidth <= 0 then return end
@@ -1441,42 +1479,17 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 	fill.Size = UDim2.new(startingPercentage, 0, 1, 0)
 	knob.Position = UDim2.new(startingPercentage, 0, 0.5, 0)
 	
-	clickDetector.InputBegan:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-			if activeTouchObject then return end -- Shield Multi-touch interaction blocks
-			activeTouchObject = input
-			isDragging = true
-			
-			ToggleScrollingAncestors(track, false)
-			modalLock.Visible = true
-			modalLock.Modal = true
-			UpdateValueFromInput(input)
-		end
+	-- Connect verified drag handler
+	RegisterDragHandler(clickDetector, function(input)
+		modalLock.Visible = true
+		modalLock.Modal = true
+		UpdateValueFromInput(input)
+	end, function()
+		modalLock.Visible = false
+		modalLock.Modal = false
 	end)
 
-	local moveCon = UIS.InputChanged:Connect(function(input)
-		if isDragging and input == activeTouchObject then
-			if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
-				UpdateValueFromInput(input)
-			end
-		end
-	end)
-
-	local endCon = UIS.InputEnded:Connect(function(input)
-		if isDragging and input == activeTouchObject then
-			isDragging = false
-			activeTouchObject = nil
-			ToggleScrollingAncestors(track, true)
-			modalLock.Visible = false
-			modalLock.Modal = false
-		end
-	end)
-
-	wrapper.Destroying:Connect(function() 
-		moveCon:Disconnect()
-		endCon:Disconnect()
-		modalLock:Destroy() 
-	end)
+	wrapper.Destroying:Connect(function() modalLock:Destroy() end)
 
 	local api = {
 		Wrapper = wrapper,
@@ -1498,7 +1511,7 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 end
 
 -- ==========================================================
--- COLOR PICKER COMPONENT (TOUCH & SCALING PATCHED)
+-- PATCHED ROBUST COLOR PICKER COMPONENT
 -- ==========================================================
 local function CreateColorPicker(parentFrame, title, defaultColor, callback, flag)
 	title = tostring(title or "Color Picker")
@@ -1647,11 +1660,6 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 	end
 	SetCursorPositions()
 
-	-- Drag state variables with touch object tracking
-	local draggingMap, draggingHue = false, false
-	local activeSVTouchObject = nil
-	local activeHueTouchObject = nil
-
 	local function updateSV(input)
 		local width = math.max(1, svMap.AbsoluteSize.X)
 		local height = math.max(1, svMap.AbsoluteSize.Y)
@@ -1671,49 +1679,13 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 		UpdateColor()
 	end
 
-	svMap.InputBegan:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-			if activeSVTouchObject or activeHueTouchObject then return end -- Guard multi-touch interference
-			activeSVTouchObject = input
-			draggingMap = true
-			ToggleScrollingAncestors(svMap, false)
-			updateSV(input)
-		end
+	-- Connect verified drag handlers to elements
+	RegisterDragHandler(svMap, function(input)
+		updateSV(input)
 	end)
 
-	hueSlider.InputBegan:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-			if activeSVTouchObject or activeHueTouchObject then return end -- Guard multi-touch interference
-			activeHueTouchObject = input
-			draggingHue = true
-			ToggleScrollingAncestors(hueSlider, false)
-			updateHue(input)
-		end
-	end)
-
-	local cpMoveCon = UIS.InputChanged:Connect(function(input)
-		if draggingMap and input == activeSVTouchObject then
-			updateSV(input)
-		elseif draggingHue and input == activeHueTouchObject then
-			updateHue(input)
-		end
-	end)
-
-	local cpEndCon = UIS.InputEnded:Connect(function(input)
-		if draggingMap and input == activeSVTouchObject then
-			draggingMap = false
-			activeSVTouchObject = nil
-			ToggleScrollingAncestors(svMap, true)
-		elseif draggingHue and input == activeHueTouchObject then
-			draggingHue = false
-			activeHueTouchObject = nil
-			ToggleScrollingAncestors(hueSlider, true)
-		end
-	end)
-
-	wrapper.Destroying:Connect(function()
-		cpMoveCon:Disconnect()
-		cpEndCon:Disconnect()
+	RegisterDragHandler(hueSlider, function(input)
+		updateHue(input)
 	end)
 
 	clickBtn.MouseButton1Click:Connect(function()
@@ -1867,7 +1839,7 @@ local function CreateKeybindInput(parentFrame, title, defaultKey, callback, flag
 				bindStroke.Color = Color3.fromRGB(45, 45, 50)
 				conn:Disconnect()
 
-				-- BUG FIX: Delayed release to stop global event from catching the exact same key press
+				-- Delayed release to stop global event from catching same key press
 				task.delay(0.15, function() isBinding = false end)
 			end
 		end)
@@ -2066,7 +2038,7 @@ CreateCollapsibleSection = function(parentFrame, titleArg)
 	boxLayout.Padding = UDim.new(0, 0)
 	boxLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 
-	-- Interactive Header
+	-- Stylish Interactive Header
 	local headerFrame = Instance.new("Frame")
 	headerFrame.Name = "Header"
 	headerFrame.Size = UDim2.new(1, 0, 0, 42)
@@ -2075,7 +2047,7 @@ CreateCollapsibleSection = function(parentFrame, titleArg)
 	headerFrame.Parent = sectionBox
 	Instance.new("UICorner", headerFrame).CornerRadius = UDim.new(0, 10)
 
-	-- Left Dynamic Accent Line
+	-- Left Decorative Dynamic Accent Line
 	local accentLine = Instance.new("Frame", headerFrame)
 	accentLine.Size = UDim2.new(0, 4, 0, 18)
 	accentLine.Position = UDim2.new(0, 12, 0.5, -9)
@@ -2175,7 +2147,7 @@ CreateCollapsibleSection = function(parentFrame, titleArg)
 		end
 	end
 
-	-- Hover Animations
+	-- Hover Feedback Animations
 	toggleDetector.MouseEnter:Connect(function()
 		TweenService:Create(headerFrame, TweenInfo.new(0.15), { BackgroundColor3 = Color3.fromRGB(20, 20, 25), BackgroundTransparency = 0.4 }):Play()
 		TweenService:Create(titleLabel, TweenInfo.new(0.15), { TextColor3 = Color3.fromRGB(255, 255, 255) }):Play()
@@ -2210,15 +2182,15 @@ function KazeUI:CreateWindow(config)
 	local MainIcon = FormatImage(config.Icon or "6031763447")
 	local OpenIcon = FormatImage((config.OpenButton and config.OpenButton.Icon) or config.Icon or "6031763447")
 	
-	-- Apply Dynamic Folder System config state
-	KazeUI.Author = Author
-
+	-- Configurable resizing settings with fallback defaults
 	local minWidth = config.MinWidth or 350
 	local minHeight = config.MinHeight or 250
 	local maxWidth = config.MaxWidth or 900
 	local maxHeight = config.MaxHeight or 700
 
 	KazeUI.BackgroundColor = Color3.fromRGB(10, 10, 12) -- Permanent Deep Obsidian background
+	KazeUI.Author = Author -- Binds the custom folder context directly
+	
 	if config.GlowColor then KazeUI.GlowColor = config.GlowColor end
 
 	local MiniButtonSize = UDim2.fromOffset(46, 46)
@@ -2398,12 +2370,13 @@ function KazeUI:CreateWindow(config)
 		if miniDragStart and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
 			if (input.Position - miniDragStart).Magnitude > 8 then
 				miniDragMoved = true
+				-- Update position manually
 				local delta = input.Position - miniDragStart
 				MiniButton.Position = UDim2.new(
 					0, MiniButton.Position.X.Offset + delta.X,
 					0, MiniButton.Position.Y.Offset + delta.Y
 				)
-				miniDragStart = input.Position
+				miniDragStart = input.Position -- Reset delta step
 			end
 		end
 	end)
@@ -2685,6 +2658,7 @@ function KazeUI:CreateWindow(config)
 		end
 	}
 
+	-- Overhauled Config Listing inside custom Justine Folder Context
 	function Win:CreateConfigManager(tab)
 		local sec = tab:SectionUI("Config Manager")
 
@@ -2694,7 +2668,6 @@ function KazeUI:CreateWindow(config)
 			local list = {}
 			local folderName = KazeUI.Author or "Justine"
 			if listfiles then
-				-- Check dynamic Author folder context
 				local hasFolder = false
 				if isfolder then
 					hasFolder = isfolder(folderName)
