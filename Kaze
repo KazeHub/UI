@@ -8,7 +8,7 @@
 	Added: Smooth & Responsive Continuous Window Resizing with UIScale correction, PC Hover Cursor (↘), and Multi-Touch Protection
 	Updated: Adaptive Device & Monitor Scale Protection Engine (0.85x Mobile / 1.0x Tablet / 1.15x Desktop Wide)
 	Updated: Adjusted Default Window Size to 600x400
-	Fixed: Section Outline Dynamic Resizing and Overflow Bug Fix (Manual Calculation Sequence via AbsoluteContentSize)
+	Bug Fix: UIStroke visibility rendering bug patched on all dynamically resizing containers (SectionUI, Dropdowns, ColorPickers)
 --]]
 
 local KazeUI = {}
@@ -473,6 +473,16 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 	boxStroke.Thickness = 1.5
 	boxStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 	StartNeonLoop(boxStroke)
+
+	-- FIX: Force UIStroke to render correctly when AutomaticSize changes the frame
+	dropFrame:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+		task.defer(function()
+			if boxStroke and boxStroke.Parent then
+				boxStroke.Enabled = false
+				boxStroke.Enabled = true
+			end
+		end)
+	end)
 
 	local layout = Instance.new("UIListLayout", dropFrame)
 	layout.SortOrder = Enum.SortOrder.LayoutOrder
@@ -1492,6 +1502,16 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 	boxStroke.Thickness = 1.5
 	StartNeonLoop(boxStroke)
 
+	-- FIX: Force UIStroke to render correctly when AutomaticSize changes the frame
+	dropFrame:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+		task.defer(function()
+			if boxStroke and boxStroke.Parent then
+				boxStroke.Enabled = false
+				boxStroke.Enabled = true
+			end
+		end)
+	end)
+
 	local layout = Instance.new("UIListLayout", dropFrame)
 	layout.SortOrder = Enum.SortOrder.LayoutOrder
 	layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
@@ -1987,17 +2007,15 @@ AttachElementsToAPI = function(apiTable, parentFrame)
 	end
 end
 
--- ====================================================
--- FIXED CRITICAL COLLAPSIBLE SECTION ENGINE
--- ====================================================
 CreateCollapsibleSection = function(parentFrame, titleArg)
 	local title = type(titleArg) == "table" and titleArg.Title or tostring(titleArg or "Section")
 	local isOpen = false
 
 	local sectionBox = Instance.new("Frame")
-	sectionBox.Size = UDim2.new(0.95, 0, 0, 36) -- Start exactly at Header Size height
+	sectionBox.Size = UDim2.new(0.95, 0, 0, 0)
 	sectionBox.BorderSizePixel = 0
 	sectionBox.Parent = parentFrame
+	sectionBox.AutomaticSize = Enum.AutomaticSize.Y
 	Instance.new("UICorner", sectionBox).CornerRadius = UDim.new(0, 8)
 	KazeUI:AddPanel(sectionBox, 0.02)
 	KazeUI:AddTransparentElement(sectionBox, 0)
@@ -2006,6 +2024,16 @@ CreateCollapsibleSection = function(parentFrame, titleArg)
 	boxStroke.Thickness = 1.5
 	boxStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 	StartNeonLoop(boxStroke)
+
+	-- FIX: Force UIStroke to render correctly when AutomaticSize changes the frame
+	sectionBox:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+		task.defer(function()
+			if boxStroke and boxStroke.Parent then
+				boxStroke.Enabled = false
+				boxStroke.Enabled = true
+			end
+		end)
+	end)
 
 	local boxLayout = Instance.new("UIListLayout", sectionBox)
 	boxLayout.SortOrder = Enum.SortOrder.LayoutOrder
@@ -2052,6 +2080,7 @@ CreateCollapsibleSection = function(parentFrame, titleArg)
 	sectionContent.BackgroundTransparency = 1
 	sectionContent.BorderSizePixel = 0
 	sectionContent.Visible = isOpen
+	sectionContent.AutomaticSize = Enum.AutomaticSize.Y
 	sectionContent.LayoutOrder = 3
 	sectionContent.Parent = sectionBox
 
@@ -2066,24 +2095,6 @@ CreateCollapsibleSection = function(parentFrame, titleArg)
 	contentPadding.PaddingLeft = UDim.new(0, 4)
 	contentPadding.PaddingRight = UDim.new(0, 4)
 
-	-- Dynamic scaling math based on real-time canvas properties
-	local function updateSectionHeight()
-		if isOpen then
-			local contentHeight = contentLayout.AbsoluteContentSize.Y
-			local paddingTop = contentPadding.PaddingTop.Offset
-			local paddingBottom = contentPadding.PaddingBottom.Offset
-			
-			sectionContent.Size = UDim2.new(1, 0, 0, contentHeight + paddingTop + paddingBottom)
-			sectionBox.Size = UDim2.new(0.95, 0, 0, 36 + 1 + sectionContent.Size.Y.Offset)
-		else
-			sectionContent.Size = UDim2.new(1, 0, 0, 0)
-			sectionBox.Size = UDim2.new(0.95, 0, 0, 36)
-		end
-	end
-
-	-- Connect layout size events to dynamically adjust Section heights in real-time
-	contentLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(updateSectionHeight)
-
 	local toggleDetector = Instance.new("TextButton")
 	toggleDetector.Size = UDim2.fromScale(1, 1)
 	toggleDetector.BackgroundTransparency = 1
@@ -2095,14 +2106,10 @@ CreateCollapsibleSection = function(parentFrame, titleArg)
 		isOpen = not isOpen
 		sectionContent.Visible = isOpen
 		divider.Visible = isOpen
-		updateSectionHeight()
 		TweenService:Create(arrowIcon, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
 			Rotation = isOpen and 0 or -90
 		}):Play()
 	end)
-
-	-- Run initial setup sizing call
-	updateSectionHeight()
 
 	local sectionPublic = { Frame = sectionBox, ContentFrame = sectionContent, Header = headerFrame }
 	AttachElementsToAPI(sectionPublic, sectionContent)
@@ -2292,7 +2299,7 @@ function KazeUI:CreateWindow(config)
 		end
 	end
 
-	BtnYellow.MouseButton1Click.Connect(minimizeWindow)
+	BtnYellow.MouseButton1Click:Connect(minimizeWindow)
 
 	-- BUG FIX: Global Dragging to stop slipping off the Mini Button bounds and triggering clicks
 	local miniDragStart
