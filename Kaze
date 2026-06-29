@@ -1,6 +1,6 @@
 
 --[[
-	Kaze UI Library v2.1
+	Kaze UI Library v2.1 (Fixed & Optimized)
 	Redesigned: High-End Desktop Software Aesthetic (Arc, Figma, Linear, macOS)
 	Retained: 100% Backwards Compatibility with Version 1 APIs
 	
@@ -8,6 +8,7 @@
 	- Full Preset Theme Engine (Arctic Light Theme & more added!)
 	- FIXED: Background transparency slider is now 0 to 10 and fully functional.
 	- Dynamic theme updates applied to all UI text, borders, and layouts in real-time.
+	- FIXED: Dropped option selection and theme transitions no longer get stuck in light/dark state.
 --]]
 
 local KazeUI = {}
@@ -361,10 +362,12 @@ function KazeUI.GetColor(elevation)
 	return Color3.fromHSV(h, s, math.clamp(v + offset, 0, 1))
 end
 
-function KazeUI:AddPanel(inst, elevation)
-	table.insert(KazeUI.PanelElements, {Inst = inst, Elevation = elevation or 0})
+function KazeUI:AddPanel(inst, elevation, ignoreColorUpdate)
+	table.insert(KazeUI.PanelElements, {Inst = inst, Elevation = elevation or 0, IgnoreColor = ignoreColorUpdate})
 	if inst and inst:IsA("GuiObject") then
-		inst.BackgroundColor3 = KazeUI.GetColor(elevation or 0)
+		if not ignoreColorUpdate then
+			inst.BackgroundColor3 = KazeUI.GetColor(elevation or 0)
+		end
 		
 		-- Set Background Transparency correctly dynamically
 		local baseTrans = KazeUI.BackgroundTransparency or 0
@@ -385,7 +388,7 @@ end
 
 function KazeUI:SetBackgroundColor(color)
 	for _, data in ipairs(KazeUI.PanelElements) do
-		if data.Inst and data.Inst.Parent and data.Inst:IsA("GuiObject") then
+		if data.Inst and data.Inst.Parent and data.Inst:IsA("GuiObject") and not data.IgnoreColor then
 			data.Inst.BackgroundColor3 = KazeUI.GetColor(data.Elevation)
 		end
 	end
@@ -869,7 +872,9 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 			btn.TextXAlignment = Enum.TextXAlignment.Left
 			btn.Parent = listContainer
 			Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 5)
-			KazeUI:AddPanel(btn, 0.03)
+			
+			-- ignoreColorUpdate = true stops SetBackgroundColor from flattening this stateful button!
+			KazeUI:AddPanel(btn, 0.03, true)
 
 			local indicator
 			if isMulti then
@@ -884,6 +889,7 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 			end
             
 			local isHovering = false
+			local currentBgTween, currentTxtTween
 
 			local function UpdateVisuals(instant)
 				local active = isMulti and selectedMulti[optStr] or (not isMulti and selectedSingle == optStr)
@@ -897,6 +903,10 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 					targetTxt = KazeUI.CurrentTheme.Text
 				end
 
+				-- Cancel running transitions so they don't override the background update asynchronously
+				if currentBgTween then currentBgTween:Cancel() currentBgTween = nil end
+				if currentTxtTween then currentTxtTween:Cancel() currentTxtTween = nil end
+
 				if instant then
 					btn.BackgroundColor3 = targetBg
 					btn.TextColor3 = targetTxt
@@ -904,7 +914,11 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 						indicator.BackgroundColor3 = indTargetBg
 					end
 				else
-					TweenService:Create(btn, TWEEN_FAST, {BackgroundColor3 = targetBg, TextColor3 = targetTxt}):Play()
+					currentBgTween = TweenService:Create(btn, TWEEN_FAST, {BackgroundColor3 = targetBg})
+					currentTxtTween = TweenService:Create(btn, TWEEN_FAST, {TextColor3 = targetTxt})
+					currentBgTween:Play()
+					currentTxtTween:Play()
+					
 					if isMulti and indicator then
 						TweenService:Create(indicator, TWEEN_FAST, {BackgroundColor3 = indTargetBg}):Play()
 					end
@@ -1185,7 +1199,6 @@ local function CreateClickableParagraph(parentFrame, title, body, callback)
 		ptitleLabel.BackgroundTransparency = 1
 		ptitleLabel.Text = title
 		ptitleLabel.Font = Enum.Font.GothamBold
-		ptitleLabel.TextSize = 13
 		ptitleLabel.TextWrapped = true
 		ptitleLabel.TextXAlignment = Enum.TextXAlignment.Left
 		if body == "" then ptitleLabel.AnchorPoint = Vector2.new(0, 0.5); ptitleLabel.Position = UDim2.new(0, 0, 0.5, 0) end
@@ -3102,7 +3115,9 @@ function KazeUI:CreateWindow(config)
 		btn.ClipsDescendants = true
 		btn.LayoutOrder = #self._Tabs + 1
 		Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
-		KazeUI:AddPanel(btn, 0.02)
+		
+		-- ignoreColorUpdate = true prevents theme engine from flattening tab-specific backgrounds
+		KazeUI:AddPanel(btn, 0.02, true)
 
 		local leftIndicator = Instance.new("Frame", btn)
 		leftIndicator.Size = UDim2.new(0,3,1,0)
@@ -3210,9 +3225,11 @@ function KazeUI:CreateWindow(config)
 			if leftIndicator.Visible then
 				txt.TextColor3 = t.Text
 				if not isHovering then iconLabel.ImageColor3 = KazeUI.GlowColor end
+				btn.BackgroundColor3 = KazeUI.GetColor(0.04)
 			else
 				txt.TextColor3 = t.MutedText
 				if not isHovering then iconLabel.ImageColor3 = t.MutedText end
+				btn.BackgroundColor3 = KazeUI.GetColor(0.02)
 			end
 		end)
 
