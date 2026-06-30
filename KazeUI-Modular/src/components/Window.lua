@@ -118,12 +118,12 @@ local function AttachElementsToAPI(apiTable, parentFrame)
 	end
 
 	function apiTable:SectionUI(arg1)
-		local title = type(arg1) == "table" and arg1.Title or arg1
+		local title = type(arg1) == "table" and (arg1.Title or arg1.Name) or arg1
 		return Section.new(parentFrame, title, AttachElementsToAPI)
 	end
 	
 	function apiTable:Section(arg1)
-		local title = type(arg1) == "table" and arg1.Title or arg1
+		local title = type(arg1) == "table" and (arg1.Title or arg1.Name) or arg1
 		return Divider.new(parentFrame, title)
 	end
 end
@@ -150,7 +150,7 @@ function WindowModule:CreateWindow(config, screenGui)
 			selectedTheme = "Amethyst"
 		elseif lowerTheme == "emerald" or lowerTheme == "green" then
 			selectedTheme = "Emerald"
-		elseif lowerTheme == "midnight" or lowerTheme == "blue" then
+		elseif lowerTheme == "midnight" or lowerTheme == "blue" or lowerTheme == "black" then
 			selectedTheme = "Midnight"
 		end
 	end
@@ -541,7 +541,7 @@ function WindowModule:CreateWindow(config, screenGui)
 		else
 			TweenService:Create(SideBarMask, tInfo, {Size = UDim2.new(0, 0, 1, 0)}):Play()
 			TweenService:Create(VertDivider, tInfo, {Position = UDim2.new(0, 0, 0, 0), BackgroundTransparency = 1}):Play()
-			TweenService:Create(Pages, tInfo, {Position = UDim2.new(0, 0, 0, 0), Size = UDim2.new(1, 0, 1, 0)}):Play()
+			TweenService:Create(Pages, tInfo, {Position = UDim2.fromScale(0, 0), Size = UDim2.fromScale(1, 1)}):Play()
 		end
 	end)
 
