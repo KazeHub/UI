@@ -17,7 +17,7 @@ local ColorPicker = require("src/components/ui/ColorPicker")
 local Keybind = require("src/components/ui/Keybind")
 local Divider = require("src/components/ui/Divider")
 local Section = require("src/components/ui/Section")
-local BannerThumbnail = require("src/components/ui/BannerThumbnail")
+local BannerThumbnail = require("src/components/ui/BannerThumbnail") -- Added import back
 
 local TweenService = game:GetService("TweenService")
 local UIS = game:GetService("UserInputService")
@@ -58,6 +58,7 @@ local function AttachElementsToAPI(apiTable, parentFrame)
 		return Button.new(parentFrame, title, desc, callback)
 	end
 
+	-- Adjusted config tables mapping to modern parameters
 	function apiTable:Toggle(arg1, arg2, arg3, arg4, arg5)
 		local title, desc, def, callback, flag
 		if type(arg1) == "table" then
@@ -127,14 +128,15 @@ local function AttachElementsToAPI(apiTable, parentFrame)
 		local title = type(arg1) == "table" and (arg1.Title or arg1.Name) or arg1
 		return Divider.new(parentFrame, title)
 	end
-end
 
-function apiTable:Banner(arg1, arg2)
-        local title = type(arg1) == "table" and arg1.Title or arg1
-        local image = type(arg1) == "table" and (arg1.Image or arg1.ImageId) or arg2
-        return BannerThumbnail.new(parentFrame, title, image)
-    end
+	-- Put inside AttachElementsToAPI function context wrapper!
+	function apiTable:Banner(arg1, arg2)
+		local title = type(arg1) == "table" and arg1.Title or arg1
+		local image = type(arg1) == "table" and (arg1.Image or arg1.ImageId) or arg2
+		return BannerThumbnail.new(parentFrame, title, image)
+	end
 end
+-- Leave the rest of your CreateWindow and Manager setups below untouched...
 
 function WindowModule:CreateWindow(config, screenGui)
 	config = config or {}
