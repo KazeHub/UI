@@ -130,9 +130,10 @@ local function AttachElementsToAPI(apiTable, parentFrame)
 end
 
 function apiTable:Banner(arg1, arg2)
-    local title = type(arg1) == "table" and arg1.Title or arg1
-    local image = type(arg1) == "table" and (arg1.Image or arg1.ImageId) or arg2
-    return BannerThumbnail.new(parentFrame, title, image)
+        local title = type(arg1) == "table" and arg1.Title or arg1
+        local image = type(arg1) == "table" and (arg1.Image or arg1.ImageId) or arg2
+        return BannerThumbnail.new(parentFrame, title, image)
+    end
 end
 
 function WindowModule:CreateWindow(config, screenGui)
