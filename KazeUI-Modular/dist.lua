@@ -27,7 +27,7 @@ end
 Modules["src/themes/init"] = function()
     local ThemesModule = {}
 
-    -- 14 Premium Themes (Kasama ang Hacker, Retro, at Luxury styles)
+    -- 14 Premium Themes (Kasama ang CyberHacker, Midnight, atbp.)
     ThemesModule.Themes = {
         Obsidian = {
             Name = "Obsidian",
@@ -257,12 +257,12 @@ Modules["src/themes/init"] = function()
         end
     end
 
-    -- PINAGANDA: May case-insensitive search at automatic shortcuts
+    -- Case-insensitive check at automatic shortcut routing
     function ThemesModule:SetTheme(themeName)
         local targetTheme = nil
         local searchName = string.lower(tostring(themeName or "obsidian"))
 
-        -- Madaling aliases para sa mabilisang setup
+        -- Aliases para sa mabilisang config
         if searchName == "black" or searchName == "dark" then
             searchName = "obsidian"
         elseif searchName == "white" or searchName == "light" then
@@ -385,6 +385,7 @@ Modules["src/themes/init"] = function()
 
     return ThemesModule
 end
+
 -- ==========================================
 -- MODULE: src/utils/init
 -- ==========================================
