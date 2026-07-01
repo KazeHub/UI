@@ -141,41 +141,65 @@ function WindowModule:CreateWindow(config, screenGui)
 	local maxWidth = config.MaxWidth or 900
 	local maxHeight = config.MaxHeight or 700
 
-	local selectedTheme = "Obsidian"
-	if config.Theme then
-		local lowerTheme = string.lower(tostring(config.Theme))
-		if lowerTheme == "arctic" or lowerTheme == "white" or lowerTheme == "light" then
-			selectedTheme = "Arctic"
-		elseif lowerTheme == "amethyst" or lowerTheme == "purple" then
-			selectedTheme = "Amethyst"
-		elseif lowerTheme == "emerald" or lowerTheme == "green" then
-			selectedTheme = "Emerald"
-		elseif lowerTheme == "midnight" or lowerTheme == "blue" or lowerTheme == "black" then
-			selectedTheme = "Midnight"
-		end
-	end
-	ThemesModule:SetTheme(selectedTheme)
+	    --// Handle Theme Selection with fallback mappings
+    local selectedTheme = "Obsidian"
+    if config.Theme then
+        local lowerTheme = string.lower(tostring(config.Theme))
+        if lowerTheme == "arctic" or lowerTheme == "white" or lowerTheme == "light" then
+            selectedTheme = "Arctic"
+        elseif lowerTheme == "amethyst" or lowerTheme == "purple" then
+            selectedTheme = "Amethyst"
+        elseif lowerTheme == "emerald" or lowerTheme == "green" then
+            selectedTheme = "Emerald"
+        elseif lowerTheme == "midnight" or lowerTheme == "blue" then
+            selectedTheme = "Midnight"
+        elseif lowerTheme == "cyberhacker" or lowerTheme == "hacker" or lowerTheme == "matrix" then
+            selectedTheme = "CyberHacker"
+        elseif lowerTheme == "terminalvoid" or lowerTheme == "terminal" then
+            selectedTheme = "TerminalVoid"
+        elseif lowerTheme == "synthwave" or lowerTheme == "retro" then
+            selectedTheme = "Synthwave"
+        elseif lowerTheme == "darkgold" or lowerTheme == "gold" then
+            selectedTheme = "DarkGold"
+        elseif lowerTheme == "frostbite" or lowerTheme == "ice" then
+            selectedTheme = "Frostbite"
+        elseif lowerTheme == "crimsonvoid" or lowerTheme == "vampire" or lowerTheme == "red" then
+            selectedTheme = "CrimsonVoid"
+        elseif lowerTheme == "sakurabreeze" or lowerTheme == "sakura" or lowerTheme == "pink" then
+            selectedTheme = "SakuraBreeze"
+        elseif lowerTheme == "cosmicnebula" or lowerTheme == "nebula" or lowerTheme == "space" then
+            selectedTheme = "CosmicNebula"
+        elseif lowerTheme == "ghostrecon" or lowerTheme == "military" or lowerTheme == "tactical" then
+            selectedTheme = "GhostRecon"
+        end
+    end
+    ThemesModule:SetTheme(selectedTheme)
 
-	if config.Glow then
-		local lowerGlow = string.lower(tostring(config.Glow))
-		local glowMap = {
-			red = Color3.fromRGB(255, 60, 60),
-			blue = Color3.fromRGB(0, 160, 255),
-			green = Color3.fromRGB(34, 197, 94),
-			yellow = Color3.fromRGB(234, 179, 8),
-			purple = Color3.fromRGB(168, 85, 247),
-			pink = Color3.fromRGB(244, 114, 182),
-			orange = Color3.fromRGB(249, 115, 22),
-			white = Color3.fromRGB(255, 255, 255)
-		}
-		if glowMap[lowerGlow] then
-			ThemesModule:SetGlow(glowMap[lowerGlow])
-		elseif typeof(config.Glow) == "Color3" then
-			ThemesModule:SetGlow(config.Glow)
+    --// Handle Neon Glow Mapping
+    if config.Glow then
+        local lowerGlow = string.lower(tostring(config.Glow))
+        local glowMap = {
+            red = Color3.fromRGB(255, 60, 60),
+            blue = Color3.fromRGB(0, 160, 255),
+            green = Color3.fromRGB(34, 197, 94),
+            neon green = Color3.fromRGB(0, 255, 100),
+            yellow = Color3.fromRGB(234, 179, 8),
+            gold = Color3.fromRGB(255, 215, 115),
+            purple = Color3.fromRGB(168, 85, 247),
+            pink = Color3.fromRGB(244, 114, 182),
+            hotpink = Color3.fromRGB(255, 90, 210),
+            orange = Color3.fromRGB(249, 115, 22),
+            white = Color3.fromRGB(255, 255, 255),
+            cyan = Color3.fromRGB(50, 255, 180)
+        }
+        if glowMap[lowerGlow] then
+            ThemesModule:SetGlow(glowMap[lowerGlow])
+        elseif typeof(config.Glow) == "Color3" then
+            ThemesModule:SetGlow(config.Glow)
+        end
+    elseif config.GlowColor then
+        ThemesModule:SetGlow(config.GlowColor)
 		end
-	elseif config.GlowColor then
-		ThemesModule:SetGlow(config.GlowColor)
-	end
 
 	local MiniButtonSize = UDim2.fromOffset(46, 46)
 
