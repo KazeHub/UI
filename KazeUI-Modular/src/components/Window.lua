@@ -143,6 +143,17 @@ modules["src/Window"] = function()
 		local maxWidth = config.MaxWidth or 900
 		local maxHeight = config.MaxHeight or 700
 
+		-- CRITICAL FIX FOR INITIAL LOAD:
+		-- I-set agad ang tema at glow color bago likhain ang anomang elements!
+		-- Dito, kahit na tawagin ang ThemesModule:AddPanel, nakahanda na agad ang tamang kulay!
+		ThemesModule:SetTheme(config.Theme or "Obsidian")
+
+		if config.Glow then
+			ThemesModule:SetGlow(config.Glow)
+		elseif config.GlowColor then
+			ThemesModule:SetGlow(config.GlowColor)
+		end
+
 		local MiniButtonSize = UDim2.fromOffset(46, 46)
 
 		local Window = Instance.new("Frame")
@@ -171,7 +182,7 @@ modules["src/Window"] = function()
 		WindowStroke.Thickness = 1.5
 		WindowStroke.Parent = Window
 		
-		-- Ikinonekta ang border ng Window sa pulsing Neon Loop
+		-- Ikinonekta ang border ng Window sa pulsing Neon Loop (Hahanapin na nito ang bagong Glow color!)
 		ThemesModule:StartNeonLoop(WindowStroke)
 
 		local ContentClipper = Instance.new("CanvasGroup")
@@ -872,18 +883,6 @@ modules["src/Window"] = function()
 				txt.Text = newText
 			end
 			return public
-		end
-
-		-- PINAGANDA AT GINAWANG DYNAMIC EXECUTION SEQUENCE:
-		-- Dito natin ilalagay ang SetTheme at SetGlow sa pinakadulo.
-		-- Dahil tapos nang mag-register ang lahat ng Panels, sidebar, at elements,
-		-- sabay-sabay silang makakatanggap ng tamang kulay kapag ginawa ang window!
-		ThemesModule:SetTheme(config.Theme or "Obsidian")
-
-		if config.Glow then
-			ThemesModule:SetGlow(config.Glow)
-		elseif config.GlowColor then
-			ThemesModule:SetGlow(config.GlowColor)
 		end
 
 		if typeof(config.Callback) == "function" then pcall(config.Callback) end
