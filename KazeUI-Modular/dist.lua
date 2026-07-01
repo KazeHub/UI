@@ -143,10 +143,27 @@ modules["src/themes/init"] = function()
         }
     }
 
+    -- Default initial states
     ThemesModule.CurrentTheme = ThemesModule.Themes.Obsidian
     ThemesModule.GlowColor = Color3.fromRGB(0, 160, 255)
     ThemesModule.BackgroundColor = ThemesModule.CurrentTheme.Background
     ThemesModule.BackgroundTransparency = 0
+
+    -- Standard Glow Presets lookup table
+    ThemesModule.GlowPresets = {
+        red = Color3.fromRGB(255, 60, 60),
+        blue = Color3.fromRGB(0, 160, 255),
+        green = Color3.fromRGB(34, 197, 94),
+        ["neon green"] = Color3.fromRGB(0, 255, 100),
+        yellow = Color3.fromRGB(234, 179, 8),
+        gold = Color3.fromRGB(255, 215, 115),
+        purple = Color3.fromRGB(168, 85, 247),
+        pink = Color3.fromRGB(244, 114, 182),
+        hotpink = Color3.fromRGB(255, 90, 210),
+        orange = Color3.fromRGB(249, 115, 22),
+        white = Color3.fromRGB(255, 255, 255),
+        cyan = Color3.fromRGB(50, 255, 180)
+    }
 
     ThemesModule.TextElements = {}
     ThemesModule.MutedTextElements = {}
@@ -353,17 +370,26 @@ modules["src/themes/init"] = function()
         end
     end
 
-    function ThemesModule:SetGlow(color)
-        ThemesModule.GlowColor = color
+    function ThemesModule:SetGlow(colorInput)
+        local resolvedColor = ThemesModule.GlowColor
+        
+        if typeof(colorInput) == "Color3" then
+            resolvedColor = colorInput
+        elseif typeof(colorInput) == "string" then
+            local lowerGlow = string.lower(colorInput)
+            resolvedColor = ThemesModule.GlowPresets[lowerGlow] or ThemesModule.GlowColor
+        end
+
+        ThemesModule.GlowColor = resolvedColor
         
         for _, data in ipairs(ThemesModule.GlowElements) do
             local target = data.Target
             local propName = data.Prop
             if target and target.Parent then
                 if ThemesModule.NeonTweens[target] then ThemesModule.NeonTweens[target]:Cancel() end
-                target[propName] = color
+                target[propName] = resolvedColor
                 local tweenInfo = TweenInfo.new(1.5, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true)
-                local h, s, v = Color3.toHSV(color)
+                local h, s, v = Color3.toHSV(resolvedColor)
                 local targetColor = Color3.fromHSV(h, s, 1)
                 local newTween = TweenService:Create(target, tweenInfo, { [propName] = targetColor })
                 newTween:Play()
@@ -376,7 +402,7 @@ modules["src/themes/init"] = function()
         for i = #ThemesModule.GlowCallbacks, 1, -1 do
             local data = ThemesModule.GlowCallbacks[i]
             if data.Inst and data.Inst.Parent then
-                task.spawn(data.Callback, color)
+                task.spawn(data.Callback, resolvedColor)
             else
                 table.remove(ThemesModule.GlowCallbacks, i)
             end
@@ -385,6 +411,7 @@ modules["src/themes/init"] = function()
 
     return ThemesModule
 end
+
 -- ==========================================
 -- MODULE: src/utils/init
 -- ==========================================
