@@ -1,15 +1,14 @@
-
 --[[
-	Kaze UI Library v2.2 (Premium Empty States Upgrade - Bug Fixed)
+	Kaze UI Library v2.3 (Premium Theme Background & Wallpaper System Upgrade)
 	Redesigned: High-End Desktop Software Aesthetic (Arc, Figma, Linear, macOS)
-	Retained: 100% Backwards Compatibility with Version 1 & 2 APIs
+	Retained: 100% Backwards Compatibility with Version 1, 2, and 2.2 APIs
 	
-	UPGRADED IN V2.2:
-	- Added: Premium Empty State engine inside every Tab.
-	- Detects empty tabs dynamically (ignoring internal layout/padding elements).
-	- Auto-fades and scales (0.95 -> 1.0) beautifully on transition states.
-	- Fully integrated with the Preset Theme Engine (Arctic, Obsidian, Amethyst, Emerald, Midnight).
-	- FIXED: clickBtn.MouseButton1Click event call uses colon operator (:Connect) on line 969.
+	UPGRADED IN V2.3:
+	- Added: Premium Theme Wallpaper System (Background Image, ScaleType.Crop)
+	- Added: Adaptive Soft Overlay Layer directly between wallpaper and UI components.
+	- Added: Interactive controls inside Win:CreateThemeManager() for custom Wallpaper Asset IDs, Wallpaper Transparency, and Dark Overlay.
+	- Dynamic transitioning using TweenService to transition wallpapers, overlays, and background colors smoothly.
+	- Optimized GPU footprint: single-instance reuse per window, robust cleaning on destroy.
 --]]
 
 local KazeUI = {}
@@ -24,7 +23,7 @@ local HttpService = game:GetService("HttpService")
 local LP = Players.LocalPlayer
 local Mouse = LP:GetMouse()
 
--- Theme Presets Configuration
+-- Theme Presets Configuration with Premium Abstract Wallpaper defaults
 KazeUI.Themes = {
 	Obsidian = {
 		Name = "Obsidian",
@@ -32,7 +31,10 @@ KazeUI.Themes = {
 		Text = Color3.fromRGB(240, 240, 245),
 		MutedText = Color3.fromRGB(150, 150, 155),
 		Border = Color3.fromRGB(45, 45, 50),
-		LightnessFactor = 1 -- Positive: lighter elevations
+		LightnessFactor = 1, -- Positive: lighter elevations
+		BackgroundImage = "rbxassetid://13963496525", -- Subtle Space Geometry
+		BackgroundImageTransparency = 0.90,
+		OverlayTransparency = 0.25
 	},
 	Arctic = {
 		Name = "Arctic",
@@ -40,7 +42,10 @@ KazeUI.Themes = {
 		Text = Color3.fromRGB(20, 20, 25),
 		MutedText = Color3.fromRGB(110, 115, 125),
 		Border = Color3.fromRGB(215, 220, 228),
-		LightnessFactor = -1 -- Negative: darker elevations
+		LightnessFactor = -1, -- Negative: darker elevations
+		BackgroundImage = "rbxassetid://12516480582", -- Light Flow Grid
+		BackgroundImageTransparency = 0.93,
+		OverlayTransparency = 0.15
 	},
 	Amethyst = {
 		Name = "Amethyst",
@@ -48,7 +53,10 @@ KazeUI.Themes = {
 		Text = Color3.fromRGB(240, 235, 250),
 		MutedText = Color3.fromRGB(160, 145, 175),
 		Border = Color3.fromRGB(50, 40, 65),
-		LightnessFactor = 1
+		LightnessFactor = 1,
+		BackgroundImage = "rbxassetid://11415494191", -- Soft Violet Space
+		BackgroundImageTransparency = 0.88,
+		OverlayTransparency = 0.30
 	},
 	Emerald = {
 		Name = "Emerald",
@@ -56,7 +64,10 @@ KazeUI.Themes = {
 		Text = Color3.fromRGB(235, 245, 240),
 		MutedText = Color3.fromRGB(145, 165, 155),
 		Border = Color3.fromRGB(38, 55, 45),
-		LightnessFactor = 1
+		LightnessFactor = 1,
+		BackgroundImage = "rbxassetid://10603140502", -- Abstract Organic Matrix
+		BackgroundImageTransparency = 0.91,
+		OverlayTransparency = 0.32
 	},
 	Midnight = {
 		Name = "Midnight",
@@ -64,7 +75,21 @@ KazeUI.Themes = {
 		Text = Color3.fromRGB(235, 240, 255),
 		MutedText = Color3.fromRGB(135, 145, 165),
 		Border = Color3.fromRGB(30, 38, 55),
-		LightnessFactor = 1
+		LightnessFactor = 1,
+		BackgroundImage = "rbxassetid://11415492978", -- Deep Cosmic Dust
+		BackgroundImageTransparency = 0.87,
+		OverlayTransparency = 0.28
+	},
+	Mita = {
+		Name = "Mita",
+		Background = Color3.fromRGB(12, 12, 14),
+		Text = Color3.fromRGB(255, 255, 255),
+		MutedText = Color3.fromRGB(160, 160, 165),
+		Border = Color3.fromRGB(55, 55, 60),
+		LightnessFactor = 1,
+		BackgroundImage = "rbxassetid://18321689252", -- Cozy Desktop Art (matches guide showcase)
+		BackgroundImageTransparency = 0.86,
+		OverlayTransparency = 0.30
 	}
 }
 
@@ -81,6 +106,7 @@ KazeUI.TextElements = {}
 KazeUI.MutedTextElements = {}
 KazeUI.BorderElements = {}
 KazeUI.ThemeCallbacks = {}
+KazeUI.WallpaperElements = {} -- Active wallpaper instances tracking (ImageLabel, OverlayFrame, Window)
 
 -- Visual Controllers
 KazeUI.GlowElements = {}
@@ -345,7 +371,7 @@ local function MakeDraggable(dragPart, targetPart)
 end
 
 -- ==========================================
--- V2.1 Theme & Transparency Engines
+-- Theme & Transparency Engines
 -- ==========================================
 function KazeUI.GetColor(elevation)
 	local theme = KazeUI.CurrentTheme
@@ -434,6 +460,36 @@ function KazeUI:SetTheme(themeName)
 			inst.Color = targetTheme.Border
 		end
 	end
+
+	-- =========================================================
+	-- PREMIUM DYNAMIC WALLPAPER SYSTEM (V2.3 UPGRADE)
+	-- =========================================================
+	local bgImgId = targetTheme.BackgroundImage or ""
+	local bgImgTrans = targetTheme.BackgroundImageTransparency or 1
+	local bgOverlayTrans = targetTheme.OverlayTransparency or 0.3
+	local hasImage = (bgImgId ~= "") and (bgImgTrans < 1)
+
+	for _, wp in ipairs(KazeUI.WallpaperElements) do
+		if wp.ImageLabel and wp.ImageLabel.Parent then
+			if hasImage then
+				wp.ImageLabel.Image = FormatImage(bgImgId)
+				TweenService:Create(wp.ImageLabel, TWEEN_SMOOTH, {
+					ImageTransparency = bgImgTrans
+				}):Play()
+				TweenService:Create(wp.OverlayFrame, TWEEN_SMOOTH, {
+					BackgroundTransparency = bgOverlayTrans
+				}):Play()
+			else
+				TweenService:Create(wp.ImageLabel, TWEEN_SMOOTH, {
+					ImageTransparency = 1
+				}):Play()
+				TweenService:Create(wp.OverlayFrame, TWEEN_SMOOTH, {
+					BackgroundTransparency = 1
+				}):Play()
+			end
+		end
+	end
+	-- =========================================================
 	
 	for _, data in ipairs(KazeUI.ThemeCallbacks) do
 		if data.Inst and data.Inst.Parent then
@@ -2432,10 +2488,10 @@ CreateCollapsibleSection = function(parentFrame, titleArg)
 	end)
 
 	toggleDetector.MouseButton1Down:Connect(function()
-		TweenService:Create(sectionBox, TweenInfo.new(0.1), { Size = UDim2.new(0.93, 0, 0, 0) }):Play()
+		TweenService:Create(sectionBox, TweenInfo.new(0.1), { Size = UDim2.new(0.93, 0, 0) }):Play()
 	end)
 	toggleDetector.MouseButton1Up:Connect(function()
-		TweenService:Create(sectionBox, TweenInfo.new(0.1), { Size = UDim2.new(0.95, 0, 0, 0) }):Play()
+		TweenService:Create(sectionBox, TweenInfo.new(0.1), { Size = UDim2.new(0.95, 0, 0) }):Play()
 		toggleSection()
 	end)
 
@@ -2475,6 +2531,8 @@ function KazeUI:CreateWindow(config)
 			selectedTheme = "Emerald"
 		elseif lowerTheme == "midnight" or lowerTheme == "blue" then
 			selectedTheme = "Midnight"
+		elseif lowerTheme == "mita" or lowerTheme == "anime" then
+			selectedTheme = "Mita"
 		end
 	end
 	KazeUI:SetTheme(selectedTheme)
@@ -2537,6 +2595,53 @@ function KazeUI:CreateWindow(config)
 	ContentClipper.BorderSizePixel = 0
 	ContentClipper.Parent = Window
 	Instance.new("UICorner", ContentClipper).CornerRadius = UDim.new(0, 12)
+
+	-- =========================================================
+	-- INTEGRATED PREMIUM WALLPAPER & OVERLAY (V2.3 UPGRADE)
+	-- =========================================================
+	local WallpaperImage = Instance.new("ImageLabel")
+	WallpaperImage.Name = "WallpaperImage"
+	WallpaperImage.Size = UDim2.fromScale(1, 1)
+	WallpaperImage.BackgroundTransparency = 1
+	WallpaperImage.ScaleType = Enum.ScaleType.Crop
+	WallpaperImage.ZIndex = -2
+	WallpaperImage.Parent = ContentClipper
+
+	local DarkOverlay = Instance.new("Frame")
+	DarkOverlay.Name = "DarkOverlay"
+	DarkOverlay.Size = UDim2.fromScale(1, 1)
+	DarkOverlay.BorderSizePixel = 0
+	DarkOverlay.ZIndex = -1
+	DarkOverlay.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+	DarkOverlay.Parent = ContentClipper
+
+	-- Initialize wallpaper state
+	local currentTheme = KazeUI.CurrentTheme
+	local initialImg = currentTheme.BackgroundImage or ""
+	local initialImgTrans = currentTheme.BackgroundImageTransparency or 1
+	local initialOverlayTrans = currentTheme.OverlayTransparency or 0.3
+	local hasImage = (initialImg ~= "") and (initialImgTrans < 1)
+
+	WallpaperImage.Image = FormatImage(initialImg)
+	WallpaperImage.ImageTransparency = hasImage and initialImgTrans or 1
+	WallpaperImage.ImageColor3 = currentTheme.BackgroundImageColor3 or Color3.fromRGB(255, 255, 255)
+	DarkOverlay.BackgroundTransparency = hasImage and initialOverlayTrans or 1
+
+	-- Registry registration for SetTheme listeners
+	table.insert(KazeUI.WallpaperElements, {
+		ImageLabel = WallpaperImage,
+		OverlayFrame = DarkOverlay,
+		Window = Window
+	})
+
+	Window.Destroying:Connect(function()
+		for i = #KazeUI.WallpaperElements, 1, -1 do
+			if KazeUI.WallpaperElements[i].Window == Window then
+				table.remove(KazeUI.WallpaperElements, i)
+			end
+		end
+	end)
+	-- =========================================================
 
 	-- Transition
 	Window.Size = UDim2.fromOffset(560, 360)
@@ -3091,6 +3196,68 @@ function KazeUI:CreateWindow(config)
 			Flag = "KazeUI_Theme_BackgroundTransparency", 
 			Callback = function(val)
 				KazeUI:SetTransparency(val / 10)
+			end
+		})
+
+		-- =========================================================
+		-- LIVE WALLPAPER CUSTOMIZATION PANEL (V2.3 UPGRADE)
+		-- =========================================================
+		local wpSec = tab:SectionUI("Premium Wallpaper System")
+
+		wpSec:TextBox({
+			Title = "Custom Background Image ID",
+			Placeholder = "rbxassetid://ID or AssetName",
+			Default = KazeUI.CurrentTheme.BackgroundImage or "",
+			Flag = "KazeUI_Wallpaper_AssetID",
+			Callback = function(val)
+				local cleanVal = FormatImage(val)
+				KazeUI.CurrentTheme.BackgroundImage = val
+				for _, wp in ipairs(KazeUI.WallpaperElements) do
+					if wp.ImageLabel and wp.ImageLabel.Parent then
+						wp.ImageLabel.Image = cleanVal
+						local hasImg = val ~= ""
+						TweenService:Create(wp.ImageLabel, TWEEN_SMOOTH, {
+							ImageTransparency = hasImg and (KazeUI.CurrentTheme.BackgroundImageTransparency or 0.88) or 1
+						}):Play()
+						TweenService:Create(wp.OverlayFrame, TWEEN_SMOOTH, {
+							BackgroundTransparency = hasImg and (KazeUI.CurrentTheme.OverlayTransparency or 0.3) or 1
+						}):Play()
+					end
+				end
+			end
+		})
+
+		wpSec:Slider({
+			Title = "Wallpaper Transparency",
+			Min = 0,
+			Max = 100,
+			Default = math.floor((KazeUI.CurrentTheme.BackgroundImageTransparency or 0.88) * 100),
+			Flag = "KazeUI_Wallpaper_Transparency",
+			Callback = function(val)
+				local trans = val / 100
+				KazeUI.CurrentTheme.BackgroundImageTransparency = trans
+				for _, wp in ipairs(KazeUI.WallpaperElements) do
+					if wp.ImageLabel and wp.ImageLabel.Parent and (KazeUI.CurrentTheme.BackgroundImage or "") ~= "" then
+						TweenService:Create(wp.ImageLabel, TWEEN_FAST, {ImageTransparency = trans}):Play()
+					end
+				end
+			end
+		})
+
+		wpSec:Slider({
+			Title = "Soft Dark Overlay Density",
+			Min = 0,
+			Max = 100,
+			Default = math.floor((KazeUI.CurrentTheme.OverlayTransparency or 0.30) * 100),
+			Flag = "KazeUI_Wallpaper_OverlayDensity",
+			Callback = function(val)
+				local trans = val / 100
+				KazeUI.CurrentTheme.OverlayTransparency = trans
+				for _, wp in ipairs(KazeUI.WallpaperElements) do
+					if wp.OverlayFrame and wp.OverlayFrame.Parent then
+						TweenService:Create(wp.OverlayFrame, TWEEN_FAST, {BackgroundTransparency = trans}):Play()
+					end
+				end
 			end
 		})
 	end
