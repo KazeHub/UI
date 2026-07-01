@@ -1,12 +1,13 @@
+
 local WindowModule = {}
 
--- Load core utilities and engines
+-- I-load ang mga pangunahing kagamitan at makina
 local ThemesModule = require("src/themes/init")
 local UtilsModule = require("src/utils/init")
 local ConfigModule = require("src/config/init")
 local NotificationModule = require("src/components/Notification")
 
--- Components mapping
+-- Pag-mapa ng mga bahagi (UI Components)
 local Paragraph = require("src/components/ui/Paragraph")
 local Button = require("src/components/ui/Button")
 local Toggle = require("src/components/ui/Toggle")
@@ -23,11 +24,12 @@ local UIS = game:GetService("UserInputService")
 local LP = game:GetService("Players").LocalPlayer
 local Mouse = LP:GetMouse()
 
--- Tween Presets
+-- Preset ng mga Tween
 local TWEEN_FAST = TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 local TWEEN_SPRING = TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
 local TWEEN_SMOOTH = TweenInfo.new(0.3, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
 
+-- Ikonekta ang mga elemento sa API Table
 local function AttachElementsToAPI(apiTable, parentFrame)
 	function apiTable:AddLabel(arg1)
 		local t = type(arg1) == "table" and (arg1.Text or arg1.Title) or arg1
@@ -126,8 +128,9 @@ local function AttachElementsToAPI(apiTable, parentFrame)
 		local title = type(arg1) == "table" and (arg1.Title or arg1.Name) or arg1
 		return Divider.new(parentFrame, title)
 	end
-end -- FIXED: Added missing end for AttachElementsToAPI
+end
 
+-- Paglikha ng Pangunahing Window
 function WindowModule:CreateWindow(config, screenGui)
 	config = config or {}
 	local Title = config.Title or "Kaze UI"
@@ -141,7 +144,7 @@ function WindowModule:CreateWindow(config, screenGui)
 	local maxWidth = config.MaxWidth or 900
 	local maxHeight = config.MaxHeight or 700
 
-	--// Handle Theme Selection with fallback mappings
+	--// Pagsasaayos ng Tema at pagsasalin nito (Case-Insensitive)
 	local selectedTheme = "Obsidian"
 	if config.Theme then
 		local lowerTheme = string.lower(tostring(config.Theme))
@@ -171,11 +174,13 @@ function WindowModule:CreateWindow(config, screenGui)
 			selectedTheme = "CosmicNebula"
 		elseif lowerTheme == "ghostrecon" or lowerTheme == "military" or lowerTheme == "tactical" then
 			selectedTheme = "GhostRecon"
+		elseif lowerTheme == "black" or lowerTheme == "dark" or lowerTheme == "obsidian" then
+			selectedTheme = "Obsidian"
 		end
 	end
 	ThemesModule:SetTheme(selectedTheme)
 
-	--// Handle Neon Glow Mapping
+	--// Pag-mapa ng Kulay ng Neon Glow (Case-Insensitive)
 	if config.Glow then
 		local lowerGlow = string.lower(tostring(config.Glow))
 		local glowMap = {
@@ -228,7 +233,8 @@ function WindowModule:CreateWindow(config, screenGui)
 	local WindowStroke = Instance.new("UIStroke")
 	WindowStroke.Thickness = 1.5
 	WindowStroke.Parent = Window
-	ThemesModule:RegisterBorder(WindowStroke)
+	-- PINAGANDA: Ang gilid ng Window ay kabilang na ngayon sa Neon Loop para sa dynamic neon glow!
+	ThemesModule:StartNeonLoop(WindowStroke)
 
 	local ContentClipper = Instance.new("CanvasGroup")
 	ContentClipper.Size = UDim2.fromScale(1, 1)
@@ -467,7 +473,7 @@ function WindowModule:CreateWindow(config, screenGui)
 		ConfirmText.Size = UDim2.new(1, -40, 0, 50)
 		ConfirmText.Position = UDim2.fromOffset(20, 15)
 		ConfirmText.BackgroundTransparency = 1
-		ConfirmText.Text = "Do you want to exit KazeUI?"
+		ConfirmText.Text = "Gusto mo ba talagang isara ang KazeUI?"
 		ConfirmText.Font = Enum.Font.GothamBold
 		ConfirmText.TextSize = 13
 		ConfirmText.TextWrapped = true
@@ -488,7 +494,7 @@ function WindowModule:CreateWindow(config, screenGui)
 		local ConfirmBtn = Instance.new("TextButton", ButtonsFrame)
 		ConfirmBtn.Size = UDim2.new(0,100,0,30)
 		ConfirmBtn.BackgroundColor3 = Color3.fromRGB(239, 68, 68)
-		ConfirmBtn.Text = "Confirm"
+		ConfirmBtn.Text = "Kumpirmahin"
 		ConfirmBtn.TextColor3 = Color3.fromRGB(255,255,255)
 		ConfirmBtn.Font = Enum.Font.GothamBold
 		ConfirmBtn.TextSize = 12
@@ -497,7 +503,7 @@ function WindowModule:CreateWindow(config, screenGui)
 
 		local CancelBtn = Instance.new("TextButton", ButtonsFrame)
 		CancelBtn.Size = UDim2.new(0,100,0,30)
-		CancelBtn.Text = "Cancel"
+		CancelBtn.Text = "Kanselahin"
 		CancelBtn.Font = Enum.Font.GothamBold
 		CancelBtn.TextSize = 12
 		CancelBtn.ZIndex = 54
@@ -700,8 +706,9 @@ function WindowModule:CreateWindow(config, screenGui)
 		end
 	}
 
+	-- Setup ng Config Manager sa Tagalog
 	function Win:CreateConfigManager(tab)
-		local sec = tab:SectionUI("Config Manager")
+		local sec = tab:SectionUI("Tagapamahala ng Config")
 		local cfgName = "Default"
 
 		local function getConfigs()
@@ -721,36 +728,37 @@ function WindowModule:CreateWindow(config, screenGui)
 			return list
 		end
 
-		sec:TextBox({Title = "Config Name", Default = "Default", Callback = function(v) cfgName = v end})
+		sec:TextBox({Title = "Pangalan ng Config", Default = "Default", Callback = function(v) cfgName = v end})
 		
 		local configDropdown
-		sec:Button({Title = "Save Config", Callback = function() 
+		sec:Button({Title = "I-save ang Config", Callback = function() 
 			ConfigModule:SaveConfig(cfgName, function(conf) NotificationModule:Notify(conf) end) 
 			if configDropdown then configDropdown:Refresh(getConfigs()) end
 		end})
 
 		configDropdown = sec:Dropdown({
-			Title = "Select Saved Config", 
+			Title = "Pumili ng Nakasave na Config", 
 			Options = getConfigs(), 
 			Callback = function(v) cfgName = v end
 		})
 
-		sec:Button({Title = "Refresh Configs", Callback = function() if configDropdown then configDropdown:Refresh(getConfigs()) end end})
-		sec:Button({Title = "Load Config", Callback = function() ConfigModule:LoadConfig(cfgName, function(conf) NotificationModule:Notify(conf) end) end})
+		sec:Button({Title = "I-refresh ang mga Config", Callback = function() if configDropdown then configDropdown:Refresh(getConfigs()) end end})
+		sec:Button({Title = "I-load ang Config", Callback = function() ConfigModule:LoadConfig(cfgName, function(conf) NotificationModule:Notify(conf) end) end})
 		
-		sec:Button({Title = "Delete Config", Callback = function()
+		sec:Button({Title = "I-delete ang Config", Callback = function()
 			if delfile then
 				pcall(function() delfile("KazeUI_"..cfgName..".json") end)
-				NotificationModule:Notify({Title = "Config System", Content = "Deleted " .. cfgName, Duration = 3})
+				NotificationModule:Notify({Title = "Sistema ng Config", Content = "Na-delete na ang " .. cfgName, Duration = 3})
 				if configDropdown then configDropdown:Refresh(getConfigs()) end
 			else
-				NotificationModule:Notify({Title = "Error", Content = "Your executor lacks 'delfile' support.", Duration = 3})
+				NotificationModule:Notify({Title = "Error", Content = "Walang 'delfile' support ang iyong executor.", Duration = 3})
 			end
 		end})
 	end
 
+	-- Setup ng Theme Manager sa Tagalog
 	function Win:CreateThemeManager(tab)
-		local sec = tab:SectionUI("Theme & Visuals")
+		local sec = tab:SectionUI("Tema at Estilo")
 		
 		local themeNames = {}
 		for name, _ in pairs(ThemesModule.Themes) do
@@ -759,7 +767,7 @@ function WindowModule:CreateWindow(config, screenGui)
 		table.sort(themeNames)
 
 		sec:Dropdown({
-			Title = "Interface Theme Preset",
+			Title = "Estilo ng Tema ng Interface",
 			Options = themeNames,
 			Default = ThemesModule.CurrentTheme.Name,
 			Flag = "KazeUI_Theme_Preset",
@@ -769,7 +777,7 @@ function WindowModule:CreateWindow(config, screenGui)
 		})
 
 		sec:ColorPicker({
-			Title = "Accent Glow Color",
+			Title = "Kulay ng Neon Glow",
 			Default = ThemesModule.GlowColor,
 			Flag = "KazeUI_Theme_GlowColor", 
 			Callback = function(color)
@@ -778,7 +786,7 @@ function WindowModule:CreateWindow(config, screenGui)
 		})
 
 		sec:Slider({
-			Title = "UI Background Transparency",
+			Title = "Aninag ng UI Background",
 			Min = 0,
 			Max = 10,
 			Default = 0,
