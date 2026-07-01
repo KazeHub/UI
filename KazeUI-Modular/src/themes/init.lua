@@ -8,7 +8,7 @@ ThemesModule.Themes = {
 		Text = Color3.fromRGB(240, 240, 245),
 		MutedText = Color3.fromRGB(150, 150, 155),
 		Border = Color3.fromRGB(45, 45, 50),
-		LightnessFactor = 1 -- Positive: lighter elevations
+		LightnessFactor = 1
 	},
 	Arctic = {
 		Name = "Arctic",
@@ -16,7 +16,7 @@ ThemesModule.Themes = {
 		Text = Color3.fromRGB(20, 20, 25),
 		MutedText = Color3.fromRGB(110, 115, 125),
 		Border = Color3.fromRGB(215, 220, 228),
-		LightnessFactor = -1 -- Negative: darker elevations
+		LightnessFactor = -1
 	},
 	Amethyst = {
 		Name = "Amethyst",
@@ -42,7 +42,6 @@ ThemesModule.Themes = {
 		Border = Color3.fromRGB(30, 38, 55),
 		LightnessFactor = 1
 	},
-	-- [HACKER VARIANT 1] Matrix Classic Neon Green
 	CyberHacker = {
 		Name = "CyberHacker",
 		Background = Color3.fromRGB(5, 10, 6),
@@ -51,7 +50,6 @@ ThemesModule.Themes = {
 		Border = Color3.fromRGB(15, 60, 30),
 		LightnessFactor = 1
 	},
-	-- [HACKER VARIANT 2] Terminal Overdrive
 	TerminalVoid = {
 		Name = "TerminalVoid",
 		Background = Color3.fromRGB(8, 8, 8),
@@ -60,67 +58,36 @@ ThemesModule.Themes = {
 		Border = Color3.fromRGB(40, 40, 42),
 		LightnessFactor = 1
 	},
-	-- [RETRO/CITY] Synthwave Tokyo Night
-	Synthwave = {
-		Name = "Synthwave",
-		Background = Color3.fromRGB(20, 8, 30),
-		Text = Color3.fromRGB(255, 90, 210),
-		MutedText = Color3.fromRGB(150, 70, 170),
-		Border = Color3.fromRGB(70, 20, 100),
+	Bloodline = {
+		Name = "Bloodline",
+		Background = Color3.fromRGB(14, 6, 6),
+		Text = Color3.fromRGB(255, 70, 70),
+		MutedText = Color3.fromRGB(160, 50, 50),
+		Border = Color3.fromRGB(55, 20, 20),
 		LightnessFactor = 1
 	},
-	-- [PREMIUM] Luxury Dark Gold
-	DarkGold = {
-		Name = "DarkGold",
-		Background = Color3.fromRGB(12, 11, 9),
-		Text = Color3.fromRGB(255, 215, 115),
-		MutedText = Color3.fromRGB(165, 140, 95),
-		Border = Color3.fromRGB(50, 40, 30),
+	OceanBreeze = {
+		Name = "OceanBreeze",
+		Background = Color3.fromRGB(8, 18, 24),
+		Text = Color3.fromRGB(100, 220, 255),
+		MutedText = Color3.fromRGB(70, 140, 170),
+		Border = Color3.fromRGB(25, 50, 70),
 		LightnessFactor = 1
 	},
-	-- [ICE] Frostbite Cool Blue
-	Frostbite = {
-		Name = "Frostbite",
-		Background = Color3.fromRGB(8, 14, 20),
-		Text = Color3.fromRGB(140, 225, 255),
-		MutedText = Color3.fromRGB(90, 150, 180),
-		Border = Color3.fromRGB(30, 55, 75),
+	ToxicWaste = {
+		Name = "ToxicWaste",
+		Background = Color3.fromRGB(12, 14, 8),
+		Text = Color3.fromRGB(210, 255, 60),
+		MutedText = Color3.fromRGB(140, 170, 50),
+		Border = Color3.fromRGB(45, 55, 25),
 		LightnessFactor = 1
 	},
-	-- [BLOOD/VAMPIRE] Crimson Void
-	CrimsonVoid = {
-		Name = "CrimsonVoid",
-		Background = Color3.fromRGB(10, 5, 6),
-		Text = Color3.fromRGB(255, 85, 85),
-		MutedText = Color3.fromRGB(155, 60, 60),
-		Border = Color3.fromRGB(50, 20, 25),
-		LightnessFactor = 1
-	},
-	-- [ANIME] Sakura Breeze (Pastel Pink Theme)
-	SakuraBreeze = {
-		Name = "SakuraBreeze",
-		Background = Color3.fromRGB(28, 18, 22),
-		Text = Color3.fromRGB(255, 185, 200),
-		MutedText = Color3.fromRGB(190, 130, 145),
-		Border = Color3.fromRGB(75, 45, 55),
-		LightnessFactor = 1
-	},
-	-- [DEEP SPACE] Cosmic Nebula (Purple/Orange Highlight)
-	CosmicNebula = {
-		Name = "CosmicNebula",
-		Background = Color3.fromRGB(12, 10, 18),
-		Text = Color3.fromRGB(255, 140, 90),
-		MutedText = Color3.fromRGB(140, 100, 150),
-		Border = Color3.fromRGB(45, 30, 65),
-		LightnessFactor = 1
-	},
-	-- [MILITARY] Ghost Recon (Tactical Camo/Olive Green)
-	GhostRecon = {
-		Name = "GhostRecon",
-		Background = Color3.fromRGB(14, 16, 13),
-		Text = Color3.fromRGB(180, 200, 160),
-		MutedText = Color3.fromRGB(120, 130, 110),
-		Border = Color3.fromRGB(45, 50, 42),
+	DeepSpace = {
+		Name = "DeepSpace",
+		Background = Color3.fromRGB(11, 8, 20),
+		Text = Color3.fromRGB(230, 150, 255),
+		MutedText = Color3.fromRGB(140, 100, 170),
+		Border = Color3.fromRGB(40, 30, 65),
 		LightnessFactor = 1
 	}
 }
@@ -242,7 +209,17 @@ function ThemesModule:SetTransparency(alpha)
 end
 
 function ThemesModule:SetTheme(themeName)
-	local targetTheme = ThemesModule.Themes[themeName] or ThemesModule.Themes.Obsidian
+	local targetTheme
+	local searchName = string.lower(tostring(themeName or ""))
+	
+	for name, theme in pairs(ThemesModule.Themes) do
+		if string.lower(name) == searchName then
+			targetTheme = theme
+			break
+		end
+	end
+	
+	targetTheme = targetTheme or ThemesModule.Themes.Obsidian
 	ThemesModule.CurrentTheme = targetTheme
 	ThemesModule.BackgroundColor = targetTheme.Background
 	
