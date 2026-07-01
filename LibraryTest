@@ -4,8 +4,9 @@
 	Retained: 100% Backwards Compatibility with Version 1, 2, and 2.2 APIs
 	
 	UPGRADED IN V2.3:
-	- Added: Premium Theme Wallpaper System (Background Image, ScaleType.Crop)
-	- Added: Adaptive Soft Overlay Layer directly between wallpaper and UI components.
+	- Added: Direct Texture ID support for Theme parameter inside CreateWindow.
+	- Preset defaults on Texture ID match: UI transparency = 0.7, Wallpaper transparency = 0, Soft Dark Overlay = 0.70.
+	- Added: Soft Dark Overlay Layer directly between wallpaper and UI components.
 	- Added: Interactive controls inside Win:CreateThemeManager() for custom Wallpaper Asset IDs, Wallpaper Transparency, and Dark Overlay.
 	- Dynamic transitioning using TweenService to transition wallpapers, overlays, and background colors smoothly.
 	- Optimized GPU footprint: single-instance reuse per window, robust cleaning on destroy.
@@ -2488,10 +2489,10 @@ CreateCollapsibleSection = function(parentFrame, titleArg)
 	end)
 
 	toggleDetector.MouseButton1Down:Connect(function()
-		TweenService:Create(sectionBox, TweenInfo.new(0.1), { Size = UDim2.new(0.93, 0, 0) }):Play()
+		TweenService:Create(sectionBox, TweenInfo.new(0.1), { Size = UDim2.new(0.93, 0, 0, 0) }):Play()
 	end)
 	toggleDetector.MouseButton1Up:Connect(function()
-		TweenService:Create(sectionBox, TweenInfo.new(0.1), { Size = UDim2.new(0.95, 0, 0) }):Play()
+		TweenService:Create(sectionBox, TweenInfo.new(0.1), { Size = UDim2.new(0.95, 0, 0, 0) }):Play()
 		toggleSection()
 	end)
 
@@ -2522,8 +2523,32 @@ function KazeUI:CreateWindow(config)
 	-- Configured theme checks with multi-option backups
 	local selectedTheme = "Obsidian"
 	if config.Theme then
-		local lowerTheme = string.lower(tostring(config.Theme))
-		if lowerTheme == "arctic" or lowerTheme == "white" or lowerTheme == "light" then
+		local themeStr = tostring(config.Theme)
+		local lowerTheme = string.lower(themeStr)
+		
+		-- Check if it matches a direct Roblox texture asset format
+		local isAssetId = tonumber(themeStr) ~= nil 
+			or string.find(themeStr, "rbxassetid://") 
+			or string.find(themeStr, "http") 
+			or IconsMap[lowerTheme] ~= nil
+
+		if isAssetId then
+			-- Generate a dynamic CustomTheme on the fly supporting direct texture IDs
+			KazeUI.Themes.CustomWallpaper = {
+				Name = "Custom",
+				Background = Color3.fromRGB(12, 12, 14),
+				Text = Color3.fromRGB(255, 255, 255),
+				MutedText = Color3.fromRGB(160, 160, 165),
+				Border = Color3.fromRGB(55, 55, 60),
+				LightnessFactor = 1,
+				BackgroundImage = themeStr,
+				BackgroundImageTransparency = 0,   -- Fully visible wallpaper (transparent 0)
+				OverlayTransparency = 0.70          -- 70% soft dark overlay
+			}
+			selectedTheme = "CustomWallpaper"
+			-- Lock premium transparency defaults immediately (transparent 7)
+			KazeUI:SetTransparency(0.7)
+		elseif lowerTheme == "arctic" or lowerTheme == "white" or lowerTheme == "light" then
 			selectedTheme = "Arctic"
 		elseif lowerTheme == "amethyst" or lowerTheme == "purple" then
 			selectedTheme = "Amethyst"
@@ -2544,11 +2569,13 @@ function KazeUI:CreateWindow(config)
 			red = Color3.fromRGB(255, 60, 60),
 			blue = Color3.fromRGB(0, 160, 255),
 			green = Color3.fromRGB(34, 197, 94),
+			["neon green"] = Color3.fromRGB(34, 197, 94),
 			yellow = Color3.fromRGB(234, 179, 8),
 			purple = Color3.fromRGB(168, 85, 247),
 			pink = Color3.fromRGB(244, 114, 182),
 			orange = Color3.fromRGB(249, 115, 22),
-			white = Color3.fromRGB(255, 255, 255)
+			white = Color3.fromRGB(255, 255, 255),
+			black = Color3.fromRGB(15, 15, 17) -- Smooth near-black for shadow-like accent outline
 		}
 		if glowMap[lowerGlow] then
 			KazeUI:SetGlow(glowMap[lowerGlow])
@@ -3192,7 +3219,7 @@ function KazeUI:CreateWindow(config)
 			Title = "UI Background Transparency",
 			Min = 0,
 			Max = 10,
-			Default = 0,
+			Default = math.floor(KazeUI.BackgroundTransparency * 10),
 			Flag = "KazeUI_Theme_BackgroundTransparency", 
 			Callback = function(val)
 				KazeUI:SetTransparency(val / 10)
@@ -3217,10 +3244,10 @@ function KazeUI:CreateWindow(config)
 						wp.ImageLabel.Image = cleanVal
 						local hasImg = val ~= ""
 						TweenService:Create(wp.ImageLabel, TWEEN_SMOOTH, {
-							ImageTransparency = hasImg and (KazeUI.CurrentTheme.BackgroundImageTransparency or 0.88) or 1
+							ImageTransparency = hasImg and (KazeUI.CurrentTheme.BackgroundImageTransparency or 0) or 1
 						}):Play()
 						TweenService:Create(wp.OverlayFrame, TWEEN_SMOOTH, {
-							BackgroundTransparency = hasImg and (KazeUI.CurrentTheme.OverlayTransparency or 0.3) or 1
+							BackgroundTransparency = hasImg and (KazeUI.CurrentTheme.OverlayTransparency or 0.7) or 1
 						}):Play()
 					end
 				end
@@ -3231,7 +3258,7 @@ function KazeUI:CreateWindow(config)
 			Title = "Wallpaper Transparency",
 			Min = 0,
 			Max = 100,
-			Default = math.floor((KazeUI.CurrentTheme.BackgroundImageTransparency or 0.88) * 100),
+			Default = math.floor((KazeUI.CurrentTheme.BackgroundImageTransparency or 0) * 100),
 			Flag = "KazeUI_Wallpaper_Transparency",
 			Callback = function(val)
 				local trans = val / 100
@@ -3248,7 +3275,7 @@ function KazeUI:CreateWindow(config)
 			Title = "Soft Dark Overlay Density",
 			Min = 0,
 			Max = 100,
-			Default = math.floor((KazeUI.CurrentTheme.OverlayTransparency or 0.30) * 100),
+			Default = math.floor((KazeUI.CurrentTheme.OverlayTransparency or 0.70) * 100),
 			Flag = "KazeUI_Wallpaper_OverlayDensity",
 			Callback = function(val)
 				local trans = val / 100
