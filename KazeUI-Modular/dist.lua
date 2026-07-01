@@ -24,7 +24,7 @@ end
 -- ==========================================
 -- MODULE: src/themes/init
 -- ==========================================
-Modules["src/themes/init"] = function()
+modules["src/themes/init"] = function()
     local ThemesModule = {}
 
     -- 14 Premium Themes (Kasama ang CyberHacker, Midnight, atbp.)
@@ -385,7 +385,6 @@ Modules["src/themes/init"] = function()
 
     return ThemesModule
 end
-
 -- ==========================================
 -- MODULE: src/utils/init
 -- ==========================================
