@@ -1,13 +1,15 @@
 --[[
-	Kaze UI Library v2.4 (Premium Theme Background, Wallpaper, and Dynamic Glow System Upgrade)
+	Kaze UI Library v2.3 (Premium Theme Background & Wallpaper System Upgrade)
 	Redesigned: High-End Desktop Software Aesthetic (Arc, Figma, Linear, macOS)
-	Retained: 100% Backwards Compatibility with Version 1, 2, 2.2, and 2.3 APIs
+	Retained: 100% Backwards Compatibility with Version 1, 2, and 2.2 APIs
 	
-	UPGRADED IN V2.4:
-	- Redesigned: True Ambient Outer Glow System using professional high-fidelity soft shadow assets.
-	- Smooth interactive hover state transitions for glow elements.
-	- Reusable performance footprint for dynamic glow scaling.
-	- Fixed: Dropdown right-aligned chevron arrow clipping and overlap bugs.
+	UPGRADED IN V2.3:
+	- Added: Direct Texture ID support for Theme parameter inside CreateWindow.
+	- Preset defaults on Texture ID match: UI transparency = 0.7, Wallpaper transparency = 0, Soft Dark Overlay = 0.70.
+	- Added: Soft Dark Overlay Layer directly between wallpaper and UI components.
+	- Added: Interactive controls inside Win:CreateThemeManager() for custom Wallpaper Asset IDs, Wallpaper Transparency, and Dark Overlay.
+	- Dynamic transitioning using TweenService to transition wallpapers, overlays, and background colors smoothly.
+	- Optimized GPU footprint: single-instance reuse per window, robust cleaning on destroy.
 --]]
 
 local KazeUI = {}
@@ -367,56 +369,6 @@ local function MakeDraggable(dragPart, targetPart)
 	UIS.InputChanged:Connect(function(input)
 		if input == dragInput and dragging then update(input) end
 	end)
-end
-
--- =========================================================
--- PREMIUM OUTER GLOW ENGINE (V2.4 UPGRADE)
--- =========================================================
-function KazeUI:ApplyGlow(inst, offset, normalTransparency, hoverTransparency)
-	if not inst then return nil end
-	offset = offset or 16
-	normalTransparency = normalTransparency or 0.85
-	hoverTransparency = hoverTransparency or 0.55
-	
-	local glow = inst:FindFirstChild("OuterGlow")
-	if not glow then
-		glow = Instance.new("ImageLabel")
-		glow.Name = "OuterGlow"
-		glow.AnchorPoint = Vector2.new(0.5, 0.5)
-		glow.Position = UDim2.fromScale(0.5, 0.5)
-		glow.Size = UDim2.new(1, offset, 1, offset)
-		glow.BackgroundTransparency = 1
-		glow.Image = "rbxassetid://5028857084" -- Smooth high fidelity round shadow/glow texture
-		glow.ScaleType = Enum.ScaleType.Slice
-		glow.SliceCenter = Rect.new(10, 10, 10, 10)
-		glow.ZIndex = inst.ZIndex - 1
-		glow.ImageTransparency = normalTransparency
-		glow.Parent = inst
-	end
-	
-	-- Sync glow colors dynamically
-	KazeUI:OnGlowChanged(glow, function(color)
-		glow.ImageColor3 = color
-	end)
-	
-	local function setState(hovered, instant)
-		local targetTrans = hovered and hoverTransparency or normalTransparency
-		local targetSize = hovered and UDim2.new(1, offset + 6, 1, offset + 6) or UDim2.new(1, offset, 1, offset)
-		if instant then
-			glow.ImageTransparency = targetTrans
-			glow.Size = targetSize
-		else
-			TweenService:Create(glow, TWEEN_FAST, {
-				ImageTransparency = targetTrans,
-				Size = targetSize
-			}):Play()
-		end
-	end
-	
-	return {
-		Glow = glow,
-		SetState = setState
-	}
 end
 
 -- ==========================================
@@ -798,9 +750,6 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 	dropFrame.Parent = wrapper
 	KazeUI:AddPanel(dropFrame, 0.02)
 
-	-- Apply Premium Ambient Glow
-	local glowCtrl = KazeUI:ApplyGlow(dropFrame, 16, 0.85, 0.50)
-
 	local padding = Instance.new("UIPadding", dropFrame)
 	padding.PaddingTop = UDim.new(0, 4)
 	padding.PaddingBottom = UDim.new(0, 4)
@@ -823,18 +772,17 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 	header.Parent = dropFrame
 
 	local titleLabel = Instance.new("TextLabel", header)
-	titleLabel.Size = UDim2.new(0.5, -8, 1, 0)
+	titleLabel.Size = UDim2.new(0.5, 0, 1, 0)
 	titleLabel.BackgroundTransparency = 1
 	titleLabel.Text = title
 	titleLabel.Font = Enum.Font.GothamBold
 	titleLabel.TextSize = 14
 	titleLabel.TextXAlignment = Enum.TextXAlignment.Left
-	titleLabel.TextTruncate = Enum.TextTruncate.AtEnd
 	KazeUI:RegisterText(titleLabel, false)
 
 	local arrowIcon = Instance.new("ImageLabel", header)
 	arrowIcon.AnchorPoint = Vector2.new(1, 0.5)
-	arrowIcon.Position = UDim2.new(1, -4, 0.5, 0) -- Consistent aligned padding
+	arrowIcon.Position = UDim2.new(1, 0, 0.5, 0)
 	arrowIcon.Size = UDim2.fromOffset(16, 16)
 	arrowIcon.BackgroundTransparency = 1
 	arrowIcon.Image = "rbxassetid://10723415693"
@@ -844,7 +792,7 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 	end)
 
 	local selectedLabel = Instance.new("TextLabel", header)
-	selectedLabel.Size = UDim2.new(0.5, -32, 1, 0) -- Safe gap to prevent overlay on the indicator
+	selectedLabel.Size = UDim2.new(0.5, -24, 1, 0)
 	selectedLabel.Position = UDim2.new(0.5, 0, 0, 0)
 	selectedLabel.BackgroundTransparency = 1
 	selectedLabel.Font = Enum.Font.Gotham
@@ -956,7 +904,6 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 		listContainer.Visible = false
 		TweenService:Create(arrowIcon, TWEEN_SPRING, {Rotation = 0}):Play()
 		TweenService:Create(boxStroke, TWEEN_FAST, {Color = KazeUI.CurrentTheme.Border}):Play()
-		if glowCtrl then glowCtrl.SetState(false) end
 	end
 
 	local function Refresh(newOptions)
@@ -976,6 +923,7 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 			btn.Parent = listContainer
 			Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 5)
 			
+			-- ignoreColorUpdate = true stops SetBackgroundColor from flattening this stateful button!
 			KazeUI:AddPanel(btn, 0.03, true)
 
 			local indicator
@@ -1005,6 +953,7 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 					targetTxt = KazeUI.CurrentTheme.Text
 				end
 
+				-- Cancel running transitions so they don't override the background update asynchronously
 				if currentBgTween then currentBgTween:Cancel() currentBgTween = nil end
 				if currentTxtTween then currentTxtTween:Cancel() currentTxtTween = nil end
 
@@ -1076,6 +1025,7 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 		CalcHeight()
 	end)
 
+	-- FIXED: clickBtn.MouseButton1Click event call uses colon operator (:Connect)
 	clickBtn.MouseButton1Click:Connect(function()
 		isOpen = not isOpen
 		if isOpen then
@@ -1085,17 +1035,9 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 			CalcHeight()
 			TweenService:Create(arrowIcon, TWEEN_SPRING, {Rotation = 180}):Play()
 			TweenService:Create(boxStroke, TWEEN_FAST, {Color = KazeUI.GlowColor}):Play()
-			if glowCtrl then glowCtrl.SetState(true) end
 		else
 			CloseDropdown()
 		end
-	end)
-
-	clickBtn.MouseEnter:Connect(function()
-		if not isOpen and glowCtrl then glowCtrl.SetState(true) end
-	end)
-	clickBtn.MouseLeave:Connect(function()
-		if not isOpen and glowCtrl then glowCtrl.SetState(false) end
 	end)
 	
 	KazeUI:OnGlowChanged(boxStroke, function(c)
@@ -1192,9 +1134,6 @@ local function CreateParagraph(parentFrame, title, body)
 	Instance.new("UICorner", paraFrame).CornerRadius = UDim.new(0, 8)
 	paraFrame.Parent = wrapper
 	KazeUI:AddPanel(paraFrame, 0.01)
-
-	-- Apply Subtle Shadow/Glow
-	KazeUI:ApplyGlow(paraFrame, 12, 0.9, 0.9)
 	
 	local paraStroke = Instance.new("UIStroke", paraFrame)
 	paraStroke.Thickness = 1.2
@@ -1277,9 +1216,6 @@ local function CreateClickableParagraph(parentFrame, title, body, callback)
 	Instance.new("UICorner", paraFrame).CornerRadius = UDim.new(0, 8)
 	paraFrame.Parent = wrapper
 	KazeUI:AddPanel(paraFrame, 0.02)
-
-	-- Apply Premium Ambient Glow
-	local glowCtrl = KazeUI:ApplyGlow(paraFrame, 16, 0.85, 0.50)
 	
 	local paraStroke = Instance.new("UIStroke", paraFrame)
 	paraStroke.Thickness = 1.2
@@ -1348,14 +1284,12 @@ local function CreateClickableParagraph(parentFrame, title, body, callback)
 		TweenService:Create(paraFrame, TWEEN_FAST, { BackgroundColor3 = KazeUI.GetColor(0.04) }):Play()
 		TweenService:Create(paraStroke, TWEEN_FAST, { Color = KazeUI.GlowColor }):Play()
 		TweenService:Create(rightIcon, TWEEN_FAST, { ImageColor3 = Color3.fromRGB(255, 255, 255), Position = UDim2.new(1, -10, 0.5, 0) }):Play()
-		if glowCtrl then glowCtrl.SetState(true) end
 	end)
 	clickDetector.MouseLeave:Connect(function()
 		isHovering = false
 		TweenService:Create(paraFrame, TWEEN_FAST, { BackgroundColor3 = KazeUI.GetColor(0.02) }):Play()
 		TweenService:Create(paraStroke, TWEEN_FAST, { Color = KazeUI.CurrentTheme.Border }):Play()
 		TweenService:Create(rightIcon, TWEEN_FAST, { ImageColor3 = KazeUI.CurrentTheme.MutedText, Position = UDim2.new(1, -12, 0.5, 0) }):Play()
-		if glowCtrl then glowCtrl.SetState(false) end
 	end)
 	
 	clickDetector.MouseButton1Down:Connect(function()
@@ -1425,9 +1359,6 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 	Instance.new("UICorner", paraFrame).CornerRadius = UDim.new(0, 8)
 	paraFrame.Parent = wrapper
 	KazeUI:AddPanel(paraFrame, 0.02)
-
-	-- Apply Premium Ambient Glow
-	local glowCtrl = KazeUI:ApplyGlow(paraFrame, 16, 0.85, 0.50)
 	
 	local paraStroke = Instance.new("UIStroke", paraFrame)
 	paraStroke.Thickness = 1.2
@@ -1446,9 +1377,6 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 	switchContainer.BorderSizePixel = 0
 	Instance.new("UICorner", switchContainer).CornerRadius = UDim.new(1, 0)
 	switchContainer.Parent = inner
-
-	-- Dynamic focus glow specifically on the switch state container
-	local switchGlow = KazeUI:ApplyGlow(switchContainer, 10, 0.90, 0.40)
 	
 	local switchIndicator = Instance.new("Frame")
 	switchIndicator.AnchorPoint = Vector2.new(0, 0.5)
@@ -1468,6 +1396,7 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 		ptitleLabel.Font = Enum.Font.GothamBold
 		ptitleLabel.TextSize = 14
 		ptitleLabel.TextWrapped = true
+		ptitleLabel.TextXAlignment = Enum.TextXAlignment.Left
 		if body == "" then ptitleLabel.AnchorPoint = Vector2.new(0, 0.5); ptitleLabel.Position = UDim2.new(0, 0, 0.5, 0) end
 		KazeUI:RegisterText(ptitleLabel, false)
 	end
@@ -1506,10 +1435,6 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 			TweenService:Create(switchIndicator, TWEEN_SPRING, { Position = targetPos }):Play()
 			TweenService:Create(switchContainer, TWEEN_FAST, { BackgroundColor3 = targetBg }):Play()
 		end
-
-		if switchGlow then
-			switchGlow.SetState(state, instant)
-		end
 	end
 	setToggleState(state, true)
 
@@ -1519,13 +1444,11 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 		isHovering = true
 		TweenService:Create(paraFrame, TWEEN_FAST, { BackgroundColor3 = KazeUI.GetColor(0.04) }):Play()
 		TweenService:Create(paraStroke, TWEEN_FAST, { Color = KazeUI.GlowColor }):Play()
-		if glowCtrl then glowCtrl.SetState(true) end
 	end)
 	clickDetector.MouseLeave:Connect(function()
 		isHovering = false
 		TweenService:Create(paraFrame, TWEEN_FAST, { BackgroundColor3 = KazeUI.GetColor(0.02) }):Play()
 		TweenService:Create(paraStroke, TWEEN_FAST, { Color = KazeUI.CurrentTheme.Border }):Play()
-		if glowCtrl then glowCtrl.SetState(false) end
 	end)
 	clickDetector.MouseButton1Down:Connect(function()
 		TweenService:Create(paraFrame, TWEEN_FAST, { Size = UDim2.new(0.93, 0, 0, totalHeight - 2), Position = UDim2.new(0.5, 0, 0, 4) }):Play()
@@ -1593,9 +1516,6 @@ local function CreateTextBoxInput(parentFrame, title, placeholder, defaultVal, c
 	Instance.new("UICorner", paraFrame).CornerRadius = UDim.new(0, 8)
 	paraFrame.Parent = wrapper
 	KazeUI:AddPanel(paraFrame, 0.02)
-
-	-- Apply Premium Ambient Glow
-	local glowCtrl = KazeUI:ApplyGlow(paraFrame, 16, 0.85, 0.50)
 	
 	local paraStroke = Instance.new("UIStroke", paraFrame)
 	paraStroke.Thickness = 1.2
@@ -1655,7 +1575,6 @@ local function CreateTextBoxInput(parentFrame, title, placeholder, defaultVal, c
 		TweenService:Create(innerStroke, TWEEN_FAST, {Color = KazeUI.GlowColor}):Play()
 		TweenService:Create(paraFrame, TWEEN_FAST, { BackgroundColor3 = KazeUI.GetColor(0.04) }):Play()
 		TweenService:Create(paraStroke, TWEEN_FAST, { Color = KazeUI.GlowColor }):Play()
-		if glowCtrl then glowCtrl.SetState(true) end
 	end)
 
 	textBox.FocusLost:Connect(function(enterPressed)
@@ -1663,7 +1582,6 @@ local function CreateTextBoxInput(parentFrame, title, placeholder, defaultVal, c
 		TweenService:Create(innerStroke, TWEEN_FAST, { Color = KazeUI.CurrentTheme.Border }):Play()
 		TweenService:Create(paraFrame, TWEEN_FAST, { BackgroundColor3 = KazeUI.GetColor(0.02) }):Play()
 		TweenService:Create(paraStroke, TWEEN_FAST, { Color = KazeUI.CurrentTheme.Border }):Play()
-		if glowCtrl then glowCtrl.SetState(false) end
 		if typeof(callback) == "function" then task.spawn(callback, textBox.Text, enterPressed) end
 	end)
 	
@@ -1722,9 +1640,6 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 	Instance.new("UICorner", paraFrame).CornerRadius = UDim.new(0, 8)
 	paraFrame.Parent = wrapper
 	KazeUI:AddPanel(paraFrame, 0.02)
-
-	-- Apply Premium Ambient Glow
-	local glowCtrl = KazeUI:ApplyGlow(paraFrame, 16, 0.85, 0.50)
 	
 	local paraStroke = Instance.new("UIStroke", paraFrame)
 	paraStroke.Thickness = 1.2
@@ -1781,9 +1696,6 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 	knob.BorderSizePixel = 0
 	knob.Parent = track
 	Instance.new("UICorner", knob).CornerRadius = UDim.new(1, 0)
-
-	-- Add dynamic focus glow to the drag knob
-	local knobGlow = KazeUI:ApplyGlow(knob, 8, 0.8, 0.3)
 	
 	local knobStroke = Instance.new("UIStroke", knob)
 	knobStroke.Thickness = 1.2
@@ -1831,8 +1743,6 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 			
 			TweenService:Create(knob, TWEEN_FAST, {Size = UDim2.fromOffset(16, 16)}):Play()
 			TweenService:Create(paraStroke, TWEEN_FAST, {Color = KazeUI.GlowColor}):Play()
-			if glowCtrl then glowCtrl.SetState(true) end
-			if knobGlow then knobGlow.SetState(true) end
 			
 			local moveCon, endCon
 			moveCon = UIS.InputChanged:Connect(function(moveInput)
@@ -1848,8 +1758,6 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 					
 					TweenService:Create(knob, TWEEN_FAST, {Size = UDim2.fromOffset(12, 12)}):Play()
 					TweenService:Create(paraStroke, TWEEN_FAST, {Color = KazeUI.CurrentTheme.Border}):Play()
-					if glowCtrl then glowCtrl.SetState(false) end
-					if knobGlow then knobGlow.SetState(false) end
 					if moveCon then moveCon:Disconnect() end
 					if endCon then endCon:Disconnect() end
 				end
@@ -1909,9 +1817,6 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 	dropFrame.Parent = wrapper
 	KazeUI:AddPanel(dropFrame, 0.02)
 
-	-- Apply Premium Ambient Glow
-	local glowCtrl = KazeUI:ApplyGlow(dropFrame, 16, 0.85, 0.50)
-
 	local padding = Instance.new("UIPadding", dropFrame)
 	padding.PaddingTop = UDim.new(0, 4)
 	padding.PaddingBottom = UDim.new(0, 4)
@@ -1953,7 +1858,7 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 
 	local arrowIcon = Instance.new("ImageLabel", header)
 	arrowIcon.AnchorPoint = Vector2.new(1, 0.5)
-	arrowIcon.Position = UDim2.new(1, -4, 0.5, 0) -- Perfectly centered aligned spacing
+	arrowIcon.Position = UDim2.new(1, 0, 0.5, 0)
 	arrowIcon.Size = UDim2.fromOffset(16, 16)
 	arrowIcon.BackgroundTransparency = 1
 	arrowIcon.Image = "rbxassetid://10723415693"
@@ -2105,14 +2010,6 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 		pickerArea.Visible = isOpen
 		TweenService:Create(arrowIcon, TWEEN_SPRING, {Rotation = isOpen and 180 or 0}):Play()
 		TweenService:Create(boxStroke, TWEEN_FAST, {Color = isOpen and KazeUI.GlowColor or KazeUI.CurrentTheme.Border}):Play()
-		if glowCtrl then glowCtrl.SetState(isOpen) end
-	end)
-
-	clickBtn.MouseEnter:Connect(function()
-		if not isOpen and glowCtrl then glowCtrl.SetState(true) end
-	end)
-	clickBtn.MouseLeave:Connect(function()
-		if not isOpen and glowCtrl then glowCtrl.SetState(false) end
 	end)
 	
 	KazeUI:OnGlowChanged(boxStroke, function(c)
@@ -2176,9 +2073,6 @@ local function CreateKeybindInput(parentFrame, title, defaultKey, callback, flag
 	Instance.new("UICorner", paraFrame).CornerRadius = UDim.new(0, 8)
 	paraFrame.Parent = wrapper
 	KazeUI:AddPanel(paraFrame, 0.02)
-
-	-- Apply Premium Ambient Glow
-	local glowCtrl = KazeUI:ApplyGlow(paraFrame, 16, 0.85, 0.50)
 	
 	local paraStroke = Instance.new("UIStroke", paraFrame)
 	paraStroke.Thickness = 1.2
@@ -2232,14 +2126,12 @@ local function CreateKeybindInput(parentFrame, title, defaultKey, callback, flag
 		if not isBinding then 
 			TweenService:Create(bindStroke, TWEEN_FAST, {Color = KazeUI.GlowColor}):Play()
 		end
-		if glowCtrl then glowCtrl.SetState(true) end
 	end)
 	bindContainer.MouseLeave:Connect(function()
 		isHovering = false
 		if not isBinding then 
 			TweenService:Create(bindStroke, TWEEN_FAST, {Color = KazeUI.CurrentTheme.Border}):Play()
 		end
-		if glowCtrl then glowCtrl.SetState(false) end
 	end)
 	
 	bindContainer.MouseButton1Click:Connect(function()
@@ -2464,9 +2356,6 @@ CreateCollapsibleSection = function(parentFrame, titleArg)
 	Instance.new("UICorner", sectionBox).CornerRadius = UDim.new(0, 10)
 	KazeUI:AddPanel(sectionBox, 0.02)
 
-	-- Apply Premium Ambient Glow
-	local glowCtrl = KazeUI:ApplyGlow(sectionBox, 18, 0.90, 0.60)
-
 	local boxStroke = Instance.new("UIStroke", sectionBox)
 	boxStroke.Thickness = 1.5
 	boxStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
@@ -2575,7 +2464,6 @@ CreateCollapsibleSection = function(parentFrame, titleArg)
 			}):Play()
 			StartNeonLoop(boxStroke)
 			StartNeonLoop(accentLine)
-			if glowCtrl then glowCtrl.SetState(true) end
 		else
 			TweenService:Create(arrowIcon, TweenInfo.new(animDuration, easeStyle, easeDir), {
 				Rotation = -90,
@@ -2588,7 +2476,6 @@ CreateCollapsibleSection = function(parentFrame, titleArg)
 			StopNeonLoop(accentLine)
 			boxStroke.Color = KazeUI.CurrentTheme.Border
 			accentLine.BackgroundColor3 = KazeUI.CurrentTheme.MutedText
-			if glowCtrl then glowCtrl.SetState(false) end
 		end
 	end
 
@@ -2711,9 +2598,6 @@ function KazeUI:CreateWindow(config)
 	Window.Parent = ScreenGui
 	Instance.new("UICorner", Window).CornerRadius = UDim.new(0, 12)
 	KazeUI:AddPanel(Window, 0)
-
-	-- Ambient Glow around the Window Frame
-	local winGlow = KazeUI:ApplyGlow(Window, 24, 0.8, 0.6)
 
 	local outerShadow = Instance.new("Frame", Window)
 	outerShadow.Size = UDim2.new(1, 10, 1, 10)
@@ -3420,6 +3304,7 @@ function KazeUI:CreateWindow(config)
 		btn.LayoutOrder = #self._Tabs + 1
 		Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
 		
+		-- ignoreColorUpdate = true prevents theme engine from flattening tab-specific backgrounds
 		KazeUI:AddPanel(btn, 0.02, true)
 
 		local leftIndicator = Instance.new("Frame", btn)
