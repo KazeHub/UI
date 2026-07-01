@@ -1,13 +1,13 @@
 --[[
-	Kaze UI Library v3.2 (Premium Bubble Redesign - Readability & Glow Update)
+	Kaze UI Library v3.3 (Premium Bubble Redesign - Responsive & High Contrast Update)
 	Inspired by: Modern Mobile Chat Bubbles, iMessage, and Discord Mobile.
 	Retained: 100% Backwards Compatibility with Version 1, 2, 2.2, 2.3, and 3.0 APIs
 	
-	UPDATES IN V3.2:
-	- Overhauled Tab Selection: Selected tabs now feature a beautiful pulsing glowing neon outline. (UPDATED: Replaced with floating capsule indicator inside the tab)
-	- Fixed Slider Title Bug: Corrected missing and tiny text size properties on slider and other element titles.
-	- Upgraded Label Readability: Enhanced AddLabel logic with GothamMedium, 13px size, and high-contrast rendering.
-	- Better Contrast: Boosted theme colors for muted text elements to prevent them from washing out on custom wallpapers.
+	UPDATES IN v3.3:
+	- Overhauled TopBar Header: Enhanced Title & SubLabel text contrast, sizes, and precise vertical spacing.
+	- Fully Responsive Minimize Toggle: Dynamic scaling, proportional inner padding, corners, and stroke.
+	- Drag-Safe Boundary Clamping: Restricts the floating bubble toggle from slipping off the viewport.
+	- Dynamic Touch Adaptation: Tailors sizing for mobile touches while maintaining PC-optimized ratios.
 --]]
 
 local KazeUI = {}
@@ -279,6 +279,21 @@ function KazeUI:RegisterText(inst, isMuted)
 	end)
 end
 
+-- Boundary Clamp Helper to prevent dragging elements off-screen
+local function ClampToViewport(part, sizeX, sizeY)
+	local camera = workspace.CurrentCamera
+	local viewport = camera and camera.ViewportSize or Vector2.new(1000, 1000)
+	local scale = UIScale.Scale
+
+	local maxX = (viewport.X / scale) - sizeX
+	local maxY = (viewport.Y / scale) - sizeY
+
+	local curX = math.clamp(part.Position.X.Offset, 0, maxX)
+	local curY = math.clamp(part.Position.Y.Offset, 0, maxY)
+
+	part.Position = UDim2.new(part.Position.X.Scale, curX, part.Position.Y.Scale, curY)
+end
+
 function KazeUI:RegisterBorder(inst)
 	if not inst then return end
 	table.insert(KazeUI.BorderElements, inst)
@@ -327,6 +342,8 @@ local function MakeDraggable(dragPart, targetPart)
 			if targetPart.Name == "Frame" or targetPart:IsA("Frame") then
 				lastNormalPosition = targetPart.Position
 				lastNormalAnchor = targetPart.AnchorPoint
+				-- Prevent the main frame itself from disappearing fully off-screen
+				ClampToViewport(targetPart, targetPart.AbsoluteSize.X / scale, targetPart.AbsoluteSize.Y / scale)
 			end
 		end
 	end
@@ -2489,6 +2506,38 @@ function KazeUI:CreateWindow(config)
 	end
 	KazeUI:SetTheme(selectedTheme)
 
+	if config.Glow then
+		local lowerGlow = string.lower(tostring(config.Glow))
+		local glowMap = {
+			red = Color3.fromRGB(255, 60, 60),
+			blue = Color3.fromRGB(0, 160, 255),
+			green = Color3.fromRGB(34, 197, 94),
+			["neon green"] = Color3.fromRGB(34, 197, 94),
+			yellow = Color3.fromRGB(234, 179, 8),
+			purple = Color3.fromRGB(150, 80, 255),
+			pink = Color3.fromRGB(244, 114, 182),
+			orange = Color3.fromRGB(249, 115, 22),
+			white = Color3.fromRGB(255, 255, 255),
+			black = Color3.fromRGB(15, 15, 17)
+		}
+		if glowMap[lowerGlow] then
+			KazeUI:SetGlow(glowMap[lowerGlow])
+		elseif typeof(config.Glow) == "Color3" then
+			KazeUI:SetGlow(config.Glow)
+		end
+	elseif config.GlowColor then
+		KazeUI:SetGlow(config.GlowColor)
+	end
+
+	-- Dynamic Responsive Sizing Calculation for Floating Bubble
+	local function GetResponsiveMiniSize()
+		if UIS.TouchEnabled then
+			return 52 -- Larger footprint for comfortable mobile touch accuracy
+		else
+			return 44 -- Sleek, clean desktop footprint
+		end
+	end
+
 	-- Main Window Setup
 	local Window = Instance.new("Frame")
 	Window.Size = UDim2.fromOffset(600, 400) 
@@ -2596,28 +2645,39 @@ function KazeUI:CreateWindow(config)
 	avatarStroke.Thickness = 1
 	KazeUI:RegisterBorder(avatarStroke)
 
+	-- ==========================================================
+	-- REDESIGNED TOPBAR HEADER (High legibility, premium styling)
+	-- ==========================================================
 	local TitleLabel = Instance.new("TextLabel")
-	TitleLabel.Size = UDim2.new(1, -200, 0, 20)
-	TitleLabel.Position = UDim2.fromOffset(56, 7)
+	TitleLabel.Size = UDim2.new(1, -200, 0, 18)
+	TitleLabel.Position = UDim2.fromOffset(56, 8) -- Aligned with balanced vertical padding
 	TitleLabel.BackgroundTransparency = 1
 	TitleLabel.Text = Title
 	TitleLabel.Font = Enum.Font.GothamBold
-	TitleLabel.TextSize = 13
+	TitleLabel.TextSize = 14 -- Upgraded title size for instant focus
 	TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
 	TitleLabel.Parent = TopBar
 	KazeUI:RegisterText(TitleLabel, false)
 
-	-- UPDATED: Mas kapansin-pansin na Author at Version Text (Mas malaki at High Contrast)
 	local SubLabel = Instance.new("TextLabel")
-	SubLabel.Size = UDim2.new(1, -200, 0, 16)
-	SubLabel.Position = UDim2.fromOffset(56, 27)
+	SubLabel.Size = UDim2.new(1, -200, 0, 14)
+	SubLabel.Position = UDim2.fromOffset(56, 28) -- Crisp spacing between Title and metadata
 	SubLabel.BackgroundTransparency = 1
 	SubLabel.Text = Author .. " • v" .. Version
-	SubLabel.Font = Enum.Font.GothamMedium -- GothamMedium para mas solid ang rendering
-	SubLabel.TextSize = 11 -- Pinalaki mula sa 10
+	SubLabel.Font = Enum.Font.Gotham
+	SubLabel.TextSize = 11 -- Upgraded sub-header size for readability
 	SubLabel.TextXAlignment = Enum.TextXAlignment.Left
 	SubLabel.Parent = TopBar
-	KazeUI:RegisterText(SubLabel, false) -- Ginawang false (Primary) para sa mas mataas na contrast laban sa madidilim na backgrounds
+
+	-- Boosted Dynamic SubLabel Contrast based on active theme
+	KazeUI:OnThemeChanged(SubLabel, function(theme)
+		local h, s, v = Color3.toHSV(theme.Text)
+		if theme.LightnessFactor == -1 then -- Light theme (Arctic)
+			SubLabel.TextColor3 = Color3.fromHSV(h, s, math.clamp(v - 0.45, 0.2, 0.5)) -- Readable charcoal grey
+		else -- Dark themes (Midnight, Amethyst, Obsidian, etc.)
+			SubLabel.TextColor3 = Color3.fromHSV(h, s * 0.5, math.clamp(v * 0.75, 0.65, 0.85)) -- Crisp soft-glow slate
+		end
+	end)
 
 	local TopDivider = Instance.new("Frame")
 	TopDivider.Size = UDim2.new(1, 0, 0, 1)
@@ -2651,85 +2711,47 @@ function KazeUI:CreateWindow(config)
 	local BtnYellow = createCircleButton("BtnYellow", -56, Color3.fromRGB(234, 179, 8))
 	local BtnRed = createCircleButton("BtnRed", -32, Color3.fromRGB(239, 68, 68))
 
-	-- UPDATED: Auto-Sizing Minimize Button Capsule (Sineset ang lapad base sa Text)
+	-- ==========================================================
+	-- FULLY RESPONSIVE DRAGGABLE MINIMIZE TOGGLE (Floating Bubble)
+	-- ==========================================================
 	local MiniButton = Instance.new("TextButton") 
-	MiniButton.Size = UDim2.fromOffset(0, 40) -- Auto size ang gagamitin sa Width
-	MiniButton.AutomaticSize = Enum.AutomaticSize.X
+	MiniButton.Name = "MiniButton"
 	MiniButton.Position = UDim2.new(0, 24, 0, 85)
-	MiniButton.BackgroundTransparency = 0
+	MiniButton.BackgroundTransparency = 1 
 	MiniButton.Text = ""
 	MiniButton.Visible = false
 	MiniButton.Parent = ScreenGui
 	MiniButton.ZIndex = 999
-	
-	-- Mini button utilizes Medium Shape (20px) for standard floating bubble capsule
-	Instance.new("UICorner", MiniButton).CornerRadius = UDim.new(0, 20)
-	KazeUI:AddPanel(MiniButton, 0.02)
-
-	local MiniStroke = Instance.new("UIStroke")
-	MiniStroke.Thickness = 1.5
-	MiniStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-	MiniStroke.Parent = MiniButton 
-	KazeUI:RegisterBorder(MiniStroke)
-
-	local miniLayout = Instance.new("UIListLayout", MiniButton)
-	miniLayout.FillDirection = Enum.FillDirection.Horizontal
-	miniLayout.VerticalAlignment = Enum.VerticalAlignment.Center
-	miniLayout.SortOrder = Enum.SortOrder.LayoutOrder
-	miniLayout.Padding = UDim.new(0, 8)
-
-	local miniPadding = Instance.new("UIPadding", MiniButton)
-	miniPadding.PaddingLeft = UDim.new(0, 12)
-	miniPadding.PaddingRight = UDim.new(0, 14)
 
 	local MiniIcon = Instance.new("ImageLabel")
-	MiniIcon.Size = UDim2.fromOffset(20, 20) 
-	MiniIcon.BackgroundTransparency = 1
+	MiniIcon.Name = "MiniIcon"
+	MiniIcon.Size = UDim2.fromScale(0.82, 0.82) -- Uniform interior scale
+	MiniIcon.Position = UDim2.fromScale(0.5, 0.5)
+	MiniIcon.AnchorPoint = Vector2.new(0.5, 0.5)
+	MiniIcon.BackgroundTransparency = 0
 	MiniIcon.Image = OpenIcon
 	MiniIcon.ScaleType = Enum.ScaleType.Fit
-	MiniIcon.LayoutOrder = 1
 	MiniIcon.Parent = MiniButton
 	MiniIcon.ZIndex = 1000
+	
+	local MiniCorner = Instance.new("UICorner", MiniIcon)
+	KazeUI:AddPanel(MiniIcon, 0.02)
 	KazeUI:OnThemeChanged(MiniIcon, function(t) MiniIcon.ImageColor3 = t.Text end)
 
-	local MiniText = Instance.new("TextLabel")
-	MiniText.Size = UDim2.fromOffset(0, 20)
-	MiniText.AutomaticSize = Enum.AutomaticSize.X
-	MiniText.BackgroundTransparency = 1
-	MiniText.Text = Title
-	MiniText.Font = Enum.Font.GothamBold
-	MiniText.TextSize = 12
-	MiniText.LayoutOrder = 2
-	MiniText.Parent = MiniButton
-	MiniText.ZIndex = 1000
-	KazeUI:RegisterText(MiniText, false)
+	local MiniStroke = Instance.new("UIStroke")
+	MiniStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+	MiniStroke.Parent = MiniIcon 
+	KazeUI:RegisterBorder(MiniStroke)
 
-	-- UIScale para sa makinis na entrance animation ng dynamic capsule
-	local MiniScale = Instance.new("UIScale", MiniButton)
-	MiniScale.Scale = 1
-
-	if config.Glow then
-		local lowerGlow = string.lower(tostring(config.Glow))
-		local glowMap = {
-			red = Color3.fromRGB(255, 60, 60),
-			blue = Color3.fromRGB(0, 160, 255),
-			green = Color3.fromRGB(34, 197, 94),
-			["neon green"] = Color3.fromRGB(34, 197, 94),
-			yellow = Color3.fromRGB(234, 179, 8),
-			purple = Color3.fromRGB(150, 80, 255),
-			pink = Color3.fromRGB(244, 114, 182),
-			orange = Color3.fromRGB(249, 115, 22),
-			white = Color3.fromRGB(255, 255, 255),
-			black = Color3.fromRGB(15, 15, 17)
-		}
-		if glowMap[lowerGlow] then
-			KazeUI:SetGlow(glowMap[lowerGlow])
-		elseif typeof(config.Glow) == "Color3" then
-			KazeUI:SetGlow(config.Glow)
-		end
-	elseif config.GlowColor then
-		KazeUI:SetGlow(config.GlowColor)
+	-- Dynamic Proportional Style Sync for Minimize Button
+	local function UpdateMiniButtonStyles()
+		local currentSize = GetResponsiveMiniSize()
+		MiniButton.Size = UDim2.fromOffset(currentSize, currentSize)
+		MiniCorner.CornerRadius = UDim.new(0, currentSize / 2.2) -- Perfect proportional bubble circularity
+		MiniStroke.Thickness = math.clamp(currentSize / 32, 1.2, 2.5) -- Scaled border stroke thickness
 	end
+
+	UpdateMiniButtonStyles()
 
 	local isMinimized = false
 	local function minimizeWindow()
@@ -2742,17 +2764,20 @@ function KazeUI:CreateWindow(config)
 		end
 		Window.Visible = false
 		MiniButton.Visible = true
-		MiniScale.Scale = 0
-		TweenService:Create(MiniScale, TWEEN_SPRING, {Scale = 1}):Play()
+
+		UpdateMiniButtonStyles()
+		local currentSize = GetResponsiveMiniSize()
+		MiniButton.Size = UDim2.fromOffset(0, 0)
+		
+		-- Safely Clamps before launch animation so that the toggle never clips off the window
+		ClampToViewport(MiniButton, currentSize, currentSize)
+		
+		TweenService:Create(MiniButton, TWEEN_SPRING, {Size = UDim2.fromOffset(currentSize, currentSize)}):Play()
 	end
 
 	local function unminimizeWindow()
 		if not isMinimized then return end
 		isMinimized = false
-		
-		local outTween = TweenService:Create(MiniScale, TWEEN_FAST, {Scale = 0})
-		outTween:Play()
-		outTween.Completed:Wait()
 		
 		MiniButton.Visible = false
 		Window.Visible = true
@@ -2772,33 +2797,56 @@ function KazeUI:CreateWindow(config)
 
 	local miniDragStart
 	local miniDragMoved = false
+	local miniStartPos = UDim2.new()
 	
 	MiniButton.InputBegan:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 			miniDragStart = input.Position
+			miniStartPos = MiniButton.Position
 			miniDragMoved = false
+			LockCamera()
 		end
 	end)
 	
 	UIS.InputChanged:Connect(function(input)
 		if miniDragStart and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-			if (input.Position - miniDragStart).Magnitude > 8 then
+			local delta = input.Position - miniDragStart
+			local scale = UIScale.Scale
+			if delta.Magnitude > 8 or miniDragMoved then
 				miniDragMoved = true
-				local delta = input.Position - miniDragStart
 				MiniButton.Position = UDim2.new(
-					0, MiniButton.Position.X.Offset + delta.X,
-					0, MiniButton.Position.Y.Offset + delta.Y
+					0, miniStartPos.X.Offset + (delta.X / scale),
+					0, miniStartPos.Y.Offset + (delta.Y / scale)
 				)
-				miniDragStart = input.Position
+				local size = GetResponsiveMiniSize()
+				ClampToViewport(MiniButton, size, size)
 			end
 		end
 	end)
 	
 	UIS.InputEnded:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-			if miniDragStart and not miniDragMoved then unminimizeWindow() end
+			if miniDragStart then
+				UnlockCamera()
+				if not miniDragMoved then 
+					unminimizeWindow() 
+				else
+					local size = GetResponsiveMiniSize()
+					ClampToViewport(MiniButton, size, size)
+				end
+			end
 			miniDragStart = nil
 			miniDragMoved = false
+		end
+	end)
+
+	-- Boundary checks are triggered instantly upon camera viewport edits to protect UI layout stability
+	workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(function()
+		UpdateScale()
+		UpdateMiniButtonStyles()
+		if MiniButton.Visible then
+			local size = GetResponsiveMiniSize()
+			ClampToViewport(MiniButton, size, size)
 		end
 	end)
 
@@ -2936,8 +2984,8 @@ function KazeUI:CreateWindow(config)
 
 	local isSidebarOpen = true
 	Avatar.MouseButton1Click:Connect(function()
-		isSidebarOpen = not isSidebarOpen
 		local tInfo = TweenInfo.new(0.35, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
+		isSidebarOpen = not isSidebarOpen
 		if isSidebarOpen then
 			TweenService:Create(SideBarMask, tInfo, {Size = UDim2.new(0, 190, 1, 0)}):Play()
 			TweenService:Create(VertDivider, tInfo, {Position = UDim2.new(0, 190, 0, 0), BackgroundTransparency = 0}):Play()
