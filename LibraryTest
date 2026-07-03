@@ -1,14 +1,14 @@
-
 --[[
 	Kaze UI Library v3.3 (Premium Bubble Redesign - Classic Indicator Reverted)
 	Inspired by: Modern Mobile Chat Bubbles, iMessage, and Discord Mobile.
 	Retained: 100% Backwards Compatibility with Version 1, 2, 2.2, 2.3, and 3.0 APIs
 	
-	UPDATES IN V3.3:
+	UPDATES IN V3.3 (PATCHED):
 	- Reverted Tab Indicator: Restored the classic, clean vertical bar indicator (3px width, full height) on selected tabs.
 	- Maintained Slider Title Fix: Retained the clear, legible title text size on sliders and other inputs.
 	- Maintained Label Readability: Left the upgraded AddLabel logic intact using GothamMedium (13px) for optimal legibility.
 	- Custom Wallpaper System: Fully supports premium live wallpaper controls, transparency, and soft overlays.
+	- Bug Fixes: Fixed tab page overlapping, button press jitter, global UIS connection memory leaks, and registry leaks.
 --]]
 
 local KazeUI = {}
@@ -256,6 +256,13 @@ end
 function KazeUI:OnGlowChanged(inst, callback)
 	table.insert(KazeUI.GlowCallbacks, {Inst = inst, Callback = callback})
 	task.spawn(callback, KazeUI.GlowColor)
+	if inst and typeof(inst) == "Instance" then
+		inst.Destroying:Connect(function()
+			for i = #KazeUI.GlowCallbacks, 1, -1 do
+				if KazeUI.GlowCallbacks[i].Inst == inst then table.remove(KazeUI.GlowCallbacks, i) end
+			end
+		end)
+	end
 end
 
 function KazeUI:RegisterText(inst, isMuted)
@@ -357,9 +364,15 @@ local function MakeDraggable(dragPart, targetPart)
 		end
 	end)
 	
-	UIS.InputChanged:Connect(function(input)
+	local uisConn = UIS.InputChanged:Connect(function(input)
 		if input == dragInput and dragging then update(input) end
 	end)
+	
+	if dragPart and typeof(dragPart) == "Instance" then
+		dragPart.Destroying:Connect(function()
+			if uisConn then uisConn:Disconnect() end
+		end)
+	end
 end
 
 -- ==========================================
@@ -1931,7 +1944,7 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 		end
 	end)
 
-	UIS.InputChanged:Connect(function(input)
+	local uisConn1 = UIS.InputChanged:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
 			if draggingMap then
 				updateSV(input)
@@ -1941,13 +1954,18 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 		end
 	end)
 
-	UIS.InputEnded:Connect(function(input)
+	local uisConn2 = UIS.InputEnded:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 			if draggingMap or draggingHue then UnlockCamera() end
 			draggingMap = false
 			draggingHue = false
 			ToggleScrollingAncestors(svMap, true)
 		end
+	end)
+	
+	wrapper.Destroying:Connect(function()
+		if uisConn1 then uisConn1:Disconnect() end
+		if uisConn2 then uisConn2:Disconnect() end
 	end)
 
 	clickBtn.MouseButton1Click:Connect(function()
@@ -2103,10 +2121,14 @@ local function CreateKeybindInput(parentFrame, title, defaultKey, callback, flag
 		end)
 	end)
 	
-	UIS.InputBegan:Connect(function(input, gp)
+	local uisConn = UIS.InputBegan:Connect(function(input, gp)
 		if not gp and not isBinding and currentKey ~= Enum.KeyCode.Unknown and input.KeyCode == currentKey then
 			if typeof(callback) == "function" then task.spawn(callback, currentKey) end
 		end
+	end)
+	
+	wrapper.Destroying:Connect(function()
+		if uisConn then uisConn:Disconnect() end
 	end)
 
 	KazeUI:OnGlowChanged(bindStroke, function(c)
@@ -2748,7 +2770,7 @@ function KazeUI:CreateWindow(config)
 		end
 	end)
 	
-	UIS.InputChanged:Connect(function(input)
+	local miniDragConn1 = UIS.InputChanged:Connect(function(input)
 		if miniDragStart and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
 			if (input.Position - miniDragStart).Magnitude > 8 then
 				miniDragMoved = true
@@ -2762,12 +2784,17 @@ function KazeUI:CreateWindow(config)
 		end
 	end)
 	
-	UIS.InputEnded:Connect(function(input)
+	local miniDragConn2 = UIS.InputEnded:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 			if miniDragStart and not miniDragMoved then unminimizeWindow() end
 			miniDragStart = nil
 			miniDragMoved = false
 		end
+	end)
+	
+	MiniButton.Destroying:Connect(function()
+		if miniDragConn1 then miniDragConn1:Disconnect() end
+		if miniDragConn2 then miniDragConn2:Disconnect() end
 	end)
 
 	BtnGreen.MouseButton1Click:Connect(function()
@@ -3001,7 +3028,7 @@ function KazeUI:CreateWindow(config)
 		end
 	end)
 
-	UIS.InputChanged:Connect(function(input)
+	local resizeConn1 = UIS.InputChanged:Connect(function(input)
 		if isResizing then
 			if input.UserInputType == Enum.UserInputType.Touch and input ~= resizeTouchInput then return end
 			if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
@@ -3010,7 +3037,7 @@ function KazeUI:CreateWindow(config)
 		end
 	end)
 
-	UIS.InputEnded:Connect(function(input)
+	local resizeConn2 = UIS.InputEnded:Connect(function(input)
 		if isResizing then
 			if input.UserInputType == Enum.UserInputType.Touch and input ~= resizeTouchInput then return end
 			isResizing = false
@@ -3021,6 +3048,11 @@ function KazeUI:CreateWindow(config)
 			Mouse.Icon = ""
 			TweenService:Create(ResizeHandle, TweenInfo.new(0.12), {ImageColor3 = KazeUI.CurrentTheme.MutedText}):Play()
 		end
+	end)
+	
+	ResizeHandle.Destroying:Connect(function()
+		if resizeConn1 then resizeConn1:Disconnect() end
+		if resizeConn2 then resizeConn2:Disconnect() end
 	end)
 
 	local Win = {
