@@ -1,17 +1,15 @@
 --[[
-	Kaze UI Library v3.4 (Premium Bubble Redesign - Patched)
+	Kaze UI Library v3.4 (Premium Bubble Redesign)
 	Inspired by: Modern Mobile Chat Bubbles, iMessage, and Discord Mobile.
 	Retained: 100% Backwards Compatibility with Version 1, 2, 2.2, 2.3, and 3.0 APIs
 	
 	UPDATES IN V3.4 (PATCHED):
-	- Divider Fix: Patched all divider lines (sidebar, dropdown, collapsible sections, topbar) 
-	  to utilize 1-pixel UIStrokes on zero-size frames. This prevents Roblox UI scaling from 
-	  causing inconsistent thicknesses ("paminsan manipis, paminsan hindi").
 	- Added Win:Divider(title): Creates tightly spaced separators inside the sidebar.
 	- Simplified Themes: Retained only "Obsidian" (default) and "CustomWallpaper".
 	- White Glow Sync: Automatically forces the Glow color to bright White when Obsidian theme is loaded.
 	- Readability Pass: Upgraded Topbar Author text to GothamMedium (12px) with zero neon-glow distortion.
 	- Version Fix: Completely removed the hardcoded "v" formatting to prevent duplication.
+	- Pixel-Perfect Divider Patched: Solved the scaling glitch that caused thin/thick divider lines.
 --]]
 
 local KazeUI = {}
@@ -169,6 +167,26 @@ end
 
 UpdateScale()
 workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(UpdateScale)
+
+-- Adaptive Pixel-Perfect scaling engine to keep separators sharp
+local function ApplyPixelPerfectScale(frame, axis, baseScale, baseOffset)
+	local function adjust()
+		local scale = UIScale.Scale
+		if scale > 0 then
+			local targetThickness = 1 / scale
+			if axis == "Y" then
+				frame.Size = UDim2.new(baseScale or frame.Size.X.Scale, baseOffset or frame.Size.X.Offset, 0, targetThickness)
+			else
+				frame.Size = UDim2.new(0, targetThickness, baseScale or frame.Size.Y.Scale, baseOffset or frame.Size.Y.Offset)
+			end
+		end
+	end
+	adjust()
+	local conn = UIScale:GetPropertyChangedSignal("Scale"):Connect(adjust)
+	frame.Destroying:Connect(function()
+		if conn then conn:Disconnect() end
+	end)
+end
 
 -- Lucide Icons Setup
 local IconsMap = {}
@@ -799,20 +817,13 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 		TweenService:Create(searchStroke, TWEEN_FAST, {Color = KazeUI.CurrentTheme.Border}):Play()
 	end)
 	
-	-- Patched Divider: Utilizes 1px UIStroke on a 0-height frame to guarantee thickness consistency
 	local divider = Instance.new("Frame")
-	divider.Size = UDim2.new(1, -20, 0, 0)
-	divider.BackgroundTransparency = 1
 	divider.BorderSizePixel = 0
 	divider.LayoutOrder = 3
 	divider.Visible = false
 	divider.Parent = dropFrame
-
-	local dropDivStroke = Instance.new("UIStroke")
-	dropDivStroke.Thickness = 1
-	dropDivStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-	dropDivStroke.Parent = divider
-	KazeUI:OnThemeChanged(divider, function(t) dropDivStroke.Color = t.Border end)
+	ApplyPixelPerfectScale(divider, "Y", 1, -20)
+	KazeUI:OnThemeChanged(divider, function(t) divider.BackgroundColor3 = t.Border end)
 
 	local listContainer = Instance.new("ScrollingFrame")
 	listContainer.Size = UDim2.new(1, -20, 0, 0)
@@ -821,7 +832,7 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 	listContainer.LayoutOrder = 4
 	listContainer.Visible = false
 	listContainer.ScrollBarThickness = 3
-	listContainer.ScrollBarImageColor3 = Color3.fromRGB(40, 40, 45)
+	listContainer.ScrollBarImageColor3 = Color3.fromRGB(60, 60, 65)
 	listContainer.Parent = dropFrame
 
 	listContainer.MouseEnter:Connect(function() ToggleScrollingAncestors(dropFrame, false) end)
@@ -1260,7 +1271,7 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 	local state = defaultState or false
 	
 	local measuredWidth = 598 * 0.92
-	if parentFrame and parentFrame.AbsoluteSize&nbsp;and parentFrame.AbsoluteSize.X > 0 then measuredWidth = parentFrame.AbsoluteSize.X * 0.95 end
+	if parentFrame and parentFrame.AbsoluteSize and parentFrame.AbsoluteSize.X > 0 then measuredWidth = parentFrame.AbsoluteSize.X * 0.95 end
 	local textContainerWidth = measuredWidth - 28 - 55
 	
 	local titleHeight = 0
@@ -1468,7 +1479,6 @@ local function CreateTextBoxInput(parentFrame, title, placeholder, defaultVal, c
 		ptitleLabel.Font = Enum.Font.GothamBold
 		ptitleLabel.TextSize = 13
 		ptitleLabel.TextWrapped = true
-		ptitleLabel.TextXAlignment = Enum.TextXAlignment.Left
 		KazeUI:RegisterText(ptitleLabel, false)
 	end
 	
@@ -1861,6 +1871,7 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 	hueCursor.Size = UDim2.fromOffset(4, 24)
 	hueCursor.AnchorPoint = Vector2.new(0.5, 0.5)
 	hueCursor.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+	hueCursor.Instance = hueCursor
 	Instance.new("UICorner", hueCursor).CornerRadius = UDim.new(1, 0)
 	Instance.new("UIStroke", hueCursor).Color = Color3.fromRGB(0, 0, 0)
 
@@ -2334,20 +2345,13 @@ CreateCollapsibleSection = function(parentFrame, titleArg)
 		if not isOpen then arrowIcon.ImageColor3 = t.MutedText end
 	end)
 
-	-- Patched Divider: Utilizes 1px UIStroke on a 0-height frame to guarantee thickness consistency
 	local divider = Instance.new("Frame")
-	divider.Size = UDim2.new(0.95, 0, 0, 0)
-	divider.BackgroundTransparency = 1
 	divider.BorderSizePixel = 0
 	divider.LayoutOrder = 2
 	divider.Visible = false
 	divider.Parent = sectionBox
-
-	local divStroke = Instance.new("UIStroke")
-	divStroke.Thickness = 1
-	divStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-	divStroke.Parent = divider
-	KazeUI:OnThemeChanged(divider, function(t) divStroke.Color = t.Border end)
+	ApplyPixelPerfectScale(divider, "Y", 0.95, 0)
+	KazeUI:OnThemeChanged(divider, function(t) divider.BackgroundColor3 = t.Border end)
 
 	local sectionContent = Instance.new("Frame")
 	sectionContent.Name = "Content"
@@ -2638,20 +2642,13 @@ function KazeUI:CreateWindow(config)
 	SubLabel.Parent = TopBar
 	KazeUI:RegisterText(SubLabel, false) -- Registered as primary bright text to ensure 100% legibility
 
-	-- Patched Divider: Utilizes 1px UIStroke on a 0-height frame to guarantee thickness consistency
 	local TopDivider = Instance.new("Frame")
-	TopDivider.Size = UDim2.new(1, 0, 0, 0)
-	TopDivider.Position = UDim2.new(0, 0, 1, -1)
-	TopDivider.BackgroundTransparency = 1
 	TopDivider.BorderSizePixel = 0
 	TopDivider.ZIndex = 5
 	TopDivider.Parent = TopBar
-
-	local topDivStroke = Instance.new("UIStroke")
-	topDivStroke.Thickness = 1
-	topDivStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-	topDivStroke.Parent = TopDivider
-	KazeUI:OnThemeChanged(TopDivider, function(t) topDivStroke.Color = t.Border end)
+	ApplyPixelPerfectScale(TopDivider, "Y", 1, 0)
+	TopDivider.Position = UDim2.new(0, 0, 1, -TopDivider.Size.Y.Offset)
+	KazeUI:OnThemeChanged(TopDivider, function(t) TopDivider.BackgroundColor3 = t.Border end)
 
 	local defaultWindowSize = UDim2.fromOffset(600, 400)
 	local lastNormalSize = defaultWindowSize
@@ -2899,19 +2896,12 @@ function KazeUI:CreateWindow(config)
 	SideBar.Parent = SideBarMask
 	KazeUI:AddPanel(SideBar, 0.01)
 
-	-- Patched Divider: Utilizes 1px UIStroke on a 0-width frame to guarantee vertical line thickness consistency
 	local VertDivider = Instance.new("Frame")
-	VertDivider.Size = UDim2.new(0, 0, 1, 0)
-	VertDivider.Position = UDim2.new(0, 190, 0, 0)
-	VertDivider.BackgroundTransparency = 1
 	VertDivider.BorderSizePixel = 0
 	VertDivider.Parent = Content
-
-	local vertDivStroke = Instance.new("UIStroke")
-	vertDivStroke.Thickness = 1
-	vertDivStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-	vertDivStroke.Parent = VertDivider
-	KazeUI:OnThemeChanged(VertDivider, function(t) vertDivStroke.Color = t.Border end)
+	ApplyPixelPerfectScale(VertDivider, "X", 1, 0)
+	VertDivider.Position = UDim2.new(0, 190, 0, 0)
+	KazeUI:OnThemeChanged(VertDivider, function(t) VertDivider.BackgroundColor3 = t.Border end)
 
 	local Pages = Instance.new("Frame")
 	Pages.Position = UDim2.new(0, 191, 0, 0)
@@ -3205,13 +3195,12 @@ function KazeUI:CreateWindow(config)
 		})
 	end
 
-	-- Patched Brand New Divider System (Resolves the fractional thickness scaling bug completely)
+	-- Brand New Divider System (Handles Titles, Line Only, and Tight Modular Spacing)
 	function Win:Divider(arg1)
 		local title = type(arg1) == "table" and (arg1.Title or arg1.Name) or type(arg1) == "string" and arg1 or nil
 		
 		local wrapper = Instance.new("Frame")
 		wrapper.Name = "SidebarDivider"
-		wrapper.Size = UDim2.new(1, -12, 0, 0)
 		wrapper.BackgroundTransparency = 1
 		wrapper.AutomaticSize = Enum.AutomaticSize.Y
 		wrapper.LayoutOrder = #TabsList:GetChildren() + 1
@@ -3241,17 +3230,13 @@ function KazeUI:CreateWindow(config)
 		end
 
 		local line = Instance.new("Frame")
-		line.Size = UDim2.new(1, 0, 0, 0) -- 0 height ensures no layout gaps or clipping overlap
-		line.BackgroundTransparency = 1 -- Uses stroke rendering for sharp consistency
 		line.BorderSizePixel = 0
 		line.LayoutOrder = 2
 		line.Parent = wrapper
-
-		local stroke = Instance.new("UIStroke")
-		stroke.Thickness = 1
-		stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-		stroke.Parent = line
-		KazeUI:OnThemeChanged(line, function(t) stroke.Color = t.Border end)
+		ApplyPixelPerfectScale(line, "Y", 1, 0)
+		KazeUI:OnThemeChanged(line, function(t) line.BackgroundColor3 = t.Border end)
+		
+		wrapper.Size = UDim2.new(1, -12, 0, 0)
 	end
 
 	function Win:CreateTab(arg1, arg2)
