@@ -4,7 +4,9 @@
 	Retained: 100% Backwards Compatibility with Version 1, 2, 2.2, 2.3, and 3.0 APIs
 	
 	UPDATES IN V3.4 (PATCHED):
-	- Added Win:Divider(title): Creates tightly spaced separators inside the sidebar.
+	- Redesigned Win:Divider(title): Beautiful modern capsule-style dividers with custom gradient fadeouts.
+	- Global Interaction Lock: Prevents drag engines from fighting during active resizing or sliding inputs.
+	- Smart Auto-Scroll Lock: Disables scrolling on all layouts automatically when resizing the window.
 	- Simplified Themes: Retained only "Obsidian" (default) and "CustomWallpaper".
 	- White Glow Sync: Automatically forces the Glow color to bright White when Obsidian theme is loaded.
 	- Readability Pass: Upgraded Topbar Author text to GothamMedium (12px) with zero neon-glow distortion.
@@ -70,10 +72,34 @@ KazeUI.NeonTweens = {}
 KazeUI.PanelElements = {}
 KazeUI.GlowCallbacks = {}
 
+-- Interaction Lock Engine to prevent overlaps (Dragging, Sliding, Resizing)
+KazeUI.ActiveInteraction = nil
+
 -- Spring & Smooth Animation Configurations
 local TWEEN_FAST = TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 local TWEEN_SPRING = TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
 local TWEEN_SMOOTH = TweenInfo.new(0.35, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
+
+-- Dynamic Scrolling Freeze Engine (used during window resizing)
+local disabledScrollers = {}
+local function LockAllScrolling(window)
+	table.clear(disabledScrollers)
+	for _, v in ipairs(window:GetDescendants()) do
+		if v:IsA("ScrollingFrame") and v.ScrollingEnabled then
+			v.ScrollingEnabled = false
+			table.insert(disabledScrollers, v)
+		end
+	end
+end
+
+local function UnlockAllScrolling()
+	for _, v in ipairs(disabledScrollers) do
+		if v and v.Parent then
+			v.ScrollingEnabled = true
+		end
+	end
+	table.clear(disabledScrollers)
+end
 
 local function RegisterFlag(flag, getFunc, setFunc)
 	if flag then
@@ -276,6 +302,8 @@ local function MakeDraggable(dragPart, targetPart)
 	
 	local function update(input)
 		if not dragStart or not startPos then return end
+		if KazeUI.ActiveInteraction ~= "Drag" then return end -- Assert our interaction lock
+		
 		local delta = input.Position - dragStart
 		local scale = UIScale.Scale
 		
@@ -294,8 +322,11 @@ local function MakeDraggable(dragPart, targetPart)
 	end
 	
 	dragPart.InputBegan:Connect(function(input)
+		if KazeUI.ActiveInteraction ~= nil then return end -- Check global interaction lock
+		
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 			dragging = true
+			KazeUI.ActiveInteraction = "Drag" -- Acquire interaction lock
 			dragActive = false
 			dragStart = input.Position
 			startPos = targetPart.Position
@@ -307,6 +338,7 @@ local function MakeDraggable(dragPart, targetPart)
 				if input.UserInputState == Enum.UserInputState.End then
 					dragging = false
 					dragInput = nil
+					KazeUI.ActiveInteraction = nil -- Release interaction lock
 					UnlockCamera()
 					if changeCon then changeCon:Disconnect() end
 				end
@@ -1250,7 +1282,7 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 	local state = defaultState or false
 	
 	local measuredWidth = 598 * 0.92
-	if parentFrame and parentFrame.AbsoluteSize and parentFrame.AbsoluteSize.X > 0 then measuredWidth = parentFrame.AbsoluteSize.X * 0.95 end
+	if parentFrame and parentFrame.AbsoluteSize parks then measuredWidth = parentFrame.AbsoluteSize.X * 0.95 end
 	local textContainerWidth = measuredWidth - 28 - 55
 	
 	local titleHeight = 0
@@ -1659,8 +1691,11 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 	knob.Position = UDim2.new(startingPercentage, 0, 0.5, 0)
 	
 	clickDetector.InputBegan:Connect(function(input)
+		if KazeUI.ActiveInteraction ~= nil then return end -- Enforce global interaction lock
+		
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 			isDragging = true
+			KazeUI.ActiveInteraction = "Slider" -- Acquire interaction lock
 			ToggleScrollingAncestors(track, false)
 			LockCamera()
 			UpdateValueFromInput(input)
@@ -1677,6 +1712,7 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 			endCon = UIS.InputEnded:Connect(function(endInput)
 				if endInput.UserInputType == Enum.UserInputType.MouseButton1 or endInput.UserInputType == Enum.UserInputType.Touch then
 					isDragging = false
+					KazeUI.ActiveInteraction = nil -- Release lock
 					ToggleScrollingAncestors(track, true)
 					UnlockCamera()
 					
@@ -1851,7 +1887,6 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 	hueCursor.Size = UDim2.fromOffset(4, 24)
 	hueCursor.AnchorPoint = Vector2.new(0.5, 0.5)
 	hueCursor.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-	hueCursor.Instance = "UICorner"
 	Instance.new("UICorner", hueCursor).CornerRadius = UDim.new(1, 0)
 	Instance.new("UIStroke", hueCursor).Color = Color3.fromRGB(0, 0, 0)
 
@@ -1890,8 +1925,11 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 	end
 
 	svMap.InputBegan:Connect(function(input)
+		if KazeUI.ActiveInteraction ~= nil then return end -- Enforce global interaction lock
+		
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 			draggingMap = true
+			KazeUI.ActiveInteraction = "ColorPicker" -- Acquire lock
 			ToggleScrollingAncestors(svMap, false)
 			LockCamera()
 			updateSV(input)
@@ -1899,8 +1937,11 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 	end)
 
 	hueSlider.InputBegan:Connect(function(input)
+		if KazeUI.ActiveInteraction ~= nil then return end -- Enforce global interaction lock
+		
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 			draggingHue = true
+			KazeUI.ActiveInteraction = "ColorPicker" -- Acquire lock
 			ToggleScrollingAncestors(hueSlider, false)
 			LockCamera()
 			updateHue(input)
@@ -1919,7 +1960,10 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 
 	local uisConn2 = UIS.InputEnded:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-			if draggingMap or draggingHue then UnlockCamera() end
+			if draggingMap or draggingHue then 
+				UnlockCamera() 
+				KazeUI.ActiveInteraction = nil -- Release interaction lock
+			end
 			draggingMap = false
 			draggingHue = false
 			ToggleScrollingAncestors(svMap, true)
@@ -2814,7 +2858,7 @@ function KazeUI:CreateWindow(config)
 		ConfirmText.ZIndex = 53
 		KazeUI:RegisterText(ConfirmText, false)
 
-		local ButtonsFrame = Instance.new("Frame", ConfirmWindow)
+		local ButtonsFrame = Instance.new("Frame", Overlay) -- Parented to Overlay to keep ConfirmWindow clean
 		ButtonsFrame.Size = UDim2.new(1, 0, 0, 40)
 		ButtonsFrame.Position = UDim2.new(0, 0, 1, -12)
 		ButtonsFrame.AnchorPoint = Vector2.new(0, 1)
@@ -2973,6 +3017,7 @@ function KazeUI:CreateWindow(config)
 
 	ResizeHandle.InputBegan:Connect(function(input)
 		if toggledMaximized then return end
+		if KazeUI.ActiveInteraction ~= nil then return end -- Interaction lock guarding
 
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 			if input.UserInputType == Enum.UserInputType.Touch and resizeTouchInput == nil then
@@ -2980,10 +3025,12 @@ function KazeUI:CreateWindow(config)
 			end
 
 			isResizing = true
+			KazeUI.ActiveInteraction = "Resize" -- Acquire global lock
 			resizeStartSize = Vector2.new(Window.AbsoluteSize.X / UIScale.Scale, Window.AbsoluteSize.Y / UIScale.Scale)
 			resizeStartInput = input.Position
 
 			LockCamera()
+			LockAllScrolling(Window) -- Freeze scrolling behaviors inside layouts
 			ToggleScrollingAncestors(ResizeHandle, false)
 			Mouse.Icon = hoverCursor
 		end
@@ -3002,9 +3049,11 @@ function KazeUI:CreateWindow(config)
 		if isResizing then
 			if input.UserInputType == Enum.UserInputType.Touch and input ~= resizeTouchInput then return end
 			isResizing = false
+			KazeUI.ActiveInteraction = nil -- Release global interaction lock
 			resizeTouchInput = nil
 			
 			UnlockCamera()
+			UnlockAllScrolling() -- Re-enable scrolling inside layout
 			ToggleScrollingAncestors(ResizeHandle, true)
 			Mouse.Icon = ""
 			TweenService:Create(ResizeHandle, TweenInfo.new(0.12), {ImageColor3 = KazeUI.CurrentTheme.MutedText}):Play()
@@ -3175,7 +3224,7 @@ function KazeUI:CreateWindow(config)
 		})
 	end
 
-	-- Brand New Divider System (Redesigned with Premium Figma styling, feathered opacity fade, and perfect vector scaling)
+	-- Redesigned Premium Sidebar Category Divider System
 	function Win:Divider(arg1)
 		local title = type(arg1) == "table" and (arg1.Title or arg1.Name) or type(arg1) == "string" and arg1 or nil
 		
@@ -3189,63 +3238,57 @@ function KazeUI:CreateWindow(config)
 
 		local layout = Instance.new("UIListLayout", wrapper)
 		layout.SortOrder = Enum.SortOrder.LayoutOrder
-		layout.Padding = UDim.new(0, 3)
+		layout.Padding = UDim.new(0, 4)
 
 		local pad = Instance.new("UIPadding", wrapper)
-		pad.PaddingLeft = UDim.new(0, 8)
-		pad.PaddingRight = UDim.new(0, 8)
-		pad.PaddingTop = UDim.new(0, 6)
+		pad.PaddingLeft = UDim.new(0, 4)
+		pad.PaddingRight = UDim.new(0, 4)
+		pad.PaddingTop = UDim.new(0, 10)
 		pad.PaddingBottom = UDim.new(0, 6)
 
 		if title and title ~= "" then
+			local headerRow = Instance.new("Frame")
+			headerRow.Size = UDim2.new(1, 0, 0, 16)
+			headerRow.BackgroundTransparency = 1
+			headerRow.LayoutOrder = 1
+			headerRow.Parent = wrapper
+
+			-- Elegant Sidebar Category Accent Pill (Syncs with Glow Color)
+			local indicator = Instance.new("Frame")
+			indicator.Size = UDim2.fromOffset(3, 10)
+			indicator.Position = UDim2.new(0, 0, 0.5, -5)
+			indicator.BorderSizePixel = 0
+			indicator.Parent = headerRow
+			Instance.new("UICorner", indicator).CornerRadius = UDim.new(1, 0)
+			KazeUI:OnGlowChanged(indicator, function(c) indicator.BackgroundColor3 = c end)
+
 			local label = Instance.new("TextLabel")
-			label.Size = UDim2.new(1, 0, 0, 14)
+			label.Size = UDim2.new(1, -10, 1, 0)
+			label.Position = UDim2.fromOffset(10, 0)
 			label.BackgroundTransparency = 1
-			label.Text = string.upper(title) -- Modern uppercase styling for premium categorized divisions
+			label.Text = string.upper(title)
 			label.Font = Enum.Font.GothamBold
-			label.TextSize = 9.5
+			label.TextSize = 10
 			label.TextXAlignment = Enum.TextXAlignment.Left
-			label.LayoutOrder = 1
-			label.Parent = wrapper
-			KazeUI:RegisterText(label, true) -- Styled as Muted Category Text
+			label.Parent = headerRow
+			KazeUI:RegisterText(label, true) -- Muted styled uppercase Category header
 		end
 
-		local line = Instance.new("Frame")
-		line.BorderSizePixel = 0
-		line.LayoutOrder = 2
-		line.Parent = wrapper
-		
-		-- Redesigned Premium Fade: Smooth translucent sequence that blends beautifully on the sidebar's edges
-		local gradient = Instance.new("UIGradient", line)
-		gradient.Transparency = NumberSequence.new({
-			NumberSequenceKeypoint.new(0, 0.85),
-			NumberSequenceKeypoint.new(0.12, 0.15),
-			NumberSequenceKeypoint.new(0.5, 0),
-			NumberSequenceKeypoint.new(0.88, 0.15),
-			NumberSequenceKeypoint.new(1, 0.85)
+		-- Beautiful Horizontal Separator that softly fades out towards the right
+		local lineContainer = Instance.new("Frame")
+		lineContainer.Size = UDim2.new(1, 0, 0, 1)
+		lineContainer.BorderSizePixel = 0
+		lineContainer.LayoutOrder = 2
+		lineContainer.Parent = wrapper
+		KazeUI:OnThemeChanged(lineContainer, function(t) lineContainer.BackgroundColor3 = t.Border end)
+
+		local lineGradient = Instance.new("UIGradient")
+		lineGradient.Transparency = NumberSequence.new({
+			NumberSequenceKeypoint.new(0, 0.2),
+			NumberSequenceKeypoint.new(0.6, 0.4),
+			NumberSequenceKeypoint.new(1, 1)
 		})
-
-		-- Pixel-Locking Math Formula:
-		-- We calculate the exact physical pixel height offset dynamically so it renders consistently razor-sharp
-		local function adjustThickness()
-			local currentScale = UIScale.Scale
-			if currentScale and currentScale > 0 then
-				local physicalPixelHeight = math.max(1, math.round(1 / currentScale))
-				line.Size = UDim2.new(1, 0, 0, physicalPixelHeight)
-			else
-				line.Size = UDim2.new(1, 0, 0, 1)
-			end
-		end
-
-		adjustThickness()
-		local scaleConnection = UIScale:GetPropertyChangedSignal("Scale"):Connect(adjustThickness)
-		line.Destroying:Connect(function()
-			if scaleConnection then
-				scaleConnection:Disconnect()
-			end
-		end)
-
-		KazeUI:OnThemeChanged(line, function(t) line.BackgroundColor3 = t.Border end)
+		lineGradient.Parent = lineContainer
 	end
 
 	function Win:CreateTab(arg1, arg2)
