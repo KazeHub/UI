@@ -9,7 +9,6 @@
 	- White Glow Sync: Automatically forces the Glow color to bright White when Obsidian theme is loaded.
 	- Readability Pass: Upgraded Topbar Author text to GothamMedium (12px) with zero neon-glow distortion.
 	- Version Fix: Completely removed the hardcoded "v" formatting to prevent duplication.
-	- Pixel-Perfect Divider Patched: Solved the scaling glitch that caused thin/thick divider lines.
 --]]
 
 local KazeUI = {}
@@ -167,26 +166,6 @@ end
 
 UpdateScale()
 workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(UpdateScale)
-
--- Adaptive Pixel-Perfect scaling engine to keep separators sharp
-local function ApplyPixelPerfectScale(frame, axis, baseScale, baseOffset)
-	local function adjust()
-		local scale = UIScale.Scale
-		if scale > 0 then
-			local targetThickness = 1 / scale
-			if axis == "Y" then
-				frame.Size = UDim2.new(baseScale or frame.Size.X.Scale, baseOffset or frame.Size.X.Offset, 0, targetThickness)
-			else
-				frame.Size = UDim2.new(0, targetThickness, baseScale or frame.Size.Y.Scale, baseOffset or frame.Size.Y.Offset)
-			end
-		end
-	end
-	adjust()
-	local conn = UIScale:GetPropertyChangedSignal("Scale"):Connect(adjust)
-	frame.Destroying:Connect(function()
-		if conn then conn:Disconnect() end
-	end)
-end
 
 -- Lucide Icons Setup
 local IconsMap = {}
@@ -818,11 +797,11 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 	end)
 	
 	local divider = Instance.new("Frame")
+	divider.Size = UDim2.new(1, -20, 0, 1)
 	divider.BorderSizePixel = 0
 	divider.LayoutOrder = 3
 	divider.Visible = false
 	divider.Parent = dropFrame
-	ApplyPixelPerfectScale(divider, "Y", 1, -20)
 	KazeUI:OnThemeChanged(divider, function(t) divider.BackgroundColor3 = t.Border end)
 
 	local listContainer = Instance.new("ScrollingFrame")
@@ -1479,6 +1458,7 @@ local function CreateTextBoxInput(parentFrame, title, placeholder, defaultVal, c
 		ptitleLabel.Font = Enum.Font.GothamBold
 		ptitleLabel.TextSize = 13
 		ptitleLabel.TextWrapped = true
+		ptitleLabel.TextXAlignment = Enum.TextXAlignment.Left
 		KazeUI:RegisterText(ptitleLabel, false)
 	end
 	
@@ -1871,7 +1851,6 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 	hueCursor.Size = UDim2.fromOffset(4, 24)
 	hueCursor.AnchorPoint = Vector2.new(0.5, 0.5)
 	hueCursor.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-	hueCursor.Instance = hueCursor
 	Instance.new("UICorner", hueCursor).CornerRadius = UDim.new(1, 0)
 	Instance.new("UIStroke", hueCursor).Color = Color3.fromRGB(0, 0, 0)
 
@@ -2346,11 +2325,11 @@ CreateCollapsibleSection = function(parentFrame, titleArg)
 	end)
 
 	local divider = Instance.new("Frame")
+	divider.Size = UDim2.new(0.95, 0, 0, 1)
 	divider.BorderSizePixel = 0
 	divider.LayoutOrder = 2
 	divider.Visible = false
 	divider.Parent = sectionBox
-	ApplyPixelPerfectScale(divider, "Y", 0.95, 0)
 	KazeUI:OnThemeChanged(divider, function(t) divider.BackgroundColor3 = t.Border end)
 
 	local sectionContent = Instance.new("Frame")
@@ -2643,11 +2622,11 @@ function KazeUI:CreateWindow(config)
 	KazeUI:RegisterText(SubLabel, false) -- Registered as primary bright text to ensure 100% legibility
 
 	local TopDivider = Instance.new("Frame")
+	TopDivider.Size = UDim2.new(1, 0, 0, 1)
+	TopDivider.Position = UDim2.new(0, 0, 1, -1)
 	TopDivider.BorderSizePixel = 0
 	TopDivider.ZIndex = 5
 	TopDivider.Parent = TopBar
-	ApplyPixelPerfectScale(TopDivider, "Y", 1, 0)
-	TopDivider.Position = UDim2.new(0, 0, 1, -TopDivider.Size.Y.Offset)
 	KazeUI:OnThemeChanged(TopDivider, function(t) TopDivider.BackgroundColor3 = t.Border end)
 
 	local defaultWindowSize = UDim2.fromOffset(600, 400)
@@ -2897,10 +2876,10 @@ function KazeUI:CreateWindow(config)
 	KazeUI:AddPanel(SideBar, 0.01)
 
 	local VertDivider = Instance.new("Frame")
+	VertDivider.Size = UDim2.new(0, 1, 1, 0)
+	VertDivider.Position = UDim2.new(0, 190, 0, 0)
 	VertDivider.BorderSizePixel = 0
 	VertDivider.Parent = Content
-	ApplyPixelPerfectScale(VertDivider, "X", 1, 0)
-	VertDivider.Position = UDim2.new(0, 190, 0, 0)
 	KazeUI:OnThemeChanged(VertDivider, function(t) VertDivider.BackgroundColor3 = t.Border end)
 
 	local Pages = Instance.new("Frame")
@@ -3201,6 +3180,7 @@ function KazeUI:CreateWindow(config)
 		
 		local wrapper = Instance.new("Frame")
 		wrapper.Name = "SidebarDivider"
+		wrapper.Size = UDim2.new(1, -12, 0, 0)
 		wrapper.BackgroundTransparency = 1
 		wrapper.AutomaticSize = Enum.AutomaticSize.Y
 		wrapper.LayoutOrder = #TabsList:GetChildren() + 1
@@ -3233,10 +3213,29 @@ function KazeUI:CreateWindow(config)
 		line.BorderSizePixel = 0
 		line.LayoutOrder = 2
 		line.Parent = wrapper
-		ApplyPixelPerfectScale(line, "Y", 1, 0)
+
+		-- Anti-aliasing Counteraction:
+		-- We divide 1 by the current UIScale value to dynamically adjust the line's Size.Y.Offset.
+		-- This ensures that when scaled, the resulting absolute height equals exactly 1 physical pixel, 
+		-- remaining perfectly sharp and consistent across different viewport resolutions.
+		local function adjustThickness()
+			local currentScale = UIScale.Scale
+			if currentScale and currentScale > 0 then
+				line.Size = UDim2.new(1, 0, 0, 1 / currentScale)
+			else
+				line.Size = UDim2.new(1, 0, 0, 1)
+			end
+		end
+
+		adjustThickness()
+		local scaleConnection = UIScale:GetPropertyChangedSignal("Scale"):Connect(adjustThickness)
+		line.Destroying:Connect(function()
+			if scaleConnection then
+				scaleConnection:Disconnect()
+			end
+		end)
+
 		KazeUI:OnThemeChanged(line, function(t) line.BackgroundColor3 = t.Border end)
-		
-		wrapper.Size = UDim2.new(1, -12, 0, 0)
 	end
 
 	function Win:CreateTab(arg1, arg2)
