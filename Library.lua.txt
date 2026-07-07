@@ -3193,12 +3193,11 @@ function KazeUI:CreateWindow(config)
 		local wrapper = Instance.new("Frame")
 		wrapper.Name = "SidebarDivider"
 		wrapper.BackgroundTransparency = 1
-		wrapper.BorderSizePixel = 0
 		wrapper.LayoutOrder = #TabsList:GetChildren() + 1
 		wrapper.Parent = TabsList
 
 		if title and title ~= "" then
-			wrapper.Size = UDim2.new(1, -12, 0, 28) -- Fixed container height of 28 pixels (no AutomaticSize)
+			wrapper.Size = UDim2.new(1, -12, 0, 16) -- Locked even compact height
 
 			local titleLabel = Instance.new("TextLabel")
 			titleLabel.Name = "Title"
@@ -3208,10 +3207,8 @@ function KazeUI:CreateWindow(config)
 			titleLabel.Text = title
 			titleLabel.Font = Enum.Font.GothamBold
 			titleLabel.TextSize = 10
-			titleLabel.TextXAlignment = Enum.TextXAlignment.Center
-			titleLabel.TextYAlignment = Enum.TextYAlignment.Center
 			titleLabel.Parent = wrapper
-			KazeUI:RegisterText(titleLabel, true)
+			KazeUI:RegisterText(titleLabel, false)
 
 			local leftLine = Instance.new("Frame")
 			leftLine.Name = "LeftLine"
@@ -3237,45 +3234,30 @@ function KazeUI:CreateWindow(config)
 			})
 			rightGradient.Parent = rightLine
 
-			-- Perfectly snaps the lines layout utilizing rounded boundaries
 			local function UpdateLineLayout()
-				local totalWidth = math.round(wrapper.AbsoluteSize.X)
-				if totalWidth <= 0 then return end
+				local textWidth = titleLabel.TextBounds.X
+				local offset = math.floor(textWidth / 2) + 6
 				
-				local textWidth = math.round(titleLabel.TextBounds.X)
-				local center = math.round(totalWidth / 2)
-				local halfText = math.round(textWidth / 2)
-				local gap = 8 -- Fixed mathematical distance spacing
+				-- Absolute integer position offsets completely solve fractional pixel anti-aliasing issues
+				leftLine.Position = UDim2.new(0, 0, 0, 8)
+				leftLine.Size = UDim2.new(0.5, -offset, 0, 1)
 				
-				local leftLineWidth = math.max(0, center - halfText - gap)
-				local rightLineWidth = math.max(0, totalWidth - (center + halfText + gap))
-				
-				-- Strictly locks to whole integer positions (combating subpixel blur)
-				leftLine.Size = UDim2.fromOffset(leftLineWidth, 1)
-				leftLine.Position = UDim2.fromOffset(0, 13) -- Perfect vertical center inside 28px height
-				
-				rightLine.Size = UDim2.fromOffset(rightLineWidth, 1)
-				rightLine.Position = UDim2.fromOffset(totalWidth - rightLineWidth, 13)
+				rightLine.Position = UDim2.new(0.5, offset, 0, 8)
+				rightLine.Size = UDim2.new(0.5, -offset, 0, 1)
 			end
 
-			-- Dynamic listeners update layout only when absolute size or bounds change
-			local boundConnection = titleLabel:GetPropertyChangedSignal("TextBounds"):Connect(UpdateLineLayout)
-			local sizeConnection = wrapper:GetPropertyChangedSignal("AbsoluteSize"):Connect(UpdateLineLayout)
-
-			wrapper.Destroying:Connect(function()
-				if boundConnection then boundConnection:Disconnect() end
-				if sizeConnection then sizeConnection:Disconnect() end
-			end)
-
+			titleLabel:GetPropertyChangedSignal("TextBounds"):Connect(UpdateLineLayout)
 			task.defer(UpdateLineLayout)
 
 			KazeUI:OnGlowChanged(leftLine, function(c) leftLine.BackgroundColor3 = c end)
 			KazeUI:OnGlowChanged(rightLine, function(c) rightLine.BackgroundColor3 = c end)
 		else
-			wrapper.Size = UDim2.new(1, -12, 0, 12) -- Compact fixed spacer height of 12 pixels for blank lines
+			wrapper.Size = UDim2.new(1, -12, 0, 4) -- Locked even tiny height when blank
 
 			local line = Instance.new("Frame")
 			line.Name = "Line"
+			line.Position = UDim2.new(0, 0, 0, 2) -- Absolutely aligned to avoid subpixel scaling bugs
+			line.Size = UDim2.new(1, 0, 0, 1)
 			line.BorderSizePixel = 0
 			line.Parent = wrapper
 			
@@ -3287,20 +3269,6 @@ function KazeUI:CreateWindow(config)
 				NumberSequenceKeypoint.new(1, 1)
 			})
 			gradient.Parent = line
-
-			local function UpdateBlankLayout()
-				local totalWidth = math.round(wrapper.AbsoluteSize.X)
-				line.Size = UDim2.fromOffset(totalWidth, 1)
-				line.Position = UDim2.fromOffset(0, 5) -- Perfectly centered within 12px container
-			end
-
-			local sizeConnection = wrapper:GetPropertyChangedSignal("AbsoluteSize"):Connect(UpdateBlankLayout)
-
-			wrapper.Destroying:Connect(function()
-				if sizeConnection then sizeConnection:Disconnect() end
-			end)
-
-			task.defer(UpdateBlankLayout)
 
 			KazeUI:OnGlowChanged(line, function(c) line.BackgroundColor3 = c end)
 		end
