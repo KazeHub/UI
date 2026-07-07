@@ -2526,13 +2526,10 @@ function KazeUI:CreateWindow(config)
 	WindowStroke.Parent = Window
 	KazeUI:RegisterBorder(WindowStroke)
 
-	-- Standard Frame replaces CanvasGroup to prevent low-resolution blurring on mobile devices
-	local ContentClipper = Instance.new("Frame")
-	ContentClipper.Name = "ContentClipper"
+	local ContentClipper = Instance.new("CanvasGroup")
 	ContentClipper.Size = UDim2.fromScale(1, 1)
 	ContentClipper.BackgroundTransparency = 1
 	ContentClipper.BorderSizePixel = 0
-	ContentClipper.ClipsDescendants = true
 	ContentClipper.Parent = Window
 	Instance.new("UICorner", ContentClipper).CornerRadius = UDim.new(0, 28)
 
@@ -2580,7 +2577,9 @@ function KazeUI:CreateWindow(config)
 
 	-- Launch Transitions
 	Window.Size = UDim2.fromOffset(550, 350)
+	ContentClipper.GroupTransparency = 1
 	TweenService:Create(Window, TweenInfo.new(0.5, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {Size = UDim2.fromOffset(600, 400)}):Play()
+	TweenService:Create(ContentClipper, TweenInfo.new(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {GroupTransparency = 0}):Play()
 
 	local TopBar = Instance.new("Frame")
 	TopBar.Size = UDim2.new(1, 0, 0, 52)
@@ -2925,7 +2924,7 @@ function KazeUI:CreateWindow(config)
 
 	local tabsLayout = Instance.new("UIListLayout", TabsList)
 	tabsLayout.SortOrder = Enum.SortOrder.LayoutOrder
-	tabsLayout.Padding = UDim.new(0, 4) -- Locked layout spacing strictly to an even integer offset
+	tabsLayout.Padding = UDim.new(0, 5)
 
 	-- ==========================================
 	-- Modal Resize Engine (System Rewrite)
@@ -3186,33 +3185,36 @@ function KazeUI:CreateWindow(config)
 	end
 
 	-- ==========================================
-	-- Premium Divider Engine (Pixel-Snapped Fixed Dimensions)
+	-- Premium Divider Engine (Completely Redesigned)
 	-- ==========================================
 	function Win:Divider(arg1)
 		local title = type(arg1) == "table" and (arg1.Title or arg1.Name) or type(arg1) == "string" and arg1 or nil
 		
 		local wrapper = Instance.new("Frame")
 		wrapper.Name = "SidebarDivider"
+		wrapper.Size = UDim2.new(1, -12, 0, 24)
 		wrapper.BackgroundTransparency = 1
 		wrapper.LayoutOrder = #TabsList:GetChildren() + 1
 		wrapper.Parent = TabsList
 
 		if title and title ~= "" then
-			wrapper.Size = UDim2.new(1, -12, 0, 16) -- Locked even compact height
-
+			-- Premium centered Title with dynamically sized trailing lines
 			local titleLabel = Instance.new("TextLabel")
 			titleLabel.Name = "Title"
-			titleLabel.Size = UDim2.new(1, 0, 1, 0)
-			titleLabel.Position = UDim2.new(0, 0, 0, 0)
+			titleLabel.Size = UDim2.new(0, 0, 1, 0)
+			titleLabel.Position = UDim2.fromScale(0.5, 0.5)
+			titleLabel.AnchorPoint = Vector2.new(0.5, 0.5)
 			titleLabel.BackgroundTransparency = 1
 			titleLabel.Text = title
 			titleLabel.Font = Enum.Font.GothamBold
-			titleLabel.TextSize = 10
+			titleLabel.TextSize = 11
+			titleLabel.AutomaticSize = Enum.AutomaticSize.X
 			titleLabel.Parent = wrapper
 			KazeUI:RegisterText(titleLabel, false)
 
 			local leftLine = Instance.new("Frame")
 			leftLine.Name = "LeftLine"
+			leftLine.AnchorPoint = Vector2.new(1, 0.5)
 			leftLine.BorderSizePixel = 0
 			leftLine.Parent = wrapper
 			
@@ -3225,6 +3227,7 @@ function KazeUI:CreateWindow(config)
 
 			local rightLine = Instance.new("Frame")
 			rightLine.Name = "RightLine"
+			rightLine.AnchorPoint = Vector2.new(0, 0.5)
 			rightLine.BorderSizePixel = 0
 			rightLine.Parent = wrapper
 			
@@ -3237,33 +3240,26 @@ function KazeUI:CreateWindow(config)
 
 			local function UpdateLineLayout()
 				local textWidth = titleLabel.TextBounds.X
-				local wrapperWidth = wrapper.AbsoluteSize.X
-				if wrapperWidth <= 0 then wrapperWidth = 162 end -- Fallback sidebar width
+				local offset = (textWidth / 2) + 8
 				
-				local mid = math.floor(wrapperWidth / 2)
-				local halfText = math.floor(textWidth / 2)
-				local offset = halfText + 6
+				leftLine.Position = UDim2.new(0.5, -offset, 0.5, 0)
+				leftLine.Size = UDim2.new(0.5, -offset, 0, 1)
 				
-				-- Exact integer pixel alignment completely eliminates anti-aliasing artifacts
-				leftLine.Position = UDim2.fromOffset(0, 8)
-				leftLine.Size = UDim2.fromOffset(mid - offset, 1)
-				
-				rightLine.Position = UDim2.fromOffset(mid + offset, 8)
-				rightLine.Size = UDim2.fromOffset(wrapperWidth - (mid + offset), 1)
+				rightLine.Position = UDim2.new(0.5, offset, 0.5, 0)
+				rightLine.Size = UDim2.new(0.5, -offset, 0, 1)
 			end
 
-			wrapper:GetPropertyChangedSignal("AbsoluteSize"):Connect(UpdateLineLayout)
 			titleLabel:GetPropertyChangedSignal("TextBounds"):Connect(UpdateLineLayout)
 			task.defer(UpdateLineLayout)
 
 			KazeUI:OnGlowChanged(leftLine, function(c) leftLine.BackgroundColor3 = c end)
 			KazeUI:OnGlowChanged(rightLine, function(c) rightLine.BackgroundColor3 = c end)
 		else
-			wrapper.Size = UDim2.new(1, -12, 0, 4) -- Locked even tiny height when blank
-
+			-- Elegant single line (Resolves rendering scaling artifacts using UIGradient + Absolute Y-axis)
 			local line = Instance.new("Frame")
 			line.Name = "Line"
-			line.Position = UDim2.new(0, 0, 0, 2) -- Absolutely aligned to avoid subpixel scaling bugs
+			line.AnchorPoint = Vector2.new(0.5, 0.5)
+			line.Position = UDim2.fromScale(0.5, 0.5)
 			line.Size = UDim2.new(1, 0, 0, 1)
 			line.BorderSizePixel = 0
 			line.Parent = wrapper
