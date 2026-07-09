@@ -1,5 +1,5 @@
 --[[
-	Aegis OS v4.0 (Robotic / AI Operating System Redesign)
+	Aegis OS v4.5 (Robotic & AI Operating System Terminal Override)
 	A complete mechanical, high-tech, and futuristic overhaul of KazeUI.
 	Retains 100% API Compatibility with Version 1, 2, 2.2, 2.3, 3.0, and 3.5.
 --]]
@@ -21,14 +21,14 @@ local Mouse = LP:GetMouse()
 KazeUI.Themes = {
 	Obsidian = {
 		Name = "Obsidian",
-		Background = Color3.fromRGB(8, 10, 15),
-		Text = Color3.fromRGB(200, 240, 255), -- Holographic Cyan
-		MutedText = Color3.fromRGB(110, 140, 160),
-		Border = Color3.fromRGB(30, 50, 75), -- High tech metallic outline
-		LightnessFactor = 1.2,
+		Background = Color3.fromRGB(6, 8, 12),
+		Text = Color3.fromRGB(180, 240, 255), -- Holographic Cyan
+		MutedText = Color3.fromRGB(100, 130, 150),
+		Border = Color3.fromRGB(24, 42, 64), -- High tech metallic outline
+		LightnessFactor = 1.25,
 		BackgroundImage = "rbxassetid://13963496525", -- Hex Grid Overlay
-		BackgroundImageTransparency = 0.90,
-		OverlayTransparency = 0.15
+		BackgroundImageTransparency = 0.92,
+		OverlayTransparency = 0.12
 	},
 	CustomWallpaper = {
 		Name = "Custom",
@@ -54,8 +54,7 @@ local AudioSystem = {
 		ToggleOn = "rbxassetid://3115458021",    -- Servo-mechanical engage
 		ToggleOff = "rbxassetid://3115458111",   -- Servo-mechanical release
 		Warning = "rbxassetid://138085442",      -- Threat alarm / Error warning
-		Success = "rbxassetid://2323869910",     -- Process Completed
-		Diagnostic = "rbxassetid://6441221768"   -- Scanning data loop
+		Success = "rbxassetid://2323869910"      -- Process Completed
 	}
 }
 
@@ -67,7 +66,7 @@ local function PlaySound(name)
 	task.spawn(function()
 		local sound = Instance.new("Sound")
 		sound.SoundId = id
-		sound.Volume = 0.25
+		sound.Volume = 0.20
 		sound.PlayOnRemove = true
 		sound.Parent = workspace:FindFirstChildOfClass("Camera") or workspace
 		sound:Play()
@@ -77,16 +76,16 @@ end
 
 -- Global States
 KazeUI.CurrentTheme = KazeUI.Themes.Obsidian
-KazeUI.GlowColor = Color3.fromRGB(0, 190, 255) -- Defaults to Cybernetic Cyan
+KazeUI.GlowColor = Color3.fromRGB(0, 195, 255) -- Cybernetic Cyan
 KazeUI.BackgroundColor = KazeUI.CurrentTheme.Background
-KazeUI.BackgroundTransparency = 0.15
+KazeUI.BackgroundTransparency = 0.12
 KazeUI.Flags = {}
 KazeUI.ActiveWindows = {}
 KazeUI.IsResizing = false
 KazeUI.AuthorName = "AegisOS"
 KazeUI.ConsoleCallback = nil
 
--- Element Registries
+-- Element Registries for live theme-switching
 KazeUI.TextElements = {}
 KazeUI.MutedTextElements = {}
 KazeUI.BorderElements = {}
@@ -97,9 +96,17 @@ KazeUI.NeonTweens = {}
 KazeUI.PanelElements = {}
 KazeUI.GlowCallbacks = {}
 
-local TWEEN_FAST = TweenInfo.new(0.15, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
+-- Responsive Measuring Constants (Sizing layout fixes)
+local WINDOW_W = 630
+local SIDEBAR_W = 195
+local PAGE_PADDING_W = 20
+local CARD_MARGIN_FACTOR = 0.96 -- 96% width of pages container
+local CARD_PADDING_W = 24       -- 12px left padding, 12px right padding
+local WIDGET_SPACE_W = 64       -- Pixels reserved for interactive buttons/toggles on the right
+
+local TWEEN_FAST = TweenInfo.new(0.12, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
 local TWEEN_SPRING = TweenInfo.new(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
-local TWEEN_SMOOTH = TweenInfo.new(0.4, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out)
+local TWEEN_SMOOTH = TweenInfo.new(0.40, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out)
 
 local function RegisterFlag(flag, getFunc, setFunc)
 	if flag then
@@ -109,7 +116,7 @@ end
 
 -- ScreenGui Setup
 local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "AegisOS_UI"
+ScreenGui.Name = "AegisOS_CoreUI"
 ScreenGui.ResetOnSpawn = false
 ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 ScreenGui.DisplayOrder = 10
@@ -120,7 +127,7 @@ if not success or not parent then
 end
 ScreenGui.Parent = parent
 
--- Camera Locker
+-- Camera Locker (Scroll-lock during drag & drop)
 local CameraLocker = Instance.new("TextButton")
 CameraLocker.Name = "CameraLocker"
 CameraLocker.Size = UDim2.fromOffset(0, 0)
@@ -135,7 +142,7 @@ local function UnlockCamera() CameraLocker.Modal = false end
 
 -- Separate Notification Overlay Screen
 local NotifScreenGui = Instance.new("ScreenGui")
-NotifScreenGui.Name = "AegisOS_Notifications"
+NotifScreenGui.Name = "AegisOS_NotifEngine"
 NotifScreenGui.ResetOnSpawn = false
 NotifScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 NotifScreenGui.DisplayOrder = 999999
@@ -171,7 +178,7 @@ local function UpdateScale()
 		targetScale = (minAxis < 500) and 0.85 or 1.0
 	else
 		if width >= 1920 or height >= 1080 then
-			targetScale = 1.10
+			targetScale = 1.12
 		elseif width <= 1366 then
 			targetScale = 0.90
 		else
@@ -220,14 +227,19 @@ local function FormatImage(id)
 	return "rbxassetid://" .. clean
 end
 
--- Logging Feedback directly to Robot Sidebar Console
+-- Monospace Console Logging
+local function GetTimestamp()
+	local t = os.date("*t")
+	return string.format("[%02d:%02d:%02d]", t.hour, t.min, t.sec)
+end
+
 local function PushConsoleLog(text)
 	if KazeUI.ConsoleCallback then
 		KazeUI.ConsoleCallback(text)
 	end
 end
 
--- State Synchronizers
+-- Dynamic Registry Hooks
 function KazeUI:OnGlowChanged(inst, callback)
 	table.insert(KazeUI.GlowCallbacks, {Inst = inst, Callback = callback})
 	task.spawn(callback, KazeUI.GlowColor)
@@ -256,7 +268,7 @@ function KazeUI:OnThemeChanged(inst, cb)
 	task.spawn(cb, KazeUI.CurrentTheme)
 end
 
--- Smooth mechanical drag engine
+-- Structural drag engine
 local lastNormalPosition = UDim2.fromScale(0.5, 0.5)
 local lastNormalAnchor = Vector2.new(0.5, 0.5)
 
@@ -314,7 +326,7 @@ local function MakeDraggable(dragPart, targetPart)
 	end)
 end
 
--- Robotic Metallic Panels & UI Conduits
+-- Robotic Panel Constructors
 function KazeUI.GetColor(elevation)
 	local theme = KazeUI.CurrentTheme
 	local h, s, v = Color3.toHSV(theme.Background)
@@ -328,8 +340,8 @@ function KazeUI:AddPanel(inst, elevation, ignoreColor, ignoreTrans)
 	if inst and inst:IsA("GuiObject") then
 		if not ignoreColor then inst.BackgroundColor3 = KazeUI.GetColor(elevation or 0) end
 		if not ignoreTrans then
-			local baseTrans = KazeUI.BackgroundTransparency or 0.15
-			inst.BackgroundTransparency = math.clamp(baseTrans - ((elevation or 0) * 0.1), 0.02, 1)
+			local baseTrans = KazeUI.BackgroundTransparency or 0.12
+			inst.BackgroundTransparency = math.clamp(baseTrans - ((elevation or 0) * 0.08), 0.01, 1)
 		end
 	end
 end
@@ -347,7 +359,7 @@ function KazeUI:SetTransparency(alpha)
 	for _, data in ipairs(KazeUI.PanelElements) do
 		local inst = data.Inst
 		if inst and inst.Parent and inst:IsA("GuiObject") and not data.IgnoreTransparency then
-			inst.BackgroundTransparency = math.clamp(alpha - ((data.Elevation or 0) * 0.1), 0.02, 1)
+			inst.BackgroundTransparency = math.clamp(alpha - ((data.Elevation or 0) * 0.08), 0.01, 1)
 		end
 	end
 end
@@ -357,7 +369,7 @@ function KazeUI:SetTheme(themeName)
 	KazeUI.CurrentTheme = targetTheme
 	KazeUI.BackgroundColor = targetTheme.Background
 	KazeUI:SetBackgroundColor(targetTheme.Background)
-	KazeUI:SetTransparency(KazeUI.BackgroundTransparency or 0.15)
+	KazeUI:SetTransparency(KazeUI.BackgroundTransparency or 0.12)
 	
 	for _, inst in ipairs(KazeUI.TextElements) do
 		if inst and inst.Parent then inst.TextColor3 = targetTheme.Text end
@@ -442,10 +454,39 @@ function KazeUI:SetGlow(color)
 	end
 end
 
--- High-Tech Terminal Alert (Notification)
+-- Pre-measured Responsive Height Calibration (Layout bug fixes)
+local function GetTextHeights(title, body, textWidth)
+	local titleHeight = 0
+	if title and title ~= " " and title ~= "" then
+		local ts = TextService:GetTextSize(string.upper(title), 12, Enum.Font.Code, Vector2.new(textWidth, 10000))
+		titleHeight = math.ceil(ts.Y)
+	end
+	local bodyHeight = 0
+	if body and body ~= "" then
+		local bs = TextService:GetTextSize(body, 10, Enum.Font.Code, Vector2.new(textWidth, 10000))
+		bodyHeight = math.ceil(bs.Y)
+	end
+	return titleHeight, bodyHeight
+end
+
+local function MeasureCardHeight(title, body, hasWidget)
+	-- Absolute Page Width estimation based on Window base (630) - Sidebar (195) = 435px.
+	-- Sizing margin is 96%, giving 417px card width.
+	local maxTextWidth = 417 - CARD_PADDING_W
+	if hasWidget then
+		maxTextWidth = maxTextWidth - WIDGET_SPACE_W
+	end
+	
+	local titleHeight, bodyHeight = GetTextHeights(title, body, maxTextWidth)
+	local gap = (titleHeight > 0 and bodyHeight > 0) and 4 or 0
+	local padding = 22 -- 11px top, 11px bottom
+	return math.max(38, titleHeight + gap + bodyHeight + padding), titleHeight, bodyHeight
+end
+
+-- Monospace Cyber Alarm Notice (Notification)
 function KazeUI:Notify(config)
 	config = config or {}
-	local title = tostring(config.Title or "AEGIS SYSTEM NOTICE")
+	local title = tostring(config.Title or "AEGIS TERMINAL ALERT")
 	local content = tostring(config.Content or "")
 	local duration = tonumber(config.Duration) or 4
 	local titleColor = config.TitleColor or config.Color
@@ -456,20 +497,14 @@ function KazeUI:Notify(config)
 	local iconColor = config.IconColor or KazeUI.GlowColor
 
 	PlaySound("Notify")
-	PushConsoleLog("[ALERT] " .. title .. " : " .. content)
+	PushConsoleLog(GetTimestamp() .. " [ALERT] " .. title)
 
 	local textPadding = hasIcon and 58 or 16
 	local rightSafety = 36
 	local maxTextWidth = 340 - 24 - textPadding - rightSafety
 
-	local titleSize = TextService:GetTextSize(title, 12, Enum.Font.Code, Vector2.new(maxTextWidth, 1000))
-	local contentSize = TextService:GetTextSize(content, 11, Enum.Font.Code, Vector2.new(maxTextWidth, 2000))
-
-	local titleHeight = math.max(16, math.ceil(titleSize.Y))
-	local contentHeight = math.max(14, math.ceil(contentSize.Y))
-	
-	local calculatedCardHeight = 14 + titleHeight + 4 + contentHeight + 16
-	local finalCardHeight = math.max(76, calculatedCardHeight)
+	local titleHeight, contentHeight = GetTextHeights(title, content, maxTextWidth)
+	local finalCardHeight = math.max(76, 14 + titleHeight + 4 + contentHeight + 16)
 	local finalHolderHeight = finalCardHeight + 12
 
 	local notifHolder = Instance.new("Frame")
@@ -484,27 +519,23 @@ function KazeUI:Notify(config)
 	notifFrame.BorderSizePixel = 0
 	notifFrame.Parent = notifHolder
 	
-	-- Angular sci-fi robotic corners (Mechanical brackets)
 	Instance.new("UICorner", notifFrame).CornerRadius = UDim.new(0, 4)
 	KazeUI:AddPanel(notifFrame, 0.05, false, true)
 	notifFrame.BackgroundTransparency = 0.08
 
-	-- Futuristic circuit grid lines in notification background
 	local gridImage = Instance.new("ImageLabel", notifFrame)
 	gridImage.Size = UDim2.fromScale(1, 1)
 	gridImage.BackgroundTransparency = 1
 	gridImage.Image = "rbxassetid://13963496525"
-	gridImage.ImageColor3 = Color3.fromRGB(0, 190, 255)
+	gridImage.ImageColor3 = Color3.fromRGB(0, 195, 255)
 	gridImage.ImageTransparency = 0.95
 
 	local borderStroke = Instance.new("UIStroke", notifFrame)
 	borderStroke.Thickness = 1.5
 	borderStroke.Color = KazeUI.GlowColor
 
-	-- Left-side solid alert bar
 	local alertBar = Instance.new("Frame", notifFrame)
 	alertBar.Size = UDim2.new(0, 4, 1, 0)
-	alertBar.Position = UDim2.fromOffset(0, 0)
 	alertBar.BorderSizePixel = 0
 	alertBar.BackgroundColor3 = KazeUI.GlowColor
 	StartNeonLoop(alertBar)
@@ -520,7 +551,6 @@ function KazeUI:Notify(config)
 		iconLabel.ScaleType = Enum.ScaleType.Fit
 	end
 
-	-- Mechanical tactical exit cross
 	local closeBtn = Instance.new("ImageButton", notifFrame)
 	closeBtn.Size = UDim2.fromOffset(16, 16)
 	closeBtn.Position = UDim2.new(1, -12, 0, 12)
@@ -598,7 +628,6 @@ function KazeUI:Notify(config)
 
 	closeBtn.MouseEnter:Connect(function()
 		TweenService:Create(closeBtn, TWEEN_FAST, {ImageColor3 = Color3.fromRGB(255, 60, 60), ImageTransparency = 0}):Play()
-		PlaySound("Hover")
 	end)
 	closeBtn.MouseLeave:Connect(function()
 		TweenService:Create(closeBtn, TWEEN_FAST, {ImageColor3 = KazeUI.CurrentTheme.MutedText, ImageTransparency = 0.3}):Play()
@@ -625,7 +654,7 @@ function KazeUI:SaveConfig(name)
 			if makefolder then pcall(function() makefolder(folder) end) end
 			writefile(folder .. "/" .. name .. ".json", encoded)
 			PlaySound("Success")
-			KazeUI:Notify({Title = "SYSTEM EXPORT", Content = "Parameters stored successfully in " .. name .. ".json", Duration = 3})
+			KazeUI:Notify({Title = "SYS PARAMS ARCHIVED", Content = "Saved structural config settings in " .. name .. ".json", Duration = 3})
 		end
 	end
 end
@@ -646,7 +675,7 @@ function KazeUI:LoadConfig(name)
 					end
 				end
 				PlaySound("Success")
-				KazeUI:Notify({Title = "SYSTEM IMPORT", Content = "Interface states synchronized from " .. name .. ".json", Duration = 3})
+				KazeUI:Notify({Title = "PARAMS SYNCHRONIZED", Content = "Loaded interface config configurations from " .. name .. ".json", Duration = 3})
 			end
 		end
 	end
@@ -661,7 +690,7 @@ local function ToggleScrollingAncestors(element, state)
 end
 
 -- =========================================================
--- Cybernetic Redesigned OS Interface Components
+-- Cybernetic Redesigned OS Interface Components (Decoupled Layouts)
 -- =========================================================
 
 local function CreateDropdown(parentFrame, title, options, defaultOption, callback, isMulti, flag)
@@ -690,12 +719,11 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 	local dropFrame = Instance.new("Frame")
 	dropFrame.AnchorPoint = Vector2.new(0.5, 0)
 	dropFrame.Position = UDim2.new(0.5, 0, 0, 4)
-	dropFrame.Size = UDim2.new(0.96, 0, 0, 0)
+	dropFrame.Size = UDim2.new(CARD_MARGIN_FACTOR, 0, 0, 0)
 	dropFrame.BorderSizePixel = 0
 	dropFrame.AutomaticSize = Enum.AutomaticSize.Y
 	dropFrame.Parent = wrapper
 	
-	-- Angular, flat-mechanical look
 	Instance.new("UICorner", dropFrame).CornerRadius = UDim.new(0, 4)
 	KazeUI:AddPanel(dropFrame, 0.02)
 
@@ -778,7 +806,7 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 	local searchBox = Instance.new("TextBox")
 	searchBox.Size = UDim2.fromScale(1, 1)
 	searchBox.BorderSizePixel = 0
-	searchBox.PlaceholderText = "> FILTER MATRIX..."
+	searchBox.PlaceholderText = "> FILTER NODES..."
 	searchBox.Text = ""
 	searchBox.Font = Enum.Font.Code
 	searchBox.TextSize = 11
@@ -904,7 +932,7 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 					UpdateVisuals()
 					rebuildInitText()
 					selectedLabel.Text = initialText
-					PushConsoleLog("[INPUT] Multidropdown update: " .. optStr)
+					PushConsoleLog(GetTimestamp() .. " [INPUT] Multidropdown sync: " .. optStr)
 					if type(callback) == "function" then
 						local r = {}
 						for k, v in pairs(selectedMulti) do if v then table.insert(r, k) end end
@@ -916,7 +944,7 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 					selectedLabel.Text = initialText
 					CloseDropdown()
 					for _, item in ipairs(optionItems) do item.Update() end
-					PushConsoleLog("[INPUT] Dropdown selected: " .. optStr)
+					PushConsoleLog(GetTimestamp() .. " [INPUT] Dropdown: " .. optStr)
 					if type(callback) == "function" then task.spawn(callback, selectedSingle) end
 				end
 			end)
@@ -991,64 +1019,58 @@ local function CreateParagraph(parentFrame, title, body)
 	title = tostring(title or "")
 	body = tostring(body or "")
 	
+	local totalHeight, titleHeight, bodyHeight = MeasureCardHeight(title, body, false)
+	
 	local wrapper = Instance.new("Frame")
-	wrapper.Size = UDim2.new(1, 0, 0, 0)
+	wrapper.Size = UDim2.new(1, 0, 0, totalHeight)
 	wrapper.BackgroundTransparency = 1
 	wrapper.Parent = parentFrame
-	wrapper.AutomaticSize = Enum.AutomaticSize.Y
 	
 	local paraFrame = Instance.new("Frame")
-	paraFrame.AnchorPoint = Vector2.new(0.5, 0)
-	paraFrame.Position = UDim2.new(0.5, 0, 0, 4)
-	paraFrame.Size = UDim2.new(0.96, 0, 0, 0)
+	paraFrame.AnchorPoint = Vector2.new(0.5, 0.5)
+	paraFrame.Position = UDim2.fromScale(0.5, 0.5)
+	paraFrame.Size = UDim2.new(CARD_MARGIN_FACTOR, 0, 1, -2)
 	paraFrame.BorderSizePixel = 0
-	paraFrame.AutomaticSize = Enum.AutomaticSize.Y
-	
-	-- Angular, flat cybernetic frame
-	Instance.new("UICorner", paraFrame).CornerRadius = UDim.new(0, 4)
 	paraFrame.Parent = wrapper
+	
+	Instance.new("UICorner", paraFrame).CornerRadius = UDim.new(0, 4)
 	KazeUI:AddPanel(paraFrame, 0.01)
 	
 	local paraStroke = Instance.new("UIStroke", paraFrame)
 	paraStroke.Thickness = 1.2
 	KazeUI:RegisterBorder(paraStroke)
 
-	local layout = Instance.new("UIListLayout", paraFrame)
-	layout.SortOrder = Enum.SortOrder.LayoutOrder
-	layout.Padding = UDim.new(0, 4)
+	local inner = Instance.new("Frame", paraFrame)
+	inner.Size = UDim2.new(1, -CARD_PADDING_W, 1, -20)
+	inner.Position = UDim2.fromOffset(12, 10)
+	inner.BackgroundTransparency = 1
 
-	local padding = Instance.new("UIPadding", paraFrame)
-	padding.PaddingLeft = UDim.new(0, 12)
-	padding.PaddingRight = UDim.new(0, 12)
-	padding.PaddingTop = UDim.new(0, 10)
-	padding.PaddingBottom = UDim.new(0, 10)
+	local listLayout = Instance.new("UIListLayout", inner)
+	listLayout.SortOrder = Enum.SortOrder.LayoutOrder
+	listLayout.Padding = UDim.new(0, 4)
 	
 	local ptitleLabel
 	if title ~= " " and title ~= "" then
-		ptitleLabel = Instance.new("TextLabel")
-		ptitleLabel.Size = UDim2.new(1, 0, 0, 0)
-		ptitleLabel.AutomaticSize = Enum.AutomaticSize.Y
+		ptitleLabel = Instance.new("TextLabel", inner)
+		ptitleLabel.Size = UDim2.new(1, 0, 0, titleHeight)
 		ptitleLabel.BackgroundTransparency = 1
 		ptitleLabel.Text = string.upper(title)
 		ptitleLabel.Font = Enum.Font.Code
 		ptitleLabel.TextSize = 12
 		ptitleLabel.TextXAlignment = Enum.TextXAlignment.Left
 		ptitleLabel.LayoutOrder = 1
-		ptitleLabel.Parent = paraFrame
 		KazeUI:RegisterText(ptitleLabel, false)
 	end
 	
-	local bodyLabel = Instance.new("TextLabel")
-	bodyLabel.Size = UDim2.new(1, 0, 0, 0)
-	bodyLabel.AutomaticSize = Enum.AutomaticSize.Y
+	local bodyLabel = Instance.new("TextLabel", inner)
+	bodyLabel.Size = UDim2.new(1, 0, 0, bodyHeight)
 	bodyLabel.BackgroundTransparency = 1
 	bodyLabel.Text = body
 	bodyLabel.Font = Enum.Font.Code
-	bodyLabel.TextSize = 11
+	bodyLabel.TextSize = 10
 	bodyLabel.TextWrapped = true
 	bodyLabel.TextXAlignment = Enum.TextXAlignment.Left
 	bodyLabel.LayoutOrder = 2
-	bodyLabel.Parent = paraFrame
 	KazeUI:RegisterText(bodyLabel, true)
 	
 	return { 
@@ -1065,63 +1087,58 @@ local function CreateClickableParagraph(parentFrame, title, body, callback)
 	title = tostring(title or "Button")
 	body = tostring(body or "")
 	
+	local totalHeight, titleHeight, bodyHeight = MeasureCardHeight(title, body, true)
+	
 	local wrapper = Instance.new("Frame")
-	wrapper.Size = UDim2.new(1, 0, 0, 0)
+	wrapper.Size = UDim2.new(1, 0, 0, totalHeight)
 	wrapper.BackgroundTransparency = 1
 	wrapper.Parent = parentFrame
-	wrapper.AutomaticSize = Enum.AutomaticSize.Y
 	
 	local paraFrame = Instance.new("Frame")
-	paraFrame.AnchorPoint = Vector2.new(0.5, 0)
-	paraFrame.Position = UDim2.new(0.5, 0, 0, 4)
-	paraFrame.Size = UDim2.new(0.96, 0, 0, 0)
+	paraFrame.AnchorPoint = Vector2.new(0.5, 0.5)
+	paraFrame.Position = UDim2.fromScale(0.5, 0.5)
+	paraFrame.Size = UDim2.new(CARD_MARGIN_FACTOR, 0, 1, -2)
 	paraFrame.BorderSizePixel = 0
-	paraFrame.AutomaticSize = Enum.AutomaticSize.Y
-	
-	-- Sharp mechanical look with minimal corner round
-	Instance.new("UICorner", paraFrame).CornerRadius = UDim.new(0, 4)
 	paraFrame.Parent = wrapper
+	
+	Instance.new("UICorner", paraFrame).CornerRadius = UDim.new(0, 4)
 	KazeUI:AddPanel(paraFrame, 0.02)
 	
 	local paraStroke = Instance.new("UIStroke", paraFrame)
 	paraStroke.Thickness = 1.2
 	KazeUI:RegisterBorder(paraStroke)
-	
-	local layout = Instance.new("UIListLayout", paraFrame)
-	layout.SortOrder = Enum.SortOrder.LayoutOrder
-	layout.Padding = UDim.new(0, 3)
 
-	local padding = Instance.new("UIPadding", paraFrame)
-	padding.PaddingLeft = UDim.new(0, 12)
-	padding.PaddingRight = UDim.new(0, 36)
-	padding.PaddingTop = UDim.new(0, 10)
-	padding.PaddingBottom = UDim.new(0, 10)
+	local inner = Instance.new("Frame", paraFrame)
+	inner.Size = UDim2.new(1, -CARD_PADDING_W - WIDGET_SPACE_W, 1, -20)
+	inner.Position = UDim2.fromOffset(12, 10)
+	inner.BackgroundTransparency = 1
+
+	local listLayout = Instance.new("UIListLayout", inner)
+	listLayout.SortOrder = Enum.SortOrder.LayoutOrder
+	listLayout.Padding = UDim.new(0, 4)
 
 	local rightIcon = Instance.new("ImageLabel", paraFrame)
 	rightIcon.AnchorPoint = Vector2.new(1, 0.5)
-	rightIcon.Position = UDim2.new(1, 26, 0.5, 0) 
+	rightIcon.Position = UDim2.new(1, -12, 0.5, 0) 
 	rightIcon.Size = UDim2.fromOffset(14, 14)
 	rightIcon.BackgroundTransparency = 1
 	rightIcon.Image = "rbxassetid://107150227368485" 
 	KazeUI:OnThemeChanged(rightIcon, function(t) rightIcon.ImageColor3 = t.MutedText end)
 	
-	local ptitleLabel = Instance.new("TextLabel")
-	ptitleLabel.Size = UDim2.new(1, 0, 0, 0)
-	ptitleLabel.AutomaticSize = Enum.AutomaticSize.Y
+	local ptitleLabel = Instance.new("TextLabel", inner)
+	ptitleLabel.Size = UDim2.new(1, 0, 0, titleHeight)
 	ptitleLabel.BackgroundTransparency = 1
 	ptitleLabel.Text = ":: " .. string.upper(title)
 	ptitleLabel.Font = Enum.Font.Code
 	ptitleLabel.TextSize = 12
 	ptitleLabel.TextXAlignment = Enum.TextXAlignment.Left
 	ptitleLabel.LayoutOrder = 1
-	ptitleLabel.Parent = paraFrame
 	KazeUI:RegisterText(ptitleLabel, false)
 
 	local bodyLabel
 	if body ~= "" then
-		bodyLabel = Instance.new("TextLabel")
-		bodyLabel.Size = UDim2.new(1, 0, 0, 0)
-		bodyLabel.AutomaticSize = Enum.AutomaticSize.Y
+		bodyLabel = Instance.new("TextLabel", inner)
+		bodyLabel.Size = UDim2.new(1, 0, 0, bodyHeight)
 		bodyLabel.BackgroundTransparency = 1
 		bodyLabel.Text = body
 		bodyLabel.Font = Enum.Font.Code
@@ -1129,13 +1146,11 @@ local function CreateClickableParagraph(parentFrame, title, body, callback)
 		bodyLabel.TextWrapped = true
 		bodyLabel.TextXAlignment = Enum.TextXAlignment.Left
 		bodyLabel.LayoutOrder = 2
-		bodyLabel.Parent = paraFrame
 		KazeUI:RegisterText(bodyLabel, true)
 	end
 
 	local clickDetector = Instance.new("TextButton", paraFrame)
 	clickDetector.Size = UDim2.fromScale(1, 1)
-	clickDetector.Position = UDim2.fromScale(0, 0)
 	clickDetector.BackgroundTransparency = 1
 	clickDetector.Text = ""
 
@@ -1157,7 +1172,7 @@ local function CreateClickableParagraph(parentFrame, title, body, callback)
 	end)
 	clickDetector.MouseButton1Up:Connect(function()
 		TweenService:Create(paraFrame, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.06)}):Play()
-		PushConsoleLog("[EXEC] Button clicked: " .. title)
+		PushConsoleLog(GetTimestamp() .. " [EXEC] Button: " .. title)
 		if typeof(callback) == "function" then task.spawn(callback) end
 	end)
 	
@@ -1176,41 +1191,39 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 	body = tostring(body or "")
 	local state = defaultState or false
 	
+	local totalHeight, titleHeight, bodyHeight = MeasureCardHeight(title, body, true)
+	
 	local wrapper = Instance.new("Frame")
-	wrapper.Size = UDim2.new(1, 0, 0, 0)
+	wrapper.Size = UDim2.new(1, 0, 0, totalHeight)
 	wrapper.BackgroundTransparency = 1
 	wrapper.Parent = parentFrame
-	wrapper.AutomaticSize = Enum.AutomaticSize.Y
 	
 	local paraFrame = Instance.new("Frame")
-	paraFrame.AnchorPoint = Vector2.new(0.5, 0)
-	paraFrame.Position = UDim2.new(0.5, 0, 0, 4)
-	paraFrame.Size = UDim2.new(0.96, 0, 0, 0)
+	paraFrame.AnchorPoint = Vector2.new(0.5, 0.5)
+	paraFrame.Position = UDim2.fromScale(0.5, 0.5)
+	paraFrame.Size = UDim2.new(CARD_MARGIN_FACTOR, 0, 1, -2)
 	paraFrame.BorderSizePixel = 0
-	paraFrame.AutomaticSize = Enum.AutomaticSize.Y
+	paraFrame.Parent = wrapper
 	
 	Instance.new("UICorner", paraFrame).CornerRadius = UDim.new(0, 4)
-	paraFrame.Parent = wrapper
 	KazeUI:AddPanel(paraFrame, 0.02)
 	
 	local paraStroke = Instance.new("UIStroke", paraFrame)
 	paraStroke.Thickness = 1.2
 	KazeUI:RegisterBorder(paraStroke)
-	
-	local padding = Instance.new("UIPadding", paraFrame)
-	padding.PaddingLeft = UDim.new(0, 12)
-	padding.PaddingRight = UDim.new(0, 60)
-	padding.PaddingTop = UDim.new(0, 10)
-	padding.PaddingBottom = UDim.new(0, 10)
 
-	local layout = Instance.new("UIListLayout", paraFrame)
-	layout.SortOrder = Enum.SortOrder.LayoutOrder
-	layout.Padding = UDim.new(0, 3)
+	local inner = Instance.new("Frame", paraFrame)
+	inner.Size = UDim2.new(1, -CARD_PADDING_W - WIDGET_SPACE_W, 1, -20)
+	inner.Position = UDim2.fromOffset(12, 10)
+	inner.BackgroundTransparency = 1
 
-	-- Cybernetic toggle bracket switch
+	local listLayout = Instance.new("UIListLayout", inner)
+	listLayout.SortOrder = Enum.SortOrder.LayoutOrder
+	listLayout.Padding = UDim.new(0, 4)
+
 	local switchContainer = Instance.new("Frame", paraFrame)
 	switchContainer.AnchorPoint = Vector2.new(1, 0.5)
-	switchContainer.Position = UDim2.new(1, 48, 0.5, 0)
+	switchContainer.Position = UDim2.new(1, -12, 0.5, 0)
 	switchContainer.Size = UDim2.fromOffset(40, 18)
 	switchContainer.BorderSizePixel = 0
 	Instance.new("UICorner", switchContainer).CornerRadius = UDim.new(0, 3)
@@ -1227,9 +1240,8 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 	switchIndicator.BorderSizePixel = 0
 	Instance.new("UICorner", switchIndicator).CornerRadius = UDim.new(0, 2)
 	
-	local ptitleLabel = Instance.new("TextLabel", paraFrame)
-	ptitleLabel.Size = UDim2.new(1, 0, 0, 0)
-	ptitleLabel.AutomaticSize = Enum.AutomaticSize.Y
+	local ptitleLabel = Instance.new("TextLabel", inner)
+	ptitleLabel.Size = UDim2.new(1, 0, 0, titleHeight)
 	ptitleLabel.BackgroundTransparency = 1
 	ptitleLabel.Text = string.upper(title)
 	ptitleLabel.Font = Enum.Font.Code
@@ -1240,9 +1252,8 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 	
 	local bodyLabel
 	if body ~= "" then
-		bodyLabel = Instance.new("TextLabel", paraFrame)
-		bodyLabel.Size = UDim2.new(1, 0, 0, 0)
-		bodyLabel.AutomaticSize = Enum.AutomaticSize.Y
+		bodyLabel = Instance.new("TextLabel", inner)
+		bodyLabel.Size = UDim2.new(1, 0, 0, bodyHeight)
 		bodyLabel.BackgroundTransparency = 1
 		bodyLabel.Text = body
 		bodyLabel.Font = Enum.Font.Code
@@ -1255,7 +1266,6 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 
 	local clickDetector = Instance.new("TextButton", paraFrame)
 	clickDetector.Size = UDim2.fromScale(1, 1)
-	clickDetector.Position = UDim2.fromScale(0, 0)
 	clickDetector.BackgroundTransparency = 1
 	clickDetector.Text = ""
 
@@ -1290,7 +1300,7 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 	clickDetector.MouseButton1Click:Connect(function()
 		setToggleState(not state, false)
 		if state then PlaySound("ToggleOn") else PlaySound("ToggleOff") end
-		PushConsoleLog("[PARAM] " .. title .. " set to " .. tostring(state))
+		PushConsoleLog(GetTimestamp() .. " [PARAM] " .. title .. ": " .. tostring(state))
 		if typeof(callback) == "function" then task.spawn(callback, state) end
 	end)
 
@@ -1313,55 +1323,45 @@ local function CreateTextBoxInput(parentFrame, title, placeholder, defaultVal, c
 	title = tostring(title or "Input Text")
 	placeholder = tostring(placeholder or "Type here...")
 	
+	local titleHeight, _ = GetTextHeights(title, nil, 417 - CARD_PADDING_W)
+	local totalHeight = 11 + titleHeight + (titleHeight > 0 and 6 or 0) + 26 + 11
+	
 	local wrapper = Instance.new("Frame")
-	wrapper.Size = UDim2.new(1, 0, 0, 0)
+	wrapper.Size = UDim2.new(1, 0, 0, totalHeight)
 	wrapper.BackgroundTransparency = 1
 	wrapper.Parent = parentFrame
-	wrapper.AutomaticSize = Enum.AutomaticSize.Y
 	
 	local paraFrame = Instance.new("Frame")
-	paraFrame.AnchorPoint = Vector2.new(0.5, 0)
-	paraFrame.Position = UDim2.new(0.5, 0, 0, 4)
-	paraFrame.Size = UDim2.new(0.96, 0, 0, 0)
+	paraFrame.AnchorPoint = Vector2.new(0.5, 0.5)
+	paraFrame.Position = UDim2.fromScale(0.5, 0.5)
+	paraFrame.Size = UDim2.new(CARD_MARGIN_FACTOR, 0, 1, -2)
 	paraFrame.BorderSizePixel = 0
-	paraFrame.AutomaticSize = Enum.AutomaticSize.Y
+	paraFrame.Parent = wrapper
 	
 	Instance.new("UICorner", paraFrame).CornerRadius = UDim.new(0, 4)
-	paraFrame.Parent = wrapper
 	KazeUI:AddPanel(paraFrame, 0.02)
 	
 	local paraStroke = Instance.new("UIStroke", paraFrame)
 	paraStroke.Thickness = 1.2
 	KazeUI:RegisterBorder(paraStroke)
 	
-	local padding = Instance.new("UIPadding", paraFrame)
-	padding.PaddingLeft = UDim.new(0, 12)
-	padding.PaddingRight = UDim.new(0, 12)
-	padding.PaddingTop = UDim.new(0, 10)
-	padding.PaddingBottom = UDim.new(0, 10)
-
-	local layout = Instance.new("UIListLayout", paraFrame)
-	layout.SortOrder = Enum.SortOrder.LayoutOrder
-	layout.Padding = UDim.new(0, 6)
-	
 	local ptitleLabel
 	if title ~= " " and title ~= "" then
 		ptitleLabel = Instance.new("TextLabel", paraFrame)
-		ptitleLabel.Size = UDim2.new(1, 0, 0, 0)
-		ptitleLabel.AutomaticSize = Enum.AutomaticSize.Y
+		ptitleLabel.Size = UDim2.new(1, -24, 0, titleHeight)
+		ptitleLabel.Position = UDim2.fromOffset(12, 11)
 		ptitleLabel.BackgroundTransparency = 1
 		ptitleLabel.Text = string.upper(title)
 		ptitleLabel.Font = Enum.Font.Code
 		ptitleLabel.TextSize = 12
 		ptitleLabel.TextXAlignment = Enum.TextXAlignment.Left
-		ptitleLabel.LayoutOrder = 1
 		KazeUI:RegisterText(ptitleLabel, false)
 	end
 	
 	local textBoxContainer = Instance.new("Frame", paraFrame)
-	textBoxContainer.Size = UDim2.new(1, 0, 0, 26)
+	textBoxContainer.Size = UDim2.new(1, -24, 0, 26)
+	textBoxContainer.Position = UDim2.fromOffset(12, 11 + titleHeight + 6)
 	textBoxContainer.BorderSizePixel = 0
-	textBoxContainer.LayoutOrder = 2
 	Instance.new("UICorner", textBoxContainer).CornerRadius = UDim.new(0, 3)
 	KazeUI:AddPanel(textBoxContainer, -0.01)
 	
@@ -1392,7 +1392,7 @@ local function CreateTextBoxInput(parentFrame, title, placeholder, defaultVal, c
 		PlaySound("Click")
 		TweenService:Create(innerStroke, TWEEN_FAST, {Color = KazeUI.CurrentTheme.Border}):Play()
 		TweenService:Create(paraStroke, TWEEN_FAST, {Color = KazeUI.CurrentTheme.Border}):Play()
-		PushConsoleLog("[INPUT] Terminal parameters compiled")
+		PushConsoleLog(GetTimestamp() .. " [INPUT] Input compiled")
 		if typeof(callback) == "function" then task.spawn(callback, textBox.Text, enterPressed) end
 	end)
 	
@@ -1418,54 +1418,45 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 	default = tonumber(default) or min
 	local value = math.clamp(default, min, max)
 	
+	local titleHeight, _ = GetTextHeights(title, nil, 417 - CARD_PADDING_W - 80)
+	local totalHeight = 11 + titleHeight + (titleHeight > 0 and 6 or 0) + 14 + 11
+	
 	local wrapper = Instance.new("Frame")
-	wrapper.Size = UDim2.new(1, 0, 0, 0)
+	wrapper.Size = UDim2.new(1, 0, 0, totalHeight)
 	wrapper.BackgroundTransparency = 1
 	wrapper.Parent = parentFrame
-	wrapper.AutomaticSize = Enum.AutomaticSize.Y
 	
 	local paraFrame = Instance.new("Frame")
-	paraFrame.AnchorPoint = Vector2.new(0.5, 0)
-	paraFrame.Position = UDim2.new(0.5, 0, 0, 4)
-	paraFrame.Size = UDim2.new(0.96, 0, 0, 0)
+	paraFrame.AnchorPoint = Vector2.new(0.5, 0.5)
+	paraFrame.Position = UDim2.fromScale(0.5, 0.5)
+	paraFrame.Size = UDim2.new(CARD_MARGIN_FACTOR, 0, 1, -2)
 	paraFrame.BorderSizePixel = 0
-	paraFrame.AutomaticSize = Enum.AutomaticSize.Y
+	paraFrame.Parent = wrapper
 	
 	Instance.new("UICorner", paraFrame).CornerRadius = UDim.new(0, 4)
-	paraFrame.Parent = wrapper
 	KazeUI:AddPanel(paraFrame, 0.02)
 	
 	local paraStroke = Instance.new("UIStroke", paraFrame)
 	paraStroke.Thickness = 1.2
 	KazeUI:RegisterBorder(paraStroke)
 	
-	local padding = Instance.new("UIPadding", paraFrame)
-	padding.PaddingLeft = UDim.new(0, 12)
-	padding.PaddingRight = UDim.new(0, 12)
-	padding.PaddingTop = UDim.new(0, 10)
-	padding.PaddingBottom = UDim.new(0, 10)
-
-	local layout = Instance.new("UIListLayout", paraFrame)
-	layout.SortOrder = Enum.SortOrder.LayoutOrder
-	layout.Padding = UDim.new(0, 6)
+	local ptitleLabel
+	if title ~= " " and title ~= "" then
+		ptitleLabel = Instance.new("TextLabel", paraFrame)
+		ptitleLabel.Size = UDim2.new(1, -92, 0, titleHeight)
+		ptitleLabel.Position = UDim2.fromOffset(12, 11)
+		ptitleLabel.BackgroundTransparency = 1
+		ptitleLabel.Text = string.upper(title)
+		ptitleLabel.Font = Enum.Font.Code
+		ptitleLabel.TextSize = 12
+		ptitleLabel.TextXAlignment = Enum.TextXAlignment.Left
+		KazeUI:RegisterText(ptitleLabel, false)
+	end
 	
-	local titleFrame = Instance.new("Frame", paraFrame)
-	titleFrame.Size = UDim2.new(1, 0, 0, 16)
-	titleFrame.BackgroundTransparency = 1
-	titleFrame.LayoutOrder = 1
-
-	local ptitleLabel = Instance.new("TextLabel", titleFrame)
-	ptitleLabel.Size = UDim2.new(0.7, 0, 1, 0)
-	ptitleLabel.BackgroundTransparency = 1
-	ptitleLabel.Text = string.upper(title)
-	ptitleLabel.Font = Enum.Font.Code
-	ptitleLabel.TextSize = 12
-	ptitleLabel.TextXAlignment = Enum.TextXAlignment.Left
-	KazeUI:RegisterText(ptitleLabel, false)
-	
-	local valueLabel = Instance.new("TextLabel", titleFrame)
-	valueLabel.Size = UDim2.new(0.3, 0, 1, 0)
-	valueLabel.Position = UDim2.new(0.7, 0, 0, 0)
+	local valueLabel = Instance.new("TextLabel", paraFrame)
+	valueLabel.Size = UDim2.new(0, 70, 0, titleHeight > 0 and titleHeight or 16)
+	valueLabel.Position = UDim2.new(1, -12, 0, 11)
+	valueLabel.AnchorPoint = Vector2.new(1, 0)
 	valueLabel.BackgroundTransparency = 1
 	valueLabel.Text = string.format("%.1f", value)
 	valueLabel.Font = Enum.Font.Code
@@ -1474,9 +1465,9 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 	KazeUI:RegisterText(valueLabel, false)
 	
 	local track = Instance.new("Frame", paraFrame)
-	track.Size = UDim2.new(1, 0, 0, 6)
+	track.Size = UDim2.new(1, -24, 0, 6)
+	track.Position = UDim2.fromOffset(12, 11 + titleHeight + 8)
 	track.BorderSizePixel = 0
-	track.LayoutOrder = 2
 	Instance.new("UICorner", track).CornerRadius = UDim.new(0, 1)
 	KazeUI:AddPanel(track, -0.01)
 	
@@ -1487,7 +1478,7 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 	
 	local knob = Instance.new("Frame", track)
 	knob.AnchorPoint = Vector2.new(0.5, 0.5)
-	knob.Size = UDim2.fromOffset(8, 14) -- Rectangular power tab slider knob
+	knob.Size = UDim2.fromOffset(8, 14) 
 	knob.Position = UDim2.new(0, 0, 0.5, 0)
 	knob.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
 	knob.BorderSizePixel = 0
@@ -1546,7 +1537,7 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 					ToggleScrollingAncestors(track, true)
 					UnlockCamera()
 					TweenService:Create(paraStroke, TWEEN_FAST, {Color = KazeUI.CurrentTheme.Border}):Play()
-					PushConsoleLog("[PARAM] Actuator slider value: " .. string.format("%.1f", value))
+					PushConsoleLog(GetTimestamp() .. " [PARAM] Slider: " .. string.format("%.1f", value))
 					if move then move:Disconnect() end
 					if ends then ends:Disconnect() end
 				end
@@ -1587,7 +1578,7 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 	local dropFrame = Instance.new("Frame")
 	dropFrame.AnchorPoint = Vector2.new(0.5, 0)
 	dropFrame.Position = UDim2.new(0.5, 0, 0, 4)
-	dropFrame.Size = UDim2.new(0.96, 0, 0, 0)
+	dropFrame.Size = UDim2.new(CARD_MARGIN_FACTOR, 0, 0, 0)
 	dropFrame.BorderSizePixel = 0
 	dropFrame.AutomaticSize = Enum.AutomaticSize.Y
 	dropFrame.Parent = wrapper
@@ -1705,7 +1696,7 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 	hueCursor.Size = UDim2.fromOffset(4, 20)
 	hueCursor.AnchorPoint = Vector2.new(0.5, 0.5)
 	hueCursor.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-	Instance.new("UICorner", hueCursor).CornerRadius = UDim.new(1, 0)
+	hueCursor.CornerRadius = UDim.new(1, 0)
 	Instance.new("UIStroke", hueCursor).Color = Color3.fromRGB(0, 0, 0)
 
 	local function UpdateColor()
@@ -1774,7 +1765,7 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 			if draggingMap or draggingHue then
 				UnlockCamera()
 				PlaySound("Click")
-				PushConsoleLog("[COLOR] Hue matrix re-mapped")
+				PushConsoleLog(GetTimestamp() .. " [COLOR] Matrix recalibrated")
 			end
 			draggingMap = false
 			draggingHue = false
@@ -1817,40 +1808,34 @@ local function CreateKeybindInput(parentFrame, title, defaultKey, callback, flag
 	local currentKey = defaultKey or Enum.KeyCode.Unknown
 	local isBinding = false
 	
+	local totalHeight, titleHeight, _ = MeasureCardHeight(title, nil, true)
+	
 	local wrapper = Instance.new("Frame")
-	wrapper.Size = UDim2.new(1, 0, 0, 0)
+	wrapper.Size = UDim2.new(1, 0, 0, totalHeight)
 	wrapper.BackgroundTransparency = 1
 	wrapper.Parent = parentFrame
-	wrapper.AutomaticSize = Enum.AutomaticSize.Y
 	
 	local paraFrame = Instance.new("Frame")
-	paraFrame.AnchorPoint = Vector2.new(0.5, 0)
-	paraFrame.Position = UDim2.new(0.5, 0, 0, 4)
-	paraFrame.Size = UDim2.new(0.96, 0, 0, 0)
+	paraFrame.AnchorPoint = Vector2.new(0.5, 0.5)
+	paraFrame.Position = UDim2.fromScale(0.5, 0.5)
+	paraFrame.Size = UDim2.new(CARD_MARGIN_FACTOR, 0, 1, -2)
 	paraFrame.BorderSizePixel = 0
-	paraFrame.AutomaticSize = Enum.AutomaticSize.Y
+	paraFrame.Parent = wrapper
 	
 	Instance.new("UICorner", paraFrame).CornerRadius = UDim.new(0, 4)
-	paraFrame.Parent = wrapper
 	KazeUI:AddPanel(paraFrame, 0.02)
 	
 	local paraStroke = Instance.new("UIStroke", paraFrame)
 	paraStroke.Thickness = 1.2
 	KazeUI:RegisterBorder(paraStroke)
-	
-	local padding = Instance.new("UIPadding", paraFrame)
-	padding.PaddingLeft = UDim.new(0, 12)
-	padding.PaddingRight = UDim.new(0, 12)
-	padding.PaddingTop = UDim.new(0, 10)
-	padding.PaddingBottom = UDim.new(0, 10)
 
-	local layout = Instance.new("UIListLayout", paraFrame)
-	layout.SortOrder = Enum.SortOrder.LayoutOrder
-	layout.FillDirection = Enum.FillDirection.Horizontal
-	layout.VerticalAlignment = Enum.VerticalAlignment.Center
+	local inner = Instance.new("Frame", paraFrame)
+	inner.Size = UDim2.new(1, -CARD_PADDING_W - WIDGET_SPACE_W, 1, -20)
+	inner.Position = UDim2.fromOffset(12, 10)
+	inner.BackgroundTransparency = 1
 	
-	local ptitleLabel = Instance.new("TextLabel", paraFrame)
-	ptitleLabel.Size = UDim2.new(0.7, 0, 1, 0)
+	local ptitleLabel = Instance.new("TextLabel", inner)
+	ptitleLabel.Size = UDim2.new(1, 0, 1, 0)
 	ptitleLabel.BackgroundTransparency = 1
 	ptitleLabel.Text = string.upper(title)
 	ptitleLabel.Font = Enum.Font.Code
@@ -1860,6 +1845,8 @@ local function CreateKeybindInput(parentFrame, title, defaultKey, callback, flag
 	
 	local bindContainer = Instance.new("TextButton", paraFrame)
 	bindContainer.Size = UDim2.fromOffset(76, 22)
+	bindContainer.AnchorPoint = Vector2.new(1, 0.5)
+	bindContainer.Position = UDim2.new(1, -12, 0.5, 0)
 	bindContainer.BorderSizePixel = 0
 	bindContainer.Text = ""
 	bindContainer.AutoButtonColor = false
@@ -1895,7 +1882,7 @@ local function CreateKeybindInput(parentFrame, title, defaultKey, callback, flag
 		PlaySound("Click")
 		bindLabel.Text = "WAITING..."
 		TweenService:Create(bindStroke, TWEEN_FAST, {Color = KazeUI.GlowColor}):Play()
-		PushConsoleLog("[INPUT] Recalibrating sensor key...")
+		PushConsoleLog(GetTimestamp() .. " [INPUT] Binding sensor key...")
 		
 		local conn
 		conn = UIS.InputBegan:Connect(function(input)
@@ -1915,7 +1902,7 @@ local function CreateKeybindInput(parentFrame, title, defaultKey, callback, flag
 				PlaySound("Success")
 				bindLabel.Text = currentKey == Enum.KeyCode.Unknown and "NONE" or string.upper(currentKey.Name)
 				TweenService:Create(bindStroke, TWEEN_FAST, {Color = KazeUI.CurrentTheme.Border}):Play()
-				PushConsoleLog("[INPUT] Sensor re-bound to Key: " .. currentKey.Name)
+				PushConsoleLog(GetTimestamp() .. " [INPUT] Sensor bound to: " .. currentKey.Name)
 				conn:Disconnect()
 				task.delay(0.15, function() isBinding = false end)
 			end
@@ -1924,7 +1911,7 @@ local function CreateKeybindInput(parentFrame, title, defaultKey, callback, flag
 	
 	UIS.InputBegan:Connect(function(input, gp)
 		if not gp and not isBinding and currentKey ~= Enum.KeyCode.Unknown and input.KeyCode == currentKey then
-			PushConsoleLog("[PARAM] Triggered Keybind: " .. currentKey.Name)
+			PushConsoleLog(GetTimestamp() .. " [EXEC] Sensor key active: " .. currentKey.Name)
 			if typeof(callback) == "function" then task.spawn(callback, currentKey) end
 		end
 	end)
@@ -1952,7 +1939,7 @@ local function CreateVisualSectionDivider(parentFrame, titleArg)
 	local title = tostring(titleArg or "Section")
 
 	local wrapper = Instance.new("Frame")
-	wrapper.Size = UDim2.new(0.96, 0, 0, 30)
+	wrapper.Size = UDim2.new(CARD_MARGIN_FACTOR, 0, 0, 30)
 	wrapper.BackgroundTransparency = 1
 	wrapper.Parent = parentFrame
 
@@ -1960,7 +1947,7 @@ local function CreateVisualSectionDivider(parentFrame, titleArg)
 	label.Size = UDim2.new(1, -16, 1, 0)
 	label.Position = UDim2.fromOffset(14, 0)
 	label.BackgroundTransparency = 1
-	label.Text = "/// " .. string.upper(title) .. " MODULES"
+	label.Text = "/// " .. string.upper(title) .. " MATRIX CONDUITS"
 	label.Font = Enum.Font.Code
 	label.TextSize = 11
 	label.TextXAlignment = Enum.TextXAlignment.Left
@@ -1977,7 +1964,7 @@ local function CreateVisualSectionDivider(parentFrame, titleArg)
 	return {
 		Label = label,
 		LeftLine = leftLine,
-		SetText = function(self, t) label.Text = "/// " .. string.upper(t) .. " MODULES" end
+		SetText = function(self, t) label.Text = "/// " .. string.upper(t) .. " MATRIX CONDUITS" end
 	}
 end
 
@@ -2093,7 +2080,7 @@ CreateCollapsibleSection = function(parentFrame, titleArg)
 
 	local sectionBox = Instance.new("Frame")
 	sectionBox.Name = "CollapsibleSection_" .. title
-	sectionBox.Size = UDim2.new(0.96, 0, 0, 0)
+	sectionBox.Size = UDim2.new(CARD_MARGIN_FACTOR, 0, 0, 0)
 	sectionBox.BorderSizePixel = 0
 	sectionBox.Parent = parentFrame
 	sectionBox.AutomaticSize = Enum.AutomaticSize.Y
@@ -2182,7 +2169,7 @@ CreateCollapsibleSection = function(parentFrame, titleArg)
 			TweenService:Create(accentLine, TweenInfo.new(animDur), {BackgroundColor3 = KazeUI.GlowColor}):Play()
 			StartNeonLoop(boxStroke)
 			StartNeonLoop(accentLine)
-			PushConsoleLog("[PARAM] Module expand: " .. title)
+			PushConsoleLog(GetTimestamp() .. " [SYS] Module expanded: " .. title)
 		else
 			TweenService:Create(arrowIcon, TweenInfo.new(animDur), {Rotation = -90, ImageColor3 = KazeUI.CurrentTheme.MutedText}):Play()
 			TweenService:Create(accentLine, TweenInfo.new(animDur), {BackgroundColor3 = KazeUI.CurrentTheme.MutedText}):Play()
@@ -2219,7 +2206,7 @@ function KazeUI:CreateWindow(config)
 	config = config or {}
 	local Title = config.Title or "AEGIS CORE"
 	local Author = config.Author or "AI SYSTEM"
-	local Version = config.Version or "v4.0"
+	local Version = config.Version or "v4.5"
 	local MainIcon = FormatImage(config.Icon or "cpu")
 	local OpenIcon = FormatImage((config.OpenButton and config.OpenButton.Icon) or config.Icon or "cpu")
 	
@@ -2231,23 +2218,20 @@ function KazeUI:CreateWindow(config)
 	KazeUI:SetTheme("Obsidian")
 	if config.GlowColor then KazeUI:SetGlow(config.GlowColor) end
 
-	-- Mini trigger button target
 	local MiniButtonSize = UDim2.fromOffset(50, 50)
 
-	-- Window Setup
+	-- Main Armored Window Outer Frame
 	local Window = Instance.new("Frame")
-	Window.Size = UDim2.fromOffset(630, 440) 
+	Window.Size = UDim2.fromOffset(WINDOW_W, 440) 
 	Window.Position = UDim2.fromScale(0.5, 0.5)
 	Window.AnchorPoint = Vector2.new(0.5, 0.5)
 	Window.BorderSizePixel = 0
 	Window.Active = true
 	Window.Parent = ScreenGui
 	
-	-- Sharp HUD look
 	Instance.new("UICorner", Window).CornerRadius = UDim.new(0, 6)
 	KazeUI:AddPanel(Window, 0)
 
-	-- High contrast cyber glow border
 	local WindowStroke = Instance.new("UIStroke", Window)
 	WindowStroke.Thickness = 1.8
 	KazeUI:RegisterBorder(WindowStroke)
@@ -2258,7 +2242,7 @@ function KazeUI:CreateWindow(config)
 	ContentClipper.BorderSizePixel = 0
 	Instance.new("UICorner", ContentClipper).CornerRadius = UDim.new(0, 6)
 
-	-- Mechanical Grid Line overlay
+	-- Concentric Hexagon Mesh Grid Overlays
 	local GridLines = Instance.new("ImageLabel", ContentClipper)
 	GridLines.Size = UDim2.fromScale(1, 1)
 	GridLines.BackgroundTransparency = 1
@@ -2268,7 +2252,49 @@ function KazeUI:CreateWindow(config)
 	GridLines.TileSize = UDim2.fromOffset(40, 40)
 	GridLines.ZIndex = -2
 
-	-- Tactical TopBar
+	-- Cool PERIODIC NEON LASER SCAN Sweep Line
+	local LaserScanBar = Instance.new("Frame", ContentClipper)
+	LaserScanBar.Size = UDim2.new(1, 0, 0, 3)
+	LaserScanBar.Position = UDim2.new(0, 0, 0, -5)
+	LaserScanBar.BorderSizePixel = 0
+	LaserScanBar.ZIndex = -1
+	
+	local laserGrad = Instance.new("UIGradient", LaserScanBar)
+	laserGrad.Rotation = 90
+	laserGrad.Transparency = NumberSequence.new{
+		NumberSequenceKeypoint.new(0, 1),
+		NumberSequenceKeypoint.new(0.5, 0),
+		NumberSequenceKeypoint.new(1, 1)
+	}
+	KazeUI:OnGlowChanged(LaserScanBar, function(c) LaserScanBar.BackgroundColor3 = c end)
+
+	task.spawn(function()
+		while Window and Window.Parent do
+			LaserScanBar.Position = UDim2.new(0, 0, 0, -5)
+			local laserTween = TweenService:Create(LaserScanBar, TweenInfo.new(6, Enum.EasingStyle.Linear), {Position = UDim2.new(0, 0, 1, 5)})
+			laserTween:Play()
+			laserTween.Completed:Wait()
+			task.wait(4) -- delay between sweeps
+		end
+	end)
+
+	-- Tactical Window Corner Brackets Decorative Layout
+	local function createBracket(anchor, pos, text)
+		local b = Instance.new("TextLabel", ContentClipper)
+		b.Size = UDim2.fromOffset(24, 16)
+		b.AnchorPoint = anchor
+		b.Position = pos
+		b.BackgroundTransparency = 1
+		b.Text = text
+		b.Font = Enum.Font.Code
+		b.TextSize = 10
+		b.ZIndex = 5
+		KazeUI:OnThemeChanged(b, function(t) b.TextColor3 = t.MutedText end)
+	end
+	createBracket(Vector2.new(0,0), UDim2.fromOffset(8, 8), "[+]")
+	createBracket(Vector2.new(1,0), UDim2.new(1, -92, 0, 8), "[//_]")
+
+	-- Tactical TopBar Header
 	local TopBar = Instance.new("Frame", ContentClipper)
 	TopBar.Size = UDim2.new(1, 0, 0, 48)
 	TopBar.BorderSizePixel = 0
@@ -2303,7 +2329,7 @@ function KazeUI:CreateWindow(config)
 	SubLabel.TextXAlignment = Enum.TextXAlignment.Left
 	KazeUI:RegisterText(SubLabel, true)
 
-	-- Animated System Diagnostic Monitor inside TopBar (CPU/RAM/BAT)
+	-- Real-time Diagnostics HUD inside TopBar
 	local LiveHUD = Instance.new("Frame", TopBar)
 	LiveHUD.Size = UDim2.new(0, 180, 1, 0)
 	LiveHUD.Position = UDim2.new(1, -270, 0, 0)
@@ -2326,15 +2352,15 @@ function KazeUI:CreateWindow(config)
 		return t
 	end
 
-	local CPU_Text = makeDiagnosticText("CPU: 3.2GHz")
+	local CPU_Text = makeDiagnosticText("CPU: 32%")
 	CPU_Text.Parent = LiveHUD
-	local RAM_Text = makeDiagnosticText("RAM: 14MB")
+	local RAM_Text = makeDiagnosticText("RAM: 14.5MB")
 	RAM_Text.Parent = LiveHUD
 
-	-- Micro Status LED
+	-- Micro LED Status Bulb
 	local LED_Light = Instance.new("Frame", LiveHUD)
 	LED_Light.Size = UDim2.fromOffset(6, 6)
-	LED_Light.BackgroundColor3 = Color3.fromRGB(0, 255, 100)
+	LED_Light.BackgroundColor3 = Color3.fromRGB(0, 255, 120)
 	Instance.new("UICorner", LED_Light).CornerRadius = UDim.new(1, 0)
 	StartNeonLoop(LED_Light)
 
@@ -2342,10 +2368,7 @@ function KazeUI:CreateWindow(config)
 		while Window and Window.Parent do
 			local ramUsed = math.floor((gcinfo() or 1000) / 10.2) / 10
 			RAM_Text.Text = "RAM: " .. tostring(ramUsed) .. "MB"
-			
-			local simulatedCPU = math.random(28, 92)
-			CPU_Text.Text = "CPU: " .. tostring(simulatedCPU) .. "%"
-			
+			CPU_Text.Text = "CPU: " .. tostring(math.random(28, 85)) .. "%"
 			task.wait(1.5)
 		end
 	end)
@@ -2356,7 +2379,7 @@ function KazeUI:CreateWindow(config)
 	TopDivider.BorderSizePixel = 0
 	KazeUI:OnThemeChanged(TopDivider, function(t) TopDivider.BackgroundColor3 = t.Border end)
 
-	-- Green / Yellow / Red Tactical circular trigger tabs
+	-- Weapon Systems Status LEDs (Red, Yellow, Green Buttons)
 	local function createCircleButton(name, offsetX, color)
 		local btn = Instance.new("TextButton", TopBar)
 		btn.Size = UDim2.fromOffset(10, 10)
@@ -2397,7 +2420,7 @@ function KazeUI:CreateWindow(config)
 	KazeUI:RegisterBorder(MiniStroke)
 
 	local isMinimized = false
-	local defaultWindowSize = UDim2.fromOffset(630, 440)
+	local defaultWindowSize = UDim2.fromOffset(WINDOW_W, 440)
 	local lastNormalSize = defaultWindowSize
 	local toggledMaximized = false
 
@@ -2405,7 +2428,7 @@ function KazeUI:CreateWindow(config)
 		if isMinimized then return end
 		isMinimized = true
 		PlaySound("ToggleOff")
-		PushConsoleLog("[SYS] Terminal Minimized to HUD trigger")
+		PushConsoleLog(GetTimestamp() .. " [SYS] Terminal minimized")
 		if not toggledMaximized then
 			lastNormalPosition = Window.Position
 			lastNormalAnchor = Window.AnchorPoint
@@ -2517,7 +2540,7 @@ function KazeUI:CreateWindow(config)
 		ConfirmText.Size = UDim2.new(1, -40, 0, 45)
 		ConfirmText.Position = UDim2.fromOffset(20, 15)
 		ConfirmText.BackgroundTransparency = 1
-		ConfirmText.Text = "DEACTIVATE AEGIS ROBOT OS TERMINAL?"
+		ConfirmText.Text = "DEACTIVATE EXILE AI TERMINAL CHANNEL?"
 		ConfirmText.Font = Enum.Font.Code
 		ConfirmText.TextSize = 12
 		ConfirmText.TextWrapped = true
@@ -2538,7 +2561,7 @@ function KazeUI:CreateWindow(config)
 		local ConfirmBtn = Instance.new("TextButton", ButtonsFrame)
 		ConfirmBtn.Size = UDim2.new(0, 90, 0, 26)
 		ConfirmBtn.BackgroundColor3 = Color3.fromRGB(240, 50, 50)
-		ConfirmBtn.Text = "SHUTDOWN"
+		ConfirmBtn.Text = "DEACTIVATE"
 		ConfirmBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 		ConfirmBtn.Font = Enum.Font.Code
 		ConfirmBtn.TextSize = 11
@@ -2578,66 +2601,98 @@ function KazeUI:CreateWindow(config)
 	Content.BackgroundTransparency = 1
 
 	local SideBarMask = Instance.new("Frame", Content)
-	SideBarMask.Size = UDim2.new(0, 195, 1, 0)
+	SideBarMask.Size = UDim2.new(0, SIDEBAR_W, 1, 0)
 	SideBarMask.BackgroundTransparency = 1
 	SideBarMask.ClipsDescendants = true
 
 	local SideBar = Instance.new("Frame", SideBarMask)
-	SideBar.Size = UDim2.new(0, 195, 1, 0) 
+	SideBar.Size = UDim2.new(0, SIDEBAR_W, 1, 0) 
 	SideBar.BorderSizePixel = 0
 	KazeUI:AddPanel(SideBar, 0.01)
 
-	-- Pulsing Robotic Core Optic (AI Eye Visualizer)
+	-- Rotating Interactive Concentric AI Optic Eye Visualizer
 	local SideHUD = Instance.new("Frame", SideBar)
-	SideHUD.Size = UDim2.new(1, 0, 0, 105)
+	SideHUD.Size = UDim2.new(1, 0, 0, 115)
 	SideHUD.Position = UDim2.fromOffset(0, 0)
 	SideHUD.BackgroundTransparency = 1
 
-	local CoreOptic = Instance.new("Frame", SideHUD)
+	local CoreOptic = Instance.new("TextButton", SideHUD)
 	CoreOptic.Size = UDim2.fromOffset(36, 36)
-	CoreOptic.Position = UDim2.fromScale(0.5, 0.35)
+	CoreOptic.Position = UDim2.fromScale(0.5, 0.4)
 	CoreOptic.AnchorPoint = Vector2.new(0.5, 0.5)
 	CoreOptic.BackgroundColor3 = KazeUI.GlowColor
+	CoreOptic.Text = ""
 	Instance.new("UICorner", CoreOptic).CornerRadius = UDim.new(1, 0)
 	StartNeonLoop(CoreOptic)
 
-	local OpticRing = Instance.new("Frame", SideHUD)
-	OpticRing.Size = UDim2.fromOffset(48, 48)
-	OpticRing.Position = UDim2.fromScale(0.5, 0.35)
-	OpticRing.AnchorPoint = Vector2.new(0.5, 0.5)
-	OpticRing.BackgroundTransparency = 1
-	local ringStroke = Instance.new("UIStroke", OpticRing)
-	ringStroke.Thickness = 1.5
-	ringStroke.Color = KazeUI.GlowColor
-	Instance.new("UICorner", OpticRing).CornerRadius = UDim.new(1, 0)
+	local OpticRingOuter = Instance.new("Frame", SideHUD)
+	OpticRingOuter.Size = UDim2.fromOffset(50, 50)
+	OpticRingOuter.Position = UDim2.fromScale(0.5, 0.4)
+	OpticRingOuter.AnchorPoint = Vector2.new(0.5, 0.5)
+	OpticRingOuter.BackgroundTransparency = 1
+	local ringStroke1 = Instance.new("UIStroke", OpticRingOuter)
+	ringStroke1.Thickness = 1.2
+	ringStroke1.Color = KazeUI.GlowColor
+	Instance.new("UICorner", OpticRingOuter).CornerRadius = UDim.new(1, 0)
+
+	local OpticRingInner = Instance.new("Frame", SideHUD)
+	OpticRingInner.Size = UDim2.fromOffset(42, 42)
+	OpticRingInner.Position = UDim2.fromScale(0.5, 0.4)
+	OpticRingInner.AnchorPoint = Vector2.new(0.5, 0.5)
+	OpticRingInner.BackgroundTransparency = 1
+	local ringStroke2 = Instance.new("UIStroke", OpticRingInner)
+	ringStroke2.Thickness = 1.2
+	ringStroke2.Color = KazeUI.GlowColor
+	Instance.new("UICorner", OpticRingInner).CornerRadius = UDim.new(1, 0)
 
 	local OpticText = Instance.new("TextLabel", SideHUD)
 	OpticText.Size = UDim2.new(1, 0, 0, 14)
-	OpticText.Position = UDim2.fromScale(0, 0.75)
+	OpticText.Position = UDim2.fromScale(0, 0.76)
 	OpticText.BackgroundTransparency = 1
-	OpticText.Text = "OS STATUS: READY"
+	OpticText.Text = "OS COGNITIVE CORE: READY"
 	OpticText.Font = Enum.Font.Code
 	OpticText.TextSize = 9
 	KazeUI:RegisterText(OpticText, true)
 
-	-- Rotating planetary HUD visualizer loop
+	-- Multi-directional rotation loop
 	task.spawn(function()
 		local rot = 0
 		while SideHUD and SideHUD.Parent do
-			rot = rot + 1.5
-			OpticRing.Rotation = rot
-			local scale = 1.0 + math.sin(tick() * 4) * 0.08
+			rot = rot + 1.2
+			OpticRingOuter.Rotation = rot
+			OpticRingInner.Rotation = -rot * 1.5
+			local scale = 1.0 + math.sin(tick() * 5) * 0.06
 			CoreOptic.Size = UDim2.fromOffset(36 * scale, 36 * scale)
 			task.wait()
 		end
 	end)
 
-	-- Digital Terminal Console Stream (Robot Feedback)
+	-- Rapid-discharge animation on click
+	CoreOptic.MouseButton1Click:Connect(function()
+		PlaySound("Success")
+		PushConsoleLog(GetTimestamp() .. " [SYS] Optic burst discharge")
+		local b = Instance.new("Frame", SideHUD)
+		b.Size = UDim2.fromOffset(36, 36)
+		b.Position = UDim2.fromScale(0.5, 0.4)
+		b.AnchorPoint = Vector2.new(0.5, 0.5)
+		b.BackgroundColor3 = KazeUI.GlowColor
+		b.BackgroundTransparency = 0.5
+		Instance.new("UICorner", b).CornerRadius = UDim.new(1, 0)
+		
+		TweenService:Create(b, TweenInfo.new(0.4), {
+			Size = UDim2.fromOffset(90, 90),
+			BackgroundTransparency = 1
+		}):Play()
+		game:GetService("Debris"):AddItem(b, 0.5)
+	end)
+
+	-- Real-time scrolling Aerospace Monospace compiler logs
 	local TerminalBox = Instance.new("Frame", SideBar)
-	TerminalBox.Size = UDim2.new(1, -12, 0, 80)
-	TerminalBox.Position = UDim2.new(0, 6, 1, -86)
+	TerminalBox.Size = UDim2.new(1, -12, 0, 92)
+	TerminalBox.Position = UDim2.new(0, 6, 1, -98)
 	TerminalBox.BackgroundColor3 = Color3.fromRGB(4, 5, 8)
 	Instance.new("UICorner", TerminalBox).CornerRadius = UDim.new(0, 2)
+	
 	local termStroke = Instance.new("UIStroke", TerminalBox)
 	termStroke.Thickness = 1
 	termStroke.Color = KazeUI.CurrentTheme.Border
@@ -2648,28 +2703,28 @@ function KazeUI:CreateWindow(config)
 	TerminalLabel.BackgroundTransparency = 1
 	TerminalLabel.Font = Enum.Font.Code
 	TerminalLabel.TextSize = 8
-	TerminalLabel.TextColor3 = Color3.fromRGB(0, 255, 100)
+	TerminalLabel.TextColor3 = Color3.fromRGB(0, 230, 255)
 	TerminalLabel.TextXAlignment = Enum.TextXAlignment.Left
 	TerminalLabel.TextYAlignment = Enum.TextYAlignment.Bottom
 	TerminalLabel.TextWrapped = true
-	TerminalLabel.Text = "[SYSTEM INITIALIZATION...]\n[ONLINE]"
+	TerminalLabel.Text = "[INITIALIZATION OK]\n[SECURE LINE LINKED]"
 
-	local logHistory = {"[SYS] Core initialized."}
+	local logHistory = {GetTimestamp() .. " [SYS] System starting..."}
 	KazeUI.ConsoleCallback = function(text)
 		table.insert(logHistory, text)
-		if #logHistory > 5 then table.remove(logHistory, 1) end
+		if #logHistory > 7 then table.remove(logHistory, 1) end
 		TerminalLabel.Text = table.concat(logHistory, "\n")
 	end
 
 	local VertDivider = Instance.new("Frame", Content)
 	VertDivider.Size = UDim2.new(0, 1, 1, 0)
-	VertDivider.Position = UDim2.fromOffset(195, 0)
+	VertDivider.Position = UDim2.fromOffset(SIDEBAR_W, 0)
 	VertDivider.BorderSizePixel = 0
 	KazeUI:OnThemeChanged(VertDivider, function(t) VertDivider.BackgroundColor3 = t.Border end)
 
 	local Pages = Instance.new("Frame", Content)
-	Pages.Position = UDim2.fromOffset(196, 0)
-	Pages.Size = UDim2.new(1, -196, 1, 0)
+	Pages.Position = UDim2.fromOffset(SIDEBAR_W + 1, 0)
+	Pages.Size = UDim2.new(1, -(SIDEBAR_W + 1), 1, 0)
 	Pages.BorderSizePixel = 0
 	KazeUI:AddPanel(Pages, -0.01)
 
@@ -2679,19 +2734,19 @@ function KazeUI:CreateWindow(config)
 		PlaySound("Click")
 		local tInfo = TweenInfo.new(0.3, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
 		if isSidebarOpen then
-			TweenService:Create(SideBarMask, tInfo, {Size = UDim2.new(0, 195, 1, 0)}):Play()
-			TweenService:Create(VertDivider, tInfo, {Position = UDim2.new(0, 195, 0, 0), BackgroundTransparency = 0}):Play()
-			TweenService:Create(Pages, tInfo, {Position = UDim2.new(0, 196, 0, 0), Size = UDim2.new(1, -196, 1, 0)}):Play()
+			TweenService:Create(SideBarMask, tInfo, {Size = UDim2.new(0, SIDEBAR_W, 1, 0)}):Play()
+			TweenService:Create(VertDivider, tInfo, {Position = UDim2.fromOffset(SIDEBAR_W, 0), BackgroundTransparency = 0}):Play()
+			TweenService:Create(Pages, tInfo, {Position = UDim2.fromOffset(SIDEBAR_W + 1, 0), Size = UDim2.new(1, -(SIDEBAR_W + 1), 1, 0)}):Play()
 		else
 			TweenService:Create(SideBarMask, tInfo, {Size = UDim2.new(0, 0, 1, 0)}):Play()
-			TweenService:Create(VertDivider, tInfo, {Position = UDim2.new(0, 0, 0, 0), BackgroundTransparency = 1}):Play()
-			TweenService:Create(Pages, tInfo, {Position = UDim2.new(0, 0, 0, 0), Size = UDim2.new(1, 0, 1, 0)}):Play()
+			TweenService:Create(VertDivider, tInfo, {Position = UDim2.fromOffset(0, 0), BackgroundTransparency = 1}):Play()
+			TweenService:Create(Pages, tInfo, {Position = UDim2.fromOffset(0, 0), Size = UDim2.new(1, 0, 1, 0)}):Play()
 		end
 	end)
 
 	local TabsScroller = Instance.new("ScrollingFrame", SideBar)
-	TabsScroller.Position = UDim2.fromOffset(6, 105)
-	TabsScroller.Size = UDim2.new(1, -12, 1, -195)
+	TabsScroller.Position = UDim2.fromOffset(6, 115)
+	TabsScroller.Size = UDim2.new(1, -12, 1, -215)
 	TabsScroller.BackgroundTransparency = 1
 	TabsScroller.ScrollBarThickness = 1
 	TabsScroller.ScrollBarImageColor3 = Color3.fromRGB(40, 80, 120)
@@ -2754,7 +2809,7 @@ function KazeUI:CreateWindow(config)
 			KazeUI.IsResizing = true
 			resizeTouchID = input
 			PlaySound("Hover")
-			PushConsoleLog("[SYS] Recalibrating spatial grid...")
+			PushConsoleLog(GetTimestamp() .. " [SYS] Calibrating terminal grid...")
 
 			resizeStartSize = Vector2.new(Window.AbsoluteSize.X / UIScale.Scale, Window.AbsoluteSize.Y / UIScale.Scale)
 			resizeStartPos = Vector2.new(input.Position.X, input.Position.Y)
@@ -2805,8 +2860,8 @@ function KazeUI:CreateWindow(config)
 	}
 
 	function Win:CreateConfigManager(tab)
-		local sec = tab:SectionUI("Parameters Core")
-		local cfgName = "Aegis_Param"
+		local sec = tab:SectionUI("Stored Hardware Matrices")
+		local cfgName = "Aegis_Params"
 
 		local function getConfigs()
 			local list = {}
@@ -2822,49 +2877,49 @@ function KazeUI:CreateWindow(config)
 					end
 				end
 			end
-			if #list == 0 then table.insert(list, "Aegis_Param") end
+			if #list == 0 then table.insert(list, "Aegis_Params") end
 			return list
 		end
 
-		sec:TextBox({Title = "Data Segment Key", Default = "Aegis_Param", Callback = function(v) cfgName = v end})
+		sec:TextBox({Title = "Matrix State Sector", Default = "Aegis_Params", Callback = function(v) cfgName = v end})
 		
 		local configDropdown
-		sec:Button({Title = "Commit Stored States", Callback = function() 
+		sec:Button({Title = "Archive Spatial Coordinates", Callback = function() 
 			KazeUI:SaveConfig(cfgName) 
 			if configDropdown then configDropdown:Refresh(getConfigs()) end
 		end})
 
 		configDropdown = sec:Dropdown({
-			Title = "Stored Modules", 
+			Title = "System Presets", 
 			Options = getConfigs(), 
 			Callback = function(v) cfgName = v end
 		})
 
-		sec:Button({Title = "Scan Storage Banks", Callback = function() if configDropdown then configDropdown:Refresh(getConfigs()) end end})
+		sec:Button({Title = "Scan Local Matrices", Callback = function() if configDropdown then configDropdown:Refresh(getConfigs()) end end})
 		sec:Button({Title = "Inject Selected Segment", Callback = function() KazeUI:LoadConfig(cfgName) end})
 		
-		sec:Button({Title = "Purge Parameters File", Callback = function()
+		sec:Button({Title = "Purge Segment File", Callback = function()
 			if delfile then
 				local folder = KazeUI.AuthorName
 				pcall(function() delfile(folder .. "/" .. cfgName .. ".json") end)
-				KazeUI:Notify({Title = "DATA CORRUPTED", Content = "Purged structural parameters: " .. cfgName, Duration = 3})
+				KazeUI:Notify({Title = "DATA CORRUPTED", Content = "Purged segment bank: " .. cfgName, Duration = 3})
 				if configDropdown then configDropdown:Refresh(getConfigs()) end
 			end
 		end})
 	end
 
 	function Win:CreateThemeManager(tab)
-		local sec = tab:SectionUI("Hologram Customizer")
+		local sec = tab:SectionUI("Holographic Optics Settings")
 		
 		sec:ColorPicker({
-			Title = "Optic Signal Pulse (Glow)",
+			Title = "Active Laser Accent Color",
 			Default = KazeUI.GlowColor,
 			Flag = "KazeUI_Theme_GlowColor", 
 			Callback = function(color) KazeUI:SetGlow(color) end
 		})
 
 		sec:Slider({
-			Title = "System Opacity Density",
+			Title = "Terminal Background Alpha",
 			Min = 0,
 			Max = 10,
 			Default = math.floor(KazeUI.BackgroundTransparency * 10),
@@ -2887,7 +2942,7 @@ function KazeUI:CreateWindow(config)
 		Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 3)
 		KazeUI:AddPanel(btn, 0.02, true)
 
-		-- Left Indicator (AegisOS Neon Conduit Bar)
+		-- Left glowing vertical conduit bar
 		local leftIndicator = Instance.new("Frame", btn)
 		leftIndicator.Size = UDim2.new(0, 3, 1, 0)
 		leftIndicator.BackgroundColor3 = KazeUI.GlowColor
@@ -2936,13 +2991,13 @@ function KazeUI:CreateWindow(config)
 		contentLayout.Padding = UDim.new(0, 4)
 		contentLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 
-		-- Tactically Empty Matrix Interface Warning
+		-- Holographic Diagnostic Matrix State Warning
 		local EmptyState = Instance.new("CanvasGroup", page)
 		EmptyState.Size = UDim2.fromScale(1, 1)
 		EmptyState.BackgroundTransparency = 1
 		EmptyState.BorderSizePixel = 0
 		EmptyState.GroupTransparency = 1
-		EmptyState.Visible = true
+		EmptyState.Visible = false -- Explicitly hidden at creation!
 
 		local CenterContent = Instance.new("Frame", EmptyState)
 		CenterContent.Size = UDim2.fromScale(1, 1)
@@ -2965,7 +3020,7 @@ function KazeUI:CreateWindow(config)
 		local stateTitle = Instance.new("TextLabel", CenterContent)
 		stateTitle.Size = UDim2.new(0.9, 0, 0, 18)
 		stateTitle.BackgroundTransparency = 1
-		stateTitle.Text = "SYS_STATUS: INACTIVE MATRIX"
+		stateTitle.Text = "SYSTEM NOTICE: EMPTY MATRIX"
 		stateTitle.Font = Enum.Font.Code
 		stateTitle.TextSize = 12
 		KazeUI:RegisterText(stateTitle, false)
@@ -2973,7 +3028,7 @@ function KazeUI:CreateWindow(config)
 		local stateDesc = Instance.new("TextLabel", CenterContent)
 		stateDesc.Size = UDim2.new(0.9, 0, 0, 30)
 		stateDesc.BackgroundTransparency = 1
-		stateDesc.Text = "Grid cells contain no modules.\nInject structures to initiate processes."
+		stateDesc.Text = "This segment contains no active modules.\nInject structures to initiate execution."
 		stateDesc.Font = Enum.Font.Code
 		stateDesc.TextSize = 10
 		KazeUI:RegisterText(stateDesc, true)
@@ -2991,7 +3046,9 @@ function KazeUI:CreateWindow(config)
 			isStateVisible = false
 			local tw = TweenService:Create(EmptyState, TWEEN_FAST, {GroupTransparency = 1})
 			tw:Play()
-			tw.Completed:Connect(function() if not isStateVisible then EmptyState.Visible = false end end)
+			tw.Completed:Connect(function() 
+				if not isStateVisible then EmptyState.Visible = false end 
+			end)
 		end
 
 		local function updateState()
@@ -3030,7 +3087,7 @@ function KazeUI:CreateWindow(config)
 			TweenService:Create(iconLabel, TWEEN_FAST, {ImageColor3 = KazeUI.GlowColor}):Play()
 			
 			PlaySound("Success")
-			PushConsoleLog("[NAV] Switched matrix to channel: " .. name)
+			PushConsoleLog(GetTimestamp() .. " [NAV] Feed matrix: " .. name)
 		end
 
 		btn.MouseEnter:Connect(function()
@@ -3071,7 +3128,7 @@ function KazeUI:CreateWindow(config)
 		return public
 	end
 
-	-- High frequency initialization boot-up scanner overlay
+	-- High-frequency hardware diagnostic boot shield
 	local BootShield = Instance.new("Frame", ContentClipper)
 	BootShield.Size = UDim2.fromScale(1, 1)
 	BootShield.BackgroundColor3 = Color3.fromRGB(4, 5, 8)
@@ -3084,18 +3141,18 @@ function KazeUI:CreateWindow(config)
 	BootLabel.Font = Enum.Font.Code
 	BootLabel.TextSize = 12
 	BootLabel.TextColor3 = Color3.fromRGB(0, 210, 255)
-	BootLabel.Text = "AEGIS COOPERATIVE SYSTEM [v4.0]\nRUNNING DIAGNOSTICS...\nMEM BANK STATUS: SAFE"
+	BootLabel.Text = "AEGIS COGNITIVE INTERFACE [v4.5]\n\nRUNNING MEM BANK HARDWARE CHECKS...\nLOAD MODULE CHANNELS: INITIALIZING"
 
 	PlaySound("Boot")
 	task.spawn(function()
 		local phases = {
-			"DIAGNOSTICS STARTED...",
-			"LOADING MATRIX SEGMENTS...",
-			"NEURAL CONNECTIONS STABLE...",
-			"BOOT SYSTEM ONLINE NOW."
+			"DIAGNOSTICS: MEMORY ACCESS CONFIRMED",
+			"CONDUIT NETWORKS: SYNAPSE CONNECTION OK",
+			"CALIBRATING OPTICS PULSE... STABLE",
+			"INITIALIZATION COMPLETION OVERRIDE ACTIVATED"
 		}
 		for _, text in ipairs(phases) do
-			BootLabel.Text = "AEGIS COOPERATIVE SYSTEM [v4.0]\n" .. text
+			BootLabel.Text = "AEGIS COGNITIVE INTERFACE [v4.5]\n\n" .. text
 			task.wait(0.3)
 		end
 		TweenService:Create(BootShield, TweenInfo.new(0.4), {BackgroundTransparency = 1}):Play()
