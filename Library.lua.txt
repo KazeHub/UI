@@ -9,7 +9,7 @@
 	- Simplified Themes: Retained only "Obsidian" (default) and "CustomWallpaper".
 	- White Glow Sync: Automatically forces the Glow color to bright White when Obsidian theme is loaded.
 	
-	CUSTOM MODIFICATIONS:
+	CUSTOM MODIFICATIONS & FIXES:
 	- Removed Win:Divider() function.
 	- Configuration System now creates a folder based on the Author's name and saves/loads files from there.
 	- Wallpaper Save/Load Restore fix.
@@ -18,6 +18,7 @@
 	- FIX: Nilagyan ng padding ang notification frame upang maiwasan ang pagkaputol ng shadow at stroke.
 	- FIX: Inalis ang glow effect sa searchbar ng dropdown para sa mas malinis na UI.
 	- FEATURE: Idinagdag ang ganap na suporta para sa Notification Icons (Lucide & Asset IDs, na may adaptive padding at RGB sync!).
+	- BUGFIX: Inayos ang dropdown selected text label na nananatiling "Label" sa simula sa pamamagitan ng agarang text assignment sa initialization.
 --]]
 
 local KazeUI = {}
@@ -818,6 +819,24 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 	arrowIcon.Rotation = 0
 	KazeUI:OnThemeChanged(arrowIcon, function(t) arrowIcon.ImageColor3 = t.MutedText end)
 
+	-- Pre-determine initial text before text label instantiation to prevent Roblox "Label" fallback
+	local initialText = ""
+	if isMulti then
+		local count = 0
+		local firstVal = ""
+		for k, v in pairs(selectedMulti) do
+			if v then 
+				count = count + 1 
+				if firstVal == "" then firstVal = k end
+			end
+		end
+		if count == 0 then initialText = "None"
+		elseif count == 1 then initialText = firstVal
+		else initialText = count .. " Selected" end
+	else
+		initialText = tostring(selectedSingle)
+	end
+
 	local selectedLabel = Instance.new("TextLabel", header)
 	selectedLabel.Size = UDim2.new(0.5, -24, 1, 0)
 	selectedLabel.Position = UDim2.new(0.5, 0, 0, 0)
@@ -826,12 +845,31 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 	selectedLabel.TextSize = 11
 	selectedLabel.TextXAlignment = Enum.TextXAlignment.Right
 	selectedLabel.TextTruncate = Enum.TextTruncate.AtEnd
+	selectedLabel.Text = initialText -- BUGFIX: Explicitly initialize Text instantly on creation to bypass default Roblox Text
 	KazeUI:RegisterText(selectedLabel, true)
 
 	local clickBtn = Instance.new("TextButton", header)
 	clickBtn.Size = UDim2.fromScale(1, 1)
 	clickBtn.BackgroundTransparency = 1
 	clickBtn.Text = ""
+
+	local function UpdateHeaderVisual()
+		if isMulti then
+			local count = 0
+			local firstVal = ""
+			for k, v in pairs(selectedMulti) do
+				if v then 
+					count = count + 1 
+					if firstVal == "" then firstVal = k end
+				end
+			end
+			if count == 0 then selectedLabel.Text = "None"
+			elseif count == 1 then selectedLabel.Text = firstVal
+			else selectedLabel.Text = count .. " Selected" end
+		else
+			selectedLabel.Text = tostring(selectedSingle)
+		end
+	end
 
 	local searchWrapper = Instance.new("Frame")
 	searchWrapper.Size = UDim2.new(1, -20, 0, 32)
@@ -1824,7 +1862,6 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 	layout.Padding = UDim.new(0, 5)
 
 	local header = Instance.new("Frame")
-	header.Name = "Header"
 	header.Size = UDim2.new(1, -20, 0, 38)
 	header.BackgroundTransparency = 1
 	header.LayoutOrder = 1
@@ -1878,6 +1915,7 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 
 	local whiteOverlay = Instance.new("Frame", svMap)
 	whiteOverlay.Size = UDim2.fromScale(1, 1)
+	whiteOverlay.BackgroundTransparency = 1
 	whiteOverlay.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
 	local wg = Instance.new("UIGradient", whiteOverlay)
 	wg.Transparency = NumberSequence.new{NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(1, 1)}
@@ -1885,6 +1923,7 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 
 	local blackOverlay = Instance.new("Frame", svMap)
 	blackOverlay.Size = UDim2.fromScale(1, 1)
+	blackOverlay.BackgroundTransparency = 1
 	blackOverlay.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 	local bg = Instance.new("UIGradient", blackOverlay)
 	bg.Transparency = NumberSequence.new{NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(1, 0)}
@@ -2257,7 +2296,7 @@ AttachElementsToAPI = function(apiTable, parentFrame)
 	end
 
 	function apiTable:Toggle(arg1, arg2, arg3, arg4, arg5)
-		local title, desc, def, callback, flag
+		local title, desc, def, callback, flag = "", "", false, nil, nil
 		if type(arg1) == "table" then
 			title, desc, def, callback, flag = arg1.Title, (arg1.Description or arg1.Content or ""), arg1.Default, arg1.Callback, arg1.Flag
 		else
@@ -2267,7 +2306,7 @@ AttachElementsToAPI = function(apiTable, parentFrame)
 	end
 
 	function apiTable:TextBox(arg1, arg2, arg3, arg4, arg5)
-		local title, place, def, callback, flag
+		local title, place, def, callback, flag = "", "", "", nil, nil
 		if type(arg1) == "table" then
 			title, place, def, callback, flag = arg1.Title, arg1.Placeholder, arg1.Default, arg1.Callback, arg1.Flag
 		else
@@ -2277,7 +2316,7 @@ AttachElementsToAPI = function(apiTable, parentFrame)
 	end
 
 	function apiTable:Slider(arg1, arg2, arg3, arg4, arg5, arg6)
-		local title, min, max, def, callback, flag
+		local title, min, max, def, callback, flag = "", 0, 100, 50, nil, nil
 		if type(arg1) == "table" then
 			title, min, max, def, callback, flag = arg1.Title, arg1.Min, arg1.Max, arg1.Default, arg1.Callback, arg1.Flag
 		else
@@ -2287,7 +2326,7 @@ AttachElementsToAPI = function(apiTable, parentFrame)
 	end
 
 	function apiTable:Dropdown(arg1, arg2, arg3, arg4, arg5, arg6)
-		local title, vals, def, callback, multi, flag
+		local title, vals, def, callback, multi, flag = "", {}, nil, nil, false, nil
 		if type(arg1) == "table" then
 			title, vals, def, multi, callback, flag = arg1.Title, (arg1.Values or arg1.Options), arg1.Default, (arg1.Multi or false), arg1.Callback, arg1.Flag
 		else
@@ -2297,7 +2336,7 @@ AttachElementsToAPI = function(apiTable, parentFrame)
 	end
 
 	function apiTable:ColorPicker(arg1, arg2, arg3, arg4)
-		local title, def, cb, flag
+		local title, def, cb, flag = "", Color3.fromRGB(255, 255, 255), nil, nil
 		if type(arg1) == "table" then
 			title, def, cb, flag = arg1.Title, arg1.Default, arg1.Callback, arg1.Flag
 		else
@@ -2307,7 +2346,7 @@ AttachElementsToAPI = function(apiTable, parentFrame)
 	end
 	
 	function apiTable:Keybind(arg1, arg2, arg3, arg4)
-		local title, def, cb, flag
+		local title, def, cb, flag = "", Enum.KeyCode.Unknown, nil, nil
 		if type(arg1) == "table" then
 			title, def, cb, flag = arg1.Title, arg1.Default, arg1.Callback, arg1.Flag
 		else
