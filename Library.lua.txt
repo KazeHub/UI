@@ -1,30 +1,31 @@
 --[[
 	Kaze UI Library v3.5 (Premium Bubble Redesign & Engine Rewrite)
-	Inspirasyon: Modern Mobile Chat Bubbles, iMessage, at Discord Mobile.
-	Pagpapanatili: 100% Backwards Compatibility sa Bersyon 1, 2, 2.2, 2.3, at 3.0 APIs
+	Inspired by: Modern Mobile Chat Bubbles, iMessage, and Discord Mobile.
+	Retained: 100% Backwards Compatibility with Version 1, 2, 2.2, 2.3, and 3.0 APIs
 	
-	MGA PAGBABAGO SA V3.5:
-	- Modal Resize Engine: Buong isinulat muli ang window scaling. Strict input capturing, multi-touch isolation, at ScrollLock habang nagre-resize.
-	- Drag Exclusion: Inayos ang bug kung saan nagkakaroon ng conflict ang pag-resize at pag-drag.
-	- Simplified Themes: Obsidian (default) at CustomWallpaper na lamang ang itinira.
-	- White Glow Sync: Awtomatikong pinipilit ang kulay ng Glow sa maliwanag na Puti kapag Obsidian theme ang ginamit.
+	UPDATES IN V3.5:
+	- Modal Resize Engine: Completely rewritten window scaling. Introduced strict input capturing, multi-touch isolation, and ScrollLock during resize.
+	- Drag Exclusion: Fixed a bug where resizing and dragging could conflict.
+	- Simplified Themes: Retained only "Obsidian" (default) and "CustomWallpaper".
+	- White Glow Sync: Automatically forces the Glow color to bright White when Obsidian theme is loaded.
 	
-	MGA CUSTOM NA PAGBABAGO AT PAGSASAAYOS:
-	- Inalis ang Win:Divider() na function.
-	- Ang Config System ay gumagawa na ng folder base sa pangalan ng Author at doon nagse-save/naglo-load ng mga file.
+	CUSTOM MODIFICATIONS & FIXES:
+	- Removed Win:Divider() function.
+	- Configuration System now creates a folder based on the Author's name and saves/loads files from there.
 	- Wallpaper Save/Load Restore fix.
-	- Decoupled Notification Background mula sa dynamic transparency overlays.
-	- Pinahusay na Notification Title support para sa Color3 at rainbow RGB animation cycles.
-	- PAGSASAAYOS: Nilagyan ng padding ang notification frame upang maiwasan ang pagkaputol ng shadow at stroke.
-	- PAGSASAAYOS: Inalis ang glow effect sa searchbar ng dropdown para sa mas malinis na UI.
-	- PAGSASAAYOS: Idinagdag ang dynamic auto-sizing (AutomaticSize.Y) sa notifications para hindi na lumagpas ang text kahit gaano ito kahaba.
-	- PAGSASAAYOS: Idinagdag ang Check/Dismiss button sa kanang bahagi sa itaas ng notification para pwede itong isara agad ng user.
+	- Decoupled Notification Background from dynamic transparency overlays.
+	- Enhanced Notification Title support for Color3 and rainbow RGB animation cycles.
+	- FIX: Nilagyan ng padding ang notification frame upang maiwasan ang pagkaputol ng shadow at stroke.
+	- FIX: Inalis ang glow effect sa searchbar ng dropdown para sa mas malinis na UI.
+	- FEATURE: Idinagdag ang ganap na suporta para sa Notification Icons (Lucide & Asset IDs, na may adaptive padding at RGB sync!).
+	- BUGFIX: Inayos ang dropdown selected text label na nananatiling "Label" sa simula sa pamamagitan ng agarang text assignment sa initialization.
+	- FIX (LATEST): Dynamic notification scaling para sa mahahabang mensahe at premium close button gamit ang Texture ID 93898873302694.
 --]]
 
 local KazeUI = {}
 KazeUI.__index = KazeUI
 
--- Mga Serbisyo ng Roblox
+-- Roblox Services
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local UIS = game:GetService("UserInputService")
@@ -33,7 +34,7 @@ local HttpService = game:GetService("HttpService")
 local LP = Players.LocalPlayer
 local Mouse = LP:GetMouse()
 
--- Premium Bubble Themes Configuration (Mataas na Contrast)
+-- Premium Bubble Themes Configuration (High-Contrast Settings)
 KazeUI.Themes = {
 	Obsidian = {
 		Name = "Obsidian",
@@ -59,17 +60,17 @@ KazeUI.Themes = {
 	}
 }
 
--- Pandaigdigang Estado (Default ay Obsidian)
+-- Global State (Obsidian Default)
 KazeUI.CurrentTheme = KazeUI.Themes.Obsidian
 KazeUI.GlowColor = Color3.fromRGB(255, 255, 255)
 KazeUI.BackgroundColor = KazeUI.CurrentTheme.Background
 KazeUI.BackgroundTransparency = 0.15
 KazeUI.Flags = {}
 KazeUI.ActiveWindows = {}
-KazeUI.IsResizing = false -- Lock state para sa modal resizing
-KazeUI.AuthorName = "Unknown" -- Dito sine-save ang pangalan ng may-akda para sa Config Folder
+KazeUI.IsResizing = false -- Modal lock state
+KazeUI.AuthorName = "Unknown" -- Stores the author name for Config Folder
 
--- UI element registries para sa pagpapalit ng tema
+-- UI element registries for theme switching
 KazeUI.TextElements = {}
 KazeUI.MutedTextElements = {}
 KazeUI.BorderElements = {}
@@ -82,7 +83,7 @@ KazeUI.NeonTweens = {}
 KazeUI.PanelElements = {}
 KazeUI.GlowCallbacks = {}
 
--- Mga Spring at Smooth na Animasyon
+-- Spring & Smooth Animation Configurations
 local TWEEN_FAST = TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 local TWEEN_SPRING = TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
 local TWEEN_SMOOTH = TweenInfo.new(0.35, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
@@ -93,7 +94,7 @@ local function RegisterFlag(flag, getFunc, setFunc)
 	end
 end
 
--- Pag-setup ng ScreenGui (Sumusuporta sa CoreGui na may PlayerGui bilang fallback)
+-- ScreenGui Setup (Supports CoreGui & PlayerGui fallback)
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "KazeUI"
 ScreenGui.ResetOnSpawn = false
@@ -106,7 +107,7 @@ if not success or not parent then
 end
 ScreenGui.Parent = parent
 
--- Sentralisadong Sistema para I-lock ang Camera
+-- Centralized Camera Locker System
 local CameraLocker = Instance.new("TextButton")
 CameraLocker.Name = "CameraLocker"
 CameraLocker.Size = UDim2.fromOffset(0, 0)
@@ -125,7 +126,7 @@ local function UnlockCamera()
 	CameraLocker.Modal = false
 end
 
--- Hiwalay na ScreenGui para sa mga Notification
+-- Separate notification screen
 local NotifScreenGui = Instance.new("ScreenGui")
 NotifScreenGui.Name = "KazeUINotifications"
 NotifScreenGui.ResetOnSpawn = false
@@ -133,7 +134,7 @@ NotifScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 NotifScreenGui.DisplayOrder = 999999
 NotifScreenGui.Parent = parent
 
--- Pag-setup ng layout ng Notification Container
+-- Notification layout setup
 local NotifContainer = Instance.new("Frame")
 local notifLayout = Instance.new("UIListLayout", NotifContainer)
 notifLayout.SortOrder = Enum.SortOrder.LayoutOrder
@@ -219,7 +220,7 @@ local function FormatImage(id)
 end
 
 -- ==========================================
--- Dinamikong Pag-sync ng Kulay at Registries
+-- Dynamic Color Sync & Registries
 -- ==========================================
 function KazeUI:OnGlowChanged(inst, callback)
 	table.insert(KazeUI.GlowCallbacks, {Inst = inst, Callback = callback})
@@ -306,7 +307,7 @@ local function MakeDraggable(dragPart, targetPart)
 	end
 	
 	dragPart.InputBegan:Connect(function(input)
-		-- Strict Modal Exclusion: Bawal i-drag ang TopBar kung kasalukuyang nagre-resize ang user
+		-- Strict Modal Exclusion: Do not permit TopBar dragging if the user is resizing
 		if KazeUI.IsResizing then return end
 		
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
@@ -346,9 +347,9 @@ local function MakeDraggable(dragPart, targetPart)
 	end
 end
 
--- =======================================================
--- Theme & Transparency Engine (Translucent Bubble Panels)
--- =======================================================
+-- ==========================================
+-- Theme & Transparency Engine (Translucent Bubbles)
+-- ==========================================
 function KazeUI.GetColor(elevation)
 	local theme = KazeUI.CurrentTheme
 	local h, s, v = Color3.toHSV(theme.Background)
@@ -369,7 +370,7 @@ function KazeUI:AddPanel(inst, elevation, ignoreColorUpdate, ignoreTransparencyU
 			inst.BackgroundColor3 = KazeUI.GetColor(elevation or 0)
 		end
 		
-		-- Dynamic bubble transparency scaling
+		-- Manage bubble-first translucent layers dynamically
 		if not ignoreTransparencyUpdate then
 			local baseTrans = KazeUI.BackgroundTransparency or 0.15
 			if elevation and elevation > 0 then
@@ -421,7 +422,7 @@ function KazeUI:SetTheme(themeName)
 	KazeUI:SetBackgroundColor(targetTheme.Background)
 	KazeUI:SetTransparency(KazeUI.BackgroundTransparency or 0.15)
 	
-	-- Awtomatikong pinipilit ang White Glow sa Obsidian selection
+	-- Automatically force White Glow on Obsidian Selection
 	if themeName == "Obsidian" then
 		KazeUI:SetGlow(Color3.fromRGB(255, 255, 255))
 	end
@@ -462,7 +463,7 @@ function KazeUI:SetTheme(themeName)
 	end
 end
 
--- Glow loop na may mataas na kalidad na breathing transition
+-- Glow loop with high quality breathing effect
 local function StartNeonLoop(target)
 	if not target then return end
 	local propName = pcall(function() return target.Color end) and "Color" or "BackgroundColor3"
@@ -522,8 +523,6 @@ function KazeUI:SetGlow(color)
 end
 
 -- Premium Bubble-style Notification Card
--- PAGSASAAYOS: Idinagdag ang dynamic auto-sizing para maiwasan ang pag-overflow ng text
--- PAGSASAAYOS: Idinagdag ang dismiss button (check icon) sa kanang bahagi sa itaas
 function KazeUI:Notify(config)
 	config = config or {}
 	local title = tostring(config.Title or "Notification")
@@ -532,10 +531,26 @@ function KazeUI:Notify(config)
 	local titleColor = config.TitleColor or config.Color
 	local isRGBTitle = config.RGBTitle or (titleColor == "RGB")
 	
-	-- Suporta para sa mga Notification Icons
+	-- Support for dynamic Icons inside notifications
 	local iconId = config.Icon and FormatImage(config.Icon) or ""
 	local hasIcon = (iconId ~= "")
 	local iconColor = config.IconColor or KazeUI.GlowColor
+
+	-- Exact dimensions calculation to prevent text clipping/overflow
+	local textPadding = hasIcon and 54 or 16
+	local rightSafetyPadding = 36 -- Leftover space for the close button
+	local maxTextWidth = 320 - 24 - textPadding - rightSafetyPadding
+
+	local titleSize = TextService:GetTextSize(title, 13, Enum.Font.GothamBold, Vector2.new(maxTextWidth, 1000))
+	local contentSize = TextService:GetTextSize(content, 11, Enum.Font.Gotham, Vector2.new(maxTextWidth, 2000))
+
+	local titleHeight = math.max(16, math.ceil(titleSize.Y))
+	local contentHeight = math.max(14, math.ceil(contentSize.Y))
+	
+	-- 12 (top margin) + title + 4 (gap) + content + 14 (bottom gap for progress bar margin)
+	local calculatedCardHeight = 12 + titleHeight + 4 + contentHeight + 14
+	local finalCardHeight = math.max(68, calculatedCardHeight)
+	local finalHolderHeight = finalCardHeight + 20 -- Spacing for structural layouts
 
 	local notifHolder = Instance.new("Frame")
 	notifHolder.Name = "NotifHolder"
@@ -544,31 +559,20 @@ function KazeUI:Notify(config)
 	notifHolder.BorderSizePixel = 0
 	notifHolder.ClipsDescendants = true
 	notifHolder.Parent = NotifContainer
-	
-	-- PAGSASAAYOS: Gamit ang AutomaticSize.Y para dynamic na lumaki base sa haba ng text
-	notifHolder.AutomaticSize = Enum.AutomaticSize.Y
 
 	local notifFrame = Instance.new("Frame")
 	notifFrame.Name = "NotifFrame"
-	notifFrame.Size = UDim2.new(1, -24, 0, 0)
-	notifFrame.Position = UDim2.new(1.3, 0, 0, 4)
+	notifFrame.Size = UDim2.new(1, -24, 0, finalCardHeight)
+	notifFrame.Position = UDim2.new(1.3, 0, 0, 10)
 	notifFrame.BorderSizePixel = 0
 	notifFrame.Parent = notifHolder
-	notifFrame.AutomaticSize = Enum.AutomaticSize.Y
 	
-	-- Notification utilizes the Medium Shape rule (20px)
+	-- Notification utilizes the Medium Shape rule (20px) for compact premium bubbles
 	Instance.new("UICorner", notifFrame).CornerRadius = UDim.new(0, 20)
 	
-	-- Maiwasang maapektuhan ang notification frame ng window transparency sliders o glass effects
+	-- Prevent notification frames from adapting to background transparency sliders / glass effects
 	KazeUI:AddPanel(notifFrame, 0.04, false, true)
-	notifFrame.BackgroundTransparency = 0.08 -- Static, high-readability semi-transparency
-
-	-- UI Padding sa loob ng notif frame para manatiling nasa loob ang lahat ng elements
-	local notifPadding = Instance.new("UIPadding", notifFrame)
-	notifPadding.PaddingTop = UDim.new(0, 12)
-	notifPadding.PaddingBottom = UDim.new(0, 16) -- Sapat na puwang para sa progress bar sa ibaba
-	notifPadding.PaddingLeft = UDim.new(0, 14)
-	notifPadding.PaddingRight = UDim.new(0, 14)
+	notifFrame.BackgroundTransparency = 0.08 -- Static, high-readability transparency
 
 	local shadow = Instance.new("Frame", notifFrame)
 	shadow.Size = UDim2.new(1, 6, 1, 6)
@@ -577,87 +581,60 @@ function KazeUI:Notify(config)
 	shadow.ZIndex = -1
 	local shCorner = Instance.new("UICorner", shadow)
 	shCorner.CornerRadius = UDim.new(0, 22)
-	local shStroke = Instance.new("UIStroke", shadow)
-	shStroke.Thickness = 3
-	shStroke.Color = Color3.fromRGB(0, 0, 0)
-	shStroke.Transparency = 0.8
+	local shadowStroke = Instance.new("UIStroke", shadow)
+	shadowStroke.Thickness = 3
+	shadowStroke.Color = Color3.fromRGB(0, 0, 0)
+	shadowStroke.Transparency = 0.8
 
 	local stroke = Instance.new("UIStroke", notifFrame)
 	stroke.Thickness = 1.2
 	KazeUI:RegisterBorder(stroke)
 
-	-- Kalkulahin ang offset ng text depende kung may icon o wala
-	local iconSize = 24
-	local iconPadding = 10
-	local leftTextOffset = hasIcon and (iconSize + iconPadding) or 0
-	-- Right offset: Naglaan ng puwang para sa check/dismiss button (20px) + spacing (8px) = 28px
-	local rightTextOffset = 28
-
-	-- Isang container frame para sa mga text na naka-automatic height
-	local textContainer = Instance.new("Frame", notifFrame)
-	textContainer.Name = "TextContainer"
-	textContainer.BackgroundTransparency = 1
-	textContainer.BorderSizePixel = 0
-	textContainer.Position = UDim2.new(0, leftTextOffset, 0, 0)
-	textContainer.Size = UDim2.new(1, -leftTextOffset - rightTextOffset, 0, 0)
-	textContainer.AutomaticSize = Enum.AutomaticSize.Y
-
-	local textLayout = Instance.new("UIListLayout", textContainer)
-	textLayout.SortOrder = Enum.SortOrder.LayoutOrder
-	textLayout.Padding = UDim.new(0, 3)
-
-	-- Notification Icon (Optional)
+	-- Setup optional notification Icon elements
 	local iconLabel
 	if hasIcon then
 		iconLabel = Instance.new("ImageLabel", notifFrame)
 		iconLabel.Name = "NotifIcon"
 		iconLabel.Size = UDim2.fromOffset(24, 24)
-		iconLabel.Position = UDim2.fromOffset(0, 0) -- Naka-align sa pinaka-itaas na bahagi ng text
+		iconLabel.Position = UDim2.fromOffset(16, 16) -- Kept balanced at top left
 		iconLabel.BackgroundTransparency = 1
 		iconLabel.Image = iconId
 		iconLabel.ImageColor3 = iconColor
 		iconLabel.ScaleType = Enum.ScaleType.Fit
 	end
 
-	-- PAGSASAAYOS: Check/Dismiss Button sa kanang bahagi sa itaas
-	local dismissBtn = Instance.new("ImageButton", notifFrame)
-	dismissBtn.Name = "DismissButton"
-	dismissBtn.Size = UDim2.fromOffset(18, 18)
-	dismissBtn.Position = UDim2.new(1, 0, 0, 0)
-	dismissBtn.AnchorPoint = Vector2.new(1, 0)
-	dismissBtn.BackgroundTransparency = 1
-	dismissBtn.Image = "rbxassetid://107150227368485" -- Premium Checkmark Icon
-	dismissBtn.ImageColor3 = KazeUI.CurrentTheme.MutedText
-	dismissBtn.ScaleType = Enum.ScaleType.Fit
-	dismissBtn.ZIndex = 20
+	-- Premium Close Button using Texture ID 93898873302694
+	local closeBtn = Instance.new("ImageButton")
+	closeBtn.Name = "CloseButton"
+	closeBtn.Size = UDim2.fromOffset(16, 16)
+	closeBtn.Position = UDim2.new(1, -12, 0, 12)
+	closeBtn.AnchorPoint = Vector2.new(1, 0)
+	closeBtn.BackgroundTransparency = 1
+	closeBtn.Image = "rbxassetid://93898873302694"
+	closeBtn.ImageTransparency = 0.4
+	closeBtn.ZIndex = 10
+	closeBtn.Parent = notifFrame
+	KazeUI:OnThemeChanged(closeBtn, function(t) closeBtn.ImageColor3 = t.Text end)
 
-	dismissBtn.MouseEnter:Connect(function()
-		TweenService:Create(dismissBtn, TWEEN_FAST, {ImageColor3 = KazeUI.GlowColor}):Play()
-	end)
-	dismissBtn.MouseLeave:Connect(function()
-		TweenService:Create(dismissBtn, TWEEN_FAST, {ImageColor3 = KazeUI.CurrentTheme.MutedText}):Play()
-	end)
-
-	local titleLab = Instance.new("TextLabel", textContainer)
-	titleLab.Size = UDim2.new(1, 0, 0, 0)
-	titleLab.AutomaticSize = Enum.AutomaticSize.Y
+	local titleLab = Instance.new("TextLabel", notifFrame)
+	titleLab.Size = UDim2.new(0, maxTextWidth, 0, titleHeight)
+	titleLab.Position = UDim2.fromOffset(textPadding, 12)
 	titleLab.BackgroundTransparency = 1
 	titleLab.Text = title
 	titleLab.Font = Enum.Font.GothamBold
 	titleLab.TextSize = 13
 	titleLab.TextXAlignment = Enum.TextXAlignment.Left
 	titleLab.TextWrapped = true
-	titleLab.LayoutOrder = 1
 
-	-- Dynamic RGB Color Rainbow Cycle o direktang Color3 assignment
-	local rgbConnection
+	-- Dynamic RGB Color Rainbow Cycle or direct Color3 assignment
 	if isRGBTitle then
-		rgbConnection = game:GetService("RunService").RenderStepped:Connect(function()
+		local connection
+		connection = game:GetService("RunService").RenderStepped:Connect(function()
 			if not titleLab or not titleLab.Parent then
-				if rgbConnection then rgbConnection:Disconnect() end
+				connection:Disconnect()
 				return
 			end
-			local hue = (tick() % 4) / 4 -- 4 seconds full loop cycle
+			local hue = (tick() % 4) / 4 -- 4 seconds full color cycle loop
 			local rainbowColor = Color3.fromHSV(hue, 0.8, 1)
 			titleLab.TextColor3 = rainbowColor
 			if iconLabel then
@@ -670,21 +647,20 @@ function KazeUI:Notify(config)
 		KazeUI:RegisterText(titleLab, false)
 	end
 
-	local contentLab = Instance.new("TextLabel", textContainer)
-	contentLab.Size = UDim2.new(1, 0, 0, 0)
-	contentLab.AutomaticSize = Enum.AutomaticSize.Y
+	local contentLab = Instance.new("TextLabel", notifFrame)
+	contentLab.Size = UDim2.new(0, maxTextWidth, 0, contentHeight)
+	contentLab.Position = UDim2.fromOffset(textPadding, 12 + titleHeight + 4)
 	contentLab.BackgroundTransparency = 1
 	contentLab.Text = content
 	contentLab.Font = Enum.Font.Gotham
 	contentLab.TextSize = 11
-	contentLab.TextWrapped = true
 	contentLab.TextXAlignment = Enum.TextXAlignment.Left
-	contentLab.LayoutOrder = 2
+	contentLab.TextWrapped = true
 	KazeUI:RegisterText(contentLab, true)
 
 	local progressTrack = Instance.new("Frame", notifFrame)
-	progressTrack.Size = UDim2.new(1, 28, 0, 2) -- Lumalagpas nang kaunti sa padding para sumayad sa gilid
-	progressTrack.Position = UDim2.new(0, -14, 1, 14) -- Nakapuwesto sa pinakailalim ng frame
+	progressTrack.Size = UDim2.new(1, -32, 0, 2.5)
+	progressTrack.Position = UDim2.new(0, 16, 1, -6)
 	progressTrack.BorderSizePixel = 0
 	Instance.new("UICorner", progressTrack).CornerRadius = UDim.new(1, 0)
 	KazeUI:OnThemeChanged(progressTrack, function(t) progressTrack.BackgroundColor3 = t.Border end)
@@ -698,43 +674,55 @@ function KazeUI:Notify(config)
 	
 	KazeUI:OnGlowChanged(progressBar, function(c) progressBar.BackgroundColor3 = c end)
 
-	-- Bubble slide animations
+	-- Transition Animations
+	TweenService:Create(notifHolder, TweenInfo.new(0.4, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {Size = UDim2.new(1, 0, 0, finalHolderHeight)}):Play()
 	TweenService:Create(notifFrame, TweenInfo.new(0.5, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Position = UDim2.new(0, 12, 0, 10)}):Play()
 
-	local isClosing = false
-	local function closeNotification()
-		if isClosing then return end
-		isStateVisible = false
-		isClosing = true
+	local isDismissing = false
+	local dismissTweenCon
+	
+	local function dismiss()
+		if isDismissing then return end
+		isDismissing = true
 		
 		local outTween = TweenService:Create(notifFrame, TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.In), {Position = UDim2.new(1.3, 0, 0, 10)})
 		outTween:Play()
-		outTween.Completed:Wait()
 		
-		local shrinkTween = TweenService:Create(notifHolder, TweenInfo.new(0.3, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {Size = UDim2.new(1, 0, 0, 0)})
-		shrinkTween:Play()
-		shrinkTween.Completed:Wait()
-
-		if connection then connection:Disconnect() end
-		StopNeonLoop(progressBar)
-		notifHolder:Destroy()
+		dismissTweenCon = outTween.Completed:Connect(function()
+			dismissTweenCon:Disconnect()
+			local shrinkTween = TweenService:Create(notifHolder, TweenInfo.new(0.3, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {Size = UDim2.new(1, 0, 0, 0)})
+			shrinkTween:Play()
+			shrinkTween.Completed:Connect(function()
+				StopNeonLoop(progressBar)
+				notifHolder:Destroy()
+			end)
+		end)
 	end
 
-	-- Isasara agad ang notification kapag clinick ang dulo/check area sa taas
-	local clickDetector = Instance.new("TextButton", notifFrame)
-	clickDetector.Name = "DismissHitbox"
-	clickDetector.Size = UDim2.fromOffset(36, 36)
-	clickDetector.Position = UDim2.new(1, 10, 0, -10)
-	clickDetector.AnchorPoint = Vector2.new(1, 0)
-	clickDetector.BackgroundTransparency = 1
-	clickDetector.Text = ""
-	clickDetector.ZIndex = 25
-	clickDetector.MouseButton1Click:Connect(closeNotification)
+	-- Interactivity animations for close button
+	closeBtn.MouseEnter:Connect(function()
+		TweenService:Create(closeBtn, TWEEN_FAST, {ImageTransparency = 0, Size = UDim2.fromOffset(18, 18), Position = UDim2.new(1, -11, 0, 11)}):Play()
+	end)
+	closeBtn.MouseLeave:Connect(function()
+		TweenService:Create(closeBtn, TWEEN_FAST, {ImageTransparency = 0.4, Size = UDim2.fromOffset(16, 16), Position = UDim2.new(1, -12, 0, 12)}):Play()
+	end)
+	closeBtn.MouseButton1Down:Connect(function()
+		TweenService:Create(closeBtn, TWEEN_FAST, {Size = UDim2.fromOffset(14, 14), Position = UDim2.new(1, -13, 0, 13)}):Play()
+	end)
+	closeBtn.MouseButton1Click:Connect(dismiss)
 
-	task.spawn(function()
+	-- Auto dismissal handling
+	local autoThread = task.spawn(function()
 		TweenService:Create(progressBar, TweenInfo.new(duration, Enum.EasingStyle.Linear), {Size = UDim2.new(0, 0, 1, 0)}):Play()
 		task.wait(duration)
-		closeNotification()
+		if not isDismissing then
+			dismiss()
+		end
+	end)
+	
+	notifHolder.Destroying:Connect(function()
+		task.cancel(autoThread)
+		if dismissTweenCon then dismissTweenCon:Disconnect() end
 	end)
 end
 
@@ -775,17 +763,17 @@ function KazeUI:LoadConfig(name)
 		if s then
 			local s2, data = pcall(function() return HttpService:JSONDecode(res) end)
 			if s2 and type(data) == "table" then
-				-- Unahin ang pag-load ng theme preset para hindi nito ma-overwrite ang ibang customization
+				-- Load priority flags (like KazeUI_Theme_Preset) before others to ensure live customizations apply cleanly
 				local priorityFlags = {
 					["KazeUI_Theme_Preset"] = true
 				}
 				
-				-- 1. Unang ilapat ang tema
+				-- 1. Apply active theme setup first
 				if data["KazeUI_Theme_Preset"] ~= nil and KazeUI.Flags["KazeUI_Theme_Preset"] then
 					KazeUI.Flags["KazeUI_Theme_Preset"].Set(data["KazeUI_Theme_Preset"])
 				end
 				
-				-- 2. Pagkatapos ay ilapat ang lahat ng iba pang configs
+				-- 2. Populate and apply the remainder of configurations (Wallpapers, sliders, inputs)
 				for flag, val in pairs(data) do
 					if not priorityFlags[flag] then
 						if KazeUI.Flags[flag] then KazeUI.Flags[flag].Set(val) end
@@ -890,7 +878,7 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 	arrowIcon.Rotation = 0
 	KazeUI:OnThemeChanged(arrowIcon, function(t) arrowIcon.ImageColor3 = t.MutedText end)
 
-	-- Tukuyin na agad ang simulang teksto bago mag-instantiate para maiwasan ang Roblox "Label" fallback
+	-- Pre-determine initial text before text label instantiation to prevent Roblox "Label" fallback
 	local initialText = ""
 	if isMulti then
 		local count = 0
@@ -916,7 +904,7 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 	selectedLabel.TextSize = 11
 	selectedLabel.TextXAlignment = Enum.TextXAlignment.Right
 	selectedLabel.TextTruncate = Enum.TextTruncate.AtEnd
-	selectedLabel.Text = initialText -- BUGFIX: Itakda agad ang Text sa simula pa lang upang lagpasan ang default Text
+	selectedLabel.Text = initialText -- BUGFIX: Explicitly initialize Text instantly on creation to bypass default Roblox Text
 	KazeUI:RegisterText(selectedLabel, true)
 
 	local clickBtn = Instance.new("TextButton", header)
@@ -969,7 +957,7 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 	local searchPadding = Instance.new("UIPadding", searchBox)
 	searchPadding.PaddingLeft = UDim.new(0, 10)
 
-	-- Inalis ang dynamic accent color glow habang ginagamit ang searchbar ng dropdown
+	-- Hindi na ito nag-gloglow sa Accent Glow Color kapag naka-focus
 	searchBox.Focused:Connect(function() 
 		TweenService:Create(searchStroke, TWEEN_FAST, {Color = KazeUI.CurrentTheme.Border}):Play()
 	end)
@@ -1006,7 +994,7 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 
 	local function CalcHeight()
 		local count = 0
-		for _, item in ipairs(optionItems) do item.Btn.Visible = (searchBox.Text == "" or string.find(string.lower(item.Text), string.lower(searchBox.Text), 1, true)) ~= nil if item.Btn.Visible then count = count + 1 end end
+		for _, item in ipairs(optionItems) do if item.Btn.Visible then count = count + 1 end end
 		local targetH = math.min(count, 5) * 34
 		TweenService:Create(listContainer, TWEEN_FAST, {Size = UDim2.new(1, -20, 0, targetH)}):Play()
 		listContainer.CanvasSize = UDim2.new(0, 0, 0, count * 34)
@@ -1548,7 +1536,7 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 	end)
 	clickDetector.MouseLeave:Connect(function()
 		isHovering = false
-		TweenService:Create(paraFrame, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.02)}):Play()
+		TweenService:Create(paraFrame, TWEEN_FAST, {BackgroundColor3 = KazeUI.CurrentTheme.Border}):Play()
 		TweenService:Create(paraStroke, TWEEN_FAST, {Color = KazeUI.CurrentTheme.Border}):Play()
 	end)
 	clickDetector.MouseButton1Down:Connect(function()
@@ -2017,7 +2005,7 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 	local hg = Instance.new("UIGradient", hueSlider)
 	hg.Color = ColorSequence.new{
 		ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 0, 0)),
-		ColorSequenceKeypoint.new(0.167, Color3.fromRGB(255, 255,  yellow)),
+		ColorSequenceKeypoint.new(0.167, Color3.fromRGB(255, 255, 0)),
 		ColorSequenceKeypoint.new(0.333, Color3.fromRGB(0, 255, 0)),
 		ColorSequenceKeypoint.new(0.5, Color3.fromRGB(0, 255, 255)),
 		ColorSequenceKeypoint.new(0.667, Color3.fromRGB(0, 0, 255)),
@@ -2694,10 +2682,10 @@ function KazeUI:CreateWindow(config)
 	outerShadow.ZIndex = -1
 	local shCorner = Instance.new("UICorner", outerShadow)
 	shCorner.CornerRadius = UDim.new(0, 32)
-	local shStroke = Instance.new("UIStroke", outerShadow)
-	shStroke.Thickness = 6
-	shStroke.Color = Color3.fromRGB(0, 0, 0)
-	shStroke.Transparency = 0.8
+	local shadowStroke = Instance.new("UIStroke", outerShadow)
+	shadowStroke.Thickness = 6
+	shadowStroke.Color = Color3.fromRGB(0, 0, 0)
+	shadowStroke.Transparency = 0.8
 
 	local WindowStroke = Instance.new("UIStroke")
 	WindowStroke.Thickness = 1.8
@@ -3108,7 +3096,8 @@ function KazeUI:CreateWindow(config)
 	-- Modal Resize Engine (System Rewrite)
 	-- ==========================================
 	
-	-- Malaking invisible blocker upang i-isolate ang input eksklusibo sa resize handle.
+	-- Massive invisible blocker isolates input exclusively to the resize handle.
+	-- Prevents clicking, scrolling, and dragging underneath.
 	local ResizeBlocker = Instance.new("TextButton")
 	ResizeBlocker.Name = "ResizeInputBlocker"
 	ResizeBlocker.Size = UDim2.fromScale(100, 100)
@@ -3163,7 +3152,7 @@ function KazeUI:CreateWindow(config)
 
 	ResizeHandle.InputBegan:Connect(function(input)
 		if toggledMaximized then return end
-		if KazeUI.IsResizing then return end
+		if KazeUI.IsResizing then return end -- Modal mutual exclusion
 
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 			KazeUI.IsResizing = true
@@ -3240,6 +3229,7 @@ function KazeUI:CreateWindow(config)
 				if s and type(files) == "table" then
 					for _, f in ipairs(files) do
 						local fileName = string.match(f, "([^/\\]+)$") or f
+						-- Extract .json names without the "KazeUI_" prefix since it's now in an isolated folder
 						local name = string.match(fileName, "^(.+)%.json$")
 						if name then table.insert(list, name) end
 					end
