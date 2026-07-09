@@ -4,11 +4,14 @@
 	Retained: 100% Backwards Compatibility with Version 1, 2, 2.2, 2.3, and 3.0 APIs
 	
 	UPDATES IN V3.5:
-	- Premium Divider: Redesigned Win:Divider() for pixel-perfect scaling, UIGradient fading, and dynamic TextBounds.
 	- Modal Resize Engine: Completely rewritten window scaling. Introduced strict input capturing, multi-touch isolation, and ScrollLock during resize.
 	- Drag Exclusion: Fixed a bug where resizing and dragging could conflict.
 	- Simplified Themes: Retained only "Obsidian" (default) and "CustomWallpaper".
 	- White Glow Sync: Automatically forces the Glow color to bright White when Obsidian theme is loaded.
+	
+	CUSTOM MODIFICATIONS:
+	- Removed Win:Divider() function.
+	- Configuration System now creates a folder based on the Author's name and saves/loads files from there.
 --]]
 
 local KazeUI = {}
@@ -57,6 +60,7 @@ KazeUI.BackgroundTransparency = 0.15
 KazeUI.Flags = {}
 KazeUI.ActiveWindows = {}
 KazeUI.IsResizing = false -- Modal lock state
+KazeUI.AuthorName = "Unknown" -- Stores the author name for Config Folder
 
 -- UI element registries for theme switching
 KazeUI.TextElements = {}
@@ -614,7 +618,15 @@ function KazeUI:SaveConfig(name)
 	if writefile then
 		local success, encoded = pcall(function() return HttpService:JSONEncode(data) end)
 		if success then
-			writefile("KazeUI_" .. name .. ".json", encoded)
+			local folder = KazeUI.AuthorName
+			if makefolder then
+				pcall(function()
+					if isfolder and not isfolder(folder) then makefolder(folder)
+					elseif not isfolder then makefolder(folder) end
+				end)
+			end
+			
+			writefile(folder .. "/" .. name .. ".json", encoded)
 			KazeUI:Notify({Title = "Config Saved", Content = "Successfully saved " .. name, Duration = 3})
 		else
 			KazeUI:Notify({Title = "Config Error", Content = "Failed to encode settings.", Duration = 3})
@@ -626,7 +638,8 @@ end
 
 function KazeUI:LoadConfig(name)
 	if readfile then
-		local s, res = pcall(function() return readfile("KazeUI_" .. name .. ".json") end)
+		local folder = KazeUI.AuthorName
+		local s, res = pcall(function() return readfile(folder .. "/" .. name .. ".json") end)
 		if s then
 			local s2, data = pcall(function() return HttpService:JSONDecode(res) end)
 			if s2 and type(data) == "table" then
@@ -2430,6 +2443,9 @@ function KazeUI:CreateWindow(config)
 	local MainIcon = FormatImage(config.Icon or "house")
 	local OpenIcon = FormatImage((config.OpenButton and config.OpenButton.Icon) or config.Icon or "house")
 	
+	-- Sync the author's name globally to establish the Config save folder
+	KazeUI.AuthorName = Author
+	
 	local minWidth = config.MinWidth or 350
 	local minHeight = config.MinHeight or 250
 	local maxWidth = config.MaxWidth or 900
@@ -3049,13 +3065,22 @@ function KazeUI:CreateWindow(config)
 
 		local function getConfigs()
 			local list = {}
+			local folder = KazeUI.AuthorName
+			
+			if makefolder then
+				pcall(function()
+					if isfolder and not isfolder(folder) then makefolder(folder)
+					elseif not isfolder then makefolder(folder) end
+				end)
+			end
+			
 			if listfiles then
-				local s, files = pcall(function() return listfiles("") end)
-				if not s then s, files = pcall(function() return listfiles("workspace") end) end
+				local s, files = pcall(function() return listfiles(folder) end)
 				if s and type(files) == "table" then
 					for _, f in ipairs(files) do
 						local fileName = string.match(f, "([^/\\]+)$") or f
-						local name = string.match(fileName, "^KazeUI_(.+)%.json$")
+						-- Extract .json names without the "KazeUI_" prefix since it's now in an isolated folder
+						local name = string.match(fileName, "^(.+)%.json$")
 						if name then table.insert(list, name) end
 					end
 				end
@@ -3083,7 +3108,8 @@ function KazeUI:CreateWindow(config)
 		
 		sec:Button({Title = "Delete Config", Callback = function()
 			if delfile then
-				pcall(function() delfile("KazeUI_" .. cfgName .. ".json") end)
+				local folder = KazeUI.AuthorName
+				pcall(function() delfile(folder .. "/" .. cfgName .. ".json") end)
 				KazeUI:Notify({Title = "Config System", Content = "Deleted " .. cfgName, Duration = 3})
 				if configDropdown then configDropdown:Refresh(getConfigs()) end
 			else
@@ -3182,99 +3208,6 @@ function KazeUI:CreateWindow(config)
 				end
 			end
 		})
-	end
-
-	-- ==========================================
-	-- Premium Divider Engine (Completely Redesigned)
-	-- ==========================================
-	function Win:Divider(arg1)
-		local title = type(arg1) == "table" and (arg1.Title or arg1.Name) or type(arg1) == "string" and arg1 or nil
-		
-		local wrapper = Instance.new("Frame")
-		wrapper.Name = "SidebarDivider"
-		wrapper.Size = UDim2.new(1, -12, 0, 24)
-		wrapper.BackgroundTransparency = 1
-		wrapper.LayoutOrder = #TabsList:GetChildren() + 1
-		wrapper.Parent = TabsList
-
-		if title and title ~= "" then
-			-- Premium centered Title with dynamically sized trailing lines
-			local titleLabel = Instance.new("TextLabel")
-			titleLabel.Name = "Title"
-			titleLabel.Size = UDim2.new(0, 0, 1, 0)
-			titleLabel.Position = UDim2.fromScale(0.5, 0.5)
-			titleLabel.AnchorPoint = Vector2.new(0.5, 0.5)
-			titleLabel.BackgroundTransparency = 1
-			titleLabel.Text = title
-			titleLabel.Font = Enum.Font.GothamBold
-			titleLabel.TextSize = 11
-			titleLabel.AutomaticSize = Enum.AutomaticSize.X
-			titleLabel.Parent = wrapper
-			KazeUI:RegisterText(titleLabel, false)
-
-			local leftLine = Instance.new("Frame")
-			leftLine.Name = "LeftLine"
-			leftLine.AnchorPoint = Vector2.new(1, 0.5)
-			leftLine.BorderSizePixel = 0
-			leftLine.Parent = wrapper
-			
-			local leftGradient = Instance.new("UIGradient")
-			leftGradient.Transparency = NumberSequence.new({
-				NumberSequenceKeypoint.new(0, 1),
-				NumberSequenceKeypoint.new(1, 0)
-			})
-			leftGradient.Parent = leftLine
-
-			local rightLine = Instance.new("Frame")
-			rightLine.Name = "RightLine"
-			rightLine.AnchorPoint = Vector2.new(0, 0.5)
-			rightLine.BorderSizePixel = 0
-			rightLine.Parent = wrapper
-			
-			local rightGradient = Instance.new("UIGradient")
-			rightGradient.Transparency = NumberSequence.new({
-				NumberSequenceKeypoint.new(0, 0),
-				NumberSequenceKeypoint.new(1, 1)
-			})
-			rightGradient.Parent = rightLine
-
-			local function UpdateLineLayout()
-				local textWidth = titleLabel.TextBounds.X
-				local offset = (textWidth / 2) + 8
-				
-				leftLine.Position = UDim2.new(0.5, -offset, 0.5, 0)
-				leftLine.Size = UDim2.new(0.5, -offset, 0, 1)
-				
-				rightLine.Position = UDim2.new(0.5, offset, 0.5, 0)
-				rightLine.Size = UDim2.new(0.5, -offset, 0, 1)
-			end
-
-			titleLabel:GetPropertyChangedSignal("TextBounds"):Connect(UpdateLineLayout)
-			task.defer(UpdateLineLayout)
-
-			KazeUI:OnGlowChanged(leftLine, function(c) leftLine.BackgroundColor3 = c end)
-			KazeUI:OnGlowChanged(rightLine, function(c) rightLine.BackgroundColor3 = c end)
-		else
-			-- Elegant single line (Resolves rendering scaling artifacts using UIGradient + Absolute Y-axis)
-			local line = Instance.new("Frame")
-			line.Name = "Line"
-			line.AnchorPoint = Vector2.new(0.5, 0.5)
-			line.Position = UDim2.fromScale(0.5, 0.5)
-			line.Size = UDim2.new(1, 0, 0, 1)
-			line.BorderSizePixel = 0
-			line.Parent = wrapper
-			
-			local gradient = Instance.new("UIGradient")
-			gradient.Transparency = NumberSequence.new({
-				NumberSequenceKeypoint.new(0, 1),
-				NumberSequenceKeypoint.new(0.15, 0),
-				NumberSequenceKeypoint.new(0.85, 0),
-				NumberSequenceKeypoint.new(1, 1)
-			})
-			gradient.Parent = line
-
-			KazeUI:OnGlowChanged(line, function(c) line.BackgroundColor3 = c end)
-		end
 	end
 
 	function Win:CreateTab(arg1, arg2)
