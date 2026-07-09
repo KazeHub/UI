@@ -9,9 +9,12 @@
 	- Simplified Themes: Retained only "Obsidian" (default) and "CustomWallpaper".
 	- White Glow Sync: Automatically forces the Glow color to bright White when Obsidian theme is loaded.
 	
-	CUSTOM MODIFICATIONS:
-	- Removed Win:Divider() function.
-	- Configuration System now creates a folder based on the Author's name and saves/loads files from there.
+	FIXES & IMPROVEMENTS:
+	1. Removed Divider: Stripped Win:Divider() completely.
+	2. Author-Isolated Directory System: Automatically grabs author name, creates a folder, and saves configs strictly to that folder.
+	3. Wallpaper Restoring: Properly saves, decodes, and restores all wallpaper settings (Image ID, Transparency, Overlay, Theme).
+	4. Notification Isolation: Keeps notifications highly visible; they bypass global window transparency changes.
+	5. RGB Title Support: Notifications can now render rainbow RGB titles or custom title colors.
 --]]
 
 local KazeUI = {}
@@ -60,7 +63,7 @@ KazeUI.BackgroundTransparency = 0.15
 KazeUI.Flags = {}
 KazeUI.ActiveWindows = {}
 KazeUI.IsResizing = false -- Modal lock state
-KazeUI.AuthorName = "Unknown" -- Stores the author name for Config Folder
+KazeUI.AuthorName = "Unknown" -- Captured author directory
 
 -- UI element registries for theme switching
 KazeUI.TextElements = {}
@@ -123,7 +126,7 @@ local NotifScreenGui = Instance.new("ScreenGui")
 NotifScreenGui.Name = "KazeUINotifications"
 NotifScreenGui.ResetOnSpawn = false
 NotifScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-NotifScreenGui.DisplayOrder = 999999
+NotifScreenGui.DisplayOrder = 999999999 -- Forced priority layer above all other UI elements
 NotifScreenGui.Parent = parent
 
 -- Notification layout setup
@@ -350,21 +353,27 @@ function KazeUI.GetColor(elevation)
 	return Color3.fromHSV(h, s, math.clamp(v + offset, 0, 1))
 end
 
-function KazeUI:AddPanel(inst, elevation, ignoreColorUpdate)
-	table.insert(KazeUI.PanelElements, {Inst = inst, Elevation = elevation or 0, IgnoreColor = ignoreColorUpdate})
+function KazeUI:AddPanel(inst, elevation, ignoreColorUpdate, ignoreTransparencyUpdate)
+	table.insert(KazeUI.PanelElements, {
+		Inst = inst, 
+		Elevation = elevation or 0, 
+		IgnoreColor = ignoreColorUpdate,
+		IgnoreTransparency = ignoreTransparencyUpdate -- Isolate layered frames from global changes
+	})
 	if inst and inst:IsA("GuiObject") then
 		if not ignoreColorUpdate then
 			inst.BackgroundColor3 = KazeUI.GetColor(elevation or 0)
 		end
 		
-		-- Manage bubble-first translucent layers dynamically
-		local baseTrans = KazeUI.BackgroundTransparency or 0.15
-		if elevation and elevation > 0 then
-			baseTrans = math.clamp(baseTrans - (elevation * 0.25), 0.05, 1)
-		elseif elevation and elevation < 0 then
-			baseTrans = math.clamp(baseTrans + (math.abs(elevation) * 0.25), 0.05, 1)
+		if not ignoreTransparencyUpdate then
+			local baseTrans = KazeUI.BackgroundTransparency or 0.15
+			if elevation and elevation > 0 then
+				baseTrans = math.clamp(baseTrans - (elevation * 0.25), 0.05, 1)
+			elseif elevation and elevation < 0 then
+				baseTrans = math.clamp(baseTrans + (math.abs(elevation) * 0.25), 0.05, 1)
+			end
+			inst.BackgroundTransparency = baseTrans
 		end
-		inst.BackgroundTransparency = baseTrans
 
 		inst.Destroying:Connect(function()
 			for i = #KazeUI.PanelElements, 1, -1 do
@@ -385,16 +394,18 @@ end
 function KazeUI:SetTransparency(alpha)
 	KazeUI.BackgroundTransparency = alpha
 	for _, data in ipairs(KazeUI.PanelElements) do
-		local inst = data.Inst
-		local elevation = data.Elevation or 0
-		if inst and inst.Parent and inst:IsA("GuiObject") then
-			local baseTrans = alpha
-			if elevation > 0 then
-				baseTrans = math.clamp(alpha - (elevation * 0.25), 0.05, 1)
-			elseif elevation < 0 then
-				baseTrans = math.clamp(alpha + (math.abs(elevation) * 0.25), 0.05, 1)
+		if not data.IgnoreTransparency then
+			local inst = data.Inst
+			local elevation = data.Elevation or 0
+			if inst and inst.Parent and inst:IsA("GuiObject") then
+				local baseTrans = alpha
+				if elevation > 0 then
+					baseTrans = math.clamp(alpha - (elevation * 0.25), 0.05, 1)
+				elseif elevation < 0 then
+					baseTrans = math.clamp(alpha + (math.abs(elevation) * 0.25), 0.05, 1)
+				end
+				inst.BackgroundTransparency = baseTrans
 			end
-			inst.BackgroundTransparency = baseTrans
 		end
 	end
 end
@@ -531,7 +542,10 @@ function KazeUI:Notify(config)
 	
 	-- Notification utilizes the Medium Shape rule (20px) for compact premium bubbles
 	Instance.new("UICorner", notifFrame).CornerRadius = UDim.new(0, 20)
-	KazeUI:AddPanel(notifFrame, 0.04)
+	
+	-- Isolated background layer to prevent transparency conflicts with main window
+	KazeUI:AddPanel(notifFrame, 0.04, false, true)
+	notifFrame.BackgroundTransparency = 0.05 -- Keep fully visible, robust background surface
 
 	local shadow = Instance.new("Frame", notifFrame)
 	shadow.Size = UDim2.new(1, 6, 1, 6)
@@ -557,7 +571,21 @@ function KazeUI:Notify(config)
 	titleLab.Font = Enum.Font.GothamBold
 	titleLab.TextSize = 13
 	titleLab.TextXAlignment = Enum.TextXAlignment.Left
-	KazeUI:RegisterText(titleLab, false)
+
+	-- RGB/Static Custom Color Support for Notification Title
+	if config.RGBTitle or config.RGB or config.TitleColor == "RGB" then
+		task.spawn(function()
+			while titleLab and titleLab.Parent do
+				local hue = (tick() % 4) / 4 -- Seamless 4-second loop
+				titleLab.TextColor3 = Color3.fromHSV(hue, 0.85, 1)
+				task.wait()
+			end
+		end)
+	elseif typeof(config.TitleColor) == "Color3" then
+		titleLab.TextColor3 = config.TitleColor
+	else
+		KazeUI:RegisterText(titleLab, false)
+	end
 
 	local contentLab = Instance.new("TextLabel", notifFrame)
 	contentLab.Size = UDim2.new(1, -44, 0, 18)
@@ -615,6 +643,14 @@ function KazeUI:SaveConfig(name)
 	local data = {}
 	for flag, obj in pairs(KazeUI.Flags) do data[flag] = obj.Get() end
 	
+	-- Save wallpaper, visual, and theme states cleanly
+	data["__ThemeSelection"] = KazeUI.CurrentTheme.Name or "Obsidian"
+	data["__CustomWallpaperData"] = {
+		BackgroundImage = KazeUI.Themes.CustomWallpaper.BackgroundImage or "",
+		BackgroundImageTransparency = KazeUI.Themes.CustomWallpaper.BackgroundImageTransparency or 0.1,
+		OverlayTransparency = KazeUI.Themes.CustomWallpaper.OverlayTransparency or 0.65,
+	}
+	
 	if writefile then
 		local success, encoded = pcall(function() return HttpService:JSONEncode(data) end)
 		if success then
@@ -643,9 +679,24 @@ function KazeUI:LoadConfig(name)
 		if s then
 			local s2, data = pcall(function() return HttpService:JSONDecode(res) end)
 			if s2 and type(data) == "table" then
+				-- Restore individual element flags
 				for flag, val in pairs(data) do
 					if KazeUI.Flags[flag] then KazeUI.Flags[flag].Set(val) end
 				end
+				
+				-- Restore and rebuild Wallpaper visual state configurations
+				if data["__CustomWallpaperData"] then
+					local wpData = data["__CustomWallpaperData"]
+					KazeUI.Themes.CustomWallpaper.BackgroundImage = wpData.BackgroundImage or ""
+					KazeUI.Themes.CustomWallpaper.BackgroundImageTransparency = wpData.BackgroundImageTransparency or 0.1
+					KazeUI.Themes.CustomWallpaper.OverlayTransparency = wpData.OverlayTransparency or 0.65
+				end
+				
+				-- Reapply and reload target theme aesthetics
+				if data["__ThemeSelection"] then
+					KazeUI:SetTheme(data["__ThemeSelection"])
+				end
+				
 				KazeUI:Notify({Title = "Config Loaded", Content = "Successfully loaded " .. name, Duration = 3})
 			else
 				KazeUI:Notify({Title = "Config Error", Content = "Corrupted or invalid config format.", Duration = 3})
@@ -1428,7 +1479,7 @@ local function CreateTextBoxInput(parentFrame, title, placeholder, defaultVal, c
 	placeholder = tostring(placeholder or "Type here...")
 	
 	local measuredWidth = 598 * 0.92
-	if parentFrame and parentFrame.AbsoluteSize and parentFrame.AbsoluteSize.X > 0 then measuredWidth = parentFrame.AbsoluteSize.X * 0.95 end
+	if parentFrame and parentFrame.AbsoluteSize parks and parentFrame.AbsoluteSize.X > 0 then measuredWidth = parentFrame.AbsoluteSize.X * 0.95 end
 	local textContainerWidth = measuredWidth - 28
 	
 	local titleHeight = 0
@@ -2443,9 +2494,9 @@ function KazeUI:CreateWindow(config)
 	local MainIcon = FormatImage(config.Icon or "house")
 	local OpenIcon = FormatImage((config.OpenButton and config.OpenButton.Icon) or config.Icon or "house")
 	
-	-- Sync the author's name globally to establish the Config save folder
+	-- Establish internal config directories based on Author Name
 	KazeUI.AuthorName = Author
-	
+
 	local minWidth = config.MinWidth or 350
 	local minHeight = config.MinHeight or 250
 	local maxWidth = config.MaxWidth or 900
@@ -3079,7 +3130,7 @@ function KazeUI:CreateWindow(config)
 				if s and type(files) == "table" then
 					for _, f in ipairs(files) do
 						local fileName = string.match(f, "([^/\\]+)$") or f
-						-- Extract .json names without the "KazeUI_" prefix since it's now in an isolated folder
+						-- Extract json names cleanly without KazeUI_ prefix since it's already in the author's folder
 						local name = string.match(fileName, "^(.+)%.json$")
 						if name then table.insert(list, name) end
 					end
