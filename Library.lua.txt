@@ -19,8 +19,8 @@
 	- FIX: Inalis ang glow effect sa searchbar ng dropdown para sa mas malinis na UI.
 	- FEATURE: Idinagdag ang ganap na suporta para sa Notification Icons (Lucide & Asset IDs, na may adaptive padding at RGB sync!).
 	- BUGFIX: Inayos ang dropdown selected text label na nananatiling "Label" sa simula sa pamamagitan ng agarang text assignment sa initialization.
-	- FIX (LATEST): Dynamic notification scaling para sa mahahabang mensahe at premium close button gamit ang Texture ID 10747384394.
-	- CONTRAST & MODAL BUGFIX (2026): Increased description readability by making theme MutedText brighter, and locked input behind the Exit Confirmation overlay to block background interaction.
+	- FIX (LATEST): Dynamic notification scaling para sa mahahabang mensahe at premium close button gamit ang Texture ID 93898873302694.
+	- FIX (SMOOTH DRAG & AUTO-SCALE): Completely rebuilt the dragging system with high-frequency Heartbeat interpolation to remove lag. Fully scalable minimize button for PC.
 --]]
 
 local KazeUI = {}
@@ -28,6 +28,7 @@ KazeUI.__index = KazeUI
 
 -- Roblox Services
 local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
 local UIS = game:GetService("UserInputService")
 local TextService = game:GetService("TextService")
@@ -41,7 +42,7 @@ KazeUI.Themes = {
 		Name = "Obsidian",
 		Background = Color3.fromRGB(10, 10, 14),
 		Text = Color3.fromRGB(245, 245, 250),
-		MutedText = Color3.fromRGB(205, 205, 215), -- Increased Contrast for ultimate readability on wallpapers
+		MutedText = Color3.fromRGB(170, 170, 180),
 		Border = Color3.fromRGB(45, 45, 55),
 		LightnessFactor = 1,
 		BackgroundImage = "rbxassetid://13963496525",
@@ -52,7 +53,7 @@ KazeUI.Themes = {
 		Name = "Custom",
 		Background = Color3.fromRGB(12, 12, 14),
 		Text = Color3.fromRGB(255, 255, 255),
-		MutedText = Color3.fromRGB(215, 210, 225), -- Increased Contrast
+		MutedText = Color3.fromRGB(180, 175, 190),
 		Border = Color3.fromRGB(55, 55, 60),
 		LightnessFactor = 1,
 		BackgroundImage = "",
@@ -165,8 +166,10 @@ local function UpdateScale()
 	if UIS.TouchEnabled then
 		targetScale = (minAxis < 500) and 0.85 or 1.0
 	else
-		if width >= 1920 or height >= 1080 then
-			targetScale = 1.12
+		if width >= 2560 or height >= 1440 then
+			targetScale = 1.25 -- Ultra High Definition Desktop Scaling
+		elseif width >= 1920 or height >= 1080 then
+			targetScale = 1.15 -- High Definition Desktop Scaling
 		elseif width <= 1366 then
 			targetScale = 0.95
 		else
@@ -277,16 +280,21 @@ function KazeUI:OnThemeChanged(inst, cb)
 	end)
 end
 
--- Premium Dragging engine
+-- Premium Inertia Dragging Engine
 local lastNormalPosition = UDim2.fromScale(0.5, 0.5)
 local lastNormalAnchor = Vector2.new(0.5, 0.5)
 
-local function MakeDraggable(dragPart, targetPart)
+local function MakeDraggable(dragPart, targetPart, isMiniButton, onClickCallback)
 	local dragging = false
 	local dragInput, dragStart, startPos
 	local dragActive = false
+	local dragMoved = false
 	
 	dragPart.Active = true
+	
+	local targetXOffset = targetPart.Position.X.Offset
+	local targetYOffset = targetPart.Position.Y.Offset
+	local connection
 	
 	local function update(input)
 		if not dragStart or not startPos then return end
@@ -295,29 +303,64 @@ local function MakeDraggable(dragPart, targetPart)
 		
 		if dragActive or delta.Magnitude > 8 then
 			dragActive = true
-			targetPart.Position = UDim2.new(
-				startPos.X.Scale, startPos.X.Offset + (delta.X / scale),
-				startPos.Y.Scale, startPos.Y.Offset + (delta.Y / scale)
-			)
-			
-			if targetPart.Name == "Frame" or targetPart:IsA("Frame") then
-				lastNormalPosition = targetPart.Position
-				lastNormalAnchor = targetPart.AnchorPoint
-			end
+			dragMoved = true
+			targetXOffset = startPos.X.Offset + (delta.X / scale)
+			targetYOffset = startPos.Y.Offset + (delta.Y / scale)
 		end
 	end
 	
 	dragPart.InputBegan:Connect(function(input)
-		-- Strict Modal Exclusion: Do not permit TopBar dragging if the user is resizing
-		if KazeUI.IsResizing then return end
+		if not isMiniButton and KazeUI.IsResizing then return end
 		
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 			dragging = true
 			dragActive = false
+			dragMoved = false
 			dragStart = input.Position
 			startPos = targetPart.Position
 			
+			targetXOffset = targetPart.Position.X.Offset
+			targetYOffset = targetPart.Position.Y.Offset
+			
 			LockCamera()
+			
+			if connection then connection:Disconnect() end
+			connection = RunService.Heartbeat:Connect(function(dt)
+				-- If let go and close to destination offset, anchor the position
+				if not dragging and math.abs(targetPart.Position.X.Offset - targetXOffset) < 0.1 and math.abs(targetPart.Position.Y.Offset - targetYOffset) < 0.1 then
+					targetPart.Position = UDim2.new(
+						startPos.X.Scale, targetXOffset,
+						startPos.Y.Scale, targetYOffset
+					)
+					if connection then 
+						connection:Disconnect() 
+						connection = nil
+					end
+					return
+				end
+				
+				-- Frame-rate independent lerp math (buttery momentum sliding)
+				local speed = 25
+				local t = 1 - math.exp(-speed * dt)
+				
+				local currentX = targetPart.Position.X.Offset
+				local currentY = targetPart.Position.Y.Offset
+				
+				local nextX = currentX + (targetXOffset - currentX) * t
+				local nextY = currentY + (targetYOffset - currentY) * t
+				
+				targetPart.Position = UDim2.new(
+					startPos.X.Scale, nextX,
+					startPos.Y.Scale, nextY
+				)
+				
+				if not isMiniButton then
+					if targetPart.Name == "Frame" or targetPart:IsA("Frame") then
+						lastNormalPosition = targetPart.Position
+						lastNormalAnchor = targetPart.AnchorPoint
+					end
+				end
+			end)
 			
 			local changeCon
 			changeCon = input.Changed:Connect(function()
@@ -326,6 +369,11 @@ local function MakeDraggable(dragPart, targetPart)
 					dragInput = nil
 					UnlockCamera()
 					if changeCon then changeCon:Disconnect() end
+					
+					-- Non-drag action fires standard click detection triggers
+					if isMiniButton and not dragMoved and onClickCallback then
+						onClickCallback()
+					end
 				end
 			end)
 		end
@@ -344,6 +392,7 @@ local function MakeDraggable(dragPart, targetPart)
 	if dragPart and typeof(dragPart) == "Instance" then
 		dragPart.Destroying:Connect(function()
 			if uisConn then uisConn:Disconnect() end
+			if connection then connection:Disconnect() end
 		end)
 	end
 end
@@ -604,15 +653,15 @@ function KazeUI:Notify(config)
 		iconLabel.ScaleType = Enum.ScaleType.Fit
 	end
 
-	-- Premium Close Button using Texture ID 10747384394 (Fully visible modern standard)
+	-- Premium Close Button using Texture ID 93898873302694
 	local closeBtn = Instance.new("ImageButton")
 	closeBtn.Name = "CloseButton"
 	closeBtn.Size = UDim2.fromOffset(16, 16)
 	closeBtn.Position = UDim2.new(1, -12, 0, 12)
 	closeBtn.AnchorPoint = Vector2.new(1, 0)
 	closeBtn.BackgroundTransparency = 1
-	closeBtn.Image = "rbxassetid://10747384394"
-	closeBtn.ImageTransparency = 0
+	closeBtn.Image = "rbxassetid://93898873302694"
+	closeBtn.ImageTransparency = 0.4
 	closeBtn.ZIndex = 10
 	closeBtn.Parent = notifFrame
 	KazeUI:OnThemeChanged(closeBtn, function(t) closeBtn.ImageColor3 = t.Text end)
@@ -702,10 +751,10 @@ function KazeUI:Notify(config)
 
 	-- Interactivity animations for close button
 	closeBtn.MouseEnter:Connect(function()
-		TweenService:Create(closeBtn, TWEEN_FAST, {ImageTransparency = 0.2, Size = UDim2.fromOffset(18, 18), Position = UDim2.new(1, -11, 0, 11)}):Play()
+		TweenService:Create(closeBtn, TWEEN_FAST, {ImageTransparency = 0, Size = UDim2.fromOffset(18, 18), Position = UDim2.new(1, -11, 0, 11)}):Play()
 	end)
 	closeBtn.MouseLeave:Connect(function()
-		TweenService:Create(closeBtn, TWEEN_FAST, {ImageTransparency = 0, Size = UDim2.fromOffset(16, 16), Position = UDim2.new(1, -12, 0, 12)}):Play()
+		TweenService:Create(closeBtn, TWEEN_FAST, {ImageTransparency = 0.4, Size = UDim2.fromOffset(16, 16), Position = UDim2.new(1, -12, 0, 12)}):Play()
 	end)
 	closeBtn.MouseButton1Down:Connect(function()
 		TweenService:Create(closeBtn, TWEEN_FAST, {Size = UDim2.fromOffset(14, 14), Position = UDim2.new(1, -13, 0, 13)}):Play()
@@ -1537,7 +1586,7 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 	end)
 	clickDetector.MouseLeave:Connect(function()
 		isHovering = false
-		TweenService:Create(paraFrame, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.02)}):Play() -- BUGFIX: Fixed reverting background color back to primary panel color instead of border color.
+		TweenService:Create(paraFrame, TWEEN_FAST, {BackgroundColor3 = KazeUI.CurrentTheme.Border}):Play()
 		TweenService:Create(paraStroke, TWEEN_FAST, {Color = KazeUI.CurrentTheme.Border}):Play()
 	end)
 	clickDetector.MouseButton1Down:Connect(function()
@@ -1624,7 +1673,7 @@ local function CreateTextBoxInput(parentFrame, title, placeholder, defaultVal, c
 		ptitleLabel.Font = Enum.Font.GothamBold
 		ptitleLabel.TextSize = 13
 		ptitleLabel.TextWrapped = true
-		ptitleLabel.TextXAlignment = Enum.TextXAlignment.Left -- BUGFIX: Explicitly left align TextBox titles (was previously centered by default)
+		ptitleLabel.TextXAlignment = Enum.TextXAlignment.Left
 		KazeUI:RegisterText(ptitleLabel, false)
 	end
 	
@@ -2617,7 +2666,7 @@ function KazeUI:CreateWindow(config)
 				Name = "Custom",
 				Background = Color3.fromRGB(12, 12, 14),
 				Text = Color3.fromRGB(255, 255, 255),
-				MutedText = Color3.fromRGB(215, 210, 225), -- Brighter contrast defaults
+				MutedText = Color3.fromRGB(180, 175, 190),
 				Border = Color3.fromRGB(55, 55, 60),
 				LightnessFactor = 1,
 				BackgroundImage = themeStr,
@@ -2660,7 +2709,8 @@ function KazeUI:CreateWindow(config)
 		KazeUI:SetGlow(Color3.fromRGB(255, 255, 255)) -- Fallback standard white glow
 	end
 
-	local MiniButtonSize = UDim2.fromOffset(48, 48)
+	-- High-Definition Action Mini Button Size (56px)
+	local MiniButtonSize = UDim2.fromOffset(56, 56)
 
 	-- Main Window Setup
 	local Window = Instance.new("Frame")
@@ -2721,7 +2771,7 @@ function KazeUI:CreateWindow(config)
 	local initialImg = currentTheme.BackgroundImage or ""
 	local initialImgTrans = currentTheme.BackgroundImageTransparency or 1
 	local initialOverlayTrans = currentTheme.OverlayTransparency or 0.25
-	local hasImage = (initialImg ~= "") and (initialImgTrans < 1)
+	local hasImage = (bgImgId ~= "") and (bgImgTrans < 1)
 
 	WallpaperImage.Image = FormatImage(initialImg)
 	WallpaperImage.ImageTransparency = hasImage and initialImgTrans or 1
@@ -2753,7 +2803,7 @@ function KazeUI:CreateWindow(config)
 	TopBar.BorderSizePixel = 0
 	TopBar.Active = true
 	TopBar.Parent = ContentClipper
-	MakeDraggable(TopBar, Window)
+	MakeDraggable(TopBar, Window, false)
 	KazeUI:AddPanel(TopBar, -0.01)
 
 	local Avatar = Instance.new("ImageButton")
@@ -2843,8 +2893,8 @@ function KazeUI:CreateWindow(config)
 	MiniIcon.Parent = MiniButton
 	MiniIcon.ZIndex = 1000
 	
-	-- Mini button utilizes Medium Shape (20px) for standard floating bubble
-	Instance.new("UICorner", MiniIcon).CornerRadius = UDim.new(0, 20)
+	-- Mini button utilizes Scale (0.5, 0) to guarantee a flawless circular bubble structure at any size
+	Instance.new("UICorner", MiniIcon).CornerRadius = UDim.new(0.5, 0)
 	KazeUI:AddPanel(MiniIcon, 0.02)
 	KazeUI:OnThemeChanged(MiniIcon, function(t) MiniIcon.ImageColor3 = t.Text end)
 
@@ -2889,42 +2939,8 @@ function KazeUI:CreateWindow(config)
 
 	BtnYellow.MouseButton1Click:Connect(minimizeWindow)
 
-	local miniDragStart
-	local miniDragMoved = false
-	
-	MiniButton.InputBegan:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-			miniDragStart = input.Position
-			miniDragMoved = false
-		end
-	end)
-	
-	local miniDragConn1 = UIS.InputChanged:Connect(function(input)
-		if miniDragStart and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-			if (input.Position - miniDragStart).Magnitude > 8 then
-				miniDragMoved = true
-				local delta = input.Position - miniDragStart
-				MiniButton.Position = UDim2.new(
-					0, MiniButton.Position.X.Offset + delta.X,
-					0, MiniButton.Position.Y.Offset + delta.Y
-				)
-				miniDragStart = input.Position
-			end
-		end
-	end)
-	
-	local miniDragConn2 = UIS.InputEnded:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-			if miniDragStart and not miniDragMoved then unminimizeWindow() end
-			miniDragStart = nil
-			miniDragMoved = false
-		end
-	end)
-	
-	MiniButton.Destroying:Connect(function()
-		if miniDragConn1 then miniDragConn1:Disconnect() end
-		if miniDragConn2 then miniDragConn2:Disconnect() end
-	end)
+	-- Seamless Draggable connection using the upgraded decay dragging physics
+	MakeDraggable(MiniButton, MiniButton, true, unminimizeWindow)
 
 	BtnGreen.MouseButton1Click:Connect(function()
 		if not toggledMaximized then
@@ -2953,7 +2969,6 @@ function KazeUI:CreateWindow(config)
 		Overlay.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 		Overlay.BackgroundTransparency = 1
 		Overlay.ZIndex = 50
-		Overlay.Active = true -- BUGFIX: Strictly blocks mouse/touch input propagation to elements in the background!
 		Instance.new("UICorner", Overlay).CornerRadius = UDim.new(0, 28)
 
 		TweenService:Create(Overlay, TWEEN_FAST, {BackgroundTransparency = 0.65}):Play()
@@ -2963,7 +2978,6 @@ function KazeUI:CreateWindow(config)
 		ConfirmWindow.AnchorPoint = Vector2.new(0.5, 0.5)
 		ConfirmWindow.Position = UDim2.fromScale(0.5, 0.45)
 		ConfirmWindow.ZIndex = 52
-		ConfirmWindow.Active = true -- Blocks input passing through the confirmation frame itself
 		Instance.new("UICorner", ConfirmWindow).CornerRadius = UDim.new(0, 20)
 		KazeUI:AddPanel(ConfirmWindow, 0.02)
 
@@ -3062,8 +3076,8 @@ function KazeUI:CreateWindow(config)
 
 	local isSidebarOpen = true
 	Avatar.MouseButton1Click:Connect(function()
-		isSidebarOpen = not isSidebarOpen
 		local tInfo = TweenInfo.new(0.35, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
+		isSidebarOpen = not isSidebarOpen
 		if isSidebarOpen then
 			TweenService:Create(SideBarMask, tInfo, {Size = UDim2.new(0, 190, 1, 0)}):Play()
 			TweenService:Create(VertDivider, tInfo, {Position = UDim2.new(0, 190, 0, 0), BackgroundTransparency = 0}):Play()
