@@ -20,7 +20,7 @@
 	- FEATURE: Idinagdag ang ganap na suporta para sa Notification Icons (Lucide & Asset IDs, na may adaptive padding at RGB sync!).
 	- BUGFIX: Inayos ang dropdown selected text label na nananatiling "Label" sa simula sa pamamagitan ng agarang text assignment sa initialization.
 	- FIX (LATEST): Dynamic notification scaling para sa mahahabang mensahe at premium close button gamit ang Texture ID 93898873302694.
-	- FIX (SMOOTH DRAG & AUTO-SCALE): Completely rebuilt the dragging system with high-frequency Heartbeat interpolation to remove lag. Fully scalable minimize button for PC.
+	- FIX (SCALING): Enhanced the minimize floating button to auto-scale perfectly with the dynamic scaling engine and corrected viewport dragging drift.
 --]]
 
 local KazeUI = {}
@@ -28,7 +28,6 @@ KazeUI.__index = KazeUI
 
 -- Roblox Services
 local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
 local UIS = game:GetService("UserInputService")
 local TextService = game:GetService("TextService")
@@ -166,10 +165,8 @@ local function UpdateScale()
 	if UIS.TouchEnabled then
 		targetScale = (minAxis < 500) and 0.85 or 1.0
 	else
-		if width >= 2560 or height >= 1440 then
-			targetScale = 1.25 -- Ultra High Definition Desktop Scaling
-		elseif width >= 1920 or height >= 1080 then
-			targetScale = 1.15 -- High Definition Desktop Scaling
+		if width >= 1920 or height >= 1080 then
+			targetScale = 1.15 -- Enhanced Desktop Scaling
 		elseif width <= 1366 then
 			targetScale = 0.95
 		else
@@ -280,21 +277,16 @@ function KazeUI:OnThemeChanged(inst, cb)
 	end)
 end
 
--- Premium Inertia Dragging Engine
+-- Premium Dragging engine
 local lastNormalPosition = UDim2.fromScale(0.5, 0.5)
 local lastNormalAnchor = Vector2.new(0.5, 0.5)
 
-local function MakeDraggable(dragPart, targetPart, isMiniButton, onClickCallback)
+local function MakeDraggable(dragPart, targetPart)
 	local dragging = false
 	local dragInput, dragStart, startPos
 	local dragActive = false
-	local dragMoved = false
 	
 	dragPart.Active = true
-	
-	local targetXOffset = targetPart.Position.X.Offset
-	local targetYOffset = targetPart.Position.Y.Offset
-	local connection
 	
 	local function update(input)
 		if not dragStart or not startPos then return end
@@ -303,64 +295,29 @@ local function MakeDraggable(dragPart, targetPart, isMiniButton, onClickCallback
 		
 		if dragActive or delta.Magnitude > 8 then
 			dragActive = true
-			dragMoved = true
-			targetXOffset = startPos.X.Offset + (delta.X / scale)
-			targetYOffset = startPos.Y.Offset + (delta.Y / scale)
+			targetPart.Position = UDim2.new(
+				startPos.X.Scale, startPos.X.Offset + (delta.X / scale),
+				startPos.Y.Scale, startPos.Y.Offset + (delta.Y / scale)
+			)
+			
+			if targetPart.Name == "Frame" or targetPart:IsA("Frame") then
+				lastNormalPosition = targetPart.Position
+				lastNormalAnchor = targetPart.AnchorPoint
+			end
 		end
 	end
 	
 	dragPart.InputBegan:Connect(function(input)
-		if not isMiniButton and KazeUI.IsResizing then return end
+		-- Strict Modal Exclusion: Do not permit TopBar dragging if the user is resizing
+		if KazeUI.IsResizing then return end
 		
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 			dragging = true
 			dragActive = false
-			dragMoved = false
 			dragStart = input.Position
 			startPos = targetPart.Position
 			
-			targetXOffset = targetPart.Position.X.Offset
-			targetYOffset = targetPart.Position.Y.Offset
-			
 			LockCamera()
-			
-			if connection then connection:Disconnect() end
-			connection = RunService.Heartbeat:Connect(function(dt)
-				-- If let go and close to destination offset, anchor the position
-				if not dragging and math.abs(targetPart.Position.X.Offset - targetXOffset) < 0.1 and math.abs(targetPart.Position.Y.Offset - targetYOffset) < 0.1 then
-					targetPart.Position = UDim2.new(
-						startPos.X.Scale, targetXOffset,
-						startPos.Y.Scale, targetYOffset
-					)
-					if connection then 
-						connection:Disconnect() 
-						connection = nil
-					end
-					return
-				end
-				
-				-- Frame-rate independent lerp math (buttery momentum sliding)
-				local speed = 25
-				local t = 1 - math.exp(-speed * dt)
-				
-				local currentX = targetPart.Position.X.Offset
-				local currentY = targetPart.Position.Y.Offset
-				
-				local nextX = currentX + (targetXOffset - currentX) * t
-				local nextY = currentY + (targetYOffset - currentY) * t
-				
-				targetPart.Position = UDim2.new(
-					startPos.X.Scale, nextX,
-					startPos.Y.Scale, nextY
-				)
-				
-				if not isMiniButton then
-					if targetPart.Name == "Frame" or targetPart:IsA("Frame") then
-						lastNormalPosition = targetPart.Position
-						lastNormalAnchor = targetPart.AnchorPoint
-					end
-				end
-			end)
 			
 			local changeCon
 			changeCon = input.Changed:Connect(function()
@@ -369,11 +326,6 @@ local function MakeDraggable(dragPart, targetPart, isMiniButton, onClickCallback
 					dragInput = nil
 					UnlockCamera()
 					if changeCon then changeCon:Disconnect() end
-					
-					-- Non-drag action fires standard click detection triggers
-					if isMiniButton and not dragMoved and onClickCallback then
-						onClickCallback()
-					end
 				end
 			end)
 		end
@@ -392,7 +344,6 @@ local function MakeDraggable(dragPart, targetPart, isMiniButton, onClickCallback
 	if dragPart and typeof(dragPart) == "Instance" then
 		dragPart.Destroying:Connect(function()
 			if uisConn then uisConn:Disconnect() end
-			if connection then connection:Disconnect() end
 		end)
 	end
 end
@@ -2709,7 +2660,7 @@ function KazeUI:CreateWindow(config)
 		KazeUI:SetGlow(Color3.fromRGB(255, 255, 255)) -- Fallback standard white glow
 	end
 
-	-- High-Definition Action Mini Button Size (56px)
+	-- Enhanced Floating Mini Button Size (Standardized modern size targets for responsive touch/desktop)
 	local MiniButtonSize = UDim2.fromOffset(56, 56)
 
 	-- Main Window Setup
@@ -2771,7 +2722,7 @@ function KazeUI:CreateWindow(config)
 	local initialImg = currentTheme.BackgroundImage or ""
 	local initialImgTrans = currentTheme.BackgroundImageTransparency or 1
 	local initialOverlayTrans = currentTheme.OverlayTransparency or 0.25
-	local hasImage = (bgImgId ~= "") and (bgImgTrans < 1)
+	local hasImage = (initialImg ~= "") and (initialImgTrans < 1)
 
 	WallpaperImage.Image = FormatImage(initialImg)
 	WallpaperImage.ImageTransparency = hasImage and initialImgTrans or 1
@@ -2803,7 +2754,7 @@ function KazeUI:CreateWindow(config)
 	TopBar.BorderSizePixel = 0
 	TopBar.Active = true
 	TopBar.Parent = ContentClipper
-	MakeDraggable(TopBar, Window, false)
+	MakeDraggable(TopBar, Window)
 	KazeUI:AddPanel(TopBar, -0.01)
 
 	local Avatar = Instance.new("ImageButton")
@@ -2893,8 +2844,8 @@ function KazeUI:CreateWindow(config)
 	MiniIcon.Parent = MiniButton
 	MiniIcon.ZIndex = 1000
 	
-	-- Mini button utilizes Scale (0.5, 0) to guarantee a flawless circular bubble structure at any size
-	Instance.new("UICorner", MiniIcon).CornerRadius = UDim.new(0.5, 0)
+	-- Mini button utilizes standard modern circular rounding (1, 0) for perfect responsive bubbles
+	Instance.new("UICorner", MiniIcon).CornerRadius = UDim.new(1, 0)
 	KazeUI:AddPanel(MiniIcon, 0.02)
 	KazeUI:OnThemeChanged(MiniIcon, function(t) MiniIcon.ImageColor3 = t.Text end)
 
@@ -2939,8 +2890,44 @@ function KazeUI:CreateWindow(config)
 
 	BtnYellow.MouseButton1Click:Connect(minimizeWindow)
 
-	-- Seamless Draggable connection using the upgraded decay dragging physics
-	MakeDraggable(MiniButton, MiniButton, true, unminimizeWindow)
+	local miniDragStart
+	local miniDragMoved = false
+	
+	MiniButton.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			miniDragStart = input.Position
+			miniDragMoved = false
+		end
+	end)
+	
+	local miniDragConn1 = UIS.InputChanged:Connect(function(input)
+		if miniDragStart and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+			if (input.Position - miniDragStart).Magnitude > 8 then
+				miniDragMoved = true
+				local delta = input.Position - miniDragStart
+				local scale = UIScale.Scale
+				-- Incorporates dynamic UI scale divisor to normalize desktop/mobile pointer movement
+				MiniButton.Position = UDim2.new(
+					0, MiniButton.Position.X.Offset + (delta.X / scale),
+					0, MiniButton.Position.Y.Offset + (delta.Y / scale)
+				)
+				miniDragStart = input.Position
+			end
+		end
+	end)
+	
+	local miniDragConn2 = UIS.InputEnded:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			if miniDragStart and not miniDragMoved then unminimizeWindow() end
+			miniDragStart = nil
+			miniDragMoved = false
+		end
+	end)
+	
+	MiniButton.Destroying:Connect(function()
+		if miniDragConn1 then miniDragConn1:Disconnect() end
+		if miniDragConn2 then miniDragConn2:Disconnect() end
+	end)
 
 	BtnGreen.MouseButton1Click:Connect(function()
 		if not toggledMaximized then
@@ -3076,8 +3063,8 @@ function KazeUI:CreateWindow(config)
 
 	local isSidebarOpen = true
 	Avatar.MouseButton1Click:Connect(function()
-		local tInfo = TweenInfo.new(0.35, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
 		isSidebarOpen = not isSidebarOpen
+		local tInfo = TweenInfo.new(0.35, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
 		if isSidebarOpen then
 			TweenService:Create(SideBarMask, tInfo, {Size = UDim2.new(0, 190, 1, 0)}):Play()
 			TweenService:Create(VertDivider, tInfo, {Position = UDim2.new(0, 190, 0, 0), BackgroundTransparency = 0}):Play()
