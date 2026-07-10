@@ -1,26 +1,13 @@
 --[[
-	Kaze UI Library v3.5 (Premium Bubble Redesign & Engine Rewrite)
+	Kaze UI Library v3.5.1 (Premium Bubble Redesign & Engine Rewrite)
 	Inspired by: Modern Mobile Chat Bubbles, iMessage, and Discord Mobile.
 	Retained: 100% Backwards Compatibility with Version 1, 2, 2.2, 2.3, and 3.0 APIs
 	
-	UPDATES IN V3.5:
-	- Modal Resize Engine: Completely rewritten window scaling. Introduced strict input capturing, multi-touch isolation, and ScrollLock during resize.
-	- Drag Exclusion: Fixed a bug where resizing and dragging could conflict.
-	- Simplified Themes: Retained only "Obsidian" (default) and "CustomWallpaper".
-	- White Glow Sync: Automatically forces the Glow color to bright White when Obsidian theme is loaded.
-	
-	CUSTOM MODIFICATIONS & FIXES:
-	- Removed Win:Divider() function.
-	- Configuration System now creates a folder based on the Author's name and saves/loads files from there.
-	- Wallpaper Save/Load Restore fix.
-	- Decoupled Notification Background from dynamic transparency overlays.
-	- Enhanced Notification Title support for Color3 and rainbow RGB animation cycles.
-	- FIX: Nilagyan ng padding ang notification frame upang maiwasan ang pagkaputol ng shadow at stroke.
-	- FIX: Inalis ang glow effect sa searchbar ng dropdown para sa mas malinis na UI.
-	- FEATURE: Idinagdag ang ganap na suporta para sa Notification Icons (Lucide & Asset IDs, na may adaptive padding at RGB sync!).
-	- BUGFIX: Inayos ang dropdown selected text label na nananatiling "Label" sa simula sa pamamagitan ng agarang text assignment sa initialization.
-	- FIX (LATEST): Dynamic notification scaling para sa mahahabang mensahe at premium close button gamit ang Texture ID 93898873302694.
-	- FIX (SCALING): Enhanced the minimize floating button to auto-scale perfectly with the dynamic scaling engine and corrected viewport dragging drift.
+	UPDATES IN V3.5.1:
+	- Smooth Dragging Engine: Completely overhauled dragging mechanics. Implemented a frame-rate-independent 
+	  linear interpolation (lerp) loop using RenderStepped for ultra-fluid movement.
+	- Minimized Floating Square: Restructured the floating Minimized Button (MiniButton) from a circular shape 
+	  to an elegant premium rounded square with custom UICorner adjustments.
 --]]
 
 local KazeUI = {}
@@ -32,6 +19,7 @@ local TweenService = game:GetService("TweenService")
 local UIS = game:GetService("UserInputService")
 local TextService = game:GetService("TextService")
 local HttpService = game:GetService("HttpService")
+local RunService = game:GetService("RunService")
 local LP = Players.LocalPlayer
 local Mouse = LP:GetMouse()
 
@@ -166,7 +154,7 @@ local function UpdateScale()
 		targetScale = (minAxis < 500) and 0.85 or 1.0
 	else
 		if width >= 1920 or height >= 1080 then
-			targetScale = 1.15 -- Enhanced Desktop Scaling
+			targetScale = 1.12
 		elseif width <= 1366 then
 			targetScale = 0.95
 		else
@@ -277,34 +265,56 @@ function KazeUI:OnThemeChanged(inst, cb)
 	end)
 end
 
--- Premium Dragging engine
+-- Premium Dragging engine with Ultra-Smooth Lerp physics
 local lastNormalPosition = UDim2.fromScale(0.5, 0.5)
 local lastNormalAnchor = Vector2.new(0.5, 0.5)
 
 local function MakeDraggable(dragPart, targetPart)
 	local dragging = false
 	local dragInput, dragStart, startPos
-	local dragActive = false
+	local targetPos
 	
 	dragPart.Active = true
 	
-	local function update(input)
-		if not dragStart or not startPos then return end
-		local delta = input.Position - dragStart
-		local scale = UIScale.Scale
+	-- Continuously interpolate position on RenderStepped for high-fidelity performance
+	local renderConnection
+	renderConnection = RunService.RenderStepped:Connect(function()
+		if not targetPart or not targetPart.Parent then
+			if renderConnection then renderConnection:Disconnect() end
+			return
+		end
 		
-		if dragActive or delta.Magnitude > 8 then
-			dragActive = true
-			targetPart.Position = UDim2.new(
-				startPos.X.Scale, startPos.X.Offset + (delta.X / scale),
-				startPos.Y.Scale, startPos.Y.Offset + (delta.Y / scale)
-			)
+		if targetPos then
+			local currentPos = targetPart.Position
+			local dx = targetPos.X.Offset - currentPos.X.Offset
+			local dy = targetPos.Y.Offset - currentPos.Y.Offset
+			
+			-- Smooth 0.20 Lerp Factor
+			if math.abs(dx) > 0.1 or math.abs(dy) > 0.1 then
+				targetPart.Position = UDim2.new(
+					targetPos.X.Scale, currentPos.X.Offset + (dx * 0.20),
+					targetPos.Y.Scale, currentPos.Y.Offset + (dy * 0.20)
+				)
+			else
+				targetPart.Position = targetPos
+			end
 			
 			if targetPart.Name == "Frame" or targetPart:IsA("Frame") then
 				lastNormalPosition = targetPart.Position
 				lastNormalAnchor = targetPart.AnchorPoint
 			end
 		end
+	end)
+	
+	local function update(input)
+		if not dragStart or not startPos then return end
+		local delta = input.Position - dragStart
+		local scale = UIScale.Scale
+		
+		targetPos = UDim2.new(
+			startPos.X.Scale, startPos.X.Offset + (delta.X / scale),
+			startPos.Y.Scale, startPos.Y.Offset + (delta.Y / scale)
+		)
 	end
 	
 	dragPart.InputBegan:Connect(function(input)
@@ -313,9 +323,9 @@ local function MakeDraggable(dragPart, targetPart)
 		
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 			dragging = true
-			dragActive = false
 			dragStart = input.Position
 			startPos = targetPart.Position
+			targetPos = startPos
 			
 			LockCamera()
 			
@@ -324,6 +334,7 @@ local function MakeDraggable(dragPart, targetPart)
 				if input.UserInputState == Enum.UserInputState.End then
 					dragging = false
 					dragInput = nil
+					targetPos = nil -- Releases interpolation state control
 					UnlockCamera()
 					if changeCon then changeCon:Disconnect() end
 				end
@@ -344,6 +355,7 @@ local function MakeDraggable(dragPart, targetPart)
 	if dragPart and typeof(dragPart) == "Instance" then
 		dragPart.Destroying:Connect(function()
 			if uisConn then uisConn:Disconnect() end
+			if renderConnection then renderConnection:Disconnect() end
 		end)
 	end
 end
@@ -630,7 +642,7 @@ function KazeUI:Notify(config)
 	-- Dynamic RGB Color Rainbow Cycle or direct Color3 assignment
 	if isRGBTitle then
 		local connection
-		connection = game:GetService("RunService").RenderStepped:Connect(function()
+		connection = RunService.RenderStepped:Connect(function()
 			if not titleLab or not titleLab.Parent then
 				connection:Disconnect()
 				return
@@ -2660,8 +2672,7 @@ function KazeUI:CreateWindow(config)
 		KazeUI:SetGlow(Color3.fromRGB(255, 255, 255)) -- Fallback standard white glow
 	end
 
-	-- Enhanced Floating Mini Button Size (Standardized modern size targets for responsive touch/desktop)
-	local MiniButtonSize = UDim2.fromOffset(56, 56)
+	local MiniButtonSize = UDim2.fromOffset(48, 48)
 
 	-- Main Window Setup
 	local Window = Instance.new("Frame")
@@ -2844,8 +2855,8 @@ function KazeUI:CreateWindow(config)
 	MiniIcon.Parent = MiniButton
 	MiniIcon.ZIndex = 1000
 	
-	-- Mini button utilizes standard modern circular rounding (1, 0) for perfect responsive bubbles
-	Instance.new("UICorner", MiniIcon).CornerRadius = UDim.new(1, 0)
+	-- FIX: Mini button now utilizes rounded square UI rounding (12px) instead of fully circular bubble (20px)
+	Instance.new("UICorner", MiniIcon).CornerRadius = UDim.new(0, 12)
 	KazeUI:AddPanel(MiniIcon, 0.02)
 	KazeUI:OnThemeChanged(MiniIcon, function(t) MiniIcon.ImageColor3 = t.Text end)
 
@@ -2905,11 +2916,9 @@ function KazeUI:CreateWindow(config)
 			if (input.Position - miniDragStart).Magnitude > 8 then
 				miniDragMoved = true
 				local delta = input.Position - miniDragStart
-				local scale = UIScale.Scale
-				-- Incorporates dynamic UI scale divisor to normalize desktop/mobile pointer movement
 				MiniButton.Position = UDim2.new(
-					0, MiniButton.Position.X.Offset + (delta.X / scale),
-					0, MiniButton.Position.Y.Offset + (delta.Y / scale)
+					0, MiniButton.Position.X.Offset + delta.X,
+					0, MiniButton.Position.Y.Offset + delta.Y
 				)
 				miniDragStart = input.Position
 			end
