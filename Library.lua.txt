@@ -10,7 +10,7 @@
 	- White Glow Sync: Automatically forces the Glow color to bright White when Obsidian theme is loaded.
 	
 	CUSTOM MODIFICATIONS & FIXES:
-	- Restored Divider: Added Win:Divider() and tab:Divider() back for 100% API compatibility.
+	- Removed Win:Divider() function.
 	- Configuration System now creates a folder based on the Author's name and saves/loads files from there.
 	- Wallpaper Save/Load Restore fix.
 	- Decoupled Notification Background from dynamic transparency overlays.
@@ -21,6 +21,7 @@
 	- BUGFIX: Inayos ang dropdown selected text label na nananatiling "Label" sa simula sa pamamagitan ng agarang text assignment sa initialization.
 	- FIX (LATEST): Dynamic notification scaling para sa mahahabang mensahe at premium close button gamit ang Texture ID 93898873302694.
 	- FIX (SCALING): Enhanced the minimize floating button to auto-scale perfectly with the dynamic scaling engine and corrected viewport dragging drift.
+	- BUGFIX (TOGGLE): Fixed an issue where toggle background changed colors to border color instead of reverting back to panel color on MouseLeave.
 --]]
 
 local KazeUI = {}
@@ -757,6 +758,14 @@ function KazeUI:SaveConfig(name)
 	end
 end
 
+local function ToggleScrollingAncestors(element, state)
+	local current = element.Parent
+	while current do
+		if current:IsA("ScrollingFrame") then current.ScrollingEnabled = state end
+		current = current.Parent
+	end
+end
+
 function KazeUI:LoadConfig(name)
 	if readfile then
 		local folder = KazeUI.AuthorName
@@ -787,14 +796,6 @@ function KazeUI:LoadConfig(name)
 		else
 			KazeUI:Notify({Title = "Config Error", Content = "Config file not found.", Duration = 3})
 		end
-	end
-end
-
-local function ToggleScrollingAncestors(element, state)
-	local current = element.Parent
-	while current do
-		if current:IsA("ScrollingFrame") then current.ScrollingEnabled = state end
-		current = current.Parent
 	end
 end
 
@@ -913,57 +914,57 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 	clickBtn.BackgroundTransparency = 1
 	clickBtn.Text = ""
 
+	local function UpdateHeaderVisual()
+		if isMulti then
+			local count = 0
+			local firstVal = ""
+			for k, v in pairs(selectedMulti) do
+				if v then 
+					count = count + 1 
+					if firstVal == "" then firstVal = k end
+				end
+			end
+			if count == 0 then selectedLabel.Text = "None"
+			elseif count == 1 then selectedLabel.Text = firstVal
+			else selectedLabel.Text = count .. " Selected" end
+		else
+			selectedLabel.Text = tostring(selectedSingle)
+		end
+	end
+
 	local searchWrapper = Instance.new("Frame")
-	searchWrapper.Size = UDim2.new(1, -20, 0, 36) -- Spacious 36px height
+	searchWrapper.Size = UDim2.new(1, -20, 0, 32)
 	searchWrapper.BackgroundTransparency = 1
 	searchWrapper.LayoutOrder = 2
 	searchWrapper.Visible = false
 	searchWrapper.Parent = dropFrame
 
-	local searchContainer = Instance.new("Frame")
-	searchContainer.Size = UDim2.new(1, 0, 1, 0)
-	searchContainer.BorderSizePixel = 0
-	searchContainer.Parent = searchWrapper
-	Instance.new("UICorner", searchContainer).CornerRadius = UDim.new(0, 10)
-	KazeUI:AddPanel(searchContainer, -0.01)
-
-	local searchStroke = Instance.new("UIStroke", searchContainer)
-	searchStroke.Thickness = 1.2
-	KazeUI:RegisterBorder(searchStroke)
-
-	local searchIcon = Instance.new("ImageLabel")
-	searchIcon.Name = "SearchIcon"
-	searchIcon.Size = UDim2.fromOffset(16, 16)
-	searchIcon.Position = UDim2.new(0, 10, 0.5, 0)
-	searchIcon.AnchorPoint = Vector2.new(0, 0.5)
-	searchIcon.BackgroundTransparency = 1
-	searchIcon.Image = "rbxassetid://11552431238" -- Modern, sleek Lucide Magnifying Glass
-	searchIcon.ImageTransparency = 0.4
-	searchIcon.Parent = searchContainer
-	KazeUI:OnThemeChanged(searchIcon, function(t) searchIcon.ImageColor3 = t.MutedText end)
-
 	local searchBox = Instance.new("TextBox")
-	searchBox.Size = UDim2.new(1, -38, 1, 0)
-	searchBox.Position = UDim2.fromOffset(32, 0) -- Indented to prevent icon overlapping
-	searchBox.BackgroundTransparency = 1
+	searchBox.Size = UDim2.new(1, 0, 1, 0)
 	searchBox.BorderSizePixel = 0
 	searchBox.PlaceholderText = "Search options..."
 	searchBox.Text = ""
 	searchBox.Font = Enum.Font.Gotham
 	searchBox.TextSize = 11
 	searchBox.TextXAlignment = Enum.TextXAlignment.Left
-	searchBox.ClearTextOnFocus = false
-	searchBox.Parent = searchContainer
+	searchBox.Parent = searchWrapper
+	Instance.new("UICorner", searchBox).CornerRadius = UDim.new(0, 10)
+	KazeUI:AddPanel(searchBox, -0.01)
 	KazeUI:RegisterText(searchBox, false)
 
-	-- Searchbox glows beautifully with Accent Glow Color on focus
+	local searchStroke = Instance.new("UIStroke", searchBox)
+	searchStroke.Thickness = 1
+	KazeUI:RegisterBorder(searchStroke)
+
+	local searchPadding = Instance.new("UIPadding", searchBox)
+	searchPadding.PaddingLeft = UDim.new(0, 10)
+
+	-- Hindi na ito nag-gloglow sa Accent Glow Color kapag naka-focus
 	searchBox.Focused:Connect(function() 
-		TweenService:Create(searchStroke, TWEEN_FAST, {Color = KazeUI.GlowColor}):Play()
-		TweenService:Create(searchIcon, TWEEN_FAST, {ImageTransparency = 0, ImageColor3 = KazeUI.GlowColor}):Play()
+		TweenService:Create(searchStroke, TWEEN_FAST, {Color = KazeUI.CurrentTheme.Border}):Play()
 	end)
 	searchBox.FocusLost:Connect(function() 
 		TweenService:Create(searchStroke, TWEEN_FAST, {Color = KazeUI.CurrentTheme.Border}):Play()
-		TweenService:Create(searchIcon, TWEEN_FAST, {ImageTransparency = 0.4, ImageColor3 = KazeUI.CurrentTheme.MutedText}):Play()
 	end)
 	
 	local divider = Instance.new("Frame")
@@ -1242,6 +1243,7 @@ local function CreateParagraph(parentFrame, title, body)
 		ptitleLabel.BackgroundTransparency = 1
 		ptitleLabel.Text = title
 		ptitleLabel.Font = Enum.Font.GothamBold
+		ptitleLabel.TextSize = 13
 		ptitleLabel.TextXAlignment = Enum.TextXAlignment.Left
 		ptitleLabel.TextWrapped = true
 		KazeUI:RegisterText(ptitleLabel, false)
@@ -1469,7 +1471,6 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 	local switchIndicator = Instance.new("Frame")
 	switchIndicator.AnchorPoint = Vector2.new(0, 0.5)
 	switchIndicator.Position = state and UDim2.new(1, -18, 0.5, 0) or UDim2.new(0, 2, 0.5, 0)
-	switchIndicator.Size = UDim2.fromOffset(16, 16)
 	switchIndicator.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
 	switchIndicator.BorderSizePixel = 0
 	Instance.new("UICorner", switchIndicator).CornerRadius = UDim.new(1, 0)
@@ -1482,6 +1483,7 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 		ptitleLabel.BackgroundTransparency = 1
 		ptitleLabel.Text = title
 		ptitleLabel.Font = Enum.Font.GothamBold
+		ptitleLabel.TextSize = 13
 		ptitleLabel.TextWrapped = true
 		ptitleLabel.TextXAlignment = Enum.TextXAlignment.Left
 		if body == "" then ptitleLabel.AnchorPoint = Vector2.new(0, 0.5); ptitleLabel.Position = UDim2.new(0, 0, 0.5, 0) end
@@ -1534,7 +1536,7 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 	end)
 	clickDetector.MouseLeave:Connect(function()
 		isHovering = false
-		-- BUGFIX: Correctly return to GetColor(0.02) instead of painting it with Border color
+		-- BUGFIX: Revert back to proper panel background color (0.02 elevation) instead of border color
 		TweenService:Create(paraFrame, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.02)}):Play()
 		TweenService:Create(paraStroke, TWEEN_FAST, {Color = KazeUI.CurrentTheme.Border}):Play()
 	end)
@@ -1620,6 +1622,7 @@ local function CreateTextBoxInput(parentFrame, title, placeholder, defaultVal, c
 		ptitleLabel.BackgroundTransparency = 1
 		ptitleLabel.Text = title
 		ptitleLabel.Font = Enum.Font.GothamBold
+		ptitleLabel.TextSize = 13
 		ptitleLabel.TextWrapped = true
 		ptitleLabel.TextXAlignment = Enum.TextXAlignment.Left
 		KazeUI:RegisterText(ptitleLabel, false)
@@ -2179,6 +2182,7 @@ local function CreateKeybindInput(parentFrame, title, defaultKey, callback, flag
 		ptitleLabel.BackgroundTransparency = 1
 		ptitleLabel.Text = title
 		ptitleLabel.Font = Enum.Font.GothamBold
+		ptitleLabel.TextSize = 13
 		ptitleLabel.TextWrapped = true
 		ptitleLabel.TextXAlignment = Enum.TextXAlignment.Left
 		KazeUI:RegisterText(ptitleLabel, false)
@@ -2419,16 +2423,6 @@ AttachElementsToAPI = function(apiTable, parentFrame)
 	function apiTable:Section(arg1)
 		local title = type(arg1) == "table" and arg1.Title or arg1
 		return CreateVisualSectionDivider(parentFrame, title)
-	end
-
-	-- 100% Backwards Compatible Divider support inside pages/tabs and sub-collapsible sections
-	function apiTable:Divider()
-		local divider = Instance.new("Frame")
-		divider.Size = UDim2.new(0.95, 0, 0, 1)
-		divider.BorderSizePixel = 0
-		divider.Parent = parentFrame
-		KazeUI:OnThemeChanged(divider, function(t) divider.BackgroundColor3 = t.Border end)
-		return divider
 	end
 end
 
@@ -2972,10 +2966,7 @@ function KazeUI:CreateWindow(config)
 		ConfirmWindow.Position = UDim2.fromScale(0.5, 0.45)
 		ConfirmWindow.ZIndex = 52
 		Instance.new("UICorner", ConfirmWindow).CornerRadius = UDim.new(0, 20)
-		
-		-- BUGFIX: Added `true` to ignore background transparency sync (ensuring a clean, solid, readable exit prompt dialog)
-		KazeUI:AddPanel(ConfirmWindow, 0.02, false, true)
-		ConfirmWindow.BackgroundTransparency = 0.05 -- Solid background opacity fallback
+		KazeUI:AddPanel(ConfirmWindow, 0.02)
 
 		local confirmStroke = Instance.new("UIStroke", ConfirmWindow)
 		confirmStroke.Thickness = 1.2
@@ -3072,8 +3063,8 @@ function KazeUI:CreateWindow(config)
 
 	local isSidebarOpen = true
 	Avatar.MouseButton1Click:Connect(function()
-		isSidebarOpen = not isSidebarOpen
 		local tInfo = TweenInfo.new(0.35, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
+		isSidebarOpen = not isSidebarOpen
 		if isSidebarOpen then
 			TweenService:Create(SideBarMask, tInfo, {Size = UDim2.new(0, 190, 1, 0)}):Play()
 			TweenService:Create(VertDivider, tInfo, {Position = UDim2.new(0, 190, 0, 0), BackgroundTransparency = 0}):Play()
@@ -3219,15 +3210,6 @@ function KazeUI:CreateWindow(config)
 			else
 				self:Minimize()
 			end
-		end,
-		-- 100% Backwards Compatible Divider support inside the main Window object fallback context
-		Divider = function(self)
-			local divider = Instance.new("Frame")
-			divider.Size = UDim2.new(0.95, 0, 0, 1)
-			divider.BorderSizePixel = 0
-			divider.Parent = self._Pages
-			KazeUI:OnThemeChanged(divider, function(t) divider.BackgroundColor3 = t.Border end)
-			return divider
 		end
 	}
 
@@ -3439,7 +3421,7 @@ function KazeUI:CreateWindow(config)
 		local page = Instance.new("Frame")
 		page.Size = UDim2.new(1, 0, 1, 0)
 		page.BackgroundTransparency = 1
-		page.Visible = false
+		page.Page.Visible = false
 		page.Parent = self._Pages
 
 		local pageContent = Instance.new("ScrollingFrame", page)
