@@ -1,18 +1,31 @@
 --[[
-	Kaze UI Library v3.5.2 (Premium Bubble Redesign & Next-Gen Glowing Engine)
+	Kaze UI Library v3.5 (Premium Bubble Redesign & Engine Rewrite)
 	Inspired by: Modern Mobile Chat Bubbles, iMessage, and Discord Mobile.
 	Retained: 100% Backwards Compatibility with Version 1, 2, 2.2, 2.3, and 3.0 APIs
 	
-	UPDATES IN V3.5.2:
-	- TYPOGRAPHY UPGRADE: Increased Button, Tab, and Component title sizes from 12pt/13pt to 14pt for ultimate high-contrast readability on mobile devices.
-	- COLOR PICKER GRADIENT BUGFIX: Fixed a bug where both the white and black overlay frames had `BackgroundTransparency = 1`, making them invisible and rendering the picker as a solid color.
-	- SMART GLOW COLOR PARSER: Added support for direct Color3 objects, Hex codes, and named strings under the 'Glow'/'GlowColor' properties.
-	- NEXT-GEN NEON ENGINE: Rewrote glowing structures. StartNeonLoop now dynamically pairs base elements with high-fidelity, dual-breathing volumetric outer shadow textures (assetid: 6015886843).
-	- VOLUMETRIC BACKLIGHTING: Applied physical neon bloom fields to toggles (when active), buttons (on hover), collapsible dividers, and window frame outlines.
+	UPDATES IN V3.5:
 	- Modal Resize Engine: Completely rewritten window scaling. Introduced strict input capturing, multi-touch isolation, and ScrollLock during resize.
 	- Drag Exclusion: Fixed a bug where resizing and dragging could conflict.
 	- Simplified Themes: Retained only "Obsidian" (default) and "CustomWallpaper".
 	- White Glow Sync: Automatically forces the Glow color to bright White when Obsidian theme is loaded.
+	
+	CUSTOM MODIFICATIONS & FIXES:
+	- Removed Win:Divider() function.
+	- Configuration System now creates a folder based on the Author's name and saves/loads files from there.
+	- Wallpaper Save/Load Restore fix.
+	- Decoupled Notification Background from dynamic transparency overlays.
+	- Enhanced Notification Title support for Color3 and rainbow RGB animation cycles.
+	- FIX: Nilagyan ng padding ang notification frame upang maiwasan ang pagkaputol ng shadow at stroke.
+	- FIX: Inalis ang glow effect sa searchbar ng dropdown para sa mas limis na UI.
+	- FEATURE: Idinagdag ang ganap na suporta para sa Notification Icons (Lucide & Asset IDs, na may adaptive padding at RGB sync!).
+	- BUGFIX: Inayos ang dropdown selected text label na nananatiling "Label" sa simula sa pamamagitan ng agarang text assignment sa initialization.
+	- FIX (LATEST): Dynamic notification scaling para sa mahahabang mensahe at premium close button gamit ang Texture ID 10747384394.
+	- CONTRAST & MODAL BUGFIX (2026): Increased description readability by making theme MutedText brighter, and locked input behind the Exit Confirmation overlay to block background interaction.
+	
+	V3.5.1 HOTFIXES:
+	- BUGFIX: Color Picker saturation/value overlays had BackgroundTransparency set to 1, rendering gradients completely invisible (resulting in a solid blue rectangle). Restored to 0.
+	- REWRITE: CreateWindow config.Glow parameter now parses strings, hex codes ("#ffffff"), and native Color3 inputs automatically.
+	- EXTENSION: Added Midnight, Sakura, Amethyst, and Emerald themes to perfectly match KazeUI's premium aesthetic.
 --]]
 
 local KazeUI = {}
@@ -39,6 +52,50 @@ KazeUI.Themes = {
 		BackgroundImage = "rbxassetid://13963496525",
 		BackgroundImageTransparency = 0.85,
 		OverlayTransparency = 0.20
+	},
+	Midnight = {
+		Name = "Midnight",
+		Background = Color3.fromRGB(14, 12, 24),
+		Text = Color3.fromRGB(245, 240, 255),
+		MutedText = Color3.fromRGB(180, 170, 205),
+		Border = Color3.fromRGB(50, 42, 80),
+		LightnessFactor = 1.1,
+		BackgroundImage = "rbxassetid://13963496525",
+		BackgroundImageTransparency = 0.88,
+		OverlayTransparency = 0.30
+	},
+	Sakura = {
+		Name = "Sakura",
+		Background = Color3.fromRGB(24, 15, 20),
+		Text = Color3.fromRGB(255, 235, 242),
+		MutedText = Color3.fromRGB(225, 185, 198),
+		Border = Color3.fromRGB(75, 45, 55),
+		LightnessFactor = 1.05,
+		BackgroundImage = "rbxassetid://13963496525",
+		BackgroundImageTransparency = 0.90,
+		OverlayTransparency = 0.25
+	},
+	Amethyst = {
+		Name = "Amethyst",
+		Background = Color3.fromRGB(14, 10, 20),
+		Text = Color3.fromRGB(245, 235, 255),
+		MutedText = Color3.fromRGB(195, 175, 215),
+		Border = Color3.fromRGB(55, 40, 75),
+		LightnessFactor = 1.1,
+		BackgroundImage = "rbxassetid://13963496525",
+		BackgroundImageTransparency = 0.85,
+		OverlayTransparency = 0.25
+	},
+	Emerald = {
+		Name = "Emerald",
+		Background = Color3.fromRGB(10, 18, 14),
+		Text = Color3.fromRGB(235, 250, 240),
+		MutedText = Color3.fromRGB(170, 205, 185),
+		Border = Color3.fromRGB(40, 65, 50),
+		LightnessFactor = 1.1,
+		BackgroundImage = "rbxassetid://13963496525",
+		BackgroundImageTransparency = 0.90,
+		OverlayTransparency = 0.25
 	},
 	CustomWallpaper = {
 		Name = "Custom",
@@ -212,39 +269,8 @@ local function FormatImage(id)
 	return "rbxassetid://" .. clean
 end
 
--- Smart dynamic Color3 parser (Supports Color3, Hex-string, or Named color mapping)
-local function ParseColor(val)
-	if typeof(val) == "Color3" then
-		return val
-	elseif type(val) == "string" then
-		local lowerVal = string.lower(val)
-		local glowMap = {
-			red = Color3.fromRGB(255, 60, 60),
-			blue = Color3.fromRGB(0, 160, 255),
-			green = Color3.fromRGB(34, 197, 94),
-			["neon green"] = Color3.fromRGB(34, 197, 94),
-			yellow = Color3.fromRGB(234, 179, 8),
-			purple = Color3.fromRGB(150, 80, 255),
-			pink = Color3.fromRGB(244, 114, 182),
-			orange = Color3.fromRGB(249, 115, 22),
-			white = Color3.fromRGB(255, 255, 255),
-			black = Color3.fromRGB(15, 15, 17)
-		}
-		if glowMap[lowerVal] then
-			return glowMap[lowerVal]
-		end
-		
-		local cleanHex = string.gsub(val, "#", "")
-		local success, parsed = pcall(function() return Color3.fromHex(cleanHex) end)
-		if success then
-			return parsed
-		end
-	end
-	return nil
-end
-
 -- ==========================================
--- Dynamic Color Sync & Volumetric Glow Engine
+-- Dynamic Color Sync & Registries
 -- ==========================================
 function KazeUI:OnGlowChanged(inst, callback)
 	table.insert(KazeUI.GlowCallbacks, {Inst = inst, Callback = callback})
@@ -487,55 +513,20 @@ function KazeUI:SetTheme(themeName)
 	end
 end
 
--- Upgraded Glow Loop with Dual-Breathing Volumetric Shadow Backlight
-local function StartNeonLoop(target, glowOffset)
+-- Glow loop with high quality breathing effect
+local function StartNeonLoop(target)
 	if not target then return end
 	local propName = pcall(function() return target.Color end) and "Color" or "BackgroundColor3"
-	
-	-- Volumetric Glow Overlay creation (Asset ID: 6015886843)
-	local glowOverlay = nil
-	if target:IsA("GuiObject") and not target:FindFirstChild("KazeTrueGlow") then
-		glowOverlay = Instance.new("ImageLabel")
-		glowOverlay.Name = "KazeTrueGlow"
-		glowOverlay.AnchorPoint = Vector2.new(0.5, 0.5)
-		glowOverlay.Position = UDim2.fromScale(0.5, 0.5)
-		
-		-- Setup layout boundary padding depending on element sizes
-		local offset = glowOffset or 30
-		glowOverlay.Size = UDim2.new(1, offset, 1, offset)
-		glowOverlay.BackgroundTransparency = 1
-		glowOverlay.Image = "rbxassetid://6015886843" -- High quality sliceable soft light glow asset
-		glowOverlay.ImageColor3 = KazeUI.GlowColor
-		glowOverlay.ImageTransparency = 0.55
-		glowOverlay.ScaleType = Enum.ScaleType.Slice
-		glowOverlay.SliceCenter = Rect.new(49, 49, 151, 151)
-		glowOverlay.ZIndex = math.max(1, target.ZIndex - 1)
-		glowOverlay.Parent = target
-	end
-
-	table.insert(KazeUI.GlowElements, {Target = target, Prop = propName, GlowOverlay = glowOverlay, Offset = glowOffset})
+	table.insert(KazeUI.GlowElements, {Target = target, Prop = propName})
 
 	local function createTween()
+		local tweenInfo = TweenInfo.new(2.2, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true)
 		local h, s, v = Color3.toHSV(KazeUI.GlowColor)
-		local brightColor = Color3.fromHSV(h, math.clamp(s * 0.95, 0, 1), math.clamp(v * 1.1, 0, 1))
-		
-		local tweenInfo = TweenInfo.new(1.8, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true)
-		local tween = TweenService:Create(target, tweenInfo, {[propName] = brightColor})
+		local targetColor = Color3.fromHSV(h, s * 0.85, math.clamp(v * 1.05, 0, 1))
+		local tween = TweenService:Create(target, tweenInfo, {[propName] = targetColor})
 		tween:Play()
 		KazeUI.NeonTweens[target] = tween
-
-		if glowOverlay then
-			-- Synchronized expansion & visibility breathing cycles
-			local overlayTween = TweenService:Create(glowOverlay, tweenInfo, {
-				Size = UDim2.new(1, (glowOffset or 30) + 6, 1, (glowOffset or 30) + 6),
-				ImageTransparency = 0.35,
-				ImageColor3 = brightColor
-			})
-			overlayTween:Play()
-			KazeUI.NeonTweens[glowOverlay] = overlayTween
-		end
 	end
-	
 	target[propName] = KazeUI.GlowColor
 	createTween()
 end
@@ -547,17 +538,7 @@ local function StopNeonLoop(target)
 		KazeUI.NeonTweens[target] = nil
 	end
 	for i = #KazeUI.GlowElements, 1, -1 do
-		local data = KazeUI.GlowElements[i]
-		if data.Target == target then
-			if data.GlowOverlay then
-				if KazeUI.NeonTweens[data.GlowOverlay] then
-					KazeUI.NeonTweens[data.GlowOverlay]:Cancel()
-					KazeUI.NeonTweens[data.GlowOverlay] = nil
-				end
-				data.GlowOverlay:Destroy()
-			end
-			table.remove(KazeUI.GlowElements, i)
-		end
+		if KazeUI.GlowElements[i].Target == target then table.remove(KazeUI.GlowElements, i) end
 	end
 end
 
@@ -567,38 +548,17 @@ function KazeUI:SetGlow(color)
 	for _, data in ipairs(KazeUI.GlowElements) do
 		local target = data.Target
 		local propName = data.Prop
-		local glowOverlay = data.GlowOverlay
-		local offset = data.Offset or 30
-		
 		if target and target.Parent then
 			if KazeUI.NeonTweens[target] then KazeUI.NeonTweens[target]:Cancel() end
-			if glowOverlay and KazeUI.NeonTweens[glowOverlay] then KazeUI.NeonTweens[glowOverlay]:Cancel() end
-			
 			target[propName] = color
-			if glowOverlay then
-				glowOverlay.ImageColor3 = color
-			end
-			
-			local h, s, v = Color3.toHSV(color)
-			local brightColor = Color3.fromHSV(h, math.clamp(s * 0.95, 0, 1), math.clamp(v * 1.1, 0, 1))
-			
 			local tweenInfo = TweenInfo.new(1.8, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true)
-			local newTween = TweenService:Create(target, tweenInfo, {[propName] = brightColor})
+			local h, s, v = Color3.toHSV(color)
+			local targetColor = Color3.fromHSV(h, s * 0.9, 1)
+			local newTween = TweenService:Create(target, tweenInfo, {[propName] = targetColor})
 			newTween:Play()
 			KazeUI.NeonTweens[target] = newTween
-
-			if glowOverlay then
-				local overlayTween = TweenService:Create(glowOverlay, tweenInfo, {
-					Size = UDim2.new(1, offset + 6, 1, offset + 6),
-					ImageTransparency = 0.35,
-					ImageColor3 = brightColor
-				})
-				overlayTween:Play()
-				KazeUI.NeonTweens[glowOverlay] = overlayTween
-			end
 		else
 			KazeUI.NeonTweens[target] = nil
-			if glowOverlay then KazeUI.NeonTweens[glowOverlay] = nil end
 		end
 	end
 	
@@ -760,7 +720,7 @@ function KazeUI:Notify(config)
 	progressBar.BackgroundColor3 = KazeUI.GlowColor
 	progressBar.BorderSizePixel = 0
 	Instance.new("UICorner", progressBar).CornerRadius = UDim.new(1, 0)
-	StartNeonLoop(progressBar, 16) -- Dynamic Breathing Glow for notification progress bar
+	StartNeonLoop(progressBar)
 	
 	KazeUI:OnGlowChanged(progressBar, function(c) progressBar.BackgroundColor3 = c end)
 
@@ -955,7 +915,7 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 	titleLabel.BackgroundTransparency = 1
 	titleLabel.Text = title
 	titleLabel.Font = Enum.Font.GothamBold
-	titleLabel.TextSize = 14 -- Increased TextSize to 14
+	titleLabel.TextSize = 13
 	titleLabel.TextXAlignment = Enum.TextXAlignment.Left
 	KazeUI:RegisterText(titleLabel, false)
 
@@ -1047,7 +1007,7 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 	local searchPadding = Instance.new("UIPadding", searchBox)
 	searchPadding.PaddingLeft = UDim.new(0, 10)
 
-	-- Hindi na ito nag-gloglow sa Accent Glow Color kapag naka-focus (Clean Search Bar modification)
+	-- Hindi na ito nag-gloglow sa Accent Glow Color kapag naka-focus
 	searchBox.Focused:Connect(function() 
 		TweenService:Create(searchStroke, TWEEN_FAST, {Color = KazeUI.CurrentTheme.Border}):Play()
 	end)
@@ -1070,7 +1030,7 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 	listContainer.LayoutOrder = 4
 	listContainer.Visible = false
 	listContainer.ScrollBarThickness = 3
-	listContainer.ScrollBarImageColor3 = Color3.fromRGB(60, 60, 65)
+	listContainer.ScrollBarImageColor3 = Color3.fromRGB(40, 40, 45)
 	listContainer.Parent = dropFrame
 
 	listContainer.MouseEnter:Connect(function() ToggleScrollingAncestors(dropFrame, false) end)
@@ -1289,7 +1249,7 @@ local function CreateParagraph(parentFrame, title, body)
 	
 	local titleHeight = 0
 	if title ~= " " then
-		local ts = TextService:GetTextSize(title, 14, Enum.Font.GothamBold, Vector2.new(measuredWidth - 28, 1000)) -- Increased TextSize calculation to 14
+		local ts = TextService:GetTextSize(title, 13, Enum.Font.GothamBold, Vector2.new(measuredWidth - 28, 1000))
 		titleHeight = math.max(18, math.ceil(ts.Y))
 	end
 	
@@ -1331,7 +1291,7 @@ local function CreateParagraph(parentFrame, title, body)
 		ptitleLabel.BackgroundTransparency = 1
 		ptitleLabel.Text = title
 		ptitleLabel.Font = Enum.Font.GothamBold
-		ptitleLabel.TextSize = 14 -- Increased TextSize to 14
+		ptitleLabel.TextSize = 13
 		ptitleLabel.TextXAlignment = Enum.TextXAlignment.Left
 		ptitleLabel.TextWrapped = true
 		KazeUI:RegisterText(ptitleLabel, false)
@@ -1369,7 +1329,7 @@ local function CreateClickableParagraph(parentFrame, title, body, callback)
 	
 	local titleHeight = 0
 	if title ~= " " and title ~= "" then
-		local ts = TextService:GetTextSize(title, 14, Enum.Font.GothamBold, Vector2.new(textContainerWidth, 1000)) -- Increased TextSize calculation to 14
+		local ts = TextService:GetTextSize(title, 13, Enum.Font.GothamBold, Vector2.new(textContainerWidth, 1000))
 		titleHeight = math.max(18, math.ceil(ts.Y))
 	end
 	
@@ -1403,23 +1363,6 @@ local function CreateClickableParagraph(parentFrame, title, body, callback)
 	paraStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 	KazeUI:RegisterBorder(paraStroke)
 	
-	-- Volumetric Ambient Backlight Hover Glow
-	local hoverGlow = Instance.new("ImageLabel")
-	hoverGlow.Name = "HoverGlow"
-	hoverGlow.AnchorPoint = Vector2.new(0.5, 0.5)
-	hoverGlow.Position = UDim2.fromScale(0.5, 0.5)
-	hoverGlow.Size = UDim2.new(1, 32, 1, 32)
-	hoverGlow.BackgroundTransparency = 1
-	hoverGlow.Image = "rbxassetid://6015886843"
-	hoverGlow.ImageColor3 = KazeUI.GlowColor
-	hoverGlow.ImageTransparency = 1 -- Start invisible
-	hoverGlow.ScaleType = Enum.ScaleType.Slice
-	hoverGlow.SliceCenter = Rect.new(49, 49, 151, 151)
-	hoverGlow.ZIndex = math.max(1, paraFrame.ZIndex - 1)
-	hoverGlow.Parent = paraFrame
-
-	KazeUI:OnGlowChanged(hoverGlow, function(c) hoverGlow.ImageColor3 = c end)
-
 	local inner = Instance.new("Frame", paraFrame)
 	inner.Size = UDim2.new(1, -20, 1, -16)
 	inner.Position = UDim2.fromOffset(10, 8)
@@ -1446,7 +1389,7 @@ local function CreateClickableParagraph(parentFrame, title, body, callback)
 		ptitleLabel.BackgroundTransparency = 1
 		ptitleLabel.Text = title
 		ptitleLabel.Font = Enum.Font.GothamBold
-		ptitleLabel.TextSize = 14 -- Increased TextSize to 14 (Fixed small button title!)
+		ptitleLabel.TextSize = 13
 		ptitleLabel.TextWrapped = true
 		ptitleLabel.TextXAlignment = Enum.TextXAlignment.Left
 		if body == "" then ptitleLabel.AnchorPoint = Vector2.new(0, 0.5); ptitleLabel.Position = UDim2.new(0, 0, 0.5, 0) end
@@ -1480,18 +1423,12 @@ local function CreateClickableParagraph(parentFrame, title, body, callback)
 		TweenService:Create(paraFrame, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.04)}):Play()
 		TweenService:Create(paraStroke, TWEEN_FAST, {Color = KazeUI.GlowColor}):Play()
 		TweenService:Create(rightIcon, TWEEN_FAST, {ImageColor3 = Color3.fromRGB(255, 255, 255), Position = UDim2.new(1, -8, 0.5, 0)}):Play()
-		
-		-- Smooth Volumetric Fade-In Hover Shadow
-		TweenService:Create(hoverGlow, TWEEN_FAST, {ImageTransparency = 0.55}):Play()
 	end)
 	clickDetector.MouseLeave:Connect(function()
 		isHovering = false
 		TweenService:Create(paraFrame, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.02)}):Play()
 		TweenService:Create(paraStroke, TWEEN_FAST, {Color = KazeUI.CurrentTheme.Border}):Play()
 		TweenService:Create(rightIcon, TWEEN_FAST, {ImageColor3 = KazeUI.CurrentTheme.MutedText, Position = UDim2.new(1, -10, 0.5, 0)}):Play()
-		
-		-- Smooth Volumetric Fade-Out Hover Shadow
-		TweenService:Create(hoverGlow, TWEEN_FAST, {ImageTransparency = 1}):Play()
 	end)
 	
 	clickDetector.MouseButton1Down:Connect(function()
@@ -1499,14 +1436,12 @@ local function CreateClickableParagraph(parentFrame, title, body, callback)
 			Size = UDim2.new(0.93, 0, 0, totalHeight - 2), 
 			Position = UDim2.new(0.5, 0, 0, 4) 
 		}):Play()
-		TweenService:Create(hoverGlow, TweenInfo.new(0.1), {Size = UDim2.new(1, 24, 1, 24)}):Play()
 	end)
 	clickDetector.MouseButton1Up:Connect(function()
 		TweenService:Create(paraFrame, TWEEN_SPRING, { 
 			Size = UDim2.new(0.95, 0, 0, totalHeight), 
 			Position = UDim2.new(0.5, 0, 0, 3) 
 		}):Play()
-		TweenService:Create(hoverGlow, TWEEN_SPRING, {Size = UDim2.new(1, 32, 1, 32)}):Play()
 		if typeof(callback) == "function" then task.spawn(callback) end
 	end)
 	
@@ -1535,7 +1470,7 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 	
 	local titleHeight = 0
 	if title ~= " " then
-		local ts = TextService:GetTextSize(title, 14, Enum.Font.GothamBold, Vector2.new(textContainerWidth, 1000)) -- Increased TextSize calculation to 14
+		local ts = TextService:GetTextSize(title, 13, Enum.Font.GothamBold, Vector2.new(textContainerWidth, 1000))
 		titleHeight = math.max(18, math.ceil(ts.Y))
 	end
 	
@@ -1598,7 +1533,7 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 		ptitleLabel.BackgroundTransparency = 1
 		ptitleLabel.Text = title
 		ptitleLabel.Font = Enum.Font.GothamBold
-		ptitleLabel.TextSize = 14 -- Increased TextSize to 14
+		ptitleLabel.TextSize = 13
 		ptitleLabel.TextWrapped = true
 		ptitleLabel.TextXAlignment = Enum.TextXAlignment.Left
 		if body == "" then ptitleLabel.AnchorPoint = Vector2.new(0, 0.5); ptitleLabel.Position = UDim2.new(0, 0, 0.5, 0) end
@@ -1627,7 +1562,6 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 	clickDetector.ZIndex = 10
 	clickDetector.Parent = paraFrame
 
-	-- Active switch glows with next-gen breathing overlay
 	local function setToggleState(newState, instant)
 		state = newState
 		local targetPos = state and UDim2.new(1, -18, 0.5, 0) or UDim2.new(0, 2, 0.5, 0)
@@ -1635,20 +1569,10 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 		
 		if instant then
 			switchIndicator.Position = targetPos
-			if state then
-				StartNeonLoop(switchContainer, 14)
-			else
-				StopNeonLoop(switchContainer)
-				switchContainer.BackgroundColor3 = targetBg
-			end
+			switchContainer.BackgroundColor3 = targetBg
 		else
 			TweenService:Create(switchIndicator, TWEEN_SPRING, {Position = targetPos}):Play()
-			if state then
-				StartNeonLoop(switchContainer, 14)
-			else
-				StopNeonLoop(switchContainer)
-				TweenService:Create(switchContainer, TWEEN_FAST, {BackgroundColor3 = targetBg}):Play()
-			end
+			TweenService:Create(switchContainer, TWEEN_FAST, {BackgroundColor3 = targetBg}):Play()
 		end
 	end
 	setToggleState(state, true)
@@ -1707,7 +1631,7 @@ local function CreateTextBoxInput(parentFrame, title, placeholder, defaultVal, c
 	
 	local titleHeight = 0
 	if title ~= " " and title ~= "" then
-		local ts = TextService:GetTextSize(title, 14, Enum.Font.GothamBold, Vector2.new(textContainerWidth, 1000)) -- Increased TextSize calculation to 14
+		local ts = TextService:GetTextSize(title, 13, Enum.Font.GothamBold, Vector2.new(textContainerWidth, 1000))
 		titleHeight = math.max(16, math.ceil(ts.Y))
 	end
 	
@@ -1747,7 +1671,7 @@ local function CreateTextBoxInput(parentFrame, title, placeholder, defaultVal, c
 		ptitleLabel.BackgroundTransparency = 1
 		ptitleLabel.Text = title
 		ptitleLabel.Font = Enum.Font.GothamBold
-		ptitleLabel.TextSize = 14 -- Increased TextSize to 14
+		ptitleLabel.TextSize = 13
 		ptitleLabel.TextWrapped = true
 		ptitleLabel.TextXAlignment = Enum.TextXAlignment.Left -- BUGFIX: Explicitly left align TextBox titles (was previously centered by default)
 		KazeUI:RegisterText(ptitleLabel, false)
@@ -1831,7 +1755,7 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 	
 	local titleHeight = 0
 	if title ~= " " and title ~= "" then
-		local ts = TextService:GetTextSize(title, 14, Enum.Font.GothamBold, Vector2.new(textContainerWidth - 80, 1000)) -- Increased TextSize calculation to 14
+		local ts = TextService:GetTextSize(title, 13, Enum.Font.GothamBold, Vector2.new(textContainerWidth - 80, 1000))
 		titleHeight = math.max(18, math.ceil(ts.Y))
 	end
 	
@@ -1871,7 +1795,7 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 		ptitleLabel.BackgroundTransparency = 1
 		ptitleLabel.Text = title
 		ptitleLabel.Font = Enum.Font.GothamBold
-		ptitleLabel.TextSize = 14 -- Increased TextSize to 14
+		ptitleLabel.TextSize = 13 -- Fixed size for slider title
 		ptitleLabel.TextWrapped = true
 		ptitleLabel.TextXAlignment = Enum.TextXAlignment.Left
 		KazeUI:RegisterText(ptitleLabel, false)
@@ -2057,7 +1981,7 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 	titleLabel.BackgroundTransparency = 1
 	titleLabel.Text = title
 	titleLabel.Font = Enum.Font.GothamBold
-	titleLabel.TextSize = 14 -- Increased TextSize to 14
+	titleLabel.TextSize = 13
 	titleLabel.TextXAlignment = Enum.TextXAlignment.Left
 	KazeUI:RegisterText(titleLabel, false)
 
@@ -2098,7 +2022,7 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 	svMap.Text = ""
 	Instance.new("UICorner", svMap).CornerRadius = UDim.new(0, 8)
 
-	-- Frame BackgroundTransparency must be 0 for parent UIGradient components to render!
+	-- BUGFIX: Changed BackgroundTransparency from 1 to 0 so the gradients are fully visible.
 	local whiteOverlay = Instance.new("Frame", svMap)
 	whiteOverlay.Size = UDim2.fromScale(1, 1)
 	whiteOverlay.BackgroundTransparency = 0 
@@ -2107,9 +2031,10 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 	wg.Transparency = NumberSequence.new{NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(1, 1)}
 	Instance.new("UICorner", whiteOverlay).CornerRadius = UDim.new(0, 8)
 
+	-- BUGFIX: Changed BackgroundTransparency from 1 to 0 so the gradients are fully visible.
 	local blackOverlay = Instance.new("Frame", svMap)
 	blackOverlay.Size = UDim2.fromScale(1, 1)
-	blackOverlay.BackgroundTransparency = 0
+	blackOverlay.BackgroundTransparency = 0 
 	blackOverlay.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 	local bg = Instance.new("UIGradient", blackOverlay)
 	bg.Transparency = NumberSequence.new{NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(1, 0)}
@@ -2268,7 +2193,7 @@ local function CreateKeybindInput(parentFrame, title, defaultKey, callback, flag
 	
 	local titleHeight = 0
 	if title ~= " " and title ~= "" then
-		local ts = TextService:GetTextSize(title, 14, Enum.Font.GothamBold, Vector2.new(textContainerWidth, 1000)) -- Increased TextSize calculation to 14
+		local ts = TextService:GetTextSize(title, 13, Enum.Font.GothamBold, Vector2.new(textContainerWidth, 1000))
 		titleHeight = math.max(16, math.ceil(ts.Y))
 	end
 	
@@ -2308,7 +2233,7 @@ local function CreateKeybindInput(parentFrame, title, defaultKey, callback, flag
 		ptitleLabel.BackgroundTransparency = 1
 		ptitleLabel.Text = title
 		ptitleLabel.Font = Enum.Font.GothamBold
-		ptitleLabel.TextSize = 14 -- Increased TextSize to 14
+		ptitleLabel.TextSize = 13
 		ptitleLabel.TextWrapped = true
 		ptitleLabel.TextXAlignment = Enum.TextXAlignment.Left
 		KazeUI:RegisterText(ptitleLabel, false)
@@ -2424,7 +2349,7 @@ local function CreateVisualSectionDivider(parentFrame, titleArg)
 	label.BackgroundTransparency = 1
 	label.Text = title
 	label.Font = Enum.Font.GothamBold
-	label.TextSize = 14 -- Increased TextSize to 14
+	label.TextSize = 13
 	label.TextXAlignment = Enum.TextXAlignment.Left
 	label.Parent = wrapper
 	KazeUI:RegisterText(label, false)
@@ -2512,7 +2437,7 @@ AttachElementsToAPI = function(apiTable, parentFrame)
 	end
 
 	function apiTable:Dropdown(arg1, arg2, arg3, arg4, arg5, arg6)
-		local title, vals, def, callback, multi, flag = "", {}, nil, nil, false, nil
+		local title, vals, def, multi, callback, flag = "", {}, nil, nil, false, nil
 		if type(arg1) == "table" then
 			title, vals, def, multi, callback, flag = arg1.Title, (arg1.Values or arg1.Options), arg1.Default, (arg1.Multi or false), arg1.Callback, arg1.Flag
 		else
@@ -2601,7 +2526,7 @@ CreateCollapsibleSection = function(parentFrame, titleArg)
 	titleLabel.BackgroundTransparency = 1
 	titleLabel.Text = title
 	titleLabel.Font = Enum.Font.GothamBold
-	titleLabel.TextSize = 14 -- Increased TextSize to 14
+	titleLabel.TextSize = 13
 	titleLabel.TextXAlignment = Enum.TextXAlignment.Left
 	titleLabel.Parent = headerFrame
 	KazeUI:RegisterText(titleLabel, false)
@@ -2671,10 +2596,8 @@ CreateCollapsibleSection = function(parentFrame, titleArg)
 			TweenService:Create(accentLine, TweenInfo.new(animDuration, easeStyle, easeDir), {
 				BackgroundColor3 = KazeUI.GlowColor
 			}):Play()
-			
-			-- Next-gen breathing volumetric visualizers
-			StartNeonLoop(boxStroke, 38)
-			StartNeonLoop(accentLine, 12)
+			StartNeonLoop(boxStroke)
+			StartNeonLoop(accentLine)
 		else
 			TweenService:Create(arrowIcon, TweenInfo.new(animDuration, easeStyle, easeDir), {
 				Rotation = -90,
@@ -2683,7 +2606,6 @@ CreateCollapsibleSection = function(parentFrame, titleArg)
 			TweenService:Create(accentLine, TweenInfo.new(animDuration, easeStyle, easeDir), {
 				BackgroundColor3 = KazeUI.CurrentTheme.MutedText
 			}):Play()
-			
 			StopNeonLoop(boxStroke)
 			StopNeonLoop(accentLine)
 			boxStroke.Color = KazeUI.CurrentTheme.Border
@@ -2736,36 +2658,94 @@ function KazeUI:CreateWindow(config)
 		local themeStr = tostring(config.Theme)
 		local lowerTheme = string.lower(themeStr)
 		
-		local isAssetId = tonumber(themeStr) ~= nil 
-			or string.find(themeStr, "rbxassetid://") 
-			or string.find(themeStr, "http") 
-			or IconsMap[lowerTheme] ~= nil
+		-- Try locating matching theme name
+		local themeMatched = false
+		for k, v in pairs(KazeUI.Themes) do
+			if string.lower(k) == lowerTheme then
+				selectedTheme = k
+				themeMatched = true
+				break
+			end
+		end
+		
+		if not themeMatched then
+			local isAssetId = tonumber(themeStr) ~= nil 
+				or string.find(themeStr, "rbxassetid://") 
+				or string.find(themeStr, "http") 
+				or IconsMap[lowerTheme] ~= nil
 
-		if isAssetId then
-			KazeUI.Themes.CustomWallpaper = {
-				Name = "Custom",
-				Background = Color3.fromRGB(12, 12, 14),
-				Text = Color3.fromRGB(255, 255, 255),
-				MutedText = Color3.fromRGB(215, 210, 225), -- Brighter contrast defaults
-				Border = Color3.fromRGB(55, 55, 60),
-				LightnessFactor = 1,
-				BackgroundImage = themeStr,
-				BackgroundImageTransparency = 0.1,
-				OverlayTransparency = 0.65
-			}
-			selectedTheme = "CustomWallpaper"
-			KazeUI:SetTransparency(0.65)
-		elseif lowerTheme == "customwallpaper" or lowerTheme == "custom" then
-			selectedTheme = "CustomWallpaper"
-		else
-			selectedTheme = "Obsidian"
+			if isAssetId then
+				KazeUI.Themes.CustomWallpaper = {
+					Name = "Custom",
+					Background = Color3.fromRGB(12, 12, 14),
+					Text = Color3.fromRGB(255, 255, 255),
+					MutedText = Color3.fromRGB(215, 210, 225), -- Brighter contrast defaults
+					Border = Color3.fromRGB(55, 55, 60),
+					LightnessFactor = 1,
+					BackgroundImage = themeStr,
+					BackgroundImageTransparency = 0.1,
+					OverlayTransparency = 0.65
+				}
+				selectedTheme = "CustomWallpaper"
+				KazeUI:SetTransparency(0.65)
+			elseif lowerTheme == "customwallpaper" or lowerTheme == "custom" then
+				selectedTheme = "CustomWallpaper"
+			else
+				selectedTheme = "Obsidian"
+			end
 		end
 	end
 	KazeUI:SetTheme(selectedTheme)
 
-	-- Upgraded Glow configuration parser (Supports native Color3 / Hex / Named Presets)
-	local resolvedGlow = ParseColor(config.Glow) or ParseColor(config.GlowColor) or Color3.fromRGB(255, 255, 255)
-	KazeUI:SetGlow(resolvedGlow)
+	-- Glow Parser rewrite (Supports hex values, presets, and standard Color3 elements natively)
+	if config.Glow then
+		local glowVal = config.Glow
+		if typeof(glowVal) == "Color3" then
+			KazeUI:SetGlow(glowVal)
+		elseif type(glowVal) == "string" then
+			local lowerGlow = string.lower(glowVal)
+			local glowMap = {
+				red = Color3.fromRGB(255, 60, 60),
+				blue = Color3.fromRGB(0, 160, 255),
+				green = Color3.fromRGB(34, 197, 94),
+				["neon green"] = Color3.fromRGB(34, 197, 94),
+				yellow = Color3.fromRGB(234, 179, 8),
+				purple = Color3.fromRGB(150, 80, 255),
+				pink = Color3.fromRGB(244, 114, 182),
+				orange = Color3.fromRGB(249, 115, 22),
+				white = Color3.fromRGB(255, 255, 255),
+				black = Color3.fromRGB(15, 15, 17)
+			}
+			
+			if glowMap[lowerGlow] then
+				KazeUI:SetGlow(glowMap[lowerGlow])
+			else
+				-- Hex code detection & parsing
+				local cleanHex = string.gsub(glowVal, "#", "")
+				local s, res = pcall(function() return Color3.fromHex(cleanHex) end)
+				if s and res then
+					KazeUI:SetGlow(res)
+				else
+					KazeUI:SetGlow(Color3.fromRGB(255, 255, 255)) -- Default Fallback
+				end
+			end
+		end
+	elseif config.GlowColor then
+		local glowColorVal = config.GlowColor
+		if typeof(glowColorVal) == "Color3" then
+			KazeUI:SetGlow(glowColorVal)
+		elseif type(glowColorVal) == "string" then
+			local cleanHex = string.gsub(glowColorVal, "#", "")
+			local s, res = pcall(function() return Color3.fromHex(cleanHex) end)
+			if s and res then
+				KazeUI:SetGlow(res)
+			else
+				KazeUI:SetGlow(Color3.fromRGB(255, 255, 255))
+			end
+		end
+	else
+		KazeUI:SetGlow(Color3.fromRGB(255, 255, 255)) -- Fallback standard white glow
+	end
 
 	local MiniButtonSize = UDim2.fromOffset(48, 48)
 
@@ -2782,28 +2762,18 @@ function KazeUI:CreateWindow(config)
 	Instance.new("UICorner", Window).CornerRadius = UDim.new(0, 28)
 	KazeUI:AddPanel(Window, 0)
 
-	-- Next-Gen Volumetric Outer Breathing Window Outline / Shadow
-	local outerShadow = Instance.new("ImageLabel", Window)
-	outerShadow.Name = "WindowOuterGlow"
-	outerShadow.Size = UDim2.new(1, 48, 1, 48)
-	outerShadow.Position = UDim2.fromOffset(-24, -24)
+	-- Premium Outer Glowing Shadows
+	local outerShadow = Instance.new("Frame", Window)
+	outerShadow.Size = UDim2.new(1, 14, 1, 14)
+	outerShadow.Position = UDim2.fromOffset(-7, -7)
 	outerShadow.BackgroundTransparency = 1
 	outerShadow.ZIndex = -1
-	outerShadow.Image = "rbxassetid://6015886843"
-	outerShadow.ImageColor3 = KazeUI.GlowColor
-	outerShadow.ImageTransparency = 0.60
-	outerShadow.ScaleType = Enum.ScaleType.Slice
-	outerShadow.SliceCenter = Rect.new(49, 49, 151, 151)
-
-	KazeUI:OnGlowChanged(outerShadow, function(c)
-		TweenService:Create(outerShadow, TWEEN_FAST, {ImageColor3 = c}):Play()
-	end)
-
-	-- Subtle continuous float shadow breathe cycle
-	local winShadowBreathe = TweenService:Create(outerShadow, TweenInfo.new(3.5, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), {
-		ImageTransparency = 0.45
-	})
-	winShadowBreathe:Play()
+	local shCorner = Instance.new("UICorner", outerShadow)
+	shCorner.CornerRadius = UDim.new(0, 32)
+	local shadowStroke = Instance.new("UIStroke", outerShadow)
+	shadowStroke.Thickness = 6
+	shadowStroke.Color = Color3.fromRGB(0, 0, 0)
+	shadowStroke.Transparency = 0.8
 
 	local WindowStroke = Instance.new("UIStroke")
 	WindowStroke.Thickness = 1.8
@@ -3528,7 +3498,7 @@ function KazeUI:CreateWindow(config)
 		txt.TextWrapped = true 
 		
 		local textConstraint = Instance.new("UITextSizeConstraint", txt)
-		textConstraint.MaxTextSize = 14 -- Increased MaxTextSize constraint to 14
+		textConstraint.MaxTextSize = 12
 		textConstraint.MinTextSize = 8
 		
 		txt.TextXAlignment = Enum.TextXAlignment.Left
