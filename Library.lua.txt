@@ -1,9 +1,12 @@
 --[[
-	Kaze UI Library v3.5.3 (Premium Bubble Redesign & Engine Rewrite)
+	Kaze UI Library v3.6.0 (Premium Bubble Redesign & Engine Rewrite)
 	Inspired by: Modern Mobile Chat Bubbles, iMessage, and Discord Mobile.
 	Retained: 100% Backwards Compatibility with Version 1, 2, 2.2, 2.3, and 3.0 APIs
 	
-	UPDATES IN V3.5.3:
+	UPDATES IN V3.6.0:
+	- Added GroupBox Component: Fully modern visual card with automatic height resizing, 
+	  custom outlines, proper nesting padding alignment, and volumetric depth elevations.
+	- Supports direct tab instantiation, section rendering, and recursive nested rendering.
 	- Simplified Themes: Retained only "Obsidian" (default) and "CustomWallpaper" per request.
 	- Volumetric Light Elevation Engine: Upgraded KazeUI.GetColor to support beautiful panel gradients.
 	- Dropdown Color Hotfix: Fixed the theme change latency bug where dropdown colors stayed on the old theme until closed/reopened.
@@ -645,8 +648,8 @@ function KazeUI:Notify(config)
 	contentLab.Text = content
 	contentLab.Font = Enum.Font.Gotham
 	contentLab.TextSize = 11
-	contentLab.TextXAlignment = Enum.TextXAlignment.Left
 	contentLab.TextWrapped = true
+	contentLab.TextXAlignment = Enum.TextXAlignment.Left
 	KazeUI:RegisterText(contentLab, true)
 
 	local progressTrack = Instance.new("Frame", notifFrame)
@@ -1805,7 +1808,6 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 		local trackWidth = track.AbsoluteSize.X
 		if trackWidth <= 0 then return end
 		local relativeX = input.Position.X - track.AbsolutePosition.X
-		local relativeY = input.Position.Y - track.AbsolutePosition.Y
 		local percentage = math.clamp(relativeX / trackWidth, 0, 1)
 		local newVal = min + (max - min) * percentage
 		newVal = math.clamp(math.floor(newVal + 0.5), min, max)
@@ -2324,12 +2326,15 @@ local function CreateVisualSectionDivider(parentFrame, titleArg)
 end
 
 -- ==========================================
--- SectionUI Builder
+-- GroupBox & SectionUI Builder
 -- ==========================================
 local CreateCollapsibleSection
+local CreateGroupBox
 local AttachElementsToAPI
 
-AttachElementsToAPI = function(apiTable, parentFrame)
+AttachElementsToAPI = function(apiTable, parentFrame, depth)
+	depth = depth or 1
+
 	function apiTable:AddLabel(arg1)
 		local t = type(arg1) == "table" and (arg1.Text or arg1.Title) or arg1
 		local label = Instance.new("TextLabel")
@@ -2420,16 +2425,22 @@ AttachElementsToAPI = function(apiTable, parentFrame)
 
 	function apiTable:SectionUI(arg1)
 		local title = type(arg1) == "table" and arg1.Title or arg1
-		return CreateCollapsibleSection(parentFrame, title)
+		return CreateCollapsibleSection(parentFrame, title, depth)
 	end
 	
 	function apiTable:Section(arg1)
 		local title = type(arg1) == "table" and arg1.Title or arg1
 		return CreateVisualSectionDivider(parentFrame, title)
 	end
+
+	function apiTable:GroupBox(arg1, depthOverride)
+		local title = type(arg1) == "table" and arg1.Title or arg1
+		return CreateGroupBox(parentFrame, title, depth, depthOverride)
+	end
 end
 
-CreateCollapsibleSection = function(parentFrame, titleArg)
+CreateCollapsibleSection = function(parentFrame, titleArg, currentDepth)
+	currentDepth = currentDepth or 1
 	local title = type(titleArg) == "table" and titleArg.Title or tostring(titleArg or "Section")
 	local isOpen = false
 
@@ -2581,9 +2592,122 @@ CreateCollapsibleSection = function(parentFrame, titleArg)
 	end)
 
 	local sectionPublic = { Frame = sectionBox, ContentFrame = sectionContent, Header = headerFrame }
-	AttachElementsToAPI(sectionPublic, sectionContent)
+	AttachElementsToAPI(sectionPublic, sectionContent, currentDepth + 1)
 	function sectionPublic:SetText(newText) titleLabel.Text = newText end
 	return sectionPublic
+end
+
+-- ==========================================
+-- Volumetric Premium GroupBox Component
+-- ==========================================
+CreateGroupBox = function(parentFrame, titleArg, currentDepth, depthOverride)
+	currentDepth = depthOverride or currentDepth or 1
+	if currentDepth > 3 then currentDepth = 3 end -- Cap nesting layout visually to prevent excess clutter
+
+	local title = tostring(titleArg or "Group")
+
+	local wrapper = Instance.new("Frame")
+	wrapper.Name = "GroupBoxWrapper_" .. title
+	wrapper.Size = UDim2.new(1, 0, 0, 0)
+	wrapper.BackgroundTransparency = 1
+	wrapper.Parent = parentFrame
+	wrapper.AutomaticSize = Enum.AutomaticSize.Y
+
+	local groupFrame = Instance.new("Frame")
+	groupFrame.Name = "GroupBoxFrame"
+	groupFrame.AnchorPoint = Vector2.new(0.5, 0)
+	groupFrame.Position = UDim2.new(0.5, 0, 0, 3)
+	
+	-- Subtract scale size incrementally as depth increases for clean visual inset padding
+	local scaledWidth = math.clamp(0.95 - (currentDepth - 1) * 0.02, 0.88, 0.95)
+	groupFrame.Size = UDim2.new(scaledWidth, 0, 0, 0)
+	groupFrame.BorderSizePixel = 0
+	groupFrame.AutomaticSize = Enum.AutomaticSize.Y
+	groupFrame.Parent = wrapper
+
+	-- Soft premium corner radiuses matching current hierarchy
+	local cornerRadius = math.max(10, 18 - (currentDepth - 1) * 3)
+	Instance.new("UICorner", groupFrame).CornerRadius = UDim.new(0, cornerRadius)
+	
+	-- Volumetric lighting: Elevated layers reflect realistic panel illumination
+	KazeUI:AddPanel(groupFrame, 0.015 + (currentDepth * 0.008))
+
+	local stroke = Instance.new("UIStroke", groupFrame)
+	stroke.Thickness = math.max(1, 1.4 - (currentDepth - 1) * 0.15)
+	stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+	KazeUI:RegisterBorder(stroke)
+
+	local layout = Instance.new("UIListLayout", groupFrame)
+	layout.SortOrder = Enum.SortOrder.LayoutOrder
+	layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+	layout.Padding = UDim.new(0, 5)
+
+	local padding = Instance.new("UIPadding", groupFrame)
+	padding.PaddingTop = UDim.new(0, 8)
+	padding.PaddingBottom = UDim.new(0, 10)
+	padding.PaddingLeft = UDim.new(0, 8)
+	padding.PaddingRight = UDim.new(0, 8)
+
+	local header
+	if title ~= "" and title ~= " " then
+		header = Instance.new("Frame")
+		header.Name = "Header"
+		header.Size = UDim2.new(1, -4, 0, 24)
+		header.BackgroundTransparency = 1
+		header.LayoutOrder = 1
+		header.Parent = groupFrame
+
+		local accentLine = Instance.new("Frame")
+		accentLine.Size = UDim2.new(0, 3, 0, 14)
+		accentLine.Position = UDim2.new(0, 2, 0.5, -7)
+		accentLine.BackgroundColor3 = KazeUI.GlowColor
+		accentLine.BorderSizePixel = 0
+		accentLine.Parent = header
+		Instance.new("UICorner", accentLine).CornerRadius = UDim.new(1, 0)
+		KazeUI:OnGlowChanged(accentLine, function(c) accentLine.BackgroundColor3 = c end)
+
+		local label = Instance.new("TextLabel")
+		label.Size = UDim2.new(1, -14, 1, 0)
+		label.Position = UDim2.fromOffset(12, 0)
+		label.BackgroundTransparency = 1
+		label.Text = title
+		label.Font = Enum.Font.GothamBold
+		label.TextSize = math.max(11, 13 - (currentDepth - 1))
+		label.TextXAlignment = Enum.TextXAlignment.Left
+		label.Parent = header
+		KazeUI:RegisterText(label, false)
+	end
+
+	local container = Instance.new("Frame")
+	container.Name = "Container"
+	container.Size = UDim2.new(1, 0, 0, 0)
+	container.BackgroundTransparency = 1
+	container.AutomaticSize = Enum.AutomaticSize.Y
+	container.LayoutOrder = 2
+	container.Parent = groupFrame
+
+	local contentLayout = Instance.new("UIListLayout", container)
+	contentLayout.SortOrder = Enum.SortOrder.LayoutOrder
+	contentLayout.Padding = UDim.new(0, 5)
+	contentLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+
+	local groupPublic = {
+		Frame = groupFrame,
+		Container = container,
+		Header = header
+	}
+
+	-- Recursive API attachment to support nested controls inside this GroupBox Container
+	AttachElementsToAPI(groupPublic, container, currentDepth + 1)
+
+	function groupPublic:SetText(newText)
+		if header then
+			local lbl = header:FindFirstChildOfClass("TextLabel")
+			if lbl then lbl.Text = tostring(newText) end
+		end
+	end
+
+	return groupPublic
 end
 
 -- ==========================================
@@ -3646,7 +3770,7 @@ function KazeUI:CreateWindow(config)
 		end)
 
 		local public = {Button = btn, Page = page}
-		AttachElementsToAPI(public, pageContent)
+		AttachElementsToAPI(public, pageContent, 1)
 		function public:SetText(newText) txt.Text = newText end
 		return public
 	end
