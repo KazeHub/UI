@@ -1,13 +1,26 @@
 --[[
-	Kaze UI Library v3.6.1 (Premium Bubble Redesign & Native Descriptions - FIXED)
+	Kaze UI Library v3.5 (Premium Bubble Redesign & Engine Rewrite)
 	Inspired by: Modern Mobile Chat Bubbles, iMessage, and Discord Mobile.
 	Retained: 100% Backwards Compatibility with Version 1, 2, 2.2, 2.3, and 3.0 APIs
 	
-	UPDATES IN V3.6.1:
-	- FIX: Removed accidental `page.Page = page` assignment which caused the "Page is not a valid member of Frame" crash.
-	- Added full Description support for all interactive elements (TextBox, Slider, Dropdown, ColorPicker, and Keybind).
-	- Dynamically calculates the size of elements when descriptions are supplied to prevent overlapping/clipping.
-	- Maintained clean responsive layout constraints optimized for PC & Mobile devices.
+	UPDATES IN V3.5:
+	- Modal Resize Engine: Completely rewritten window scaling. Introduced strict input capturing, multi-touch isolation, and ScrollLock during resize.
+	- Drag Exclusion: Fixed a bug where resizing and dragging could conflict.
+	- Simplified Themes: Retained only "Obsidian" (default) and "CustomWallpaper".
+	- White Glow Sync: Automatically forces the Glow color to bright White when Obsidian theme is loaded.
+	
+	CUSTOM MODIFICATIONS & FIXES:
+	- Removed Win:Divider() function.
+	- Configuration System now creates a folder based on the Author's name and saves/loads files from there.
+	- Wallpaper Save/Load Restore fix.
+	- Decoupled Notification Background from dynamic transparency overlays.
+	- Enhanced Notification Title support for Color3 and rainbow RGB animation cycles.
+	- FIX: Nilagyan ng padding ang notification frame upang maiwasan ang pagkaputol ng shadow at stroke.
+	- FIX: Inalis ang glow effect sa searchbar ng dropdown para sa mas malinis na UI.
+	- FEATURE: Idinagdag ang ganap na suporta para sa Notification Icons (Lucide & Asset IDs, na may adaptive padding at RGB sync!).
+	- BUGFIX: Inayos ang dropdown selected text label na nananatiling "Label" sa simula sa pamamagitan ng agarang text assignment sa initialization.
+	- FIX (LATEST): Dynamic notification scaling para sa mahahabang mensahe at premium close button gamit ang Texture ID 10747384394.
+	- CONTRAST & MODAL BUGFIX (2026): Increased description readability by making theme MutedText brighter, and locked input behind the Exit Confirmation overlay to block background interaction.
 --]]
 
 local KazeUI = {}
@@ -789,9 +802,8 @@ end
 -- Elegant Bubble-First Components (Figma / iMessage design)
 -- =========================================================
 
-local function CreateDropdown(parentFrame, title, body, options, defaultOption, callback, isMulti, flag)
+local function CreateDropdown(parentFrame, title, options, defaultOption, callback, isMulti, flag)
 	title = tostring(title or "Dropdown")
-	body = tostring(body or "")
 	options = type(options) == "table" and options or {}
 	local isOpen = false
 
@@ -842,35 +854,15 @@ local function CreateDropdown(parentFrame, title, body, options, defaultOption, 
 	layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 	layout.Padding = UDim.new(0, 5)
 
-	-- Dynamic Header Sizing to account for description heights
-	local measuredWidth = 598 * 0.92
-	if parentFrame and parentFrame.AbsoluteSize and parentFrame.AbsoluteSize.X > 0 then measuredWidth = parentFrame.AbsoluteSize.X * 0.95 end
-	local textContainerWidth = measuredWidth - 28 - 24
-
-	local titleHeight = 18
-	if title ~= " " and title ~= "" then
-		local ts = TextService:GetTextSize(title, 13, Enum.Font.GothamBold, Vector2.new(textContainerWidth * 0.5, 1000))
-		titleHeight = math.max(18, math.ceil(ts.Y))
-	end
-
-	local bodyHeight = 0
-	if body ~= "" then
-		local bodySize = TextService:GetTextSize(body, 12, Enum.Font.Gotham, Vector2.new(textContainerWidth, 2000))
-		bodyHeight = math.ceil(bodySize.Y)
-	end
-
-	local headerHeight = 10 + titleHeight + (body ~= "" and 3 or 0) + bodyHeight + 10
-
 	local header = Instance.new("Frame")
 	header.Name = "Header"
-	header.Size = UDim2.new(1, -20, 0, headerHeight)
+	header.Size = UDim2.new(1, -20, 0, 38)
 	header.BackgroundTransparency = 1
 	header.LayoutOrder = 1
 	header.Parent = dropFrame
 
 	local titleLabel = Instance.new("TextLabel", header)
-	titleLabel.Size = UDim2.new(0.5, 0, 0, titleHeight)
-	titleLabel.Position = UDim2.fromOffset(0, 10)
+	titleLabel.Size = UDim2.new(0.5, 0, 1, 0)
 	titleLabel.BackgroundTransparency = 1
 	titleLabel.Text = title
 	titleLabel.Font = Enum.Font.GothamBold
@@ -878,23 +870,9 @@ local function CreateDropdown(parentFrame, title, body, options, defaultOption, 
 	titleLabel.TextXAlignment = Enum.TextXAlignment.Left
 	KazeUI:RegisterText(titleLabel, false)
 
-	local bodyLabel
-	if body ~= "" then
-		bodyLabel = Instance.new("TextLabel", header)
-		bodyLabel.Size = UDim2.new(1, -24, 0, bodyHeight)
-		bodyLabel.Position = UDim2.fromOffset(0, 10 + titleHeight + 3)
-		bodyLabel.BackgroundTransparency = 1
-		bodyLabel.Text = body
-		bodyLabel.Font = Enum.Font.Gotham
-		bodyLabel.TextSize = 11
-		bodyLabel.TextWrapped = true
-		bodyLabel.TextXAlignment = Enum.TextXAlignment.Left
-		KazeUI:RegisterText(bodyLabel, true)
-	end
-
 	local arrowIcon = Instance.new("ImageLabel", header)
 	arrowIcon.AnchorPoint = Vector2.new(1, 0.5)
-	arrowIcon.Position = UDim2.new(1, 0, 0, 10 + titleHeight / 2)
+	arrowIcon.Position = UDim2.new(1, 0, 0.5, 0)
 	arrowIcon.Size = UDim2.fromOffset(16, 16)
 	arrowIcon.BackgroundTransparency = 1
 	arrowIcon.Image = "rbxassetid://10723415693"
@@ -920,8 +898,8 @@ local function CreateDropdown(parentFrame, title, body, options, defaultOption, 
 	end
 
 	local selectedLabel = Instance.new("TextLabel", header)
-	selectedLabel.Size = UDim2.new(0.5, -24, 0, titleHeight)
-	selectedLabel.Position = UDim2.new(0.5, 0, 0, 10)
+	selectedLabel.Size = UDim2.new(0.5, -24, 1, 0)
+	selectedLabel.Position = UDim2.new(0.5, 0, 0, 0)
 	selectedLabel.BackgroundTransparency = 1
 	selectedLabel.Font = Enum.Font.Gotham
 	selectedLabel.TextSize = 11
@@ -1594,9 +1572,8 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 	}
 end
 
-local function CreateTextBoxInput(parentFrame, title, body, placeholder, defaultVal, callback, flag)
+local function CreateTextBoxInput(parentFrame, title, placeholder, defaultVal, callback, flag)
 	title = tostring(title or "Input Text")
-	body = tostring(body or "")
 	placeholder = tostring(placeholder or "Type here...")
 	
 	local measuredWidth = 598 * 0.92
@@ -1608,14 +1585,8 @@ local function CreateTextBoxInput(parentFrame, title, body, placeholder, default
 		local ts = TextService:GetTextSize(title, 13, Enum.Font.GothamBold, Vector2.new(textContainerWidth, 1000))
 		titleHeight = math.max(16, math.ceil(ts.Y))
 	end
-
-	local bodyHeight = 0
-	if body ~= "" then
-		local bodySize = TextService:GetTextSize(body, 12, Enum.Font.Gotham, Vector2.new(textContainerWidth, 2000))
-		bodyHeight = math.ceil(bodySize.Y)
-	end
 	
-	local totalHeight = 10 + titleHeight + (body ~= "" and 3 or 0) + bodyHeight + 6 + 32 + 10
+	local totalHeight = 10 + titleHeight + 6 + 32 + 10
 	
 	local wrapper = Instance.new("Frame")
 	wrapper.Size = UDim2.new(1, 0, 0, 0)
@@ -1656,24 +1627,10 @@ local function CreateTextBoxInput(parentFrame, title, body, placeholder, default
 		ptitleLabel.TextXAlignment = Enum.TextXAlignment.Left -- BUGFIX: Explicitly left align TextBox titles (was previously centered by default)
 		KazeUI:RegisterText(ptitleLabel, false)
 	end
-
-	local bodyLabel
-	if body ~= "" then
-		bodyLabel = Instance.new("TextLabel", inner)
-		bodyLabel.Size = UDim2.new(1, 0, 0, bodyHeight)
-		bodyLabel.Position = UDim2.fromOffset(0, titleHeight + 3)
-		bodyLabel.BackgroundTransparency = 1
-		bodyLabel.Text = body
-		bodyLabel.Font = Enum.Font.Gotham
-		bodyLabel.TextSize = 11
-		bodyLabel.TextWrapped = true
-		bodyLabel.TextXAlignment = Enum.TextXAlignment.Left
-		KazeUI:RegisterText(bodyLabel, true)
-	end
 	
 	local textBoxContainer = Instance.new("Frame")
 	textBoxContainer.Size = UDim2.new(1, 0, 0, 30)
-	textBoxContainer.Position = UDim2.new(0, 0, 0, titleHeight + (body ~= "" and 3 or 0) + bodyHeight + 4)
+	textBoxContainer.Position = UDim2.new(0, 0, 0, titleHeight + 4)
 	textBoxContainer.BorderSizePixel = 0
 	textBoxContainer.Parent = inner
 	Instance.new("UICorner", textBoxContainer).CornerRadius = UDim.new(0, 10)
@@ -1736,9 +1693,8 @@ local function CreateTextBoxInput(parentFrame, title, body, placeholder, default
 	}
 end
 
-local function CreateSliderInput(parentFrame, title, body, min, max, default, callback, flag)
+local function CreateSliderInput(parentFrame, title, min, max, default, callback, flag)
 	title = tostring(title or "Slider")
-	body = tostring(body or "")
 	min = tonumber(min) or 0
 	max = tonumber(max) or 100
 	default = tonumber(default) or min
@@ -1753,14 +1709,8 @@ local function CreateSliderInput(parentFrame, title, body, min, max, default, ca
 		local ts = TextService:GetTextSize(title, 13, Enum.Font.GothamBold, Vector2.new(textContainerWidth - 80, 1000))
 		titleHeight = math.max(18, math.ceil(ts.Y))
 	end
-
-	local bodyHeight = 0
-	if body ~= "" then
-		local bodySize = TextService:GetTextSize(body, 12, Enum.Font.Gotham, Vector2.new(textContainerWidth, 2000))
-		bodyHeight = math.ceil(bodySize.Y)
-	end
 	
-	local totalHeight = 10 + math.max(titleHeight, 18) + (body ~= "" and 3 or 0) + bodyHeight + 6 + 18 + 10
+	local totalHeight = 10 + titleHeight + 6 + 18 + 10
 	
 	local wrapper = Instance.new("Frame")
 	wrapper.Size = UDim2.new(1, 0, 0, 0)
@@ -1811,24 +1761,10 @@ local function CreateSliderInput(parentFrame, title, body, min, max, default, ca
 	valueLabel.TextSize = 11
 	valueLabel.TextXAlignment = Enum.TextXAlignment.Right
 	KazeUI:RegisterText(valueLabel, false)
-
-	local bodyLabel
-	if body ~= "" then
-		bodyLabel = Instance.new("TextLabel", inner)
-		bodyLabel.Size = UDim2.new(1, 0, 0, bodyHeight)
-		bodyLabel.Position = UDim2.fromOffset(0, titleHeight + 3)
-		bodyLabel.BackgroundTransparency = 1
-		bodyLabel.Text = body
-		bodyLabel.Font = Enum.Font.Gotham
-		bodyLabel.TextSize = 11
-		bodyLabel.TextWrapped = true
-		bodyLabel.TextXAlignment = Enum.TextXAlignment.Left
-		KazeUI:RegisterText(bodyLabel, true)
-	end
 	
 	local track = Instance.new("Frame")
 	track.Size = UDim2.new(1, 0, 0, 6)
-	track.Position = UDim2.new(0, 0, 0, titleHeight + (body ~= "" and 3 or 0) + bodyHeight + 8)
+	track.Position = UDim2.new(0, 0, 0, titleHeight + 8)
 	track.BorderSizePixel = 0
 	track.Parent = inner
 	Instance.new("UICorner", track).CornerRadius = UDim.new(1, 0)
@@ -1947,9 +1883,8 @@ local function CreateSliderInput(parentFrame, title, body, min, max, default, ca
 	return api
 end
 
-local function CreateColorPicker(parentFrame, title, body, defaultColor, callback, flag)
+local function CreateColorPicker(parentFrame, title, defaultColor, callback, flag)
 	title = tostring(title or "Color Picker")
-	body = tostring(body or "")
 	local color = defaultColor or Color3.fromRGB(255, 255, 255)
 	local h, s, v = Color3.toHSV(color)
 	local isOpen = false
@@ -1986,33 +1921,14 @@ local function CreateColorPicker(parentFrame, title, body, defaultColor, callbac
 	layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 	layout.Padding = UDim.new(0, 5)
 
-	local measuredWidth = 598 * 0.92
-	if parentFrame and parentFrame.AbsoluteSize and parentFrame.AbsoluteSize.X > 0 then measuredWidth = parentFrame.AbsoluteSize.X * 0.95 end
-	local textContainerWidth = measuredWidth - 28 - 24
-
-	local titleHeight = 18
-	if title ~= " " and title ~= "" then
-		local ts = TextService:GetTextSize(title, 13, Enum.Font.GothamBold, Vector2.new(textContainerWidth * 0.5, 1000))
-		titleHeight = math.max(18, math.ceil(ts.Y))
-	end
-
-	local bodyHeight = 0
-	if body ~= "" then
-		local bodySize = TextService:GetTextSize(body, 12, Enum.Font.Gotham, Vector2.new(textContainerWidth, 2000))
-		bodyHeight = math.ceil(bodySize.Y)
-	end
-
-	local headerHeight = 10 + titleHeight + (body ~= "" and 3 or 0) + bodyHeight + 10
-
 	local header = Instance.new("Frame")
-	header.Size = UDim2.new(1, -20, 0, headerHeight)
+	header.Size = UDim2.new(1, -20, 0, 38)
 	header.BackgroundTransparency = 1
 	header.LayoutOrder = 1
 	header.Parent = dropFrame
 
 	local titleLabel = Instance.new("TextLabel", header)
-	titleLabel.Size = UDim2.new(0.5, 0, 0, titleHeight)
-	titleLabel.Position = UDim2.fromOffset(0, 10)
+	titleLabel.Size = UDim2.new(0.5, 0, 1, 0)
 	titleLabel.BackgroundTransparency = 1
 	titleLabel.Text = title
 	titleLabel.Font = Enum.Font.GothamBold
@@ -2020,23 +1936,9 @@ local function CreateColorPicker(parentFrame, title, body, defaultColor, callbac
 	titleLabel.TextXAlignment = Enum.TextXAlignment.Left
 	KazeUI:RegisterText(titleLabel, false)
 
-	local bodyLabel
-	if body ~= "" then
-		bodyLabel = Instance.new("TextLabel", header)
-		bodyLabel.Size = UDim2.new(1, -24, 0, bodyHeight)
-		bodyLabel.Position = UDim2.fromOffset(0, 10 + titleHeight + 3)
-		bodyLabel.BackgroundTransparency = 1
-		bodyLabel.Text = body
-		bodyLabel.Font = Enum.Font.Gotham
-		bodyLabel.TextSize = 11
-		bodyLabel.TextWrapped = true
-		bodyLabel.TextXAlignment = Enum.TextXAlignment.Left
-		KazeUI:RegisterText(bodyLabel, true)
-	end
-
 	local previewColor = Instance.new("Frame", header)
 	previewColor.AnchorPoint = Vector2.new(1, 0.5)
-	previewColor.Position = UDim2.new(1, -24, 0, 10 + titleHeight / 2)
+	previewColor.Position = UDim2.new(1, -24, 0.5, 0)
 	previewColor.Size = UDim2.fromOffset(24, 24)
 	previewColor.BackgroundColor3 = color
 	Instance.new("UICorner", previewColor).CornerRadius = UDim.new(0, 6)
@@ -2046,7 +1948,7 @@ local function CreateColorPicker(parentFrame, title, body, defaultColor, callbac
 
 	local arrowIcon = Instance.new("ImageLabel", header)
 	arrowIcon.AnchorPoint = Vector2.new(1, 0.5)
-	arrowIcon.Position = UDim2.new(1, 0, 0, 10 + titleHeight / 2)
+	arrowIcon.Position = UDim2.new(1, 0, 0.5, 0)
 	arrowIcon.Size = UDim2.fromOffset(16, 16)
 	arrowIcon.BackgroundTransparency = 1
 	arrowIcon.Image = "rbxassetid://10723415693"
@@ -2096,7 +1998,6 @@ local function CreateColorPicker(parentFrame, title, body, defaultColor, callbac
 	Instance.new("UIStroke", svCursor).Color = Color3.fromRGB(0, 0, 0)
 
 	local hueSlider = Instance.new("TextButton", pickerArea)
-	textContainerWidth = math.max(1, textContainerWidth)
 	hueSlider.Size = UDim2.new(1, 0, 0, 22)
 	hueSlider.Position = UDim2.new(0, 0, 0, 130)
 	hueSlider.AutoButtonColor = false
@@ -2105,7 +2006,7 @@ local function CreateColorPicker(parentFrame, title, body, defaultColor, callbac
 	local hg = Instance.new("UIGradient", hueSlider)
 	hg.Color = ColorSequence.new{
 		ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 0, 0)),
-		ColorSequenceKeypoint.new(0.167, Color3.fromRGB(255, 255,  yellow)),
+		ColorSequenceKeypoint.new(0.167, Color3.fromRGB(255, 255, 0)),
 		ColorSequenceKeypoint.new(0.333, Color3.fromRGB(0, 255, 0)),
 		ColorSequenceKeypoint.new(0.5, Color3.fromRGB(0, 255, 255)),
 		ColorSequenceKeypoint.new(0.667, Color3.fromRGB(0, 0, 255)),
@@ -2230,9 +2131,8 @@ local function CreateColorPicker(parentFrame, title, body, defaultColor, callbac
 	}
 end
 
-local function CreateKeybindInput(parentFrame, title, body, defaultKey, callback, flag)
+local function CreateKeybindInput(parentFrame, title, defaultKey, callback, flag)
 	title = tostring(title or "Keybind")
-	body = tostring(body or "")
 	local currentKey = defaultKey or Enum.KeyCode.Unknown
 	local isBinding = false
 	
@@ -2245,14 +2145,8 @@ local function CreateKeybindInput(parentFrame, title, body, defaultKey, callback
 		local ts = TextService:GetTextSize(title, 13, Enum.Font.GothamBold, Vector2.new(textContainerWidth, 1000))
 		titleHeight = math.max(16, math.ceil(ts.Y))
 	end
-
-	local bodyHeight = 0
-	if body ~= "" then
-		local bodySize = TextService:GetTextSize(body, 12, Enum.Font.Gotham, Vector2.new(textContainerWidth, 2000))
-		bodyHeight = math.ceil(bodySize.Y)
-	end
 	
-	local totalHeight = 10 + math.max(titleHeight + (body ~= "" and 3 or 0) + bodyHeight, 24) + 10
+	local totalHeight = 10 + math.max(titleHeight, 24) + 10
 	
 	local wrapper = Instance.new("Frame")
 	wrapper.Size = UDim2.new(1, 0, 0, 0)
@@ -2284,7 +2178,7 @@ local function CreateKeybindInput(parentFrame, title, body, defaultKey, callback
 	local ptitleLabel
 	if title ~= " " and title ~= "" then
 		ptitleLabel = Instance.new("TextLabel", inner)
-		ptitleLabel.Size = UDim2.new(1, -90, 0, titleHeight)
+		ptitleLabel.Size = UDim2.new(1, -90, 1, 0)
 		ptitleLabel.BackgroundTransparency = 1
 		ptitleLabel.Text = title
 		ptitleLabel.Font = Enum.Font.GothamBold
@@ -2292,20 +2186,6 @@ local function CreateKeybindInput(parentFrame, title, body, defaultKey, callback
 		ptitleLabel.TextWrapped = true
 		ptitleLabel.TextXAlignment = Enum.TextXAlignment.Left
 		KazeUI:RegisterText(ptitleLabel, false)
-	end
-
-	local bodyLabel
-	if body ~= "" then
-		bodyLabel = Instance.new("TextLabel", inner)
-		bodyLabel.Size = UDim2.new(1, -90, 0, bodyHeight)
-		bodyLabel.Position = UDim2.fromOffset(0, titleHeight + 3)
-		bodyLabel.BackgroundTransparency = 1
-		bodyLabel.Text = body
-		bodyLabel.Font = Enum.Font.Gotham
-		bodyLabel.TextSize = 11
-		bodyLabel.TextWrapped = true
-		bodyLabel.TextXAlignment = Enum.TextXAlignment.Left
-		KazeUI:RegisterText(bodyLabel, true)
 	end
 	
 	local bindContainer = Instance.new("TextButton", inner)
@@ -2485,54 +2365,54 @@ AttachElementsToAPI = function(apiTable, parentFrame)
 		return CreateToggleSwitch(parentFrame, title, desc, def, callback, flag)
 	end
 
-	function apiTable:TextBox(arg1, arg2, arg3, arg4, arg5, arg6)
-		local title, desc, place, def, callback, flag = "", "", "", "", nil, nil
+	function apiTable:TextBox(arg1, arg2, arg3, arg4, arg5)
+		local title, place, def, callback, flag = "", "", "", nil, nil
 		if type(arg1) == "table" then
-			title, desc, place, def, callback, flag = arg1.Title, (arg1.Description or arg1.Content or ""), arg1.Placeholder, arg1.Default, arg1.Callback, arg1.Flag
+			title, place, def, callback, flag = arg1.Title, arg1.Placeholder, arg1.Default, arg1.Callback, arg1.Flag
 		else
-			title, desc, place, def, callback, flag = arg1, arg2, arg3, arg4, arg5, arg6
+			title, place, def, callback, flag = arg1, arg2, arg3, arg4, arg5
 		end
-		return CreateTextBoxInput(parentFrame, title, desc, place, def, callback, flag)
+		return CreateTextBoxInput(parentFrame, title, place, def, callback, flag)
 	end
 
-	function apiTable:Slider(arg1, arg2, arg3, arg4, arg5, arg6, arg7)
-		local title, desc, min, max, def, callback, flag = "", "", 0, 100, 50, nil, nil
+	function apiTable:Slider(arg1, arg2, arg3, arg4, arg5, arg6)
+		local title, min, max, def, callback, flag = "", 0, 100, 50, nil, nil
 		if type(arg1) == "table" then
-			title, desc, min, max, def, callback, flag = arg1.Title, (arg1.Description or arg1.Content or ""), arg1.Min, arg1.Max, arg1.Default, arg1.Callback, arg1.Flag
+			title, min, max, def, callback, flag = arg1.Title, arg1.Min, arg1.Max, arg1.Default, arg1.Callback, arg1.Flag
 		else
-			title, desc, min, max, def, callback, flag = arg1, arg2, arg3, arg4, arg5, arg6, arg7
+			title, min, max, def, callback, flag = arg1, arg2, arg3, arg4, arg5, arg6
 		end
-		return CreateSliderInput(parentFrame, title, desc, min, max, def, callback, flag)
+		return CreateSliderInput(parentFrame, title, min, max, def, callback, flag)
 	end
 
-	function apiTable:Dropdown(arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8)
-		local title, desc, vals, def, callback, multi, flag = "", "", {}, nil, nil, false, nil
+	function apiTable:Dropdown(arg1, arg2, arg3, arg4, arg5, arg6)
+		local title, vals, def, callback, multi, flag = "", {}, nil, nil, false, nil
 		if type(arg1) == "table" then
-			title, desc, vals, def, multi, callback, flag = arg1.Title, (arg1.Description or arg1.Content or ""), (arg1.Options or arg1.Values), arg1.Default, (arg1.Multi or false), arg1.Callback, arg1.Flag
+			title, vals, def, multi, callback, flag = arg1.Title, (arg1.Values or arg1.Options), arg1.Default, (arg1.Multi or false), arg1.Callback, arg1.Flag
 		else
-			title, desc, vals, def, callback, multi, flag = arg1, arg2, arg3, arg4, arg5, (arg6 or false), arg7
+			title, vals, def, callback, multi, flag = arg1, arg2, arg3, arg4, (arg5 or false), arg6
 		end
-		return CreateDropdown(parentFrame, title, desc, vals, def, callback, multi, flag)
+		return CreateDropdown(parentFrame, title, vals, def, callback, multi, flag)
 	end
 
-	function apiTable:ColorPicker(arg1, arg2, arg3, arg4, arg5)
-		local title, desc, def, cb, flag = "", "", Color3.fromRGB(255, 255, 255), nil, nil
+	function apiTable:ColorPicker(arg1, arg2, arg3, arg4)
+		local title, def, cb, flag = "", Color3.fromRGB(255, 255, 255), nil, nil
 		if type(arg1) == "table" then
-			title, desc, def, cb, flag = arg1.Title, (arg1.Description or arg1.Content or ""), arg1.Default, arg1.Callback, arg1.Flag
+			title, def, cb, flag = arg1.Title, arg1.Default, arg1.Callback, arg1.Flag
 		else
-			title, desc, def, cb, flag = arg1, arg2, arg3, arg4, arg5
+			title, def, cb, flag = arg1, arg2, arg3, arg4
 		end
-		return CreateColorPicker(parentFrame, title, desc, def, cb, flag)
+		return CreateColorPicker(parentFrame, title, def, cb, flag)
 	end
 	
-	function apiTable:Keybind(arg1, arg2, arg3, arg4, arg5)
-		local title, desc, def, cb, flag = "", "", Enum.KeyCode.Unknown, nil, nil
+	function apiTable:Keybind(arg1, arg2, arg3, arg4)
+		local title, def, cb, flag = "", Enum.KeyCode.Unknown, nil, nil
 		if type(arg1) == "table" then
-			title, desc, def, cb, flag = arg1.Title, (arg1.Description or arg1.Content or ""), arg1.Default, arg1.Callback, arg1.Flag
+			title, def, cb, flag = arg1.Title, arg1.Default, arg1.Callback, arg1.Flag
 		else
-			title, desc, def, cb, flag = arg1, arg2, arg3, arg4, arg5
+			title, def, cb, flag = arg1, arg2, arg3, arg4
 		end
-		return CreateKeybindInput(parentFrame, title, desc, def, cb, flag)
+		return CreateKeybindInput(parentFrame, title, def, cb, flag)
 	end
 
 	function apiTable:SectionUI(arg1)
@@ -3362,25 +3242,24 @@ function KazeUI:CreateWindow(config)
 			return list
 		end
 
-		sec:TextBox({Title = "Config Name", Description = "Provide a filename to save configurations.", Default = "Default", Callback = function(v) cfgName = v end})
+		sec:TextBox({Title = "Config Name", Default = "Default", Callback = function(v) cfgName = v end})
 		
 		local configDropdown
-		sec:Button({Title = "Save Config", Description = "Saves current configurations under the set name.", Callback = function() 
+		sec:Button({Title = "Save Config", Callback = function() 
 			KazeUI:SaveConfig(cfgName) 
 			if configDropdown then configDropdown:Refresh(getConfigs()) end
 		end})
 
 		configDropdown = sec:Dropdown({
 			Title = "Select Saved Config", 
-			Description = "Choose a previously saved config profile.",
 			Options = getConfigs(), 
 			Callback = function(v) cfgName = v end
 		})
 
-		sec:Button({Title = "Refresh Configs", Description = "Scans config directory for update.", Callback = function() if configDropdown then configDropdown:Refresh(getConfigs()) end end})
-		sec:Button({Title = "Load Config", Description = "Applies chosen configuration settings.", Callback = function() KazeUI:LoadConfig(cfgName) end})
+		sec:Button({Title = "Refresh Configs", Callback = function() if configDropdown then configDropdown:Refresh(getConfigs()) end end})
+		sec:Button({Title = "Load Config", Callback = function() KazeUI:LoadConfig(cfgName) end})
 		
-		sec:Button({Title = "Delete Config", Description = "Permanently removes settings from disc.", Callback = function()
+		sec:Button({Title = "Delete Config", Callback = function()
 			if delfile then
 				local folder = KazeUI.AuthorName
 				pcall(function() delfile(folder .. "/" .. cfgName .. ".json") end)
@@ -3401,7 +3280,6 @@ function KazeUI:CreateWindow(config)
 
 		sec:Dropdown({
 			Title = "Interface Theme Preset",
-			Description = "Select a styling standard preset template.",
 			Options = themeNames,
 			Default = KazeUI.CurrentTheme.Name,
 			Flag = "KazeUI_Theme_Preset",
@@ -3410,7 +3288,6 @@ function KazeUI:CreateWindow(config)
 
 		sec:ColorPicker({
 			Title = "Accent Glow Color",
-			Description = "Applies custom visual accent highlights across elements.",
 			Default = KazeUI.GlowColor,
 			Flag = "KazeUI_Theme_GlowColor", 
 			Callback = function(color) KazeUI:SetGlow(color) end
@@ -3418,7 +3295,6 @@ function KazeUI:CreateWindow(config)
 
 		sec:Slider({
 			Title = "UI Background Transparency",
-			Description = "Controls dynamic bubble transparency depth.",
 			Min = 0,
 			Max = 10,
 			Default = math.floor(KazeUI.BackgroundTransparency * 10),
@@ -3431,7 +3307,6 @@ function KazeUI:CreateWindow(config)
 
 		wpSec:TextBox({
 			Title = "Custom Background Image ID",
-			Description = "Load standard Roblox Image ID references.",
 			Placeholder = "rbxassetid://ID or AssetName",
 			Default = KazeUI.CurrentTheme.BackgroundImage or "",
 			Flag = "KazeUI_Wallpaper_AssetID",
@@ -3455,7 +3330,6 @@ function KazeUI:CreateWindow(config)
 
 		wpSec:Slider({
 			Title = "Wallpaper Transparency",
-			Description = "Manipulate backplate image overlay transparency strength.",
 			Min = 0,
 			Max = 100,
 			Default = math.floor((KazeUI.CurrentTheme.BackgroundImageTransparency or 0) * 100),
@@ -3473,7 +3347,6 @@ function KazeUI:CreateWindow(config)
 
 		wpSec:Slider({
 			Title = "Soft Dark Overlay Density",
-			Description = "Controls darkness filter of background overlay gradient.",
 			Min = 0,
 			Max = 100,
 			Default = math.floor((KazeUI.CurrentTheme.OverlayTransparency or 0.70) * 100),
