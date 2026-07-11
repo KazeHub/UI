@@ -38,8 +38,8 @@ KazeUI.Themes = {
 		Border = Color3.fromRGB(55, 55, 60),
 		LightnessFactor = 1.0,
 		BackgroundImage = "",
-		BackgroundImageTransparency = 0.1, -- Restored exact 10% opacity
-		OverlayTransparency = 0.65         -- Restored exact 65% opacity
+		BackgroundImageTransparency = 0.1, -- Restored exact 10% defaults
+		OverlayTransparency = 0.65         -- Restored exact 65% defaults
 	}
 }
 
@@ -213,6 +213,17 @@ function KazeUI:OnGlowChanged(inst, callback)
 				if KazeUI.GlowCallbacks[i].Inst == inst then table.remove(KazeUI.GlowCallbacks, i) end
 			end
 		end)
+	end
+end
+
+-- Force Layout Recalculation (Forces Roblox UIListLayout to instantly refresh sizes)
+local function ForceRecalculate(frame)
+	if frame and frame:IsA("GuiObject") then
+		local layout = frame:FindFirstChildOfClass("UIListLayout")
+		if layout then
+			layout.Enabled = false
+			layout.Enabled = true
+		end
 	end
 end
 
@@ -1887,7 +1898,7 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 	local hg = Instance.new("UIGradient", hueSlider)
 	hg.Color = ColorSequence.new{
 		ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 0, 0)),
-		ColorSequenceKeypoint.new(0.167, Color3.fromRGB(255, 255, 0)),
+		ColorSequenceKeypoint.new(0.167, Color3.fromRGB(255, 255,  yellow)),
 		ColorSequenceKeypoint.new(0.333, Color3.fromRGB(0, 255, 0)),
 		ColorSequenceKeypoint.new(0.5, Color3.fromRGB(0, 255, 255)),
 		ColorSequenceKeypoint.new(0.667, Color3.fromRGB(0, 0, 255)),
@@ -2085,7 +2096,7 @@ local function CreateKeybindInput(parentFrame, title, defaultKey, callback, flag
 	local bindLabel = Instance.new("TextLabel", bindContainer)
 	bindLabel.Size = UDim2.new(1, 0, 1, 0)
 	bindLabel.BackgroundTransparency = 1
-	bindLabel.Text = currentKey == Enum.KeyCode.Unknown and "None" or currentKey.Name
+	bindLabel.Text = currentKey == Enum.KeyCode.Unknown perks "None" or currentKey.Name
 	bindLabel.Font = Enum.Font.GothamBold
 	bindLabel.TextSize = 9
 	KazeUI:RegisterText(bindLabel, false)
@@ -2334,6 +2345,12 @@ CreateCollapsibleSection = function(parentFrame, titleArg, currentDepth)
 	boxStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 	KazeUI:RegisterBorder(boxStroke)
 
+	-- Premium Padding protection keeps inner children strictly away from parent border bounds
+	local boxPadding = Instance.new("UIPadding", sectionBox)
+	boxPadding.PaddingLeft = UDim.new(0, 1)
+	boxPadding.PaddingRight = UDim.new(0, 1)
+	boxPadding.PaddingBottom = UDim.new(0, 1)
+
 	local boxLayout = Instance.new("UIListLayout", sectionBox)
 	boxLayout.SortOrder = Enum.SortOrder.LayoutOrder
 	boxLayout.Padding = UDim.new(0, 0)
@@ -2429,7 +2446,10 @@ CreateCollapsibleSection = function(parentFrame, titleArg, currentDepth)
 			TweenService:Create(accentLine, TWEEN_FAST, {
 				BackgroundColor3 = KazeUI.GlowColor
 			}):Play()
-			TweenService:Create(boxStroke, TWEEN_FAST, {Color = KazeUI.GlowColor}):Play()
+			-- Border outline remains sleek gray (Figma/Raycast styled restraints) to prevent overwhelming double border cages
+			local h, s, v = Color3.toHSV(KazeUI.CurrentTheme.Border)
+			local activeBorder = Color3.fromHSV(h, s, math.clamp(v * 1.2, 0, 1))
+			TweenService:Create(boxStroke, TWEEN_FAST, {Color = activeBorder}):Play()
 		else
 			TweenService:Create(arrowIcon, TWEEN_FAST, {
 				Rotation = -90,
@@ -2440,6 +2460,10 @@ CreateCollapsibleSection = function(parentFrame, titleArg, currentDepth)
 			}):Play()
 			TweenService:Create(boxStroke, TWEEN_FAST, {Color = KazeUI.CurrentTheme.Border}):Play()
 		end
+
+		-- Instant recalculation prevents Roblox Layout collapse
+		ForceRecalculate(sectionBox)
+		if sectionBox.Parent then ForceRecalculate(sectionBox.Parent) end
 	end
 
 	toggleDetector.MouseEnter:Connect(function()
@@ -2491,6 +2515,12 @@ CreateGroupBox = function(parentFrame, titleArg, currentDepth, depthOverride)
 	stroke.Thickness = 1.0
 	stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 	KazeUI:RegisterBorder(stroke)
+
+	-- Padding prevents inner scale overlaps from distorting parent boundaries
+	local groupPadding = Instance.new("UIPadding", groupFrame)
+	groupPadding.PaddingLeft = UDim.new(0, 1)
+	groupPadding.PaddingRight = UDim.new(0, 1)
+	groupPadding.PaddingBottom = UDim.new(0, 1)
 
 	local layout = Instance.new("UIListLayout", groupFrame)
 	layout.SortOrder = Enum.SortOrder.LayoutOrder
@@ -2586,7 +2616,10 @@ CreateGroupBox = function(parentFrame, titleArg, currentDepth, depthOverride)
 			TweenService:Create(accentLine, TWEEN_FAST, {
 				BackgroundColor3 = KazeUI.GlowColor
 			}):Play()
-			TweenService:Create(stroke, TWEEN_FAST, {Color = KazeUI.GlowColor}):Play()
+			-- Border outline remains sleek gray (Figma/Raycast styled restraints) to prevent overwhelming double border cages
+			local h, s, v = Color3.toHSV(KazeUI.CurrentTheme.Border)
+			local activeBorder = Color3.fromHSV(h, s, math.clamp(v * 1.2, 0, 1))
+			TweenService:Create(stroke, TWEEN_FAST, {Color = activeBorder}):Play()
 		else
 			TweenService:Create(arrowIcon, TWEEN_FAST, {
 				Rotation = -90,
@@ -2597,6 +2630,10 @@ CreateGroupBox = function(parentFrame, titleArg, currentDepth, depthOverride)
 			}):Play()
 			TweenService:Create(stroke, TWEEN_FAST, {Color = KazeUI.CurrentTheme.Border}):Play()
 		end
+
+		-- Instant recalculation prevents Roblox Layout collapse
+		ForceRecalculate(groupFrame)
+		if groupFrame.Parent then ForceRecalculate(groupFrame.Parent) end
 	end
 
 	toggleDetector.MouseEnter:Connect(function()
@@ -2605,8 +2642,6 @@ CreateGroupBox = function(parentFrame, titleArg, currentDepth, depthOverride)
 	toggleDetector.MouseLeave:Connect(function()
 		TweenService:Create(header, TWEEN_FAST, {BackgroundTransparency = 1}):Play()
 	end)
-	-- FIX: Switched from physical size shrinking to elegant background highlights on click.
-	-- Animating size-scales on containers with AutomaticSize.Y causes severe layout collapse & UIStroke clipping bugs.
 	toggleDetector.MouseButton1Click:Connect(toggleGroup)
 
 	local groupPublic = {
