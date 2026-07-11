@@ -12,8 +12,6 @@
 	- Dropdown Color Hotfix: Fixed the theme change latency bug where dropdown colors stayed on the old theme until closed/reopened.
 	- Toggle Dynamic Theme Sync: Fully synced toggle switch neutral colors with real-time theme changes.
 	- GroupBox SectionUI Mirror: Redesigned GroupBox to look and behave exactly like SectionUI (full-width header, vertical accent line, click highlight, horizontal divider, neon loops) but optimized for nested volumetric scaling.
-	- Title Button Size Bugfix: Resolved text scaling latency where clickable paragraph titles rendered extremely small.
-	- Tab Dividers added: Tab:Divider("Title") / Tab:Divider("") premium separators.
 --]]
 
 local KazeUI = {}
@@ -1342,7 +1340,7 @@ local function CreateClickableParagraph(parentFrame, title, body, callback)
 		ptitleLabel.BackgroundTransparency = 1
 		ptitleLabel.Text = title
 		ptitleLabel.Font = Enum.Font.GothamBold
-		ptitleLabel.TextSize = 13 -- BUGFIX: Explicitly assign text size (was previously defaulting to Roblox's tiny 8 scale)
+		ptitleLabel.TextSize = 13 -- FIX: Restored the explicit premium button text size
 		ptitleLabel.TextWrapped = true
 		ptitleLabel.TextXAlignment = Enum.TextXAlignment.Left
 		if body == "" then ptitleLabel.AnchorPoint = Vector2.new(0, 0.5); ptitleLabel.Position = UDim2.new(0, 0, 0.5, 0) end
@@ -1629,7 +1627,7 @@ local function CreateTextBoxInput(parentFrame, title, placeholder, defaultVal, c
 		ptitleLabel.BackgroundTransparency = 1
 		ptitleLabel.Text = title
 		ptitleLabel.Font = Enum.Font.GothamBold
-		ptitleLabel.TextSize = 13
+		ptitleLabel.TextSize = 13 -- Added explicit size 13 standard to keep inputs identical to premium buttons
 		ptitleLabel.TextWrapped = true
 		ptitleLabel.TextXAlignment = Enum.TextXAlignment.Left -- BUGFIX: Explicitly left align TextBox titles (was previously centered by default)
 		KazeUI:RegisterText(ptitleLabel, false)
@@ -1811,7 +1809,6 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 		local trackWidth = track.AbsoluteSize.X
 		if trackWidth <= 0 then return end
 		local relativeX = input.Position.X - track.AbsolutePosition.X
-		local relativeY = input.Position.Y - track.AbsolutePosition.Y
 		local percentage = math.clamp(relativeX / trackWidth, 0, 1)
 		local newVal = min + (max - min) * percentage
 		newVal = math.clamp(math.floor(newVal + 0.5), min, max)
@@ -2329,88 +2326,6 @@ local function CreateVisualSectionDivider(parentFrame, titleArg)
 	}
 end
 
--- ==========================================================
--- Premium Space Divider Component (Tab:Divider)
--- ==========================================================
-local function CreateTabDivider(parentFrame, title)
-	title = tostring(title or "")
-	
-	local wrapper = Instance.new("Frame")
-	wrapper.Name = "TabDivider_" .. title
-	wrapper.BackgroundTransparency = 1
-	wrapper.Parent = parentFrame
-	wrapper.AutomaticSize = Enum.AutomaticSize.Y
-	
-	if title ~= "" then
-		wrapper.Size = UDim2.new(0.95, 0, 0, 24)
-		
-		local container = Instance.new("Frame", wrapper)
-		container.Size = UDim2.new(1, 0, 0, 24)
-		container.BackgroundTransparency = 1
-		
-		local layout = Instance.new("UIListLayout", container)
-		layout.FillDirection = Enum.FillDirection.Horizontal
-		layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-		layout.VerticalAlignment = Enum.VerticalAlignment.Center
-		layout.Padding = UDim.new(0, 10)
-		
-		local leftLine = Instance.new("Frame", container)
-		leftLine.Size = UDim2.new(0.5, -60, 0, 1)
-		leftLine.BorderSizePixel = 0
-		KazeUI:OnThemeChanged(leftLine, function(t) leftLine.BackgroundColor3 = t.Border end)
-		
-		local textLabel = Instance.new("TextLabel", container)
-		textLabel.Size = UDim2.new(0, 100, 1, 0)
-		textLabel.BackgroundTransparency = 1
-		textLabel.Text = title
-		textLabel.Font = Enum.Font.GothamBold
-		textLabel.TextSize = 11
-		textLabel.TextXAlignment = Enum.TextXAlignment.Center
-		textLabel.AutomaticSize = Enum.AutomaticSize.X
-		KazeUI:RegisterText(textLabel, true)
-		
-		local rightLine = Instance.new("Frame", container)
-		rightLine.Size = UDim2.new(0.5, -60, 0, 1)
-		rightLine.BorderSizePixel = 0
-		KazeUI:OnThemeChanged(rightLine, function(t) rightLine.BackgroundColor3 = t.Border end)
-		
-		-- Track scale modifications dynamically to balance line constraints cleanly
-		local function adjustLines()
-			local textWidth = textLabel.AbsoluteSize.X
-			local halfRemainingWidth = (wrapper.AbsoluteSize.X - textWidth - 20) / 2
-			if halfRemainingWidth > 0 then
-				leftLine.Size = UDim2.new(0, halfRemainingWidth, 0, 1)
-				rightLine.Size = UDim2.new(0, halfRemainingWidth, 0, 1)
-			end
-		end
-		textLabel:GetPropertyChangedSignal("AbsoluteSize"):Connect(adjustLines)
-		wrapper:GetPropertyChangedSignal("AbsoluteSize"):Connect(adjustLines)
-		task.spawn(adjustLines)
-	else
-		wrapper.Size = UDim2.new(0.95, 0, 0, 14)
-		
-		local container = Instance.new("Frame", wrapper)
-		container.Size = UDim2.new(1, 0, 0, 14)
-		container.BackgroundTransparency = 1
-		
-		local line = Instance.new("Frame", container)
-		line.AnchorPoint = Vector2.new(0.5, 0.5)
-		line.Position = UDim2.fromScale(0.5, 0.5)
-		line.Size = UDim2.new(1, 0, 0, 1)
-		line.BorderSizePixel = 0
-		KazeUI:OnThemeChanged(line, function(t) line.BackgroundColor3 = t.Border end)
-	end
-	
-	return {
-		Wrapper = wrapper,
-		SetText = function(self, newTitle)
-			title = tostring(newTitle or "")
-			local textLabel = wrapper:FindFirstChildOfClass("TextLabel", true)
-			if textLabel then textLabel.Text = title end
-		end
-	}
-end
-
 -- ==========================================
 -- GroupBox & SectionUI Builder
 -- ==========================================
@@ -2522,11 +2437,6 @@ AttachElementsToAPI = function(apiTable, parentFrame, depth)
 	function apiTable:GroupBox(arg1, depthOverride)
 		local title = type(arg1) == "table" and arg1.Title or arg1
 		return CreateGroupBox(parentFrame, title, depth, depthOverride)
-	end
-
-	function apiTable:Divider(arg1)
-		local title = type(arg1) == "table" and (arg1.Title or arg1.Text) or arg1
-		return CreateTabDivider(parentFrame, title)
 	end
 end
 
@@ -3750,7 +3660,7 @@ function KazeUI:CreateWindow(config)
 		txt.TextWrapped = true 
 		
 		local textConstraint = Instance.new("UITextSizeConstraint", txt)
-		textConstraint.MaxTextSize = 13 -- Slightly adjusted maximum tab title font size for enhanced clarity
+		textConstraint.MaxTextSize = 12
 		textConstraint.MinTextSize = 8
 		
 		txt.TextXAlignment = Enum.TextXAlignment.Left
