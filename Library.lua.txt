@@ -1,28 +1,17 @@
 --[[
-	Kaze UI Library v3.5+ (Premium Bubble Redesign & Next-Gen Glowing Engine)
+	Kaze UI Library v3.5.1 (Premium Bubble Redesign & Next-Gen Glowing Engine)
 	Inspired by: Modern Mobile Chat Bubbles, iMessage, and Discord Mobile.
 	Retained: 100% Backwards Compatibility with Version 1, 2, 2.2, 2.3, and 3.0 APIs
 	
-	UPDATES IN V3.5+ (Neon Volumetric Rewrite):
+	UPDATES IN V3.5.1:
+	- COLOR PICKER GRADIENT BUGFIX: Fixed a bug where both the white and black overlay frames had `BackgroundTransparency = 1`, making them invisible and rendering the picker as a solid color.
+	- SMART GLOW COLOR PARSER: Added support for direct Color3 objects, Hex codes, and named strings under the 'Glow'/'GlowColor' properties.
 	- NEXT-GEN NEON ENGINE: Rewrote glowing structures. StartNeonLoop now dynamically pairs base elements with high-fidelity, dual-breathing volumetric outer shadow textures (assetid: 6015886843).
 	- VOLUMETRIC BACKLIGHTING: Applied physical neon bloom fields to toggles (when active), buttons (on hover), collapsible dividers, and window frame outlines.
 	- Modal Resize Engine: Completely rewritten window scaling. Introduced strict input capturing, multi-touch isolation, and ScrollLock during resize.
 	- Drag Exclusion: Fixed a bug where resizing and dragging could conflict.
 	- Simplified Themes: Retained only "Obsidian" (default) and "CustomWallpaper".
 	- White Glow Sync: Automatically forces the Glow color to bright White when Obsidian theme is loaded.
-	
-	CUSTOM MODIFICATIONS & FIXES:
-	- Removed Win:Divider() function.
-	- Configuration System now creates a folder based on the Author's name and saves/loads files from there.
-	- Wallpaper Save/Load Restore fix.
-	- Decoupled Notification Background from dynamic transparency overlays.
-	- Enhanced Notification Title support for Color3 and rainbow RGB animation cycles.
-	- FIX: Nilagyan ng padding ang notification frame upang maiwasan ang pagkaputol ng shadow at stroke.
-	- FIX: Inalis ang glow effect sa searchbar ng dropdown para sa mas malinis na UI.
-	- FEATURE: Idinagdag ang ganap na suporta para sa Notification Icons (Lucide & Asset IDs, na may adaptive padding at RGB sync!).
-	- BUGFIX: Inayos ang dropdown selected text label na nananatiling "Label" sa simula sa pamamagitan ng agarang text assignment sa initialization.
-	- FIX (LATEST): Dynamic notification scaling para sa mahahabang mensahe at premium close button gamit ang Texture ID 10747384394.
-	- CONTRAST & MODAL BUGFIX (2026): Increased description readability by making theme MutedText brighter, and locked input behind the Exit Confirmation overlay to block background interaction.
 --]]
 
 local KazeUI = {}
@@ -220,6 +209,37 @@ local function FormatImage(id)
 	local clean = string.gsub(id, "%D", "")
 	if clean == "" then return id end
 	return "rbxassetid://" .. clean
+end
+
+-- Smart dynamic Color3 parser (Supports Color3, Hex-string, or Named color mapping)
+local function ParseColor(val)
+	if typeof(val) == "Color3" then
+		return val
+	elseif type(val) == "string" then
+		local lowerVal = string.lower(val)
+		local glowMap = {
+			red = Color3.fromRGB(255, 60, 60),
+			blue = Color3.fromRGB(0, 160, 255),
+			green = Color3.fromRGB(34, 197, 94),
+			["neon green"] = Color3.fromRGB(34, 197, 94),
+			yellow = Color3.fromRGB(234, 179, 8),
+			purple = Color3.fromRGB(150, 80, 255),
+			pink = Color3.fromRGB(244, 114, 182),
+			orange = Color3.fromRGB(249, 115, 22),
+			white = Color3.fromRGB(255, 255, 255),
+			black = Color3.fromRGB(15, 15, 17)
+		}
+		if glowMap[lowerVal] then
+			return glowMap[lowerVal]
+		end
+		
+		local cleanHex = string.gsub(val, "#", "")
+		local success, parsed = pcall(function() return Color3.fromHex(cleanHex) end)
+		if success then
+			return parsed
+		end
+	end
+	return nil
 end
 
 -- ==========================================
@@ -1425,7 +1445,6 @@ local function CreateClickableParagraph(parentFrame, title, body, callback)
 		ptitleLabel.BackgroundTransparency = 1
 		ptitleLabel.Text = title
 		ptitleLabel.Font = Enum.Font.GothamBold
-		ptitleLabel.TextSize = 13
 		ptitleLabel.TextWrapped = true
 		ptitleLabel.TextXAlignment = Enum.TextXAlignment.Left
 		if body == "" then ptitleLabel.AnchorPoint = Vector2.new(0, 0.5); ptitleLabel.Position = UDim2.new(0, 0, 0.5, 0) end
@@ -2077,9 +2096,11 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 	svMap.Text = ""
 	Instance.new("UICorner", svMap).CornerRadius = UDim.new(0, 8)
 
+	-- BUGFIX: Changed BackgroundTransparency from 1 to 0 on white & black gradient layers. 
+	-- Frame BackgroundTransparency must be 0 for parent UIGradient components to render!
 	local whiteOverlay = Instance.new("Frame", svMap)
 	whiteOverlay.Size = UDim2.fromScale(1, 1)
-	whiteOverlay.BackgroundTransparency = 1
+	whiteOverlay.BackgroundTransparency = 0 
 	whiteOverlay.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
 	local wg = Instance.new("UIGradient", whiteOverlay)
 	wg.Transparency = NumberSequence.new{NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(1, 1)}
@@ -2087,7 +2108,7 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 
 	local blackOverlay = Instance.new("Frame", svMap)
 	blackOverlay.Size = UDim2.fromScale(1, 1)
-	blackOverlay.BackgroundTransparency = 1
+	blackOverlay.BackgroundTransparency = 0
 	blackOverlay.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 	local bg = Instance.new("UIGradient", blackOverlay)
 	bg.Transparency = NumberSequence.new{NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(1, 0)}
@@ -2741,31 +2762,9 @@ function KazeUI:CreateWindow(config)
 	end
 	KazeUI:SetTheme(selectedTheme)
 
-	-- Handle glow colors (Default to White on Obsidian)
-	if config.Glow then
-		local lowerGlow = string.lower(tostring(config.Glow))
-		local glowMap = {
-			red = Color3.fromRGB(255, 60, 60),
-			blue = Color3.fromRGB(0, 160, 255),
-			green = Color3.fromRGB(34, 197, 94),
-			["neon green"] = Color3.fromRGB(34, 197, 94),
-			yellow = Color3.fromRGB(234, 179, 8),
-			purple = Color3.fromRGB(150, 80, 255),
-			pink = Color3.fromRGB(244, 114, 182),
-			orange = Color3.fromRGB(249, 115, 22),
-			white = Color3.fromRGB(255, 255, 255),
-			black = Color3.fromRGB(15, 15, 17)
-		}
-		if glowMap[lowerGlow] then
-			KazeUI:SetGlow(glowMap[lowerGlow])
-		elseif typeof(config.Glow) == "Color3" then
-			KazeUI:SetGlow(config.Glow)
-		end
-	elseif config.GlowColor then
-		KazeUI:SetGlow(config.GlowColor)
-	else
-		KazeUI:SetGlow(Color3.fromRGB(255, 255, 255)) -- Fallback standard white glow
-	end
+	-- Upgraded Glow configuration parser (Supports native Color3 / Hex / Named Presets)
+	local resolvedGlow = ParseColor(config.Glow) or ParseColor(config.GlowColor) or Color3.fromRGB(255, 255, 255)
+	KazeUI:SetGlow(resolvedGlow)
 
 	local MiniButtonSize = UDim2.fromOffset(48, 48)
 
