@@ -1,9 +1,11 @@
 --[[
-	Kaze UI Library v3.5 (Premium Bubble Redesign & Engine Rewrite)
+	Kaze UI Library v3.5+ (Premium Bubble Redesign & Next-Gen Glowing Engine)
 	Inspired by: Modern Mobile Chat Bubbles, iMessage, and Discord Mobile.
 	Retained: 100% Backwards Compatibility with Version 1, 2, 2.2, 2.3, and 3.0 APIs
 	
-	UPDATES IN V3.5:
+	UPDATES IN V3.5+ (Neon Volumetric Rewrite):
+	- NEXT-GEN NEON ENGINE: Rewrote glowing structures. StartNeonLoop now dynamically pairs base elements with high-fidelity, dual-breathing volumetric outer shadow textures (assetid: 6015886843).
+	- VOLUMETRIC BACKLIGHTING: Applied physical neon bloom fields to toggles (when active), buttons (on hover), collapsible dividers, and window frame outlines.
 	- Modal Resize Engine: Completely rewritten window scaling. Introduced strict input capturing, multi-touch isolation, and ScrollLock during resize.
 	- Drag Exclusion: Fixed a bug where resizing and dragging could conflict.
 	- Simplified Themes: Retained only "Obsidian" (default) and "CustomWallpaper".
@@ -221,7 +223,7 @@ local function FormatImage(id)
 end
 
 -- ==========================================
--- Dynamic Color Sync & Registries
+-- Dynamic Color Sync & Volumetric Glow Engine
 -- ==========================================
 function KazeUI:OnGlowChanged(inst, callback)
 	table.insert(KazeUI.GlowCallbacks, {Inst = inst, Callback = callback})
@@ -464,20 +466,55 @@ function KazeUI:SetTheme(themeName)
 	end
 end
 
--- Glow loop with high quality breathing effect
-local function StartNeonLoop(target)
+-- Upgraded Glow Loop with Dual-Breathing Volumetric Shadow Backlight
+local function StartNeonLoop(target, glowOffset)
 	if not target then return end
 	local propName = pcall(function() return target.Color end) and "Color" or "BackgroundColor3"
-	table.insert(KazeUI.GlowElements, {Target = target, Prop = propName})
+	
+	-- Volumetric Glow Overlay creation (Asset ID: 6015886843)
+	local glowOverlay = nil
+	if target:IsA("GuiObject") and not target:FindFirstChild("KazeTrueGlow") then
+		glowOverlay = Instance.new("ImageLabel")
+		glowOverlay.Name = "KazeTrueGlow"
+		glowOverlay.AnchorPoint = Vector2.new(0.5, 0.5)
+		glowOverlay.Position = UDim2.fromScale(0.5, 0.5)
+		
+		-- Setup layout boundary padding depending on element sizes
+		local offset = glowOffset or 30
+		glowOverlay.Size = UDim2.new(1, offset, 1, offset)
+		glowOverlay.BackgroundTransparency = 1
+		glowOverlay.Image = "rbxassetid://6015886843" -- High quality sliceable soft light glow asset
+		glowOverlay.ImageColor3 = KazeUI.GlowColor
+		glowOverlay.ImageTransparency = 0.55
+		glowOverlay.ScaleType = Enum.ScaleType.Slice
+		glowOverlay.SliceCenter = Rect.new(49, 49, 151, 151)
+		glowOverlay.ZIndex = math.max(1, target.ZIndex - 1)
+		glowOverlay.Parent = target
+	end
+
+	table.insert(KazeUI.GlowElements, {Target = target, Prop = propName, GlowOverlay = glowOverlay, Offset = glowOffset})
 
 	local function createTween()
-		local tweenInfo = TweenInfo.new(2.2, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true)
 		local h, s, v = Color3.toHSV(KazeUI.GlowColor)
-		local targetColor = Color3.fromHSV(h, s * 0.85, math.clamp(v * 1.05, 0, 1))
-		local tween = TweenService:Create(target, tweenInfo, {[propName] = targetColor})
+		local brightColor = Color3.fromHSV(h, math.clamp(s * 0.95, 0, 1), math.clamp(v * 1.1, 0, 1))
+		
+		local tweenInfo = TweenInfo.new(1.8, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true)
+		local tween = TweenService:Create(target, tweenInfo, {[propName] = brightColor})
 		tween:Play()
 		KazeUI.NeonTweens[target] = tween
+
+		if glowOverlay then
+			-- Synchronized expansion & visibility breathing cycles
+			local overlayTween = TweenService:Create(glowOverlay, tweenInfo, {
+				Size = UDim2.new(1, (glowOffset or 30) + 6, 1, (glowOffset or 30) + 6),
+				ImageTransparency = 0.35,
+				ImageColor3 = brightColor
+			})
+			overlayTween:Play()
+			KazeUI.NeonTweens[glowOverlay] = overlayTween
+		end
 	end
+	
 	target[propName] = KazeUI.GlowColor
 	createTween()
 end
@@ -489,7 +526,17 @@ local function StopNeonLoop(target)
 		KazeUI.NeonTweens[target] = nil
 	end
 	for i = #KazeUI.GlowElements, 1, -1 do
-		if KazeUI.GlowElements[i].Target == target then table.remove(KazeUI.GlowElements, i) end
+		local data = KazeUI.GlowElements[i]
+		if data.Target == target then
+			if data.GlowOverlay then
+				if KazeUI.NeonTweens[data.GlowOverlay] then
+					KazeUI.NeonTweens[data.GlowOverlay]:Cancel()
+					KazeUI.NeonTweens[data.GlowOverlay] = nil
+				end
+				data.GlowOverlay:Destroy()
+			end
+			table.remove(KazeUI.GlowElements, i)
+		end
 	end
 end
 
@@ -499,17 +546,38 @@ function KazeUI:SetGlow(color)
 	for _, data in ipairs(KazeUI.GlowElements) do
 		local target = data.Target
 		local propName = data.Prop
+		local glowOverlay = data.GlowOverlay
+		local offset = data.Offset or 30
+		
 		if target and target.Parent then
 			if KazeUI.NeonTweens[target] then KazeUI.NeonTweens[target]:Cancel() end
+			if glowOverlay and KazeUI.NeonTweens[glowOverlay] then KazeUI.NeonTweens[glowOverlay]:Cancel() end
+			
 			target[propName] = color
-			local tweenInfo = TweenInfo.new(1.8, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true)
+			if glowOverlay then
+				glowOverlay.ImageColor3 = color
+			end
+			
 			local h, s, v = Color3.toHSV(color)
-			local targetColor = Color3.fromHSV(h, s * 0.9, 1)
-			local newTween = TweenService:Create(target, tweenInfo, {[propName] = targetColor})
+			local brightColor = Color3.fromHSV(h, math.clamp(s * 0.95, 0, 1), math.clamp(v * 1.1, 0, 1))
+			
+			local tweenInfo = TweenInfo.new(1.8, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true)
+			local newTween = TweenService:Create(target, tweenInfo, {[propName] = brightColor})
 			newTween:Play()
 			KazeUI.NeonTweens[target] = newTween
+
+			if glowOverlay then
+				local overlayTween = TweenService:Create(glowOverlay, tweenInfo, {
+					Size = UDim2.new(1, offset + 6, 1, offset + 6),
+					ImageTransparency = 0.35,
+					ImageColor3 = brightColor
+				})
+				overlayTween:Play()
+				KazeUI.NeonTweens[glowOverlay] = overlayTween
+			end
 		else
 			KazeUI.NeonTweens[target] = nil
+			if glowOverlay then KazeUI.NeonTweens[glowOverlay] = nil end
 		end
 	end
 	
@@ -671,7 +739,7 @@ function KazeUI:Notify(config)
 	progressBar.BackgroundColor3 = KazeUI.GlowColor
 	progressBar.BorderSizePixel = 0
 	Instance.new("UICorner", progressBar).CornerRadius = UDim.new(1, 0)
-	StartNeonLoop(progressBar)
+	StartNeonLoop(progressBar, 16) -- Dynamic Breathing Glow for notification progress bar
 	
 	KazeUI:OnGlowChanged(progressBar, function(c) progressBar.BackgroundColor3 = c end)
 
@@ -958,7 +1026,7 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 	local searchPadding = Instance.new("UIPadding", searchBox)
 	searchPadding.PaddingLeft = UDim.new(0, 10)
 
-	-- Hindi na ito nag-gloglow sa Accent Glow Color kapag naka-focus
+	-- Hindi na ito nag-gloglow sa Accent Glow Color kapag naka-focus (Clean Search Bar modification)
 	searchBox.Focused:Connect(function() 
 		TweenService:Create(searchStroke, TWEEN_FAST, {Color = KazeUI.CurrentTheme.Border}):Play()
 	end)
@@ -1314,6 +1382,23 @@ local function CreateClickableParagraph(parentFrame, title, body, callback)
 	paraStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 	KazeUI:RegisterBorder(paraStroke)
 	
+	-- Volumetric Ambient Backlight Hover Glow
+	local hoverGlow = Instance.new("ImageLabel")
+	hoverGlow.Name = "HoverGlow"
+	hoverGlow.AnchorPoint = Vector2.new(0.5, 0.5)
+	hoverGlow.Position = UDim2.fromScale(0.5, 0.5)
+	hoverGlow.Size = UDim2.new(1, 32, 1, 32)
+	hoverGlow.BackgroundTransparency = 1
+	hoverGlow.Image = "rbxassetid://6015886843"
+	hoverGlow.ImageColor3 = KazeUI.GlowColor
+	hoverGlow.ImageTransparency = 1 -- Start invisible
+	hoverGlow.ScaleType = Enum.ScaleType.Slice
+	hoverGlow.SliceCenter = Rect.new(49, 49, 151, 151)
+	hoverGlow.ZIndex = math.max(1, paraFrame.ZIndex - 1)
+	hoverGlow.Parent = paraFrame
+
+	KazeUI:OnGlowChanged(hoverGlow, function(c) hoverGlow.ImageColor3 = c end)
+
 	local inner = Instance.new("Frame", paraFrame)
 	inner.Size = UDim2.new(1, -20, 1, -16)
 	inner.Position = UDim2.fromOffset(10, 8)
@@ -1374,12 +1459,18 @@ local function CreateClickableParagraph(parentFrame, title, body, callback)
 		TweenService:Create(paraFrame, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.04)}):Play()
 		TweenService:Create(paraStroke, TWEEN_FAST, {Color = KazeUI.GlowColor}):Play()
 		TweenService:Create(rightIcon, TWEEN_FAST, {ImageColor3 = Color3.fromRGB(255, 255, 255), Position = UDim2.new(1, -8, 0.5, 0)}):Play()
+		
+		-- Smooth Volumetric Fade-In Hover Shadow
+		TweenService:Create(hoverGlow, TWEEN_FAST, {ImageTransparency = 0.55}):Play()
 	end)
 	clickDetector.MouseLeave:Connect(function()
 		isHovering = false
 		TweenService:Create(paraFrame, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.02)}):Play()
 		TweenService:Create(paraStroke, TWEEN_FAST, {Color = KazeUI.CurrentTheme.Border}):Play()
 		TweenService:Create(rightIcon, TWEEN_FAST, {ImageColor3 = KazeUI.CurrentTheme.MutedText, Position = UDim2.new(1, -10, 0.5, 0)}):Play()
+		
+		-- Smooth Volumetric Fade-Out Hover Shadow
+		TweenService:Create(hoverGlow, TWEEN_FAST, {ImageTransparency = 1}):Play()
 	end)
 	
 	clickDetector.MouseButton1Down:Connect(function()
@@ -1387,12 +1478,14 @@ local function CreateClickableParagraph(parentFrame, title, body, callback)
 			Size = UDim2.new(0.93, 0, 0, totalHeight - 2), 
 			Position = UDim2.new(0.5, 0, 0, 4) 
 		}):Play()
+		TweenService:Create(hoverGlow, TweenInfo.new(0.1), {Size = UDim2.new(1, 24, 1, 24)}):Play()
 	end)
 	clickDetector.MouseButton1Up:Connect(function()
 		TweenService:Create(paraFrame, TWEEN_SPRING, { 
 			Size = UDim2.new(0.95, 0, 0, totalHeight), 
 			Position = UDim2.new(0.5, 0, 0, 3) 
 		}):Play()
+		TweenService:Create(hoverGlow, TWEEN_SPRING, {Size = UDim2.new(1, 32, 1, 32)}):Play()
 		if typeof(callback) == "function" then task.spawn(callback) end
 	end)
 	
@@ -1513,6 +1606,7 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 	clickDetector.ZIndex = 10
 	clickDetector.Parent = paraFrame
 
+	-- Active switch glows with next-gen breathing overlay
 	local function setToggleState(newState, instant)
 		state = newState
 		local targetPos = state and UDim2.new(1, -18, 0.5, 0) or UDim2.new(0, 2, 0.5, 0)
@@ -1520,10 +1614,20 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 		
 		if instant then
 			switchIndicator.Position = targetPos
-			switchContainer.BackgroundColor3 = targetBg
+			if state then
+				StartNeonLoop(switchContainer, 14)
+			else
+				StopNeonLoop(switchContainer)
+				switchContainer.BackgroundColor3 = targetBg
+			end
 		else
 			TweenService:Create(switchIndicator, TWEEN_SPRING, {Position = targetPos}):Play()
-			TweenService:Create(switchContainer, TWEEN_FAST, {BackgroundColor3 = targetBg}):Play()
+			if state then
+				StartNeonLoop(switchContainer, 14)
+			else
+				StopNeonLoop(switchContainer)
+				TweenService:Create(switchContainer, TWEEN_FAST, {BackgroundColor3 = targetBg}):Play()
+			end
 		end
 	end
 	setToggleState(state, true)
@@ -2545,8 +2649,10 @@ CreateCollapsibleSection = function(parentFrame, titleArg)
 			TweenService:Create(accentLine, TweenInfo.new(animDuration, easeStyle, easeDir), {
 				BackgroundColor3 = KazeUI.GlowColor
 			}):Play()
-			StartNeonLoop(boxStroke)
-			StartNeonLoop(accentLine)
+			
+			-- Next-gen breathing volumetric visualizers
+			StartNeonLoop(boxStroke, 38)
+			StartNeonLoop(accentLine, 12)
 		else
 			TweenService:Create(arrowIcon, TweenInfo.new(animDuration, easeStyle, easeDir), {
 				Rotation = -90,
@@ -2555,6 +2661,7 @@ CreateCollapsibleSection = function(parentFrame, titleArg)
 			TweenService:Create(accentLine, TweenInfo.new(animDuration, easeStyle, easeDir), {
 				BackgroundColor3 = KazeUI.CurrentTheme.MutedText
 			}):Play()
+			
 			StopNeonLoop(boxStroke)
 			StopNeonLoop(accentLine)
 			boxStroke.Color = KazeUI.CurrentTheme.Border
@@ -2675,18 +2782,28 @@ function KazeUI:CreateWindow(config)
 	Instance.new("UICorner", Window).CornerRadius = UDim.new(0, 28)
 	KazeUI:AddPanel(Window, 0)
 
-	-- Premium Outer Glowing Shadows
-	local outerShadow = Instance.new("Frame", Window)
-	outerShadow.Size = UDim2.new(1, 14, 1, 14)
-	outerShadow.Position = UDim2.fromOffset(-7, -7)
+	-- Next-Gen Volumetric Outer Breathing Window Outline / Shadow
+	local outerShadow = Instance.new("ImageLabel", Window)
+	outerShadow.Name = "WindowOuterGlow"
+	outerShadow.Size = UDim2.new(1, 48, 1, 48)
+	outerShadow.Position = UDim2.fromOffset(-24, -24)
 	outerShadow.BackgroundTransparency = 1
 	outerShadow.ZIndex = -1
-	local shCorner = Instance.new("UICorner", outerShadow)
-	shCorner.CornerRadius = UDim.new(0, 32)
-	local shadowStroke = Instance.new("UIStroke", outerShadow)
-	shadowStroke.Thickness = 6
-	shadowStroke.Color = Color3.fromRGB(0, 0, 0)
-	shadowStroke.Transparency = 0.8
+	outerShadow.Image = "rbxassetid://6015886843"
+	outerShadow.ImageColor3 = KazeUI.GlowColor
+	outerShadow.ImageTransparency = 0.60
+	outerShadow.ScaleType = Enum.ScaleType.Slice
+	outerShadow.SliceCenter = Rect.new(49, 49, 151, 151)
+
+	KazeUI:OnGlowChanged(outerShadow, function(c)
+		TweenService:Create(outerShadow, TWEEN_FAST, {ImageColor3 = c}):Play()
+	end)
+
+	-- Subtle continuous float shadow breathe cycle
+	local winShadowBreathe = TweenService:Create(outerShadow, TweenInfo.new(3.5, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), {
+		ImageTransparency = 0.45
+	})
+	winShadowBreathe:Play()
 
 	local WindowStroke = Instance.new("UIStroke")
 	WindowStroke.Thickness = 1.8
