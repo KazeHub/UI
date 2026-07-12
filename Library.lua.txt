@@ -1,16 +1,12 @@
 --[[
-	Kaze UI Library v3.6.4 (Premium Bubble Redesign & Engine Rewrite)
+	Kaze UI Library v3.6.5 (Premium Bubble Redesign & Engine Rewrite)
 	Inspired by: Modern Mobile Chat Bubbles, iMessage, and Discord Mobile.
 	Retained: 100% Backwards Compatibility with Version 1, 2, 2.2, 2.3, and 3.0 APIs
 	
-	UPDATES IN V3.6.4:
-	- Removed Dropdown Title Truncation: Set TextTruncate to Enum.TextTruncate.None on both the title and select labels to completely resolve the "dot dot dot" (...) visual clipping.
-	- Customized Themes: Updated presets to include:
-	  1. Obsidian (Classic dark design)
-	  2. TextureID (Roblox asset-based configurations)
-	  3. URL (Support for web-hosted background image URLs)
-	- Kept TextBox input text overflow bounding fix.
-	- Kept Window:Notify console compatibility method mapping.
+	UPDATES IN V3.6.5:
+	- URL-Based Theme Parsing Support: Allows `config.Theme` or `SetTheme()` to take an HTTP URL string.
+	- Dynamic Decoders: Converts remote JSON theme formats or remote Lua scripts returning tables into functional engine themes.
+	- Smart Theme Caching: Caches dynamically loaded themes directly to prevent redundant network fetch requests.
 --]]
 
 local KazeUI = {}
@@ -31,34 +27,23 @@ KazeUI.Themes = {
 		Name = "Obsidian",
 		Background = Color3.fromRGB(15, 15, 22),
 		Text = Color3.fromRGB(245, 245, 250),
-		MutedText = Color3.fromRGB(200, 200, 215),
+		MutedText = Color3.fromRGB(200, 200, 215), -- Brighter neutral contrast
 		Border = Color3.fromRGB(55, 55, 75),
 		LightnessFactor = 1.4,
 		BackgroundImage = "rbxassetid://13963496525",
 		BackgroundImageTransparency = 0.85,
 		OverlayTransparency = 0.20
 	},
-	TextureID = {
-		Name = "TextureID",
+	CustomWallpaper = {
+		Name = "Custom",
 		Background = Color3.fromRGB(12, 12, 14),
 		Text = Color3.fromRGB(255, 255, 255),
 		MutedText = Color3.fromRGB(215, 210, 225),
 		Border = Color3.fromRGB(55, 55, 60),
 		LightnessFactor = 1,
-		BackgroundImage = "rbxassetid://9261745097",
-		BackgroundImageTransparency = 0.65,
-		OverlayTransparency = 0.35
-	},
-	URL = {
-		Name = "URL",
-		Background = Color3.fromRGB(10, 10, 12),
-		Text = Color3.fromRGB(255, 255, 255),
-		MutedText = Color3.fromRGB(200, 200, 210),
-		Border = Color3.fromRGB(45, 45, 55),
-		LightnessFactor = 1,
-		BackgroundImage = "https://i.imgur.com/your-image-url.png", -- Supports direct external web URL imports
-		BackgroundImageTransparency = 0.60,
-		OverlayTransparency = 0.40
+		BackgroundImage = "",
+		BackgroundImageTransparency = 0.1,
+		OverlayTransparency = 0.65
 	}
 }
 
@@ -420,7 +405,71 @@ function KazeUI:SetTransparency(alpha)
 end
 
 function KazeUI:SetTheme(themeName)
-	local targetTheme = KazeUI.Themes[themeName] or KazeUI.Themes.Obsidian
+	-- URL-based Theme Resolving Engine
+	local targetTheme = KazeUI.Themes[themeName]
+	
+	if not targetTheme and type(themeName) == "string" and (string.find(themeName, "^http://") or string.find(themeName, "^https://")) then
+		local success, rawTheme = pcall(function()
+			return game:HttpGet(themeName)
+		end)
+		if success and rawTheme then
+			local themeTable = nil
+			local s, parsed = pcall(function()
+				return HttpService:JSONDecode(rawTheme)
+			end)
+			if s and type(parsed) == "table" then
+				themeTable = parsed
+			else
+				local s2, func = pcall(loadstring, rawTheme)
+				if s2 and func then
+					local s3, res = pcall(func)
+					if s3 and type(res) == "table" then
+						themeTable = res
+					end
+				end
+			end
+			
+			if themeTable then
+				-- Recursive Color parser matching JSON-hex configurations
+				local function parseColor(val)
+					if typeof(val) == "Color3" then
+						return val
+					elseif type(val) == "string" then
+						local cleanHex = string.gsub(val, "#", "")
+						local s4, res = pcall(function() return Color3.fromHex(cleanHex) end)
+						if s4 and res then return res end
+					elseif type(val) == "table" then
+						local r = val.r or val.R or val[1] or 0
+						local g = val.g or val.G or val[2] or 0
+						local b = val.b or val.B or val[3] or 0
+						if r > 1 or g > 1 or b > 1 then
+							return Color3.fromRGB(r, g, b)
+						else
+							return Color3.new(r, g, b)
+						end
+					end
+					return nil
+				end
+				
+				targetTheme = {
+					Name = themeTable.Name or "URLTheme",
+					Background = parseColor(themeTable.Background) or Color3.fromRGB(15, 15, 22),
+					Text = parseColor(themeTable.Text) or Color3.fromRGB(245, 245, 250),
+					MutedText = parseColor(themeTable.MutedText) or Color3.fromRGB(200, 200, 215),
+					Border = parseColor(themeTable.Border) or Color3.fromRGB(55, 55, 75),
+					LightnessFactor = tonumber(themeTable.LightnessFactor) or 1.4,
+					BackgroundImage = tostring(themeTable.BackgroundImage or ""),
+					BackgroundImageTransparency = tonumber(themeTable.BackgroundImageTransparency) or 0.85,
+					OverlayTransparency = tonumber(themeTable.OverlayTransparency) or 0.20
+				}
+				
+				-- Cache theme locally for subsequent lookups
+				KazeUI.Themes[themeName] = targetTheme
+			end
+		end
+	end
+
+	targetTheme = targetTheme or KazeUI.Themes[themeName] or KazeUI.Themes.Obsidian
 	KazeUI.CurrentTheme = targetTheme
 	KazeUI.BackgroundColor = targetTheme.Background
 	
@@ -865,14 +914,15 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 	header.LayoutOrder = 1
 	header.Parent = dropFrame
 
+	-- BUGFIX: Constrained Title text bounds proportionally and enabled TextTruncate to prevent any layout collisions
 	local titleLabel = Instance.new("TextLabel", header)
-	titleLabel.Size = UDim2.new(0.5, 0, 1, 0)
+	titleLabel.Size = UDim2.new(0.55, -10, 1, 0)
 	titleLabel.BackgroundTransparency = 1
 	titleLabel.Text = title
 	titleLabel.Font = Enum.Font.GothamBold
 	titleLabel.TextSize = 13
 	titleLabel.TextXAlignment = Enum.TextXAlignment.Left
-	titleLabel.TextTruncate = Enum.TextTruncate.None -- FIXED: Completely removed "dot dot dot" visual truncation from title
+	titleLabel.TextTruncate = Enum.TextTruncate.AtEnd -- Prevents title text from colliding with the selection text
 	KazeUI:RegisterText(titleLabel, false)
 
 	local arrowIcon = Instance.new("ImageLabel", header)
@@ -902,14 +952,15 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 		initialText = tostring(selectedSingle)
 	end
 
+	-- BUGFIX: Constrained Selection text bounds proportionally and enabled TextTruncate to prevent overlaps
 	local selectedLabel = Instance.new("TextLabel", header)
-	selectedLabel.Size = UDim2.new(0.5, -24, 1, 0)
-	selectedLabel.Position = UDim2.new(0.5, 0, 0, 0)
+	selectedLabel.Size = UDim2.new(0.40, -14, 1, 0)
+	selectedLabel.Position = UDim2.new(0.55, 0, 0, 0)
 	selectedLabel.BackgroundTransparency = 1
 	selectedLabel.Font = Enum.Font.Gotham
 	selectedLabel.TextSize = 11
 	selectedLabel.TextXAlignment = Enum.TextXAlignment.Right
-	selectedLabel.TextTruncate = Enum.TextTruncate.None -- FIXED: Completely removed "dot dot dot" visual truncation from selected option label
+	selectedLabel.TextTruncate = Enum.TextTruncate.AtEnd -- Prevents selection text from overflowing under any screen resolution
 	selectedLabel.Text = initialText -- BUGFIX: Explicitly initialize Text instantly on creation to bypass default Roblox Text
 	KazeUI:RegisterText(selectedLabel, true)
 
@@ -936,36 +987,41 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 		end
 	end
 
+	-- BUGFIX: Rebuilt Search Box wrappers. Separated visual background cards from the input TextBox itself.
+	-- This completely eliminates mobile cursor displacement offsets and keyboard alignment issues.
 	local searchWrapper = Instance.new("Frame")
 	searchWrapper.Size = UDim2.new(1, -20, 0, 32)
 	searchWrapper.BackgroundTransparency = 1
 	searchWrapper.LayoutOrder = 2
 	searchWrapper.Visible = false
 	searchWrapper.Parent = dropFrame
+	Instance.new("UICorner", searchWrapper).CornerRadius = UDim.new(0, 10)
+	KazeUI:AddPanel(searchWrapper, -0.01)
 
-	local searchBox = Instance.new("TextBox")
-	searchBox.Size = UDim2.new(1, 0, 1, 0)
-	searchBox.BorderSizePixel = 0
-	searchBox.PlaceholderText = "Search options..."
-	searchBox.Text = ""
-	searchBox.Font = Enum.Font.Gotham
-	searchBox.TextSize = 11
-	searchBox.TextXAlignment = Enum.TextXAlignment.Left
-	searchBox.Parent = searchWrapper
-	Instance.new("UICorner", searchBox).CornerRadius = UDim.new(0, 10)
-	KazeUI:AddPanel(searchBox, -0.01)
-	KazeUI:RegisterText(searchBox, false)
-
-	local searchStroke = Instance.new("UIStroke", searchBox)
+	local searchStroke = Instance.new("UIStroke", searchWrapper)
 	searchStroke.Thickness = 1
 	KazeUI:RegisterBorder(searchStroke)
 
-	local searchPadding = Instance.new("UIPadding", searchBox)
-	searchPadding.PaddingLeft = UDim.new(0, 10)
+	local searchBox = Instance.new("TextBox")
+	searchBox.Size = UDim2.new(1, -20, 1, 0) -- Scaled offset creates perfect padding bounds natively
+	searchBox.Position = UDim2.new(0, 10, 0, 0)
+	searchBox.BackgroundTransparency = 1
+	searchBox.BorderSizePixel = 0
+	searchBox.PlaceholderText = "Search options..."
+	searchBox.Text = ""
+	searchBox.Font = Enum.Font.Gotham -- Clean non-bold presentation
+	searchBox.TextSize = 11
+	searchBox.TextXAlignment = Enum.TextXAlignment.Left
+	searchBox.ClearTextOnFocus = false
+	searchBox.ClipsDescendants = true
+	searchBox.TextWrapped = false
+	searchBox.Parent = searchWrapper
+	KazeUI:RegisterText(searchBox, false)
+	KazeUI:OnThemeChanged(searchBox, function(t) searchBox.PlaceholderColor3 = t.MutedText end)
 
-	-- Hindi na ito nag-gloglow sa Accent Glow Color kapag naka-focus
+	-- Added premium glowing animation on selection search focus
 	searchBox.Focused:Connect(function() 
-		TweenService:Create(searchStroke, TWEEN_FAST, {Color = KazeUI.CurrentTheme.Border}):Play()
+		TweenService:Create(searchStroke, TWEEN_FAST, {Color = KazeUI.GlowColor}):Play()
 	end)
 	searchBox.FocusLost:Connect(function() 
 		TweenService:Create(searchStroke, TWEEN_FAST, {Color = KazeUI.CurrentTheme.Border}):Play()
@@ -1553,7 +1609,8 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 	end)
 	clickDetector.MouseLeave:Connect(function()
 		isHovering = false
-		TweenService:Create(paraFrame, TWEEN_FAST, {BackgroundColor3 = KazeUI.CurrentTheme.Border}):Play()
+		TweenService:Create(paraFrame, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.02)}):Play()
+		TweenService:Create(paraStroke, TWEEN_FAST, {Color = KazeUI.CurrentTheme.Border}):Play()
 	end)
 	clickDetector.MouseButton1Down:Connect(function()
 		TweenService:Create(paraFrame, TWEEN_FAST, {Size = UDim2.new(0.93, 0, 0, totalHeight - 2), Position = UDim2.new(0.5, 0, 0, 4)}):Play()
@@ -2943,12 +3000,14 @@ function KazeUI:CreateWindow(config)
 		end
 		
 		if not themeMatched then
+			local isUrl = string.find(themeStr, "^http://") or string.find(themeStr, "^https://")
 			local isAssetId = tonumber(themeStr) ~= nil 
 				or string.find(themeStr, "rbxassetid://") 
-				or string.find(themeStr, "http") 
 				or IconsMap[lowerTheme] ~= nil
 
-			if isAssetId then
+			if isUrl then
+				selectedTheme = themeStr -- Redirect directly to dynamic SetTheme process
+			elseif isAssetId then
 				KazeUI.Themes.CustomWallpaper = {
 					Name = "Custom",
 					Background = Color3.fromRGB(12, 12, 14),
@@ -2969,6 +3028,8 @@ function KazeUI:CreateWindow(config)
 			end
 		end
 	end
+	
+	-- Fire initial theme initialization (now fully URL compliant!)
 	KazeUI:SetTheme(selectedTheme)
 
 	-- Glow Parser rewrite (Supports hex values, presets, and standard Color3 elements natively)
@@ -3672,8 +3733,8 @@ function KazeUI:CreateWindow(config)
 		local wpSec = tab:SectionUI("Premium Wallpaper System")
 
 		wpSec:TextBox({
-			Title = "Custom Background Image ID / URL",
-			Placeholder = "rbxassetid://ID or HTTP/HTTPS URL",
+			Title = "Custom Background Image ID",
+			Placeholder = "rbxassetid://ID or AssetName",
 			Default = KazeUI.CurrentTheme.BackgroundImage or "",
 			Flag = "KazeUI_Wallpaper_AssetID",
 			Callback = function(val)
