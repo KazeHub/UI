@@ -4,6 +4,7 @@
 	Retained: 100% Backwards Compatibility with Version 1, 2, 2.2, 2.3, and 3.0 APIs
 	
 	UPDATES IN V3.6.6 & CUSTOM TUNING:
+	- Layout Engine Rewrite: Integrated custom visual spacing layout based on structural sweet spot configurations.
 	- HTTP Image Asset Pipeline: Automatically downloads web image URLs (`https://...`), writes them to exploit files, and converts them using `getcustomasset` or `getsynasset` for background wallpapers.
 	- Smart Cache System: Saves downloaded images locally under `KazeUI/Cache/` to bypass redundant internet requests and boost loading speed.
 	- Unified Theme & Wallpaper Router: All custom URLs now dynamically update the single, native "CustomWallpaper" option. No redundant entries are added to your Preset Dropdown!
@@ -21,6 +22,18 @@ local TextService = game:GetService("TextService")
 local HttpService = game:GetService("HttpService")
 local LP = Players.LocalPlayer
 local Mouse = LP:GetMouse()
+
+-- Spacing and Padding Layout Sweet Spots Configuration
+KazeUI.Layout = {
+	WindowPadding = 12,       -- Window Padding: 12-16 px
+	TabPadding = 12,          -- Tab Top -> First Element: 12 px
+	SectionPadding = 16,      -- SectionUI -> SectionUI: 16-20 px
+	GroupPadding = 14,        -- Group -> Group: 14-16 px
+	ElementSpacing = 8,       -- Component -> Component: 8 px (Sweet Spot)
+	TitleSpacing = 10,        -- Paragraph -> Component & Group Header -> First Component: 10 px
+	DescriptionSpacing = 4,   -- Gap between element titles and descriptive texts: 4 px
+	LabelSpacing = 6          -- Label -> Component: 6 px
+}
 
 -- Premium Bubble Themes Configuration (High-Contrast, Vivid Settings)
 KazeUI.Themes = {
@@ -650,7 +663,7 @@ function KazeUI:Notify(config)
 	local contentHeight = math.max(14, math.ceil(contentSize.Y))
 	
 	-- 12 (top margin) + title + 4 (gap) + content + 14 (bottom gap for progress bar margin)
-	local calculatedCardHeight = 12 + titleHeight + 4 + contentHeight + 14
+	local calculatedCardHeight = 12 + titleHeight + KazeUI.Layout.DescriptionSpacing + contentHeight + 14
 	local finalCardHeight = math.max(68, calculatedCardHeight)
 	local finalHolderHeight = finalCardHeight + 20 -- Spacing for structural layouts
 
@@ -751,7 +764,7 @@ function KazeUI:Notify(config)
 
 	local contentLab = Instance.new("TextLabel", notifFrame)
 	contentLab.Size = UDim2.new(0, maxTextWidth, 0, contentHeight)
-	contentLab.Position = UDim2.fromOffset(textPadding, 12 + titleHeight + 4)
+	contentLab.Position = UDim2.fromOffset(textPadding, 12 + titleHeight + KazeUI.Layout.DescriptionSpacing)
 	contentLab.BackgroundTransparency = 1
 	contentLab.Text = content
 	contentLab.Font = Enum.Font.Gotham
@@ -953,7 +966,7 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 	local layout = Instance.new("UIListLayout", dropFrame)
 	layout.SortOrder = Enum.SortOrder.LayoutOrder
 	layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-	layout.Padding = UDim.new(0, 5)
+	layout.Padding = UDim.new(0, KazeUI.Layout.LabelSpacing)
 
 	local header = Instance.new("Frame")
 	header.Name = "Header"
@@ -1016,24 +1029,6 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 	clickBtn.Size = UDim2.fromScale(1, 1)
 	clickBtn.BackgroundTransparency = 1
 	clickBtn.Text = ""
-
-	local function UpdateHeaderVisual()
-		if isMulti then
-			local count = 0
-			local firstVal = ""
-			for k, v in pairs(selectedMulti) do
-				if v then 
-					count = count + 1 
-					if firstVal == "" then firstVal = k end
-				end
-			end
-			if count == 0 then selectedLabel.Text = "None"
-			elseif count == 1 then selectedLabel.Text = firstVal
-			else selectedLabel.Text = count .. " Selected" end
-		else
-			selectedLabel.Text = tostring(selectedSingle)
-		end
-	end
 
 	-- Clean search wrappers setup
 	local searchWrapper = Instance.new("Frame")
@@ -1317,7 +1312,7 @@ local function CreateParagraph(parentFrame, title, body)
 	
 	local bodySize = TextService:GetTextSize(body, 12, Enum.Font.Gotham, Vector2.new(measuredWidth - 28, 2000))
 	local bodyHeight = math.ceil(bodySize.Y)
-	local totalHeight = 10 + titleHeight + 3 + bodyHeight + 10
+	local totalHeight = KazeUI.Layout.TitleSpacing + titleHeight + (title ~= " " and KazeUI.Layout.DescriptionSpacing or 0) + bodyHeight + KazeUI.Layout.TitleSpacing
 	
 	local wrapper = Instance.new("Frame")
 	wrapper.Size = UDim2.new(1, 0, 0, 0)
@@ -1342,8 +1337,8 @@ local function CreateParagraph(parentFrame, title, body)
 	KazeUI:RegisterBorder(paraStroke)
 	
 	local inner = Instance.new("Frame", paraFrame)
-	inner.Size = UDim2.new(1, -24, 1, -16)
-	inner.Position = UDim2.fromOffset(12, 8)
+	inner.Size = UDim2.new(1, -24, 1, - (KazeUI.Layout.TitleSpacing * 2))
+	inner.Position = UDim2.fromOffset(12, KazeUI.Layout.TitleSpacing)
 	inner.BackgroundTransparency = 1
 	
 	local ptitleLabel
@@ -1361,7 +1356,7 @@ local function CreateParagraph(parentFrame, title, body)
 	
 	local bodyLabel = Instance.new("TextLabel", inner)
 	bodyLabel.Size = UDim2.new(1, 0, 0, bodyHeight)
-	bodyLabel.Position = UDim2.fromOffset(0, titleHeight + 3)
+	bodyLabel.Position = UDim2.fromOffset(0, titleHeight + KazeUI.Layout.DescriptionSpacing)
 	bodyLabel.BackgroundTransparency = 1
 	bodyLabel.Text = body
 	bodyLabel.Font = Enum.Font.Gotham
@@ -1401,7 +1396,7 @@ local function CreateClickableParagraph(parentFrame, title, body, callback)
 		bodyHeight = math.ceil(bodySize.Y)
 	end
 	
-	local totalHeight = 10 + titleHeight + (body ~= "" and 3 or 0) + bodyHeight + 10
+	local totalHeight = KazeUI.Layout.TitleSpacing + titleHeight + (body ~= "" and KazeUI.Layout.DescriptionSpacing or 0) + bodyHeight + KazeUI.Layout.TitleSpacing
 	
 	local wrapper = Instance.new("Frame")
 	wrapper.Size = UDim2.new(1, 0, 0, 0)
@@ -1426,8 +1421,8 @@ local function CreateClickableParagraph(parentFrame, title, body, callback)
 	KazeUI:RegisterBorder(paraStroke)
 	
 	local inner = Instance.new("Frame", paraFrame)
-	inner.Size = UDim2.new(1, -20, 1, -16)
-	inner.Position = UDim2.fromOffset(10, 8)
+	inner.Size = UDim2.new(1, -20, 1, - (KazeUI.Layout.TitleSpacing * 2))
+	inner.Position = UDim2.fromOffset(10, KazeUI.Layout.TitleSpacing)
 	inner.BackgroundTransparency = 1
 	
 	local rightIcon = Instance.new("ImageLabel")
@@ -1462,7 +1457,7 @@ local function CreateClickableParagraph(parentFrame, title, body, callback)
 	if body ~= "" then
 		bodyLabel = Instance.new("TextLabel", inner)
 		bodyLabel.Size = UDim2.new(1, -34, 0, bodyHeight)
-		bodyLabel.Position = UDim2.fromOffset(0, titleHeight + 3)
+		bodyLabel.Position = UDim2.fromOffset(0, titleHeight + KazeUI.Layout.DescriptionSpacing)
 		bodyLabel.BackgroundTransparency = 1
 		bodyLabel.Text = body
 		bodyLabel.Font = Enum.Font.Gotham
@@ -1542,7 +1537,7 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 		bodyHeight = math.ceil(bodySize.Y)
 	end
 	
-	local totalHeight = 10 + titleHeight + (body ~= "" and 3 or 0) + bodyHeight + 10
+	local totalHeight = KazeUI.Layout.TitleSpacing + titleHeight + (body ~= "" and KazeUI.Layout.DescriptionSpacing or 0) + bodyHeight + KazeUI.Layout.TitleSpacing
 	
 	local wrapper = Instance.new("Frame")
 	wrapper.Size = UDim2.new(1, 0, 0, 0)
@@ -1567,8 +1562,8 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 	KazeUI:RegisterBorder(paraStroke)
 	
 	local inner = Instance.new("Frame", paraFrame)
-	inner.Size = UDim2.new(1, -20, 1, -16)
-	inner.Position = UDim2.fromOffset(10, 8)
+	inner.Size = UDim2.new(1, -20, 1, - (KazeUI.Layout.TitleSpacing * 2))
+	inner.Position = UDim2.fromOffset(10, KazeUI.Layout.TitleSpacing)
 	inner.BackgroundTransparency = 1
 	
 	local switchContainer = Instance.new("Frame")
@@ -1606,7 +1601,7 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 	if body ~= "" then
 		bodyLabel = Instance.new("TextLabel", inner)
 		bodyLabel.Size = UDim2.new(1, -48, 0, bodyHeight)
-		bodyLabel.Position = UDim2.fromOffset(0, titleHeight + 3)
+		bodyLabel.Position = UDim2.fromOffset(0, titleHeight + KazeUI.Layout.DescriptionSpacing)
 		bodyLabel.BackgroundTransparency = 1
 		bodyLabel.Text = body
 		bodyLabel.Font = Enum.Font.Gotham
@@ -1702,7 +1697,7 @@ local function CreateTextBoxInput(parentFrame, title, placeholder, defaultVal, c
 		titleHeight = math.max(16, math.ceil(ts.Y))
 	end
 	
-	local totalHeight = 10 + titleHeight + 6 + 32 + 10
+	local totalHeight = KazeUI.Layout.TitleSpacing + titleHeight + KazeUI.Layout.LabelSpacing + 30 + KazeUI.Layout.TitleSpacing
 	
 	local wrapper = Instance.new("Frame")
 	wrapper.Size = UDim2.new(1, 0, 0, 0)
@@ -1727,8 +1722,8 @@ local function CreateTextBoxInput(parentFrame, title, placeholder, defaultVal, c
 	KazeUI:RegisterBorder(paraStroke)
 	
 	local inner = Instance.new("Frame", paraFrame)
-	inner.Size = UDim2.new(1, -20, 1, -16)
-	inner.Position = UDim2.fromOffset(10, 8)
+	inner.Size = UDim2.new(1, -20, 1, - (KazeUI.Layout.TitleSpacing * 2))
+	inner.Position = UDim2.fromOffset(10, KazeUI.Layout.TitleSpacing)
 	inner.BackgroundTransparency = 1
 	
 	local ptitleLabel
@@ -1746,7 +1741,7 @@ local function CreateTextBoxInput(parentFrame, title, placeholder, defaultVal, c
 	
 	local textBoxContainer = Instance.new("Frame")
 	textBoxContainer.Size = UDim2.new(1, 0, 0, 30)
-	textBoxContainer.Position = UDim2.new(0, 0, 0, titleHeight + 4)
+	textBoxContainer.Position = UDim2.new(0, 0, 0, titleHeight + KazeUI.Layout.LabelSpacing)
 	textBoxContainer.BorderSizePixel = 0
 	textBoxContainer.ClipsDescendants = true 
 	textBoxContainer.Parent = inner
@@ -1829,7 +1824,7 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 		titleHeight = math.max(18, math.ceil(ts.Y))
 	end
 	
-	local totalHeight = 10 + titleHeight + 6 + 18 + 10
+	local totalHeight = KazeUI.Layout.TitleSpacing + titleHeight + KazeUI.Layout.LabelSpacing + 18 + KazeUI.Layout.TitleSpacing
 	
 	local wrapper = Instance.new("Frame")
 	wrapper.Size = UDim2.new(1, 0, 0, 0)
@@ -1854,8 +1849,8 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 	KazeUI:RegisterBorder(paraStroke)
 	
 	local inner = Instance.new("Frame", paraFrame)
-	inner.Size = UDim2.new(1, -20, 1, -16)
-	inner.Position = UDim2.fromOffset(10, 8)
+	inner.Size = UDim2.new(1, -20, 1, - (KazeUI.Layout.TitleSpacing * 2))
+	inner.Position = UDim2.fromOffset(10, KazeUI.Layout.TitleSpacing)
 	inner.BackgroundTransparency = 1
 	
 	local ptitleLabel
@@ -1883,7 +1878,7 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 	
 	local track = Instance.new("Frame")
 	track.Size = UDim2.new(1, 0, 0, 6)
-	track.Position = UDim2.new(0, 0, 0, titleHeight + 8)
+	track.Position = UDim2.new(0, 0, 0, titleHeight + KazeUI.Layout.LabelSpacing + 6)
 	track.BorderSizePixel = 0
 	track.Parent = inner
 	Instance.new("UICorner", track).CornerRadius = UDim.new(1, 0)
@@ -2037,7 +2032,7 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 	local layout = Instance.new("UIListLayout", dropFrame)
 	layout.SortOrder = Enum.SortOrder.LayoutOrder
 	layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-	layout.Padding = UDim.new(0, 5)
+	layout.Padding = UDim.new(0, KazeUI.Layout.LabelSpacing)
 
 	local header = Instance.new("Frame")
 	header.Size = UDim2.new(1, -20, 0, 38)
@@ -2137,7 +2132,7 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 	hueCursor.Size = UDim2.fromOffset(4, 24)
 	hueCursor.AnchorPoint = Vector2.new(0.5, 0.5)
 	hueCursor.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-	Instance.new("UICorner", hueCursor).CornerRadius = UDim.new(1, 0)
+	hueCursor.CornerRadius = UDim.new(1, 0)
 	Instance.new("UIStroke", hueCursor).Color = Color3.fromRGB(0, 0, 0)
 
 	local function UpdateColor()
@@ -2264,7 +2259,7 @@ local function CreateKeybindInput(parentFrame, title, defaultKey, callback, flag
 		titleHeight = math.max(16, math.ceil(ts.Y))
 	end
 	
-	local totalHeight = 10 + math.max(titleHeight, 24) + 10
+	local totalHeight = KazeUI.Layout.TitleSpacing + math.max(titleHeight, 24) + KazeUI.Layout.TitleSpacing
 	
 	local wrapper = Instance.new("Frame")
 	wrapper.Size = UDim2.new(1, 0, 0, 0)
@@ -2289,8 +2284,8 @@ local function CreateKeybindInput(parentFrame, title, defaultKey, callback, flag
 	KazeUI:RegisterBorder(paraStroke)
 	
 	local inner = Instance.new("Frame", paraFrame)
-	inner.Size = UDim2.new(1, -20, 1, -16)
-	inner.Position = UDim2.fromOffset(10, 8)
+	inner.Size = UDim2.new(1, -20, 1, - (KazeUI.Layout.TitleSpacing * 2))
+	inner.Position = UDim2.fromOffset(10, KazeUI.Layout.TitleSpacing)
 	inner.BackgroundTransparency = 1
 	
 	local ptitleLabel
@@ -2656,11 +2651,26 @@ CreateCollapsibleSection = function(parentFrame, titleArg, currentDepth)
 	local title = type(titleArg) == "table" and titleArg.Title or tostring(titleArg or "Section")
 	local isOpen = false
 
+	-- Unified SectionWrapper with Section-to-Section padding offsets
+	local wrapper = Instance.new("Frame")
+	wrapper.Name = "CollapsibleSectionWrapper_" .. title
+	wrapper.Size = UDim2.new(1, 0, 0, 0)
+	wrapper.BackgroundTransparency = 1
+	wrapper.Parent = parentFrame
+	wrapper.AutomaticSize = Enum.AutomaticSize.Y
+
+	-- Section Padding (16px) dynamic offsets across UI list sibling items
+	local wrapPadding = Instance.new("UIPadding", wrapper)
+	wrapPadding.PaddingTop = UDim.new(0, 4)
+	wrapPadding.PaddingBottom = UDim.new(0, 4)
+
 	local sectionBox = Instance.new("Frame")
 	sectionBox.Name = "CollapsibleSection_" .. title
+	sectionBox.AnchorPoint = Vector2.new(0.5, 0)
+	sectionBox.Position = UDim2.new(0.5, 0, 0, 0)
 	sectionBox.Size = UDim2.new(0.95, 0, 0, 0)
 	sectionBox.BorderSizePixel = 0
-	sectionBox.Parent = parentFrame
+	sectionBox.Parent = wrapper
 	sectionBox.AutomaticSize = Enum.AutomaticSize.Y
 	
 	-- Sections utilize the Medium Shape guide (20px)
@@ -2738,14 +2748,15 @@ CreateCollapsibleSection = function(parentFrame, titleArg, currentDepth)
 
 	local contentLayout = Instance.new("UIListLayout", sectionContent)
 	contentLayout.SortOrder = Enum.SortOrder.LayoutOrder
-	contentLayout.Padding = UDim.new(0, 5)
+	contentLayout.Padding = UDim.new(0, KazeUI.Layout.ElementSpacing)
 	contentLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 
+	-- Group Header -> First Component Spacing (10px) and Window Padding (12px)
 	local contentPadding = Instance.new("UIPadding", sectionContent)
-	contentPadding.PaddingTop = UDim.new(0, 8)
-	contentPadding.PaddingBottom = UDim.new(0, 10)
-	contentPadding.PaddingLeft = UDim.new(0, 6)
-	contentPadding.PaddingRight = UDim.new(0, 6)
+	contentPadding.PaddingTop = UDim.new(0, KazeUI.Layout.TitleSpacing)
+	contentPadding.PaddingBottom = UDim.new(0, KazeUI.Layout.TitleSpacing)
+	contentPadding.PaddingLeft = UDim.new(0, KazeUI.Layout.WindowPadding)
+	contentPadding.PaddingRight = UDim.new(0, KazeUI.Layout.WindowPadding)
 
 	local toggleDetector = Instance.new("TextButton")
 	toggleDetector.Size = UDim2.fromScale(1, 1)
@@ -2803,7 +2814,7 @@ CreateCollapsibleSection = function(parentFrame, titleArg, currentDepth)
 		toggleSection()
 	end)
 
-	local sectionPublic = { Frame = sectionBox, ContentFrame = sectionContent, Header = headerFrame }
+	local sectionPublic = { Frame = sectionBox, ContentFrame = sectionContent, Header = headerFrame, Wrapper = wrapper }
 	AttachElementsToAPI(sectionPublic, sectionContent, currentDepth + 1)
 	function sectionPublic:SetText(newText) titleLabel.Text = newText end
 	return sectionPublic
@@ -2826,10 +2837,15 @@ CreateGroupBox = function(parentFrame, titleArg, currentDepth, depthOverride)
 	wrapper.Parent = parentFrame
 	wrapper.AutomaticSize = Enum.AutomaticSize.Y
 
+	-- Group Spacing (14px) offsets applied cleanly across layout engines
+	local wrapPadding = Instance.new("UIPadding", wrapper)
+	wrapPadding.PaddingTop = UDim.new(0, 3)
+	wrapPadding.PaddingBottom = UDim.new(0, 3)
+
 	local groupFrame = Instance.new("Frame")
 	groupFrame.Name = "GroupBoxFrame"
 	groupFrame.AnchorPoint = Vector2.new(0.5, 0)
-	groupFrame.Position = UDim2.new(0.5, 0, 0, 3)
+	groupFrame.Position = UDim2.new(0.5, 0, 0, 0)
 	
 	-- Subtract scale size incrementally as depth increases
 	local scaledWidth = math.clamp(0.95 - (currentDepth - 1) * 0.02, 0.88, 0.95)
@@ -2920,15 +2936,15 @@ CreateGroupBox = function(parentFrame, titleArg, currentDepth, depthOverride)
 
 	local contentLayout = Instance.new("UIListLayout", container)
 	contentLayout.SortOrder = Enum.SortOrder.LayoutOrder
-	contentLayout.Padding = UDim.new(0, 5)
+	contentLayout.Padding = UDim.new(0, KazeUI.Layout.ElementSpacing)
 	contentLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 
-	-- Structural inner padding 
+	-- Structural inner padding (Glow Head -> 1st Comp & Window limits)
 	local contentPadding = Instance.new("UIPadding", container)
-	contentPadding.PaddingTop = UDim.new(0, 8)
-	contentPadding.PaddingBottom = UDim.new(0, 10)
-	contentPadding.PaddingLeft = UDim.new(0, 6)
-	contentPadding.PaddingRight = UDim.new(0, 6)
+	contentPadding.PaddingTop = UDim.new(0, KazeUI.Layout.TitleSpacing)
+	contentPadding.PaddingBottom = UDim.new(0, KazeUI.Layout.TitleSpacing)
+	contentPadding.PaddingLeft = UDim.new(0, KazeUI.Layout.WindowPadding)
+	contentPadding.PaddingRight = UDim.new(0, KazeUI.Layout.WindowPadding)
 
 	-- Full Header Interactivity Detector
 	local toggleDetector = Instance.new("TextButton")
@@ -2990,7 +3006,8 @@ CreateGroupBox = function(parentFrame, titleArg, currentDepth, depthOverride)
 	local groupPublic = {
 		Frame = groupFrame,
 		Container = container,
-		Header = header
+		Header = header,
+		Wrapper = wrapper
 	}
 
 	-- Recursive API attachment 
@@ -3543,7 +3560,7 @@ function KazeUI:CreateWindow(config)
 
 	local tabsLayout = Instance.new("UIListLayout", TabsList)
 	tabsLayout.SortOrder = Enum.SortOrder.LayoutOrder
-	tabsLayout.Padding = UDim.new(0, 5)
+	tabsLayout.Padding = UDim.new(0, KazeUI.Layout.ElementSpacing)
 
 	-- ==========================================
 	-- Modal Resize Engine (System Rewrite)
@@ -3882,15 +3899,16 @@ function KazeUI:CreateWindow(config)
 		pageContent.AutomaticCanvasSize = Enum.AutomaticSize.Y
 		pageContent.ScrollBarImageColor3 = Color3.fromRGB(40, 40, 45)
 
+		-- Spacing System implementation (Tab top padding 12px, Window padding 12px)
 		local pagePadding = Instance.new("UIPadding", pageContent)
-		pagePadding.PaddingTop = UDim.new(0, 10)
-		pagePadding.PaddingBottom = UDim.new(0, 10)
-		pagePadding.PaddingLeft = UDim.new(0, 10)
-		pagePadding.PaddingRight = UDim.new(0, 10)
+		pagePadding.PaddingTop = UDim.new(0, KazeUI.Layout.TabPadding)
+		pagePadding.PaddingBottom = UDim.new(0, KazeUI.Layout.WindowPadding)
+		pagePadding.PaddingLeft = UDim.new(0, KazeUI.Layout.WindowPadding)
+		pagePadding.PaddingRight = UDim.new(0, KazeUI.Layout.WindowPadding)
 
 		local contentLayout = Instance.new("UIListLayout", pageContent)
 		contentLayout.SortOrder = Enum.SortOrder.LayoutOrder
-		contentLayout.Padding = UDim.new(0, 5)
+		contentLayout.Padding = UDim.new(0, KazeUI.Layout.ElementSpacing)
 		contentLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 
 		-- Premium Empty Section Visualizer
