@@ -4,9 +4,9 @@
 	Retained: 100% Backwards Compatibility with Version 1, 2, 2.2, 2.3, and 3.0 APIs
 	
 	UPDATES IN V3.7.5:
-	- Initial Lock State: Pass `Lock = true` or `Locked = true` inside the creation config to lock on startup!
-	- Lock Texture Integration: Lock overlays now beautifully render the requested Asset ID: `78672912777756`.
-	- Immersive Dialog System: Full screen decision modals with customizable actions and no auto-dismissal duration.
+	- Auto-Lock on Creation: Natively pass `Lock = true` or `Locked = true` in any element configuration (Tab, Group, Toggle, Slider, Dropdown, Button, Keybind, ColorPicker, TextBox, SectionUI) to instantly spawn locked.
+	- Lock Overlay Texture: Custom lock overlay beautifully renders asset texture ID: `78672912777756`.
+	- Immersive Dialogues: Added premium full screen dialogue modals with no timeout durations.
 --]]
 
 local KazeUI = {}
@@ -395,7 +395,7 @@ local function ApplyLockOverlay(targetFrame, cornerRadius)
 	lockIcon.Position = UDim2.fromScale(0.5, 0.5)
 	lockIcon.AnchorPoint = Vector2.new(0.5, 0.5)
 	lockIcon.BackgroundTransparency = 1
-	lockIcon.Image = FormatImage("78672912777756") -- Beautiful custom requested padlock texture ID
+	lockIcon.Image = FormatImage("78672912777756") -- Requested padlock texture ID
 	lockIcon.ImageColor3 = Color3.fromRGB(240, 240, 240)
 	
 	return lockOverlay
@@ -1948,7 +1948,7 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 	end
 	setToggleState(state, true)
 
-	-- Auto-refresh switch neutral styling whenever theme is modified
+	-- Auto-refresh switch styling whenever theme is modified
 	KazeUI:OnThemeChanged(switchContainer, function()
 		setToggleState(state, true)
 	end)
@@ -2545,10 +2545,11 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 	hueSlider.Position = UDim2.new(0, 0, 0, 130)
 	hueSlider.AutoButtonColor = false
 	hueSlider.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-	hueSlider.Text = ""
+	text = ""
 	local hg = Instance.new("UIGradient", hueSlider)
 	hg.Color = ColorSequence.new{
 		ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 0, 0)),
+		ColorSequenceKeypoint.new(0.167, Color3.fromRGB(255, 255,  yellow and 0 or 0)), -- Safely configured layout
 		ColorSequenceKeypoint.new(0.167, Color3.fromRGB(255, 255, 0)),
 		ColorSequenceKeypoint.new(0.333, Color3.fromRGB(0, 255, 0)),
 		ColorSequenceKeypoint.new(0.5, Color3.fromRGB(0, 255, 255)),
@@ -2716,7 +2717,7 @@ local function CreateKeybindInput(parentFrame, title, defaultKey, callback, flag
 	local locked = false
 	
 	local measuredWidth = 598 * 0.92
-	if parentFrame and parentFrame.AbsoluteSize parks and parentFrame.AbsoluteSize.X > 0 then measuredWidth = parentFrame.AbsoluteSize.X * 0.95 end
+	if parentFrame and parentFrame.AbsoluteSize and parentFrame.AbsoluteSize.X > 0 then measuredWidth = parentFrame.AbsoluteSize.X * 0.95 end
 	local textContainerWidth = measuredWidth - 28 - 90
 	
 	local titleHeight = 0
@@ -3095,6 +3096,8 @@ AttachElementsToAPI = function(apiTable, parentFrame, depth)
 
 	function apiTable:AddLabel(arg1)
 		local t = type(arg1) == "table" and (arg1.Text or arg1.Title) or arg1
+		local lockState = type(arg1) == "table" and (arg1.Lock or arg1.Locked or false) or false
+		
 		local label = Instance.new("TextLabel")
 		label.Size = UDim2.new(1, -12, 0, 22)
 		label.BackgroundTransparency = 1
@@ -3115,23 +3118,26 @@ AttachElementsToAPI = function(apiTable, parentFrame, depth)
 		function api:Hide() label.Visible = false end
 		function api:Show() label.Visible = true end
 		function api:Destroy() label:Destroy() end
+		
+		if lockState then api:Lock() end
 		return api
 	end
 
 	function apiTable:Paragraph(arg1, arg2)
 		local title = type(arg1) == "table" and arg1.Title or arg1
 		local content = type(arg1) == "table" and (arg1.Content or arg1.Description) or arg2
-		return CreateParagraph(parentFrame, title, content)
+		local lockState = type(arg1) == "table" and (arg1.Lock or arg1.Locked or false) or false
+		
+		local api = CreateParagraph(parentFrame, title, content)
+		if lockState then api:Lock() end
+		return api
 	end
 
 	function apiTable:Button(arg1, arg2, arg3)
 		local title = type(arg1) == "table" and arg1.Title or arg1
 		local desc = type(arg1) == "table" and (arg1.Description or arg1.Content or "") or arg2
 		local callback = type(arg1) == "table" and arg1.Callback or arg3
-		local lockState = false
-		if type(arg1) == "table" then
-			lockState = arg1.Lock or arg1.Locked or false
-		end
+		local lockState = type(arg1) == "table" and (arg1.Lock or arg1.Locked or false) or false
 		
 		local api = CreateClickableParagraph(parentFrame, title, desc, callback)
 		if lockState then api:Lock() end
@@ -3866,7 +3872,7 @@ function KazeUI:CreateWindow(config)
 	local initialImg = currentTheme.BackgroundImage or ""
 	local initialImgTrans = currentTheme.BackgroundImageTransparency or 1
 	local initialOverlayTrans = currentTheme.OverlayTransparency or 0.25
-	local hasImage = (initialImg ~= "") and (initialImgTrans < 1)
+	local hasImage = (bgImgId ~= "") and (bgImgTrans < 1)
 
 	WallpaperImage.Image = FormatImage(initialImg)
 	WallpaperImage.ImageTransparency = hasImage and initialImgTrans or 1
@@ -4517,6 +4523,7 @@ function KazeUI:CreateWindow(config)
 		local name = tostring(type(arg1) == "table" and (arg1.Title or arg1.Name) or arg1 or "Tab")
 		local iconId = type(arg1) == "table" and arg1.Icon or arg2
 		local formattedIcon = FormatImage(iconId or "")
+		local lockState = type(arg1) == "table" and (arg1.Lock or arg1.Locked or false) or false
 		
 		local btn = Instance.new("TextButton")
 		btn.Size = UDim2.new(1, -12, 0, 42)
@@ -4773,10 +4780,14 @@ function KazeUI:CreateWindow(config)
 
 		function public:Lock()
 			btn.Active = false
+			txt.TextTransparency = 0.5
+			iconLabel.ImageTransparency = 0.5
 		end
 
 		function public:Unlock()
 			btn.Active = true
+			txt.TextTransparency = 0
+			iconLabel.ImageTransparency = 0
 		end
 
 		function public:Hide()
@@ -4794,6 +4805,7 @@ function KazeUI:CreateWindow(config)
 			page:Destroy()
 		end
 
+		if lockState then public:Lock() end
 		return public
 	end
 
