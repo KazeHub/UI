@@ -1,9 +1,11 @@
 --[[
-	Kaze UI Library v3.6.0 (Premium Bubble Redesign & Engine Rewrite)
+	Kaze UI Library v3.6.1 (Premium Bubble Redesign & Engine Rewrite)
 	Inspired by: Modern Mobile Chat Bubbles, iMessage, and Discord Mobile.
 	Retained: 100% Backwards Compatibility with Version 1, 2, 2.2, 2.3, and 3.0 APIs
 	
-	UPDATES IN V3.6.0:
+	UPDATES IN V3.6.1:
+	- Added Divider Component: Supports "With and Without Title" cleanly. 
+	  Renders a centered muted text with horizontal split lines when titled, and a subtle solid divider when empty.
 	- Added GroupBox Component: Fully modern visual card with automatic height resizing, 
 	  custom outlines, proper nesting padding alignment, and volumetric depth elevations.
 	- Supports direct tab instantiation, section rendering, and recursive nested rendering.
@@ -11,7 +13,7 @@
 	- Volumetric Light Elevation Engine: Upgraded KazeUI.GetColor to support beautiful panel gradients.
 	- Dropdown Color Hotfix: Fixed the theme change latency bug where dropdown colors stayed on the old theme until closed/reopened.
 	- Toggle Dynamic Theme Sync: Fully synced toggle switch neutral colors with real-time theme changes.
-	- GroupBox SectionUI Mirror: Redesigned GroupBox to look and behave exactly like SectionUI (full-width header, vertical accent line, click highlight, horizontal divider, neon loops) but optimized for nested volumetric scaling.
+	- GroupBox SectionUI Mirror: Redesigned GroupBox to look and behave exactly like SectionUI but optimized for nested volumetric scaling.
 --]]
 
 local KazeUI = {}
@@ -2012,7 +2014,7 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 	local hg = Instance.new("UIGradient", hueSlider)
 	hg.Color = ColorSequence.new{
 		ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 0, 0)),
-		ColorSequenceKeypoint.new(0.167, Color3.fromRGB(255, 255, 0)),
+		ColorSequenceKeypoint.new(0.167, Color3.fromRGB(255, 255,  yellow)),
 		ColorSequenceKeypoint.new(0.333, Color3.fromRGB(0, 255, 0)),
 		ColorSequenceKeypoint.new(0.5, Color3.fromRGB(0, 255, 255)),
 		ColorSequenceKeypoint.new(0.667, Color3.fromRGB(0, 0, 255)),
@@ -2327,6 +2329,100 @@ local function CreateVisualSectionDivider(parentFrame, titleArg)
 end
 
 -- ==========================================
+-- Premium Geometric Divider Component (With and Without Title)
+-- ==========================================
+local function CreateVisualDivider(parentFrame, titleArg)
+	local title = titleArg and tostring(titleArg) or ""
+	if type(titleArg) == "table" then
+		title = tostring(titleArg.Title or titleArg.Text or "")
+	end
+
+	local wrapper = Instance.new("Frame")
+	wrapper.Name = "DividerWrapper"
+	wrapper.BackgroundTransparency = 1
+	wrapper.Parent = parentFrame
+
+	if title == "" or title == " " then
+		-- Minimalist Divider (Without Title)
+		wrapper.Size = UDim2.new(0.95, 0, 0, 14) -- 14px total bounding box
+		
+		local line = Instance.new("Frame")
+		line.Name = "Line"
+		line.Size = UDim2.new(1, 0, 0, 1)
+		line.Position = UDim2.new(0, 0, 0.5, 0)
+		line.BorderSizePixel = 0
+		line.Parent = wrapper
+		KazeUI:OnThemeChanged(line, function(t)
+			line.BackgroundColor3 = t.Border
+		end)
+	else
+		-- Structural Line-Bounded Text Divider (With Title)
+		wrapper.Size = UDim2.new(0.95, 0, 0, 26) -- 26px bounding box
+
+		local container = Instance.new("Frame")
+		container.Name = "Container"
+		container.Size = UDim2.new(1, 0, 1, 0)
+		container.BackgroundTransparency = 1
+		container.Parent = wrapper
+
+		-- Precalculate text width dynamically
+		local ts = TextService:GetTextSize(title, 11, Enum.Font.GothamBold, Vector2.new(1000, 1000))
+		local textWidth = math.min(220, math.ceil(ts.X))
+
+		local label = Instance.new("TextLabel")
+		label.Name = "Title"
+		label.Size = UDim2.new(0, textWidth, 1, 0)
+		label.Position = UDim2.new(0.5, -textWidth / 2, 0, 0)
+		label.BackgroundTransparency = 1
+		label.Text = title
+		label.Font = Enum.Font.GothamBold
+		label.TextSize = 10
+		label.TextXAlignment = Enum.TextXAlignment.Center
+		label.Parent = container
+		KazeUI:RegisterText(label, true) -- Styled in real-time with theme muted contrast
+
+		local leftLine = Instance.new("Frame")
+		leftLine.Name = "LeftLine"
+		leftLine.Size = UDim2.new(0.5, -(textWidth / 2 + 10), 0, 1)
+		leftLine.Position = UDim2.new(0, 0, 0.5, 0)
+		leftLine.BorderSizePixel = 0
+		leftLine.Parent = container
+		KazeUI:OnThemeChanged(leftLine, function(t)
+			leftLine.BackgroundColor3 = t.Border
+		end)
+
+		local rightLine = Instance.new("Frame")
+		rightLine.Name = "RightLine"
+		rightLine.Size = UDim2.new(0.5, -(textWidth / 2 + 10), 0, 1)
+		rightLine.Position = UDim2.new(0.5, (textWidth / 2 + 10), 0.5, 0)
+		rightLine.BorderSizePixel = 0
+		rightLine.Parent = container
+		KazeUI:OnThemeChanged(rightLine, function(t)
+			rightLine.BackgroundColor3 = t.Border
+		end)
+	end
+
+	return {
+		Wrapper = wrapper,
+		SetText = function(self, newText)
+			local lbl = wrapper:FindFirstChild("Title", true)
+			if lbl then
+				lbl.Text = tostring(newText or "")
+				local ts = TextService:GetTextSize(lbl.Text, 11, Enum.Font.GothamBold, Vector2.new(1000, 1000))
+				local textWidth = math.min(220, math.ceil(ts.X))
+				lbl.Size = UDim2.new(0, textWidth, 1, 0)
+				lbl.Position = UDim2.new(0.5, -textWidth / 2, 0, 0)
+				
+				local lLine = wrapper:FindFirstChild("LeftLine", true)
+				if lLine then lLine.Size = UDim2.new(0.5, -(textWidth / 2 + 10), 0, 1) end
+				local rLine = wrapper:FindFirstChild("RightLine", true)
+				if rLine then rLine.Size = UDim2.new(0.5, -(textWidth / 2 + 10), 0, 1) rLine.Position = UDim2.new(0.5, (textWidth / 2 + 10), 0.5, 0) end
+			end
+		end
+	}
+end
+
+-- ==========================================
 -- GroupBox & SectionUI Builder
 -- ==========================================
 local CreateCollapsibleSection
@@ -2432,6 +2528,11 @@ AttachElementsToAPI = function(apiTable, parentFrame, depth)
 	function apiTable:Section(arg1)
 		local title = type(arg1) == "table" and arg1.Title or arg1
 		return CreateVisualSectionDivider(parentFrame, title)
+	end
+
+	function apiTable:Divider(arg1)
+		local title = type(arg1) == "table" and (arg1.Title or arg1.Text) or arg1
+		return CreateVisualDivider(parentFrame, title)
 	end
 
 	function apiTable:GroupBox(arg1, depthOverride)
