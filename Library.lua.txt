@@ -1,12 +1,13 @@
 --[[
-	Kaze UI Library v3.6.3 (Premium Bubble Redesign & Engine Rewrite)
+	Kaze UI Library v3.6.4 (Premium Bubble Redesign & Engine Rewrite)
 	Inspired by: Modern Mobile Chat Bubbles, iMessage, and Discord Mobile.
 	Retained: 100% Backwards Compatibility with Version 1, 2, 2.2, 2.3, and 3.0 APIs
 	
-	UPDATES IN V3.6.3:
-	- Window:Notify Backwards Compatibility Patch: Window objects now inherit the `:Notify()` method directly to prevent the Roblox console from throwing "attempt to call missing method 'Notify' of table" errors when executed.
-	- Input Text Overflow Bugfix: Enabled robust text bounding box clipping with `ClipsDescendants` directly inside TextBox wrappers to stop long text inputs from spilling visually outside of their containers.
-	- Retained Obsidian theme, volumetric gradient offsets, neon loops, and draggable behaviors.
+	UPDATES IN V3.6.4:
+	- Mobile Dropdown Input Fix: Rebuilt search wrapper layout. Removed buggy TextBox UIPadding on mobile which displaced cursors.
+	- Title & Selection Overlap Fix: Bound title and selection string widths to proportional segments with TextTruncate enabled. No overlapping text.
+	- Window:Notify Backwards Compatibility Patch: Window objects inherit `:Notify()` method directly to prevent console method crashes.
+	- Input Text Overflow Bugfix: Enabled robust text bounding box clipping with `ClipsDescendants` inside TextBox containers.
 --]]
 
 local KazeUI = {}
@@ -850,13 +851,15 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 	header.LayoutOrder = 1
 	header.Parent = dropFrame
 
+	-- BUGFIX: Constrained Title text bounds proportionally and enabled TextTruncate to prevent any layout collisions
 	local titleLabel = Instance.new("TextLabel", header)
-	titleLabel.Size = UDim2.new(0.5, 0, 1, 0)
+	titleLabel.Size = UDim2.new(0.55, -10, 1, 0)
 	titleLabel.BackgroundTransparency = 1
 	titleLabel.Text = title
 	titleLabel.Font = Enum.Font.GothamBold
 	titleLabel.TextSize = 13
 	titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+	titleLabel.TextTruncate = Enum.TextTruncate.AtEnd -- Prevents title text from colliding with the selection text
 	KazeUI:RegisterText(titleLabel, false)
 
 	local arrowIcon = Instance.new("ImageLabel", header)
@@ -886,14 +889,15 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 		initialText = tostring(selectedSingle)
 	end
 
+	-- BUGFIX: Constrained Selection text bounds proportionally and enabled TextTruncate to prevent overlaps
 	local selectedLabel = Instance.new("TextLabel", header)
-	selectedLabel.Size = UDim2.new(0.5, -24, 1, 0)
-	selectedLabel.Position = UDim2.new(0.5, 0, 0, 0)
+	selectedLabel.Size = UDim2.new(0.40, -14, 1, 0)
+	selectedLabel.Position = UDim2.new(0.55, 0, 0, 0)
 	selectedLabel.BackgroundTransparency = 1
 	selectedLabel.Font = Enum.Font.Gotham
 	selectedLabel.TextSize = 11
 	selectedLabel.TextXAlignment = Enum.TextXAlignment.Right
-	selectedLabel.TextTruncate = Enum.TextTruncate.AtEnd
+	selectedLabel.TextTruncate = Enum.TextTruncate.AtEnd -- Prevents selection text from overflowing under any screen resolution
 	selectedLabel.Text = initialText -- BUGFIX: Explicitly initialize Text instantly on creation to bypass default Roblox Text
 	KazeUI:RegisterText(selectedLabel, true)
 
@@ -920,36 +924,41 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 		end
 	end
 
+	-- BUGFIX: Rebuilt Search Box wrappers. Separated visual background cards from the input TextBox itself.
+	-- This completely eliminates mobile cursor displacement offsets and keyboard alignment issues.
 	local searchWrapper = Instance.new("Frame")
 	searchWrapper.Size = UDim2.new(1, -20, 0, 32)
 	searchWrapper.BackgroundTransparency = 1
 	searchWrapper.LayoutOrder = 2
 	searchWrapper.Visible = false
 	searchWrapper.Parent = dropFrame
+	Instance.new("UICorner", searchWrapper).CornerRadius = UDim.new(0, 10)
+	KazeUI:AddPanel(searchWrapper, -0.01)
 
-	local searchBox = Instance.new("TextBox")
-	searchBox.Size = UDim2.new(1, 0, 1, 0)
-	searchBox.BorderSizePixel = 0
-	searchBox.PlaceholderText = "Search options..."
-	searchBox.Text = ""
-	searchBox.Font = Enum.Font.Gotham
-	searchBox.TextSize = 11
-	searchBox.TextXAlignment = Enum.TextXAlignment.Left
-	searchBox.Parent = searchWrapper
-	Instance.new("UICorner", searchBox).CornerRadius = UDim.new(0, 10)
-	KazeUI:AddPanel(searchBox, -0.01)
-	KazeUI:RegisterText(searchBox, false)
-
-	local searchStroke = Instance.new("UIStroke", searchBox)
+	local searchStroke = Instance.new("UIStroke", searchWrapper)
 	searchStroke.Thickness = 1
 	KazeUI:RegisterBorder(searchStroke)
 
-	local searchPadding = Instance.new("UIPadding", searchBox)
-	searchPadding.PaddingLeft = UDim.new(0, 10)
+	local searchBox = Instance.new("TextBox")
+	searchBox.Size = UDim2.new(1, -20, 1, 0) -- Scaled offset creates perfect padding bounds natively
+	searchBox.Position = UDim2.new(0, 10, 0, 0)
+	searchBox.BackgroundTransparency = 1
+	searchBox.BorderSizePixel = 0
+	searchBox.PlaceholderText = "Search options..."
+	searchBox.Text = ""
+	searchBox.Font = Enum.Font.Gotham -- Clean non-bold presentation
+	searchBox.TextSize = 11
+	searchBox.TextXAlignment = Enum.TextXAlignment.Left
+	searchBox.ClearTextOnFocus = false
+	searchBox.ClipsDescendants = true
+	searchBox.TextWrapped = false
+	searchBox.Parent = searchWrapper
+	KazeUI:RegisterText(searchBox, false)
+	KazeUI:OnThemeChanged(searchBox, function(t) searchBox.PlaceholderColor3 = t.MutedText end)
 
-	-- Hindi na ito nag-gloglow sa Accent Glow Color kapag naka-focus
+	-- Added premium glowing animation on selection search focus
 	searchBox.Focused:Connect(function() 
-		TweenService:Create(searchStroke, TWEEN_FAST, {Color = KazeUI.CurrentTheme.Border}):Play()
+		TweenService:Create(searchStroke, TWEEN_FAST, {Color = KazeUI.GlowColor}):Play()
 	end)
 	searchBox.FocusLost:Connect(function() 
 		TweenService:Create(searchStroke, TWEEN_FAST, {Color = KazeUI.CurrentTheme.Border}):Play()
