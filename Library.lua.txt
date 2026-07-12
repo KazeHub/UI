@@ -1,19 +1,13 @@
 --[[
-	Kaze UI Library v3.6.1 (Premium Bubble Redesign & Engine Rewrite)
+	Kaze UI Library v3.6.2 (Premium Bubble Redesign & Engine Rewrite)
 	Inspired by: Modern Mobile Chat Bubbles, iMessage, and Discord Mobile.
 	Retained: 100% Backwards Compatibility with Version 1, 2, 2.2, 2.3, and 3.0 APIs
 	
-	UPDATES IN V3.6.1:
-	- Added Divider Component: Supports "With and Without Title" cleanly. 
-	  Renders a centered muted text with horizontal split lines when titled, and a subtle solid divider when empty.
-	- Added GroupBox Component: Fully modern visual card with automatic height resizing, 
-	  custom outlines, proper nesting padding alignment, and volumetric depth elevations.
-	- Supports direct tab instantiation, section rendering, and recursive nested rendering.
-	- Simplified Themes: Retained only "Obsidian" (default) and "CustomWallpaper" per request.
-	- Volumetric Light Elevation Engine: Upgraded KazeUI.GetColor to support beautiful panel gradients.
-	- Dropdown Color Hotfix: Fixed the theme change latency bug where dropdown colors stayed on the old theme until closed/reopened.
-	- Toggle Dynamic Theme Sync: Fully synced toggle switch neutral colors with real-time theme changes.
-	- GroupBox SectionUI Mirror: Redesigned GroupBox to look and behave exactly like SectionUI but optimized for nested volumetric scaling.
+	UPDATES IN V3.6.2:
+	- Added Tab Divider Feature: Call `Window:CreateTabDivider("Title")` or `Window:TabDivider()` directly on the Window object to add beautiful, non-clickable visual category dividers into your sidebar menu.
+	- Window:Notify Backwards Compatibility Patch: Window objects now inherit the `:Notify()` method directly to prevent the Roblox console from throwing "attempt to call missing method 'Notify' of table" errors when executed.
+	- Input Text Overflow Bugfix: Enabled robust text bounding box clipping with `ClipsDescendants` directly inside TextBox wrappers to stop long text inputs from spilling visually outside of their containers.
+	- Retained Obsidian theme, volumetric gradient offsets, neon loops, and draggable behaviors.
 --]]
 
 local KazeUI = {}
@@ -1639,6 +1633,7 @@ local function CreateTextBoxInput(parentFrame, title, placeholder, defaultVal, c
 	textBoxContainer.Size = UDim2.new(1, 0, 0, 30)
 	textBoxContainer.Position = UDim2.new(0, 0, 0, titleHeight + 4)
 	textBoxContainer.BorderSizePixel = 0
+	textBoxContainer.ClipsDescendants = true -- BUGFIX: Strictly clip long overflowing input text strings inside container bounds!
 	textBoxContainer.Parent = inner
 	Instance.new("UICorner", textBoxContainer).CornerRadius = UDim.new(0, 10)
 	KazeUI:AddPanel(textBoxContainer, -0.01)
@@ -1657,6 +1652,8 @@ local function CreateTextBoxInput(parentFrame, title, placeholder, defaultVal, c
 	textBox.TextSize = 11
 	textBox.TextXAlignment = Enum.TextXAlignment.Left
 	textBox.ClearTextOnFocus = false
+	textBox.ClipsDescendants = true -- Prevent text from overflowing horizontally
+	textBox.TextWrapped = false -- Horizontal scrolling behavior for inputs instead of wrapping or spilling
 	textBox.Parent = textBoxContainer
 	KazeUI:RegisterText(textBox, false)
 	KazeUI:OnThemeChanged(textBox, function(t) textBox.PlaceholderColor3 = t.MutedText end)
@@ -2014,7 +2011,7 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 	local hg = Instance.new("UIGradient", hueSlider)
 	hg.Color = ColorSequence.new{
 		ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 0, 0)),
-		ColorSequenceKeypoint.new(0.167, Color3.fromRGB(255, 255,  yellow)),
+		ColorSequenceKeypoint.new(0.167, Color3.fromRGB(255, 255, 0)),
 		ColorSequenceKeypoint.new(0.333, Color3.fromRGB(0, 255, 0)),
 		ColorSequenceKeypoint.new(0.5, Color3.fromRGB(0, 255, 255)),
 		ColorSequenceKeypoint.new(0.667, Color3.fromRGB(0, 0, 255)),
@@ -2328,9 +2325,9 @@ local function CreateVisualSectionDivider(parentFrame, titleArg)
 	}
 end
 
--- ==========================================
+-- ==========================================================
 -- Premium Geometric Divider Component (With and Without Title)
--- ==========================================
+-- ==========================================================
 local function CreateVisualDivider(parentFrame, titleArg)
 	local title = titleArg and tostring(titleArg) or ""
 	if type(titleArg) == "table" then
@@ -3561,6 +3558,76 @@ function KazeUI:CreateWindow(config)
 			end
 		end
 	}
+
+	-- BUGFIX: Attach the `Notify` method directly to the window instance to prevent console missing method crashes.
+	function Win:Notify(...)
+		return KazeUI:Notify(...)
+	end
+
+	-- NEW FEATURE: Create visual tab headers/separators in the sidebar scroller list.
+	function Win:CreateTabDivider(title)
+		title = title and tostring(title) or ""
+		if type(title) == "table" then
+			title = tostring(title.Title or title.Text or "")
+		end
+
+		local dividerFrame = Instance.new("Frame")
+		dividerFrame.Name = "TabDivider_" .. title
+		dividerFrame.BackgroundTransparency = 1
+		dividerFrame.Parent = TabsList
+		dividerFrame.LayoutOrder = #TabsList:GetChildren() + 1
+
+		if title == "" or title == " " then
+			dividerFrame.Size = UDim2.new(1, -12, 0, 12)
+			
+			local line = Instance.new("Frame", dividerFrame)
+			line.Name = "Line"
+			line.Size = UDim2.new(0.8, 0, 0, 1)
+			line.Position = UDim2.new(0.1, 0, 0.5, 0)
+			line.BorderSizePixel = 0
+			KazeUI:OnThemeChanged(line, function(t)
+				line.BackgroundColor3 = t.Border
+			end)
+		else
+			dividerFrame.Size = UDim2.new(1, -12, 0, 26)
+
+			local container = Instance.new("Frame", dividerFrame)
+			container.Name = "Container"
+			container.Size = UDim2.fromScale(1, 1)
+			container.BackgroundTransparency = 1
+
+			local label = Instance.new("TextLabel", container)
+			label.Name = "Label"
+			label.Size = UDim2.fromScale(1, 1)
+			label.BackgroundTransparency = 1
+			label.Text = string.upper(title)
+			label.Font = Enum.Font.GothamBold
+			label.TextSize = 9
+			label.TextXAlignment = Enum.TextXAlignment.Center
+			KazeUI:RegisterText(label, true) -- Styled in real-time with theme muted contrast
+
+			local leftLine = Instance.new("Frame", container)
+			leftLine.Name = "LeftLine"
+			leftLine.Size = UDim2.new(0.18, 0, 0, 1)
+			leftLine.Position = UDim2.new(0.04, 0, 0.5, 0)
+			leftLine.BorderSizePixel = 0
+			KazeUI:OnThemeChanged(leftLine, function(t)
+				leftLine.BackgroundColor3 = t.Border
+			end)
+
+			local rightLine = Instance.new("Frame", container)
+			rightLine.Name = "RightLine"
+			rightLine.Size = UDim2.new(0.18, 0, 0, 1)
+			rightLine.Position = UDim2.new(0.78, 0, 0.5, 0)
+			rightLine.BorderSizePixel = 0
+			KazeUI:OnThemeChanged(rightLine, function(t)
+				rightLine.BackgroundColor3 = t.Border
+			end)
+		end
+
+		return dividerFrame
+	end
+	Win.TabDivider = Win.CreateTabDivider -- Alias for shorthand use
 
 	function Win:CreateConfigManager(tab)
 		local sec = tab:SectionUI("Config Manager")
