@@ -1,12 +1,12 @@
 --[[
-	Kaze UI Library v3.6.5 (Premium Bubble Redesign & Engine Rewrite)
+	Kaze UI Library v3.6.6 (Premium Bubble Redesign & Engine Rewrite)
 	Inspired by: Modern Mobile Chat Bubbles, iMessage, and Discord Mobile.
 	Retained: 100% Backwards Compatibility with Version 1, 2, 2.2, 2.3, and 3.0 APIs
 	
-	UPDATES IN V3.6.5:
-	- URL-Based Theme Parsing Support: Allows `config.Theme` or `SetTheme()` to take an HTTP URL string.
-	- Dynamic Decoders: Converts remote JSON theme formats or remote Lua scripts returning tables into functional engine themes.
-	- Smart Theme Caching: Caches dynamically loaded themes directly to prevent redundant network fetch requests.
+	UPDATES IN V3.6.6:
+	- HTTP Image Asset Pipeline: Automatically downloads web image URLs (`https://...`), writes them to exploit files, and converts them using `getcustomasset` or `getsynasset` for background wallpapers.
+	- Smart Cache System: Saves downloaded images locally under `KazeUI/Cache/` to bypass redundant internet requests and boost loading speed.
+	- Automated Theme vs Wallpaper Router: If `CreateWindow({ Theme = "https://..." })` fails to parse as a JSON theme configuration, it automatically sets the URL as your custom wallpaper instead!
 --]]
 
 local KazeUI = {}
@@ -187,6 +187,41 @@ pcall(function()
 	end
 end)
 
+-- Exploit Direct Web Image Compiler & Caching Pipeline
+local function GetCustomAssetFromURL(url)
+	local getasset = (getcustomasset or getsynasset or (drawing and drawing.new and drawing.custom_asset))
+	if not getasset or not writefile or not game or not game.HttpGet then
+		return url -- Fallback if exploit is not supported
+	end
+	
+	-- Clean string to build a secure filename
+	local hashName = string.gsub(url, "%A", "")
+	local filename = "KazeUI/Cache/" .. string.sub(hashName, 1, 30) .. ".png"
+	
+	-- Return cached resource if file already exists
+	if isfile and isfile(filename) then
+		local s, asset = pcall(getasset, filename)
+		if s and asset then return asset end
+	end
+	
+	-- If uncached, fetch data from link
+	local success, bytes = pcall(function()
+		return game:HttpGet(url)
+	end)
+	
+	if success and bytes and string.len(bytes) > 0 then
+		if makefolder then
+			pcall(makefolder, "KazeUI")
+			pcall(makefolder, "KazeUI/Cache")
+		end
+		pcall(writefile, filename, bytes)
+		local s, asset = pcall(getasset, filename)
+		if s and asset then return asset end
+	end
+	
+	return url
+end
+
 local function FormatImage(id)
 	if not id or id == "" then return "" end
 	id = tostring(id)
@@ -200,7 +235,13 @@ local function FormatImage(id)
 		return mapped
 	end
 	
-	if string.find(id, "rbxassetid://") or string.find(id, "http") then return id end
+	if string.find(id, "rbxassetid://") then return id end
+	
+	-- Detect Web Links directly passed into custom images
+	if string.find(id, "^http://") or string.find(id, "^https://") then
+		return GetCustomAssetFromURL(id)
+	end
+	
 	local clean = string.gsub(id, "%D", "")
 	if clean == "" then return id end
 	return "rbxassetid://" .. clean
@@ -465,7 +506,26 @@ function KazeUI:SetTheme(themeName)
 				
 				-- Cache theme locally for subsequent lookups
 				KazeUI.Themes[themeName] = targetTheme
+			else
+				-- Dynamic Fallback: If it failed to parse as a theme table,
+				-- we safely assume the URL is a direct Custom Wallpaper Image!
+				KazeUI.Themes.CustomWallpaper = {
+					Name = "Custom",
+					Background = Color3.fromRGB(12, 12, 14),
+					Text = Color3.fromRGB(255, 255, 255),
+					MutedText = Color3.fromRGB(215, 210, 225),
+					Border = Color3.fromRGB(55, 55, 60),
+					LightnessFactor = 1,
+					BackgroundImage = themeName, -- Treat URL directly as Wallpaper
+					BackgroundImageTransparency = 0.1,
+					OverlayTransparency = 0.65
+				}
+				targetTheme = KazeUI.Themes.CustomWallpaper
+				KazeUI.Themes[themeName] = targetTheme
 			end
+		else
+			-- Handle link failure
+			targetTheme = KazeUI.Themes.Obsidian
 		end
 	end
 
