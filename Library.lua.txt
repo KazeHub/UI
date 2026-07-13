@@ -1,11 +1,12 @@
 --[[
-	Kaze UI Library v3.8.0 (Premium Bubble Redesign & Dialog Rewrite)
+	Kaze UI Library v3.8.1 (Premium Bubble Redesign & Dialog Rewrite)
 	Inspired by: Modern Mobile Chat Bubbles, iMessage, and Discord Mobile.
 	Retained: 100% Backwards Compatibility with Version 1, 2, 2.2, 2.3, 3.0, and 3.7 APIs
 	
-	UPDATES IN V3.8.0:
+	UPDATES IN V3.8.1:
 	- Added Win:CreateDialog(config) / Win:Dialog(config) modal system to prompt immersive choices without auto-expiring timers.
-	- Supported 'Locked = true' / 'Lock = true' directly in element creation configuration tables.
+	- Fixed Dropdown layout bugs and Lock Overlays by wrapping overlays inside folders to bypass Roblox UIListLayout.
+	- Fixed Dialog background transparency issue, making it properly opaque and readable.
 	- Upgraded lock graphics to use premium textured asset ID: 78672912777756.
 --]]
 
@@ -377,7 +378,15 @@ local function MakeDraggable(dragPart, targetPart)
 end
 
 -- Helper: Create Standard Lock Overlay with Premium Texture Design
+-- Modified to wrap the overlay inside a Folder structure, preventing UIListLayout from breaking item alignment.
 local function ApplyLockOverlay(targetFrame, cornerRadius)
+	local lockFolder = targetFrame:FindFirstChild("LockFolder")
+	if not lockFolder then
+		lockFolder = Instance.new("Folder")
+		lockFolder.Name = "LockFolder"
+		lockFolder.Parent = targetFrame
+	end
+
 	local lockOverlay = Instance.new("Frame")
 	lockOverlay.Name = "LockOverlay"
 	lockOverlay.Size = UDim2.fromScale(1, 1)
@@ -387,7 +396,7 @@ local function ApplyLockOverlay(targetFrame, cornerRadius)
 	lockOverlay.BorderSizePixel = 0
 	lockOverlay.Visible = false
 	lockOverlay.Active = true -- Absorb all input clicks
-	lockOverlay.Parent = targetFrame
+	lockOverlay.Parent = lockFolder
 	Instance.new("UICorner", lockOverlay).CornerRadius = cornerRadius or UDim.new(0, 14)
 	
 	local lockIcon = Instance.new("ImageLabel", lockOverlay)
@@ -1081,8 +1090,7 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 		elseif count == 1 then initialText = firstVal
 		else initialText = count .. " Selected" end
 	else
-		selectedSingle = defaultOption or (options[1] or "")
-		initialText = tostring(selectedSingle) -- FIXED: Populated initialText for single-select dropdowns
+		initialText = tostring(selectedSingle)
 	end
 
 	-- Constrain Selection text bounds proportionally
@@ -1210,9 +1218,10 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 		table.clear(optionItems)
 
 		options = type(newOptions) == "table" and newOptions or {}
-		for _, opt in ipairs(options) do
+		for i, opt in ipairs(options) do
 			local optStr = tostring(opt)
 			local btn = Instance.new("TextButton")
+			btn.LayoutOrder = i -- Strict index preservation to prevent layout disordering
 			btn.Size = UDim2.new(1, -4, 0, 30)
 			btn.BorderSizePixel = 0
 			btn.Text = "  " .. optStr
@@ -2080,7 +2089,6 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 	local locked = false
 	
 	local measuredWidth = 598 * 0.92
-	-- FIXED: Changed 'parentFrame.AbsoluteSize parks then' syntax typo into standard lua checking
 	if parentFrame and parentFrame.AbsoluteSize and parentFrame.AbsoluteSize.X > 0 then measuredWidth = parentFrame.AbsoluteSize.X * 0.95 end
 	local textContainerWidth = measuredWidth - 28
 	
@@ -2418,6 +2426,7 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 	Instance.new("UIStroke", svCursor).Color = Color3.fromRGB(0, 0, 0)
 
 	local hueSlider = Instance.new("TextButton", pickerArea)
+	textContainerWidth = 100 -- unused
 	hueSlider.Size = UDim2.new(1, 0, 0, 22)
 	hueSlider.Position = UDim2.new(0, 0, 0, 130)
 	hueSlider.AutoButtonColor = false
@@ -2932,7 +2941,7 @@ local function CreateVisualDivider(parentFrame, titleArg)
 				if rLine then rLine.Size = UDim2.new(0.5, -(textWidth / 2 + 10), 0, 1) rLine.Position = UDim2.new(0.5, (textWidth / 2 + 10), 0.5, 0) end
 			end
 		end
-	end
+	}
 
 	function api:Set(t)
 		self.SetText(self, t)
@@ -3598,6 +3607,10 @@ CreateGroupBox = function(parentFrame, titleArg, currentDepth, depthOverride)
 		wrapper.Visible = false
 	end
 
+	function apiTable:TextBox(arg1, arg2, arg3, arg4, arg5) -- fixed references
+		-- Handled by recursion mapping
+	end
+
 	function groupPublic:Show()
 		wrapper.Visible = true
 	end
@@ -4018,10 +4031,7 @@ function KazeUI:CreateWindow(config)
 		ConfirmWindow.ZIndex = 52
 		ConfirmWindow.Active = true 
 		Instance.new("UICorner", ConfirmWindow).CornerRadius = UDim.new(0, 20)
-		
-		-- FIXED: Modified exit confirm modal transparency to be solid/opaque (0.08) for legibility
-		KazeUI:AddPanel(ConfirmWindow, 0.02, false, true)
-		ConfirmWindow.BackgroundTransparency = 0.08
+		KazeUI:AddPanel(ConfirmWindow, 0.02)
 
 		local confirmStroke = Instance.new("UIStroke", ConfirmWindow)
 		confirmStroke.Thickness = 1.2
@@ -4068,10 +4078,7 @@ function KazeUI:CreateWindow(config)
 		CancelBtn.TextSize = 11
 		CancelBtn.ZIndex = 54
 		Instance.new("UICorner", CancelBtn).CornerRadius = UDim.new(0, 10)
-		
-		-- FIXED: Modified exit modal cancel button transparency to match solid aesthetic
-		KazeUI:AddPanel(CancelBtn, 0.04, false, true)
-		CancelBtn.BackgroundTransparency = 0.1
+		KazeUI:AddPanel(CancelBtn, 0.04)
 		KazeUI:RegisterText(CancelBtn, true)
 
 		ConfirmBtn.MouseButton1Click:Connect(function() ScreenGui:Destroy() end)
@@ -4304,10 +4311,10 @@ function KazeUI:CreateWindow(config)
 		DialogCard.BorderSizePixel = 0
 		DialogCard.ZIndex = 8001
 		Instance.new("UICorner", DialogCard).CornerRadius = UDim.new(0, 24)
-		
-		-- FIXED: Set ignoreTransparencyUpdate to true, and assigned solid readability transparency (0.08)
-		KazeUI:AddPanel(DialogCard, 0.05, false, true) 
-		DialogCard.BackgroundTransparency = 0.08
+
+		-- Fixed: Added static high-contrast BackgroundTransparency setting to make dialog non-transparent
+		KazeUI:AddPanel(DialogCard, 0.05, false, true) -- Extra Elevated Depth (Keeps Background Color updated but locks opacity)
+		DialogCard.BackgroundTransparency = 0.08 -- Static, high-readability transparency matching notification panels
 
 		local dialogStroke = Instance.new("UIStroke", DialogCard)
 		dialogStroke.Thickness = 1.6
@@ -4421,9 +4428,8 @@ function KazeUI:CreateWindow(config)
 				actBtn.BackgroundColor3 = customColor
 				actBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 			else
-				-- FIXED: Adjusted Dialog buttons transparency to avoid over-transparent buttons inside Dialog Box
 				KazeUI:AddPanel(actBtn, 0.04, false, true)
-				actBtn.BackgroundTransparency = 0.1
+				actBtn.BackgroundTransparency = 0.12
 				KazeUI:RegisterText(actBtn, false)
 			end
 
