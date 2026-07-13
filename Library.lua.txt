@@ -1,11 +1,12 @@
 --[[
-	Kaze UI Library v3.8.1 (Premium Bubble Redesign & Layout Bug Fix)
+	Kaze UI Library v3.8.0 (Premium Bubble Redesign & Dialog Rewrite)
 	Inspired by: Modern Mobile Chat Bubbles, iMessage, and Discord Mobile.
-	Retained: 100% Backwards Compatibility with Version 1, 2, 2.2, 2.3, 3.0, and 3.8 APIs
+	Retained: 100% Backwards Compatibility with Version 1, 2, 2.2, 2.3, 3.0, and 3.7 APIs
 	
-	UPDATES IN V3.8.1:
-	- Fixed Roblox AutomaticSize scale-loop bug in dropdown lock overlays by updating bounds dynamically using AbsoluteSize.
-	- Set dialog transparency to match notification transparency (static 0.08) for premium readability.
+	UPDATES IN V3.8.0:
+	- Added Win:CreateDialog(config) / Win:Dialog(config) modal system to prompt immersive choices without auto-expiring timers.
+	- Supported 'Locked = true' / 'Lock = true' directly in element creation configuration tables.
+	- Upgraded lock graphics to use premium textured asset ID: 78672912777756.
 --]]
 
 local KazeUI = {}
@@ -375,14 +376,11 @@ local function MakeDraggable(dragPart, targetPart)
 	end
 end
 
--- Helper: Create Standard Lock Overlay with Premium Texture Design & Circular Scale Sizing Fix
+-- Helper: Create Standard Lock Overlay with Premium Texture Design
 local function ApplyLockOverlay(targetFrame, cornerRadius)
 	local lockOverlay = Instance.new("Frame")
 	lockOverlay.Name = "LockOverlay"
-	
-	-- We initialize the lock overlay via offset rather than scale.
-	-- Scale (1, 1) inside an AutomaticSize parent causes severe circular layout sizing loops in Roblox.
-	lockOverlay.Size = UDim2.fromOffset(targetFrame.AbsoluteSize.X, targetFrame.AbsoluteSize.Y)
+	lockOverlay.Size = UDim2.fromScale(1, 1)
 	lockOverlay.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 	lockOverlay.BackgroundTransparency = 0.55
 	lockOverlay.ZIndex = 9999
@@ -400,11 +398,6 @@ local function ApplyLockOverlay(targetFrame, cornerRadius)
 	lockIcon.Image = "rbxassetid://78672912777756" -- High quality custom texture ID lock icon
 	lockIcon.ImageColor3 = Color3.fromRGB(240, 240, 240)
 	lockIcon.ScaleType = Enum.ScaleType.Fit
-	
-	-- Dynamic bounds listener to ensure it scales cleanly when parents shift/resize
-	targetFrame:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
-		lockOverlay.Size = UDim2.fromOffset(targetFrame.AbsoluteSize.X, targetFrame.AbsoluteSize.Y)
-	end)
 	
 	return lockOverlay
 end
@@ -1088,7 +1081,8 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 		elseif count == 1 then initialText = firstVal
 		else initialText = count .. " Selected" end
 	else
-		initialText = tostring(selectedSingle)
+		selectedSingle = defaultOption or (options[1] or "")
+		initialText = tostring(selectedSingle) -- FIXED: Populated initialText for single-select dropdowns
 	end
 
 	-- Constrain Selection text bounds proportionally
@@ -2086,7 +2080,7 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 	local locked = false
 	
 	local measuredWidth = 598 * 0.92
-	if parentFrame and parentFrame.AbsoluteSize and parentFrame.AbsoluteSize.X > 0 then measuredWidth = parentFrame.AbsoluteSize.X * 0.95 end
+	if parentFrame and parentFrame.AbsoluteSize parks then measuredWidth = parentFrame.AbsoluteSize.X * 0.95 end
 	local textContainerWidth = measuredWidth - 28
 	
 	local titleHeight = 0
@@ -4023,7 +4017,10 @@ function KazeUI:CreateWindow(config)
 		ConfirmWindow.ZIndex = 52
 		ConfirmWindow.Active = true 
 		Instance.new("UICorner", ConfirmWindow).CornerRadius = UDim.new(0, 20)
-		KazeUI:AddPanel(ConfirmWindow, 0.02)
+		
+		-- FIXED: Modified exit confirm modal transparency to be solid/opaque (0.08) for legibility
+		KazeUI:AddPanel(ConfirmWindow, 0.02, false, true)
+		ConfirmWindow.BackgroundTransparency = 0.08
 
 		local confirmStroke = Instance.new("UIStroke", ConfirmWindow)
 		confirmStroke.Thickness = 1.2
@@ -4070,7 +4067,10 @@ function KazeUI:CreateWindow(config)
 		CancelBtn.TextSize = 11
 		CancelBtn.ZIndex = 54
 		Instance.new("UICorner", CancelBtn).CornerRadius = UDim.new(0, 10)
-		KazeUI:AddPanel(CancelBtn, 0.04)
+		
+		-- FIXED: Modified exit modal cancel button transparency to match solid aesthetic
+		KazeUI:AddPanel(CancelBtn, 0.04, false, true)
+		CancelBtn.BackgroundTransparency = 0.1
 		KazeUI:RegisterText(CancelBtn, true)
 
 		ConfirmBtn.MouseButton1Click:Connect(function() ScreenGui:Destroy() end)
@@ -4304,9 +4304,9 @@ function KazeUI:CreateWindow(config)
 		DialogCard.ZIndex = 8001
 		Instance.new("UICorner", DialogCard).CornerRadius = UDim.new(0, 24)
 		
-		-- FIX: Bypass dynamic transparency updates and enforce static semi-solid visual contrast (matching notifications!)
+		-- FIXED: Set ignoreTransparencyUpdate to true, and assigned solid readability transparency (0.08)
 		KazeUI:AddPanel(DialogCard, 0.05, false, true) 
-		DialogCard.BackgroundTransparency = 0.08 -- Static high-readability premium contrast
+		DialogCard.BackgroundTransparency = 0.08
 
 		local dialogStroke = Instance.new("UIStroke", DialogCard)
 		dialogStroke.Thickness = 1.6
@@ -4420,7 +4420,9 @@ function KazeUI:CreateWindow(config)
 				actBtn.BackgroundColor3 = customColor
 				actBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 			else
-				KazeUI:AddPanel(actBtn, 0.04)
+				-- FIXED: Adjusted Dialog buttons transparency to avoid over-transparent buttons inside Dialog Box
+				KazeUI:AddPanel(actBtn, 0.04, false, true)
+				actBtn.BackgroundTransparency = 0.1
 				KazeUI:RegisterText(actBtn, false)
 			end
 
