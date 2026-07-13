@@ -1,12 +1,13 @@
 --[[
-	Kaze UI Library v3.8.0 (Premium Bubble Redesign & Dialog Rewrite)
+	Kaze UI Library v3.7.0 (Premium Bubble Redesign & Engine Rewrite)
 	Inspired by: Modern Mobile Chat Bubbles, iMessage, and Discord Mobile.
-	Retained: 100% Backwards Compatibility with Version 1, 2, 2.2, 2.3, 3.0, and 3.7 APIs
+	Retained: 100% Backwards Compatibility with Version 1, 2, 2.2, 2.3, and 3.0 APIs
 	
-	UPDATES IN V3.8.0:
-	- Added Win:CreateDialog(config) / Win:Dialog(config) modal system to prompt immersive choices without auto-expiring timers.
-	- Supported 'Locked = true' / 'Lock = true' directly in element creation configuration tables.
-	- Upgraded lock graphics to use premium textured asset ID: 78672912777756.
+	UPDATES IN V3.7.0 & CUSTOM TUNING:
+	- Unified Component API: All elements expose :Set(), :Get(), :Lock(), :Unlock(), :Hide(), :Show(), :Destroy().
+	- Lock Overlays: Visually frosted cover with lock icons blocks clicks/actions on elements during lock mode.
+	- Notification Actions: Supports inline premium action buttons with customizable colors and automated height calculations.
+	- Soft Horrific Atmosphere Defaults: Pre-configured with the Yokai custom wallpaper, deep red accent glow, and soft transparent background panels.
 --]]
 
 local KazeUI = {}
@@ -41,8 +42,8 @@ KazeUI.Themes = {
 		MutedText = Color3.fromRGB(215, 210, 225),
 		Border = Color3.fromRGB(55, 55, 60),
 		LightnessFactor = 1,
-		BackgroundImage = "https://pbs.twimg.com/media/Gu-hWtyX0AA5-5s.jpg", -- Yokai image
-		BackgroundImageTransparency = 0.1, -- Soft wallpaper visibility
+		BackgroundImage = "https://pbs.twimg.com/media/Gu-hWtyX0AA5-5s.jpg", -- Automatically set to the requested Yokai image
+		BackgroundImageTransparency = 0.1, -- Perfectly soft wallpaper visibility
 		OverlayTransparency = 0.65 -- Seamless dark horror aesthetic blend
 	}
 }
@@ -376,8 +377,8 @@ local function MakeDraggable(dragPart, targetPart)
 	end
 end
 
--- Helper: Create Standard Lock Overlay with Premium Texture Design
--- Fix: Wrapped inside a Folder instance to bypass layout/AutomaticSize conflicts
+-- Helper: Create Standard Lock Overlay
+-- Patched in v3.7.0: Now wraps the frame inside a Folder container to bypass UIListLayout interference.
 local function ApplyLockOverlay(targetFrame, cornerRadius)
 	local lockFolder = Instance.new("Folder")
 	lockFolder.Name = "LockFolder"
@@ -387,23 +388,21 @@ local function ApplyLockOverlay(targetFrame, cornerRadius)
 	lockOverlay.Name = "LockOverlay"
 	lockOverlay.Size = UDim2.fromScale(1, 1)
 	lockOverlay.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-	lockOverlay.BackgroundTransparency = 0.55
+	lockOverlay.BackgroundTransparency = 0.5
 	lockOverlay.ZIndex = 9999
 	lockOverlay.BorderSizePixel = 0
 	lockOverlay.Visible = false
 	lockOverlay.Active = true -- Absorb all input clicks
 	lockOverlay.Parent = lockFolder
-	
 	Instance.new("UICorner", lockOverlay).CornerRadius = cornerRadius or UDim.new(0, 14)
 	
 	local lockIcon = Instance.new("ImageLabel", lockOverlay)
-	lockIcon.Size = UDim2.fromOffset(24, 24)
+	lockIcon.Size = UDim2.fromOffset(16, 16)
 	lockIcon.Position = UDim2.fromScale(0.5, 0.5)
 	lockIcon.AnchorPoint = Vector2.new(0.5, 0.5)
 	lockIcon.BackgroundTransparency = 1
-	lockIcon.Image = "rbxassetid://78672912777756" -- High quality custom texture ID lock icon
-	lockIcon.ImageColor3 = Color3.fromRGB(240, 240, 240)
-	lockIcon.ScaleType = Enum.ScaleType.Fit
+	lockIcon.Image = "rbxassetid://10715030327" -- Custom lock icon
+	lockIcon.ImageColor3 = Color3.fromRGB(220, 220, 220)
 	
 	return lockOverlay
 end
@@ -1106,6 +1105,24 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 	clickBtn.Size = UDim2.fromScale(1, 1)
 	clickBtn.BackgroundTransparency = 1
 	clickBtn.Text = ""
+
+	local function UpdateHeaderVisual()
+		if isMulti then
+			local count = 0
+			local firstVal = ""
+			for k, v in pairs(selectedMulti) do
+				if v then 
+					count = count + 1 
+					if firstVal == "" then firstVal = k end
+				end
+			end
+			if count == 0 then selectedLabel.Text = "None"
+			elseif count == 1 then selectedLabel.Text = firstVal
+			else selectedLabel.Text = count .. " Selected" end
+		else
+			selectedLabel.Text = tostring(selectedSingle)
+		end
+	end
 
 	-- Clean search wrappers setup
 	local searchWrapper = Instance.new("Frame")
@@ -2579,7 +2596,7 @@ local function CreateKeybindInput(parentFrame, title, defaultKey, callback, flag
 	local locked = false
 	
 	local measuredWidth = 598 * 0.92
-	if parentFrame and parentFrame.AbsoluteSize and parentFrame.AbsoluteSize.X > 0 then measuredWidth = parentFrame.AbsoluteSize.X * 0.95 end
+	if parentFrame and parentFrame.AbsoluteSize&nbsp;&nbsp;and parentFrame.AbsoluteSize.X > 0 then measuredWidth = parentFrame.AbsoluteSize.X * 0.95 end
 	local textContainerWidth = measuredWidth - 28 - 90
 	
 	local titleHeight = 0
@@ -2779,7 +2796,6 @@ local function CreateVisualSectionDivider(parentFrame, titleArg)
 	label.Font = Enum.Font.GothamBold
 	label.TextSize = 13
 	label.TextXAlignment = Enum.TextXAlignment.Left
-	label.TextWrapped = true
 	label.Parent = wrapper
 	KazeUI:RegisterText(label, false)
 	
@@ -2979,37 +2995,20 @@ AttachElementsToAPI = function(apiTable, parentFrame, depth)
 		function api:Hide() label.Visible = false end
 		function api:Show() label.Visible = true end
 		function api:Destroy() label:Destroy() end
-
-		if type(arg1) == "table" and (arg1.Locked or arg1.Lock) then
-			api:Lock()
-		end
-
 		return api
 	end
 
 	function apiTable:Paragraph(arg1, arg2)
 		local title = type(arg1) == "table" and arg1.Title or arg1
 		local content = type(arg1) == "table" and (arg1.Content or arg1.Description) or arg2
-		local api = CreateParagraph(parentFrame, title, content)
-
-		if type(arg1) == "table" and (arg1.Locked or arg1.Lock) then
-			api:Lock()
-		end
-
-		return api
+		return CreateParagraph(parentFrame, title, content)
 	end
 
 	function apiTable:Button(arg1, arg2, arg3)
 		local title = type(arg1) == "table" and arg1.Title or arg1
 		local desc = type(arg1) == "table" and (arg1.Description or arg1.Content or "") or arg2
 		local callback = type(arg1) == "table" and arg1.Callback or arg3
-		local api = CreateClickableParagraph(parentFrame, title, desc, callback)
-
-		if type(arg1) == "table" and (arg1.Locked or arg1.Lock) then
-			api:Lock()
-		end
-
-		return api
+		return CreateClickableParagraph(parentFrame, title, desc, callback)
 	end
 
 	function apiTable:Toggle(arg1, arg2, arg3, arg4, arg5)
@@ -3019,13 +3018,7 @@ AttachElementsToAPI = function(apiTable, parentFrame, depth)
 		else
 			title, desc, def, callback, flag = arg1, arg2, arg3, arg4, arg5
 		end
-		local api = CreateToggleSwitch(parentFrame, title, desc, def, callback, flag)
-
-		if type(arg1) == "table" and (arg1.Locked or arg1.Lock) then
-			api:Lock()
-		end
-
-		return api
+		return CreateToggleSwitch(parentFrame, title, desc, def, callback, flag)
 	end
 
 	function apiTable:TextBox(arg1, arg2, arg3, arg4, arg5)
@@ -3035,13 +3028,7 @@ AttachElementsToAPI = function(apiTable, parentFrame, depth)
 		else
 			title, place, def, callback, flag = arg1, arg2, arg3, arg4, arg5
 		end
-		local api = CreateTextBoxInput(parentFrame, title, place, def, callback, flag)
-
-		if type(arg1) == "table" and (arg1.Locked or arg1.Lock) then
-			api:Lock()
-		end
-
-		return api
+		return CreateTextBoxInput(parentFrame, title, place, def, callback, flag)
 	end
 
 	function apiTable:Slider(arg1, arg2, arg3, arg4, arg5, arg6)
@@ -3051,13 +3038,7 @@ AttachElementsToAPI = function(apiTable, parentFrame, depth)
 		else
 			title, min, max, def, callback, flag = arg1, arg2, arg3, arg4, arg5, arg6
 		end
-		local api = CreateSliderInput(parentFrame, title, min, max, def, callback, flag)
-
-		if type(arg1) == "table" and (arg1.Locked or arg1.Lock) then
-			api:Lock()
-		end
-
-		return api
+		return CreateSliderInput(parentFrame, title, min, max, def, callback, flag)
 	end
 
 	function apiTable:Dropdown(arg1, arg2, arg3, arg4, arg5, arg6)
@@ -3067,13 +3048,7 @@ AttachElementsToAPI = function(apiTable, parentFrame, depth)
 		else
 			title, vals, def, callback, multi, flag = arg1, arg2, arg3, arg4, (arg5 or false), arg6
 		end
-		local api = CreateDropdown(parentFrame, title, vals, def, callback, multi, flag)
-
-		if type(arg1) == "table" and (arg1.Locked or arg1.Lock) then
-			api:Lock()
-		end
-
-		return api
+		return CreateDropdown(parentFrame, title, vals, def, callback, multi, flag)
 	end
 
 	function apiTable:ColorPicker(arg1, arg2, arg3, arg4)
@@ -3083,13 +3058,7 @@ AttachElementsToAPI = function(apiTable, parentFrame, depth)
 		else
 			title, def, cb, flag = arg1, arg2, arg3, arg4
 		end
-		local api = CreateColorPicker(parentFrame, title, def, cb, flag)
-
-		if type(arg1) == "table" and (arg1.Locked or arg1.Lock) then
-			api:Lock()
-		end
-
-		return api
+		return CreateColorPicker(parentFrame, title, def, cb, flag)
 	end
 	
 	function apiTable:Keybind(arg1, arg2, arg3, arg4)
@@ -3099,57 +3068,27 @@ AttachElementsToAPI = function(apiTable, parentFrame, depth)
 		else
 			title, def, cb, flag = arg1, arg2, arg3, arg4
 		end
-		local api = CreateKeybindInput(parentFrame, title, def, cb, flag)
-
-		if type(arg1) == "table" and (arg1.Locked or arg1.Lock) then
-			api:Lock()
-		end
-
-		return api
+		return CreateKeybindInput(parentFrame, title, def, cb, flag)
 	end
 
 	function apiTable:SectionUI(arg1)
 		local title = type(arg1) == "table" and arg1.Title or arg1
-		local api = CreateCollapsibleSection(parentFrame, title, depth)
-
-		if type(arg1) == "table" and (arg1.Locked or arg1.Lock) then
-			api:Lock()
-		end
-
-		return api
+		return CreateCollapsibleSection(parentFrame, title, depth)
 	end
 	
 	function apiTable:Section(arg1)
 		local title = type(arg1) == "table" and arg1.Title or arg1
-		local api = CreateVisualSectionDivider(parentFrame, title)
-
-		if type(arg1) == "table" and (arg1.Locked or arg1.Lock) then
-			api:Lock()
-		end
-
-		return api
+		return CreateVisualSectionDivider(parentFrame, title)
 	end
 
 	function apiTable:Divider(arg1)
 		local title = type(arg1) == "table" and (arg1.Title or arg1.Text) or arg1
-		local api = CreateVisualDivider(parentFrame, title)
-
-		if type(arg1) == "table" and (arg1.Locked or arg1.Lock) then
-			api:Lock()
-		end
-
-		return api
+		return CreateVisualDivider(parentFrame, title)
 	end
 
 	function apiTable:GroupBox(arg1, depthOverride)
 		local title = type(arg1) == "table" and arg1.Title or arg1
-		local api = CreateGroupBox(parentFrame, title, depth, depthOverride)
-
-		if type(arg1) == "table" and (arg1.Locked or arg1.Lock) then
-			api:Lock()
-		end
-
-		return api
+		return CreateGroupBox(parentFrame, title, depth, depthOverride)
 	end
 end
 
@@ -4248,176 +4187,6 @@ function KazeUI:CreateWindow(config)
 		end
 	}
 
-	-- ==========================================
-	-- Premium Dialog Pop-up Modal System
-	-- ==========================================
-	function Win:CreateDialog(config)
-		config = config or {}
-		local title = tostring(config.Title or "Dialog")
-		local content = tostring(config.Content or "")
-		local iconId = config.Icon and FormatImage(config.Icon) or ""
-		local hasIcon = (iconId ~= "")
-		local actions = config.Actions or {}
-		
-		-- Temporary disable standard controls during active Dialog Modal
-		BtnYellow.Active = false; BtnGreen.Active = false; BtnRed.Active = false
-
-		-- Create Full-Window Blurry/Dark Blocker Overlay
-		local DialogOverlay = Instance.new("Frame", Window)
-		DialogOverlay.Name = "DialogOverlay"
-		DialogOverlay.Size = UDim2.fromScale(1, 1)
-		DialogOverlay.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-		DialogOverlay.BackgroundTransparency = 1
-		DialogOverlay.ZIndex = 8000
-		DialogOverlay.Active = true 
-		Instance.new("UICorner", DialogOverlay).CornerRadius = UDim.new(0, 28)
-
-		-- Dim Animation
-		TweenService:Create(DialogOverlay, TWEEN_FAST, {BackgroundTransparency = 0.65}):Play()
-
-		-- Dialogue Bubble Container Frame (Centered)
-		local DialogCard = Instance.new("Frame", DialogOverlay)
-		DialogCard.Name = "DialogCard"
-		DialogCard.Size = UDim2.fromOffset(360, 160)
-		DialogCard.AnchorPoint = Vector2.new(0.5, 0.5)
-		DialogCard.Position = UDim2.fromScale(0.5, 0.45)
-		DialogCard.BorderSizePixel = 0
-		DialogCard.ZIndex = 8001
-		Instance.new("UICorner", DialogCard).CornerRadius = UDim.new(0, 24)
-		KazeUI:AddPanel(DialogCard, 0.05) -- Extra Elevated Depth
-
-		local dialogStroke = Instance.new("UIStroke", DialogCard)
-		dialogStroke.Thickness = 1.6
-		dialogStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-		KazeUI:RegisterBorder(dialogStroke)
-		StartNeonLoop(dialogStroke)
-
-		-- Spring In Animation
-		TweenService:Create(DialogCard, TWEEN_SPRING, {Position = UDim2.fromScale(0.5, 0.5)}):Play()
-
-		-- Structural Sizing Calculations
-		local maxTextWidth = 360 - 40 - (hasIcon and 48 or 0)
-		local titleSize = TextService:GetTextSize(title, 14, Enum.Font.GothamBold, Vector2.new(maxTextWidth, 1000))
-		local contentSize = TextService:GetTextSize(content, 11, Enum.Font.Gotham, Vector2.new(maxTextWidth, 2000))
-		local calculatedTextHeight = math.ceil(titleSize.Y) + 6 + math.ceil(contentSize.Y)
-		
-		local finalCardHeight = math.max(160, 24 + calculatedTextHeight + 16 + 40 + 20)
-		DialogCard.Size = UDim2.fromOffset(360, finalCardHeight)
-
-		-- Left Icon Element Setup (Optional)
-		if hasIcon then
-			local diagIcon = Instance.new("ImageLabel", DialogCard)
-			diagIcon.Name = "DialogIcon"
-			diagIcon.Size = UDim2.fromOffset(36, 36)
-			diagIcon.Position = UDim2.fromOffset(20, 24)
-			diagIcon.BackgroundTransparency = 1
-			diagIcon.Image = iconId
-			diagIcon.ImageColor3 = KazeUI.GlowColor
-			diagIcon.ScaleType = Enum.ScaleType.Fit
-			diagIcon.ZIndex = 8002
-		end
-
-		local textContainer = Instance.new("Frame", DialogCard)
-		textContainer.Size = UDim2.new(1, hasIcon and -100 or -40, 0, calculatedTextHeight)
-		textContainer.Position = UDim2.fromOffset(hasIcon and 72 or 20, 24)
-		textContainer.BackgroundTransparency = 1
-		textContainer.ZIndex = 8002
-
-		local titleLab = Instance.new("TextLabel", textContainer)
-		titleLab.Size = UDim2.new(1, 0, 0, math.ceil(titleSize.Y))
-		titleLab.BackgroundTransparency = 1
-		titleLab.Text = title
-		titleLab.Font = Enum.Font.GothamBold
-		titleLab.TextSize = 14
-		titleLab.TextXAlignment = Enum.TextXAlignment.Left
-		titleLab.TextWrapped = true
-		titleLab.ZIndex = 8003
-		KazeUI:RegisterText(titleLab, false)
-
-		local contentLab = Instance.new("TextLabel", textContainer)
-		contentLab.Size = UDim2.new(1, 0, 0, math.ceil(contentSize.Y))
-		contentLab.Position = UDim2.fromOffset(0, math.ceil(titleSize.Y) + 6)
-		contentLab.BackgroundTransparency = 1
-		contentLab.Text = content
-		contentLab.Font = Enum.Font.Gotham
-		contentLab.TextSize = 11
-		contentLab.TextXAlignment = Enum.TextXAlignment.Left
-		contentLab.TextWrapped = true
-		contentLab.ZIndex = 8003
-		KazeUI:RegisterText(contentLab, true)
-
-		-- Dynamic Actions Frame Layout Setup
-		local actionsFrame = Instance.new("Frame", DialogCard)
-		actionsFrame.Name = "ActionsFrame"
-		actionsFrame.Size = UDim2.new(1, -40, 0, 36)
-		actionsFrame.Position = UDim2.new(0.5, 0, 1, -16)
-		actionsFrame.AnchorPoint = Vector2.new(0.5, 1)
-		actionsFrame.BackgroundTransparency = 1
-		actionsFrame.ZIndex = 8002
-
-		local actionLayout = Instance.new("UIListLayout", actionsFrame)
-		actionLayout.FillDirection = Enum.FillDirection.Horizontal
-		actionLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-		actionLayout.SortOrder = Enum.SortOrder.LayoutOrder
-		actionLayout.Padding = UDim.new(0, 12)
-
-		local function closeDialog()
-			TweenService:Create(DialogOverlay, TWEEN_FAST, {BackgroundTransparency = 1}):Play()
-			local tw = TweenService:Create(DialogCard, TWEEN_FAST, {Position = UDim2.fromScale(0.5, 0.45)})
-			tw:Play()
-			tw.Completed:Wait()
-			StopNeonLoop(dialogStroke)
-			DialogOverlay:Destroy()
-			BtnYellow.Active = true; BtnGreen.Active = true; BtnRed.Active = true
-		end
-
-		if #actions == 0 then
-			actions = {{Name = "Okay", Callback = function() end}}
-		end
-
-		for i, act in ipairs(actions) do
-			local actBtn = Instance.new("TextButton", actionsFrame)
-			actBtn.Name = "DialogAction_" .. i
-			actBtn.LayoutOrder = i
-			actBtn.Size = UDim2.new(1 / #actions, -((#actions - 1) * 12 / #actions), 1, 0)
-			actBtn.BorderSizePixel = 0
-			actBtn.Text = tostring(act.Name or "Confirm")
-			actBtn.Font = Enum.Font.GothamBold
-			actBtn.TextSize = 11
-			actBtn.ZIndex = 8004
-			Instance.new("UICorner", actBtn).CornerRadius = UDim.new(0, 10)
-
-			local customColor = act.Color or KazeUI.GlowColor
-			if type(customColor) == "string" then
-				local cleanHex = string.gsub(customColor, "#", "")
-				local sc, rc = pcall(function() return Color3.fromHex(cleanHex) end)
-				if sc and rc then customColor = rc end
-			end
-
-			if typeof(customColor) == "Color3" then
-				actBtn.BackgroundColor3 = customColor
-				actBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-			else
-				KazeUI:AddPanel(actBtn, 0.04)
-				KazeUI:RegisterText(actBtn, false)
-			end
-
-			actBtn.MouseEnter:Connect(function()
-				TweenService:Create(actBtn, TWEEN_FAST, {BackgroundTransparency = 0.2}):Play()
-			end)
-			actBtn.MouseLeave:Connect(function()
-				TweenService:Create(actBtn, TWEEN_FAST, {BackgroundTransparency = 0}):Play()
-			end)
-			actBtn.MouseButton1Click:Connect(function()
-				if type(act.Callback) == "function" then
-					task.spawn(act.Callback)
-				end
-				closeDialog()
-			end)
-		end
-	end
-	Win.Dialog = Win.CreateDialog
-
 	function Win:Notify(...)
 		return KazeUI:Notify(...)
 	end
@@ -4851,10 +4620,6 @@ function KazeUI:CreateWindow(config)
 		function public:Destroy()
 			btn:Destroy()
 			page:Destroy()
-		end
-
-		if type(arg1) == "table" and (arg1.Locked or arg1.Lock) then
-			public:Lock()
 		end
 
 		return public
