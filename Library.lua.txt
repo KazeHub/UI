@@ -1,14 +1,12 @@
 --[[
-	Kaze UI Library v3.8.2 (Premium Bubble Redesign & Dialog Rewrite)
+	Kaze UI Library v3.8.1 (Premium Bubble Redesign, Dropdown Overhaul & Dialog Fix)
 	Inspired by: Modern Mobile Chat Bubbles, iMessage, and Discord Mobile.
 	Retained: 100% Backwards Compatibility with Version 1, 2, 2.2, 2.3, 3.0, and 3.7 APIs
 	
-	UPDATES IN V3.8.2:
-	- Fixed critical runtime crash: Removed stray nil declaration of apiTable:TextBox inside CreateGroupBox.
-	- Added Win:CreateDialog(config) / Win:Dialog(config) modal system to prompt immersive choices without auto-expiring timers.
-	- Fixed Dropdown layout bugs and Lock Overlays by wrapping overlays inside folders to bypass Roblox UIListLayout.
-	- Fixed Dialog background transparency issue, making it properly opaque and readable.
-	- Upgraded lock graphics to use premium textured asset ID: 78672912777756.
+	UPDATES IN V3.8.1:
+	- Complete Dropdown UI Overhaul: Modern option cards, sleek hover states, and smooth scroll frames.
+	- Dialog Modal Opacity Guard: Solidified dialog cards to prevent background bleed-through.
+	- Supported 'Locked = true' / 'Lock = true' directly in element creation configuration tables.
 --]]
 
 local KazeUI = {}
@@ -379,15 +377,7 @@ local function MakeDraggable(dragPart, targetPart)
 end
 
 -- Helper: Create Standard Lock Overlay with Premium Texture Design
--- Modified to wrap the overlay inside a Folder structure, preventing UIListLayout from breaking item alignment.
 local function ApplyLockOverlay(targetFrame, cornerRadius)
-	local lockFolder = targetFrame:FindFirstChild("LockFolder")
-	if not lockFolder then
-		lockFolder = Instance.new("Folder")
-		lockFolder.Name = "LockFolder"
-		lockFolder.Parent = targetFrame
-	end
-
 	local lockOverlay = Instance.new("Frame")
 	lockOverlay.Name = "LockOverlay"
 	lockOverlay.Size = UDim2.fromScale(1, 1)
@@ -397,7 +387,7 @@ local function ApplyLockOverlay(targetFrame, cornerRadius)
 	lockOverlay.BorderSizePixel = 0
 	lockOverlay.Visible = false
 	lockOverlay.Active = true -- Absorb all input clicks
-	lockOverlay.Parent = lockFolder
+	lockOverlay.Parent = targetFrame
 	Instance.new("UICorner", lockOverlay).CornerRadius = cornerRadius or UDim.new(0, 14)
 	
 	local lockIcon = Instance.new("ImageLabel", lockOverlay)
@@ -1009,7 +999,7 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 			selectedMulti[tostring(defaultOption)] = true
 		end
 	else
-		selectedSingle = defaultOption or (options[1] or "")
+		selectedSingle = tostring(defaultOption or (options[1] or ""))
 	end
 
 	local wrapper = Instance.new("Frame")
@@ -1027,7 +1017,6 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 	dropFrame.BorderSizePixel = 0
 	dropFrame.AutomaticSize = Enum.AutomaticSize.Y
 	
-	-- Elements utilize the Small Shape rule (14px) for bubble-first consistency
 	local cornerRadius = UDim.new(0, 14)
 	Instance.new("UICorner", dropFrame).CornerRadius = cornerRadius
 	dropFrame.Parent = wrapper
@@ -1049,6 +1038,7 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 	layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 	layout.Padding = UDim.new(0, 5)
 
+	-- Premium Header Design (Figma-Aligned)
 	local header = Instance.new("Frame")
 	header.Name = "Header"
 	header.Size = UDim2.new(1, -20, 0, 38)
@@ -1056,9 +1046,8 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 	header.LayoutOrder = 1
 	header.Parent = dropFrame
 
-	-- Title bounds constrained proportionally to prevent overlapping
 	local titleLabel = Instance.new("TextLabel", header)
-	titleLabel.Size = UDim2.new(0.55, -10, 1, 0)
+	titleLabel.Size = UDim2.new(0.5, -10, 1, 0)
 	titleLabel.BackgroundTransparency = 1
 	titleLabel.Text = title
 	titleLabel.Font = Enum.Font.GothamBold
@@ -1094,13 +1083,26 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 		initialText = tostring(selectedSingle)
 	end
 
-	-- Constrain Selection text bounds proportionally
-	local selectedLabel = Instance.new("TextLabel", header)
-	selectedLabel.Size = UDim2.new(0.40, -14, 1, 0)
-	selectedLabel.Position = UDim2.new(0.55, 0, 0, 0)
+	-- Gorgeous pill indicator container for Selection State
+	local selectedContainer = Instance.new("Frame", header)
+	selectedContainer.Name = "SelectedContainer"
+	selectedContainer.Size = UDim2.new(0.5, -20, 0, 26)
+	selectedContainer.Position = UDim2.new(0.5, 0, 0.5, -13)
+	selectedContainer.BackgroundTransparency = 1
+	Instance.new("UICorner", selectedContainer).CornerRadius = UDim.new(0, 8)
+	KazeUI:AddPanel(selectedContainer, 0.04)
+
+	local selectedContainerStroke = Instance.new("UIStroke", selectedContainer)
+	selectedContainerStroke.Thickness = 1
+	KazeUI:RegisterBorder(selectedContainerStroke)
+
+	local selectedLabel = Instance.new("TextLabel", selectedContainer)
+	selectedLabel.Size = UDim2.new(1, -16, 1, 0)
+	selectedLabel.Position = UDim2.new(0, 8, 0, 0)
 	selectedLabel.BackgroundTransparency = 1
-	selectedLabel.Font = Enum.Font.Gotham
+	selectedLabel.Font = Enum.Font.GothamMedium
 	selectedLabel.TextSize = 11
+	selectedLabel.TextColor3 = KazeUI.CurrentTheme.MutedText
 	selectedLabel.TextXAlignment = Enum.TextXAlignment.Right
 	selectedLabel.TextTruncate = Enum.TextTruncate.AtEnd 
 	selectedLabel.Text = initialText 
@@ -1212,6 +1214,8 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 		listContainer.Visible = false
 		TweenService:Create(arrowIcon, TWEEN_SPRING, {Rotation = 0}):Play()
 		TweenService:Create(boxStroke, TWEEN_FAST, {Color = KazeUI.CurrentTheme.Border}):Play()
+		TweenService:Create(selectedContainerStroke, TWEEN_FAST, {Color = KazeUI.CurrentTheme.Border}):Play()
+		ToggleScrollingAncestors(dropFrame, true)
 	end
 
 	local function Refresh(newOptions)
@@ -1219,64 +1223,83 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 		table.clear(optionItems)
 
 		options = type(newOptions) == "table" and newOptions or {}
-		for i, opt in ipairs(options) do
+		for _, opt in ipairs(options) do
 			local optStr = tostring(opt)
 			local btn = Instance.new("TextButton")
-			btn.LayoutOrder = i -- Strict index preservation to prevent layout disordering
 			btn.Size = UDim2.new(1, -4, 0, 30)
 			btn.BorderSizePixel = 0
-			btn.Text = "  " .. optStr
-			btn.Font = Enum.Font.Gotham
-			btn.TextSize = 11
-			btn.TextXAlignment = Enum.TextXAlignment.Left
+			btn.Text = ""
+			btn.AutoButtonColor = false
 			btn.Parent = listContainer
-			Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 10)
+			Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 8)
 			
 			KazeUI:AddPanel(btn, 0.03, true)
 
-			local indicator
-			if isMulti then
-				indicator = Instance.new("Frame", btn)
-				indicator.AnchorPoint = Vector2.new(1, 0.5)
-				indicator.Position = UDim2.new(1, -10, 0.5, 0)
-				indicator.Size = UDim2.fromOffset(12, 12)
-				local indStroke = Instance.new("UIStroke", indicator)
-				KazeUI:RegisterBorder(indStroke)
-				Instance.new("UICorner", indicator).CornerRadius = UDim.new(0, 4)
-				KazeUI:AddPanel(indicator, 0.04)
-			end
+			-- Left Accent Indicator (Hover state dynamic visual glow)
+			local hoverLine = Instance.new("Frame", btn)
+			hoverLine.Size = UDim2.new(0, 0, 0, 16)
+			hoverLine.Position = UDim2.new(0, 0, 0.5, -8)
+			hoverLine.BorderSizePixel = 0
+			hoverLine.BackgroundColor3 = KazeUI.GlowColor
+			Instance.new("UICorner", hoverLine).CornerRadius = UDim.new(1, 0)
+
+			local optLabel = Instance.new("TextLabel", btn)
+			optLabel.Size = UDim2.new(1, -40, 1, 0)
+			optLabel.Position = UDim2.fromOffset(12, 0)
+			optLabel.BackgroundTransparency = 1
+			optLabel.Text = optStr
+			optLabel.Font = Enum.Font.Gotham
+			optLabel.TextSize = 11
+			optLabel.TextXAlignment = Enum.TextXAlignment.Left
+			KazeUI:RegisterText(optLabel, true)
+
+			local indicator = Instance.new("Frame", btn)
+			indicator.AnchorPoint = Vector2.new(1, 0.5)
+			indicator.Position = UDim2.new(1, -12, 0.5, 0)
+			indicator.Size = UDim2.fromOffset(12, 12)
+			
+			local indStroke = Instance.new("UIStroke", indicator)
+			indStroke.Thickness = 1
+			KazeUI:RegisterBorder(indStroke)
+			Instance.new("UICorner", indicator).CornerRadius = isMulti and UDim.new(0, 4) or UDim.new(1, 0)
+			
+			KazeUI:AddPanel(indicator, 0.04, true)
             
 			local isHovering = false
-			local currentBgTween, currentTxtTween
+			local currentBgTween, currentTxtTween, currentLineTween
 
 			local function UpdateVisuals(instant)
 				local active = isMulti and selectedMulti[optStr] or (not isMulti and selectedSingle == optStr)
 				
-				local targetBg = active and KazeUI.GetColor(0.06) or KazeUI.GetColor(0.03)
+				local targetBg = active and KazeUI.GetColor(0.05) or KazeUI.GetColor(0.03)
 				local targetTxt = active and KazeUI.CurrentTheme.Text or KazeUI.CurrentTheme.MutedText
 				local indTargetBg = active and KazeUI.GlowColor or KazeUI.GetColor(0.03)
+				local lineWidth = isHovering and 4 or 0
 				
 				if isHovering then
-					targetBg = KazeUI.GetColor(0.08)
+					targetBg = KazeUI.GetColor(0.06)
 					targetTxt = KazeUI.CurrentTheme.Text
 				end
 
 				if currentBgTween then currentBgTween:Cancel() currentBgTween = nil end
 				if currentTxtTween then currentTxtTween:Cancel() currentTxtTween = nil end
+				if currentLineTween then currentLineTween:Cancel() currentLineTween = nil end
 
 				if instant then
 					btn.BackgroundColor3 = targetBg
-					btn.TextColor3 = targetTxt
-					if isMulti and indicator then indicator.BackgroundColor3 = indTargetBg end
+					optLabel.TextColor3 = targetTxt
+					indicator.BackgroundColor3 = indTargetBg
+					hoverLine.Size = UDim2.new(0, lineWidth, 0, 16)
 				else
 					currentBgTween = TweenService:Create(btn, TWEEN_FAST, {BackgroundColor3 = targetBg})
-					currentTxtTween = TweenService:Create(btn, TWEEN_FAST, {TextColor3 = targetTxt})
+					currentTxtTween = TweenService:Create(optLabel, TWEEN_FAST, {TextColor3 = targetTxt})
+					currentLineTween = TweenService:Create(hoverLine, TWEEN_FAST, {Size = UDim2.new(0, lineWidth, 0, 16)})
+					
 					currentBgTween:Play()
 					currentTxtTween:Play()
+					currentLineTween:Play()
 					
-					if isMulti and indicator then
-						TweenService:Create(indicator, TWEEN_FAST, {BackgroundColor3 = indTargetBg}):Play()
-					end
+					TweenService:Create(indicator, TWEEN_FAST, {BackgroundColor3 = indTargetBg}):Play()
 				end
 			end
 			UpdateVisuals(true)
@@ -1320,7 +1343,11 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 
 			table.insert(optionItems, { Btn = btn, Text = optStr, Update = function(instant) UpdateVisuals(instant) end })
 			
-			KazeUI:OnGlowChanged(btn, function() UpdateVisuals(true) end)
+			KazeUI:OnGlowChanged(indicator, function(c) 
+				local active = isMulti and selectedMulti[optStr] or (not isMulti and selectedSingle == optStr)
+				if active then indicator.BackgroundColor3 = c end
+				hoverLine.BackgroundColor3 = c
+			end)
 		end
 		CalcHeight()
 	end
@@ -1345,13 +1372,17 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 			CalcHeight()
 			TweenService:Create(arrowIcon, TWEEN_SPRING, {Rotation = 180}):Play()
 			TweenService:Create(boxStroke, TWEEN_FAST, {Color = KazeUI.GlowColor}):Play()
+			TweenService:Create(selectedContainerStroke, TWEEN_FAST, {Color = KazeUI.GlowColor}):Play()
 		else
 			CloseDropdown()
 		end
 	end)
 	
 	KazeUI:OnGlowChanged(boxStroke, function(c)
-		if isOpen then boxStroke.Color = c end
+		if isOpen then 
+			boxStroke.Color = c 
+			selectedContainerStroke.Color = c
+		end
 	end)
 
 	KazeUI:OnThemeChanged(dropFrame, function()
@@ -2849,9 +2880,9 @@ local function CreateVisualSectionDivider(parentFrame, titleArg)
 	return api
 end
 
--- ==========================================
+-- ==========================================================
 -- Premium Geometric Divider Component (With and Without Title)
--- ==========================================
+-- ==========================================================
 local function CreateVisualDivider(parentFrame, titleArg)
 	local title = titleArg and tostring(titleArg) or ""
 	if type(titleArg) == "table" then
@@ -3775,7 +3806,7 @@ function KazeUI:CreateWindow(config)
 
 	local DarkOverlay = Instance.new("Frame")
 	DarkOverlay.Name = "DarkOverlay"
-	DarkOverlay.Size = UDim2.fromScale(1, 1)
+	DarkOverlay.Size = UDim2.new(1, 0, 1, 0)
 	DarkOverlay.BorderSizePixel = 0
 	DarkOverlay.ZIndex = -1
 	DarkOverlay.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
@@ -3785,7 +3816,7 @@ function KazeUI:CreateWindow(config)
 	local initialImg = currentTheme.BackgroundImage or ""
 	local initialImgTrans = currentTheme.BackgroundImageTransparency or 1
 	local initialOverlayTrans = currentTheme.OverlayTransparency or 0.25
-	local hasImage = (initialImg ~= "") Accelerating = false
+	local hasImage = (initialImg ~= "") and (initialImgTrans < 1)
 
 	WallpaperImage.Image = FormatImage(initialImg)
 	WallpaperImage.ImageTransparency = hasImage and initialImgTrans or 1
@@ -4307,10 +4338,10 @@ function KazeUI:CreateWindow(config)
 		DialogCard.BorderSizePixel = 0
 		DialogCard.ZIndex = 8001
 		Instance.new("UICorner", DialogCard).CornerRadius = UDim.new(0, 24)
-
-		-- Fixed: Added static high-contrast BackgroundTransparency setting to make dialog non-transparent
-		KazeUI:AddPanel(DialogCard, 0.05, false, true) -- Extra Elevated Depth (Keeps Background Color updated but locks opacity)
-		DialogCard.BackgroundTransparency = 0.08 -- Static, high-readability transparency matching notification panels
+		
+		-- FIX: Added ignoreTransparencyUpdate (true) so the background opacity remains solid/highly readable
+		KazeUI:AddPanel(DialogCard, 0.05, false, true) 
+		DialogCard.BackgroundTransparency = 0.08 -- Static high-readability solid guardrail
 
 		local dialogStroke = Instance.new("UIStroke", DialogCard)
 		dialogStroke.Thickness = 1.6
@@ -4424,8 +4455,7 @@ function KazeUI:CreateWindow(config)
 				actBtn.BackgroundColor3 = customColor
 				actBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 			else
-				KazeUI:AddPanel(actBtn, 0.04, false, true)
-				actBtn.BackgroundTransparency = 0.12
+				KazeUI:AddPanel(actBtn, 0.04)
 				KazeUI:RegisterText(actBtn, false)
 			end
 
