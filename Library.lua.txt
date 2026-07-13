@@ -1,15 +1,12 @@
 --[[
-	Kaze UI Library v3.8.3 (Premium Bubble Redesign & Dialog Rewrite)
+	Kaze UI Library v3.8.1 (Premium Bubble Redesign & Dialog Rewrite - Fixed)
 	Inspired by: Modern Mobile Chat Bubbles, iMessage, and Discord Mobile.
 	Retained: 100% Backwards Compatibility with Version 1, 2, 2.2, 2.3, 3.0, and 3.7 APIs
 	
-	UPDATES IN V3.8.3:
-	- Added strict dialog click debouncing to prevent multiple spammed callbacks (e.g. duplicate notifications).
-	- Fixed critical runtime crash: Removed stray nil declaration of apiTable:TextBox inside CreateGroupBox.
-	- Added Win:CreateDialog(config) / Win:Dialog(config) modal system to prompt immersive choices without auto-expiring timers.
-	- Fixed Dropdown layout bugs and Lock Overlays by wrapping overlays inside folders to bypass Roblox UIListLayout.
-	- Fixed Dialog background transparency issue, making it properly opaque and readable.
-	- Upgraded lock graphics to use premium textured asset ID: 78672912777756.
+	UPDATES IN V3.8.1:
+	- Fixed Dropdown expansion & opening animation resets by using standard container frame wrappers to bypass Roblox AutomaticSize bugs.
+	- Fixed Dialog background transparency to remain solid (0.08) matching the notification design.
+	- Fixed Dialog and Close Confirm overlays to use TextButtons, fully blocking clicks from leaking to background elements.
 --]]
 
 local KazeUI = {}
@@ -380,15 +377,7 @@ local function MakeDraggable(dragPart, targetPart)
 end
 
 -- Helper: Create Standard Lock Overlay with Premium Texture Design
--- Modified to wrap the overlay inside a Folder structure, preventing UIListLayout from breaking item alignment.
 local function ApplyLockOverlay(targetFrame, cornerRadius)
-	local lockFolder = targetFrame:FindFirstChild("LockFolder")
-	if not lockFolder then
-		lockFolder = Instance.new("Folder")
-		lockFolder.Name = "LockFolder"
-		lockFolder.Parent = targetFrame
-	end
-
 	local lockOverlay = Instance.new("Frame")
 	lockOverlay.Name = "LockOverlay"
 	lockOverlay.Size = UDim2.fromScale(1, 1)
@@ -398,7 +387,7 @@ local function ApplyLockOverlay(targetFrame, cornerRadius)
 	lockOverlay.BorderSizePixel = 0
 	lockOverlay.Visible = false
 	lockOverlay.Active = true -- Absorb all input clicks
-	lockOverlay.Parent = lockFolder
+	lockOverlay.Parent = targetFrame
 	Instance.new("UICorner", lockOverlay).CornerRadius = cornerRadius or UDim.new(0, 14)
 	
 	local lockIcon = Instance.new("ImageLabel", lockOverlay)
@@ -1178,18 +1167,28 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 	divider.Parent = dropFrame
 	KazeUI:OnThemeChanged(divider, function(t) divider.BackgroundColor3 = t.Border end)
 
+	-- Premium Wrapper: Bypasses Roblox's auto-expanding canvas calculation bug
+	local listContainerFrame = Instance.new("Frame")
+	listContainerFrame.Name = "ListContainerFrame"
+	listContainerFrame.Size = UDim2.new(1, -20, 0, 0)
+	listContainerFrame.BackgroundTransparency = 1
+	listContainerFrame.BorderSizePixel = 0
+	listContainerFrame.ClipsDescendants = true
+	listContainerFrame.LayoutOrder = 4
+	listContainerFrame.Visible = false
+	listContainerFrame.Parent = dropFrame
+
 	local listContainer = Instance.new("ScrollingFrame")
-	listContainer.Size = UDim2.new(1, -20, 0, 0)
+	listContainer.Size = UDim2.new(1, 0, 1, 0)
 	listContainer.BackgroundTransparency = 1
 	listContainer.BorderSizePixel = 0
-	listContainer.LayoutOrder = 4
-	listContainer.Visible = false
 	listContainer.ScrollBarThickness = 3
 	listContainer.ScrollBarImageColor3 = Color3.fromRGB(40, 40, 45)
-	listContainer.Parent = dropFrame
+	listContainer.Active = true
+	listContainer.Parent = listContainerFrame
 
-	listContainer.MouseEnter:Connect(function() ToggleScrollingAncestors(dropFrame, false) end)
-	listContainer.MouseLeave:Connect(function() ToggleScrollingAncestors(dropFrame, true) end)
+	listContainerFrame.MouseEnter:Connect(function() ToggleScrollingAncestors(dropFrame, false) end)
+	listContainerFrame.MouseLeave:Connect(function() ToggleScrollingAncestors(dropFrame, true) end)
 
 	local listLayout = Instance.new("UIListLayout", listContainer)
 	listLayout.SortOrder = Enum.SortOrder.LayoutOrder
@@ -1201,7 +1200,7 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 		local count = 0
 		for _, item in ipairs(optionItems) do if item.Btn.Visible then count = count + 1 end end
 		local targetH = math.min(count, 5) * 34
-		TweenService:Create(listContainer, TWEEN_FAST, {Size = UDim2.new(1, -20, 0, targetH)}):Play()
+		TweenService:Create(listContainerFrame, TWEEN_FAST, {Size = UDim2.new(1, -20, 0, targetH)}):Play()
 		listContainer.CanvasSize = UDim2.new(0, 0, 0, count * 34)
 	end
 
@@ -1210,9 +1209,10 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 		searchBox.Text = "" 
 		searchWrapper.Visible = false
 		divider.Visible = false
-		listContainer.Visible = false
+		listContainerFrame.Visible = false
 		TweenService:Create(arrowIcon, TWEEN_SPRING, {Rotation = 0}):Play()
 		TweenService:Create(boxStroke, TWEEN_FAST, {Color = KazeUI.CurrentTheme.Border}):Play()
+		listContainerFrame.Size = UDim2.new(1, -20, 0, 0) -- Safely reset target size for next animation play
 	end
 
 	local function Refresh(newOptions)
@@ -1220,10 +1220,9 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 		table.clear(optionItems)
 
 		options = type(newOptions) == "table" and newOptions or {}
-		for i, opt in ipairs(options) do
+		for _, opt in ipairs(options) do
 			local optStr = tostring(opt)
 			local btn = Instance.new("TextButton")
-			btn.LayoutOrder = i -- Strict index preservation to prevent layout disordering
 			btn.Size = UDim2.new(1, -4, 0, 30)
 			btn.BorderSizePixel = 0
 			btn.Text = "  " .. optStr
@@ -1331,7 +1330,7 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 	searchBox:GetPropertyChangedSignal("Text"):Connect(function()
 		local q = string.lower(searchBox.Text)
 		for _, item in ipairs(optionItems) do
-			item.Btn.Visible = (q == "" or string.find(string.lower(item.Text), q, 1, true)) ~= nil
+			item.Btn.Visible = (q == "" or string.find(string.lower(item.Text), q, 1, true) ~= nil)
 		end
 		CalcHeight()
 	end)
@@ -1342,7 +1341,7 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 		if isOpen then
 			searchWrapper.Visible = true
 			divider.Visible = true
-			listContainer.Visible = true
+			listContainerFrame.Visible = true
 			CalcHeight()
 			TweenService:Create(arrowIcon, TWEEN_SPRING, {Rotation = 180}):Play()
 			TweenService:Create(boxStroke, TWEEN_FAST, {Color = KazeUI.GlowColor}):Play()
@@ -2091,7 +2090,7 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 	local locked = false
 	
 	local measuredWidth = 598 * 0.92
-	if parentFrame and parentFrame.AbsoluteSize and parentFrame.AbsoluteSize.X > 0 then measuredWidth = parentFrame.AbsoluteSize.X * 0.95 end
+	if parentFrame and parentFrame.AbsoluteSize, X > 0 then measuredWidth = parentFrame.AbsoluteSize.X * 0.95 end
 	local textContainerWidth = measuredWidth - 28
 	
 	local titleHeight = 0
@@ -2850,9 +2849,9 @@ local function CreateVisualSectionDivider(parentFrame, titleArg)
 	return api
 end
 
--- ==========================================================
+-- ==========================================
 -- Premium Geometric Divider Component (With and Without Title)
--- ==========================================================
+-- ==========================================
 local function CreateVisualDivider(parentFrame, titleArg)
 	local title = titleArg and tostring(titleArg) or ""
 	if type(titleArg) == "table" then
@@ -4011,11 +4010,15 @@ function KazeUI:CreateWindow(config)
 		confirmActive = true
 		BtnYellow.Active = false; BtnGreen.Active = false; BtnRed.Active = false
 		
-		local Overlay = Instance.new("Frame", Window)
+		-- Upgraded to absorbing TextButton to block click leaking
+		local Overlay = Instance.new("TextButton", Window)
+		Overlay.Name = "CloseConfirmOverlay"
 		Overlay.Size = UDim2.new(1, 0, 1, 0)
 		Overlay.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 		Overlay.BackgroundTransparency = 1
 		Overlay.ZIndex = 50
+		Overlay.Text = ""
+		Overlay.AutoButtonColor = false
 		Overlay.Active = true 
 		Instance.new("UICorner", Overlay).CornerRadius = UDim.new(0, 28)
 
@@ -4028,7 +4031,10 @@ function KazeUI:CreateWindow(config)
 		ConfirmWindow.ZIndex = 52
 		ConfirmWindow.Active = true 
 		Instance.new("UICorner", ConfirmWindow).CornerRadius = UDim.new(0, 20)
-		KazeUI:AddPanel(ConfirmWindow, 0.02)
+		
+		-- Static highly-visible background transparency applied to confirmation dialog
+		KazeUI:AddPanel(ConfirmWindow, 0.02, false, true)
+		ConfirmWindow.BackgroundTransparency = 0.08
 
 		local confirmStroke = Instance.new("UIStroke", ConfirmWindow)
 		confirmStroke.Thickness = 1.2
@@ -4287,12 +4293,14 @@ function KazeUI:CreateWindow(config)
 		BtnYellow.Active = false; BtnGreen.Active = false; BtnRed.Active = false
 
 		-- Create Full-Window Blurry/Dark Blocker Overlay
-		local DialogOverlay = Instance.new("Frame", Window)
+		local DialogOverlay = Instance.new("TextButton", Window)
 		DialogOverlay.Name = "DialogOverlay"
 		DialogOverlay.Size = UDim2.fromScale(1, 1)
 		DialogOverlay.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 		DialogOverlay.BackgroundTransparency = 1
 		DialogOverlay.ZIndex = 8000
+		DialogOverlay.Text = ""
+		DialogOverlay.AutoButtonColor = false
 		DialogOverlay.Active = true 
 		Instance.new("UICorner", DialogOverlay).CornerRadius = UDim.new(0, 28)
 
@@ -4308,10 +4316,10 @@ function KazeUI:CreateWindow(config)
 		DialogCard.BorderSizePixel = 0
 		DialogCard.ZIndex = 8001
 		Instance.new("UICorner", DialogCard).CornerRadius = UDim.new(0, 24)
-
-		-- Fixed: Added static high-contrast BackgroundTransparency setting to make dialog non-transparent
-		KazeUI:AddPanel(DialogCard, 0.05, false, true) -- Extra Elevated Depth (Keeps Background Color updated but locks opacity)
-		DialogCard.BackgroundTransparency = 0.08 -- Static, high-readability transparency matching notification panels
+		
+		-- Extra Elevated Depth, with locked high-contrast background opacity (0.08)
+		KazeUI:AddPanel(DialogCard, 0.05, false, true)
+		DialogCard.BackgroundTransparency = 0.08
 
 		local dialogStroke = Instance.new("UIStroke", DialogCard)
 		dialogStroke.Thickness = 1.6
@@ -4388,18 +4396,7 @@ function KazeUI:CreateWindow(config)
 		actionLayout.SortOrder = Enum.SortOrder.LayoutOrder
 		actionLayout.Padding = UDim.new(0, 12)
 
-		local dialogClosed = false -- Local choice blocker flag to prevent multi-choice click spams
 		local function closeDialog()
-			if dialogClosed then return end
-			dialogClosed = true
-
-			-- Instantly disable interactions on choices so spam clicking is fully blocked
-			for _, child in ipairs(actionsFrame:GetChildren()) do
-				if child:IsA("TextButton") then
-					child.Active = false
-				end
-			end
-
 			TweenService:Create(DialogOverlay, TWEEN_FAST, {BackgroundTransparency = 1}):Play()
 			local tw = TweenService:Create(DialogCard, TWEEN_FAST, {Position = UDim2.fromScale(0.5, 0.45)})
 			tw:Play()
@@ -4436,21 +4433,17 @@ function KazeUI:CreateWindow(config)
 				actBtn.BackgroundColor3 = customColor
 				actBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 			else
-				KazeUI:AddPanel(actBtn, 0.04, false, true)
-				actBtn.BackgroundTransparency = 0.12
+				KazeUI:AddPanel(actBtn, 0.04)
 				KazeUI:RegisterText(actBtn, false)
 			end
 
 			actBtn.MouseEnter:Connect(function()
-				if dialogClosed then return end
 				TweenService:Create(actBtn, TWEEN_FAST, {BackgroundTransparency = 0.2}):Play()
 			end)
 			actBtn.MouseLeave:Connect(function()
-				if dialogClosed then return end
 				TweenService:Create(actBtn, TWEEN_FAST, {BackgroundTransparency = 0}):Play()
 			end)
 			actBtn.MouseButton1Click:Connect(function()
-				if dialogClosed then return end
 				if type(act.Callback) == "function" then
 					task.spawn(act.Callback)
 				end
@@ -4543,8 +4536,6 @@ function KazeUI:CreateWindow(config)
 			Flag = "KazeUI_Theme_GlowColor", 
 			Callback = function(color) KazeUI:SetGlow(color) end
 		})
-
-		sec:PhasedAction = nil -- cleaned internal references
 
 		sec:Slider({
 			Title = "UI Background Transparency",
