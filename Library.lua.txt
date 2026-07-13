@@ -1,12 +1,11 @@
 --[[
-	Kaze UI Library v3.8.0 (Premium Bubble Redesign & Dialog Rewrite)
+	Kaze UI Library v3.8.1 (Premium Bubble Redesign & Layout Bug Fix)
 	Inspired by: Modern Mobile Chat Bubbles, iMessage, and Discord Mobile.
-	Retained: 100% Backwards Compatibility with Version 1, 2, 2.2, 2.3, 3.0, and 3.7 APIs
+	Retained: 100% Backwards Compatibility with Version 1, 2, 2.2, 2.3, 3.0, and 3.8 APIs
 	
-	UPDATES IN V3.8.0:
-	- Added Win:CreateDialog(config) / Win:Dialog(config) modal system to prompt immersive choices without auto-expiring timers.
-	- Supported 'Locked = true' / 'Lock = true' directly in element creation configuration tables.
-	- Upgraded lock graphics to use premium textured asset ID: 78672912777756.
+	UPDATES IN V3.8.1:
+	- Fixed Roblox AutomaticSize scale-loop bug in dropdown lock overlays by updating bounds dynamically using AbsoluteSize.
+	- Set dialog transparency to match notification transparency (static 0.08) for premium readability.
 --]]
 
 local KazeUI = {}
@@ -376,11 +375,14 @@ local function MakeDraggable(dragPart, targetPart)
 	end
 end
 
--- Helper: Create Standard Lock Overlay with Premium Texture Design
+-- Helper: Create Standard Lock Overlay with Premium Texture Design & Circular Scale Sizing Fix
 local function ApplyLockOverlay(targetFrame, cornerRadius)
 	local lockOverlay = Instance.new("Frame")
 	lockOverlay.Name = "LockOverlay"
-	lockOverlay.Size = UDim2.fromScale(1, 1)
+	
+	-- We initialize the lock overlay via offset rather than scale.
+	-- Scale (1, 1) inside an AutomaticSize parent causes severe circular layout sizing loops in Roblox.
+	lockOverlay.Size = UDim2.fromOffset(targetFrame.AbsoluteSize.X, targetFrame.AbsoluteSize.Y)
 	lockOverlay.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 	lockOverlay.BackgroundTransparency = 0.55
 	lockOverlay.ZIndex = 9999
@@ -398,6 +400,11 @@ local function ApplyLockOverlay(targetFrame, cornerRadius)
 	lockIcon.Image = "rbxassetid://78672912777756" -- High quality custom texture ID lock icon
 	lockIcon.ImageColor3 = Color3.fromRGB(240, 240, 240)
 	lockIcon.ScaleType = Enum.ScaleType.Fit
+	
+	-- Dynamic bounds listener to ensure it scales cleanly when parents shift/resize
+	targetFrame:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+		lockOverlay.Size = UDim2.fromOffset(targetFrame.AbsoluteSize.X, targetFrame.AbsoluteSize.Y)
+	end)
 	
 	return lockOverlay
 end
@@ -4296,7 +4303,10 @@ function KazeUI:CreateWindow(config)
 		DialogCard.BorderSizePixel = 0
 		DialogCard.ZIndex = 8001
 		Instance.new("UICorner", DialogCard).CornerRadius = UDim.new(0, 24)
-		KazeUI:AddPanel(DialogCard, 0.05) -- Extra Elevated Depth
+		
+		-- FIX: Bypass dynamic transparency updates and enforce static semi-solid visual contrast (matching notifications!)
+		KazeUI:AddPanel(DialogCard, 0.05, false, true) 
+		DialogCard.BackgroundTransparency = 0.08 -- Static high-readability premium contrast
 
 		local dialogStroke = Instance.new("UIStroke", DialogCard)
 		dialogStroke.Thickness = 1.6
