@@ -1,14 +1,13 @@
 --[[
-	Kaze UI Library v3.6.7 (Premium Bubble Redesign & Engine Rewrite)
+	Kaze UI Library v3.6.8 (Premium Bubble Redesign & Engine Rewrite)
 	Inspired by: Modern Mobile Chat Bubbles, iMessage, and Discord Mobile.
 	Retained: 100% Backwards Compatibility with Version 1, 2, 2.2, 2.3, and 3.0 APIs
 	
-	UPDATES IN V3.6.7 & CUSTOM TUNING:
-	- Added Premium Dialog: Dynamic floating modal prompts supporting header icons, detailed descriptions, custom layout triggers, and custom actions with vivid hex/Color3 buttons.
-	- HTTP Image Asset Pipeline: Automatically downloads web image URLs (`https://...`), writes them to exploit files, and converts them using `getcustomasset` or `getsynasset` for background wallpapers.
-	- Smart Cache System: Saves downloaded images locally under `KazeUI/Cache/` to bypass redundant internet requests and boost loading speed.
-	- Unified Theme & Wallpaper Router: All custom URLs now dynamically update the single, native "CustomWallpaper" option. No redundant entries are added to your Preset Dropdown!
-	- Soft Horrific Atmosphere Defaults: Beautifully pre-configured with the Yokai custom wallpaper, deep red accent glow, and soft transparent background panels.
+	UPDATES IN V3.6.8 & CUSTOM TUNING:
+	- INPUT LOCKOUT DIALOGS: Dialogs now parent directly to the root ScreenGui, completely blocking ALL input, Sidebar, Minimizing, Resizing, and Tab switches until a choice is selected!
+	- AUTO-STACKING ACTIONS ENGINE: If there are 1 to 3 buttons, they render in an elegant horizontal row. If there are 4 or more buttons, they automatically stack vertically!
+	- SMART BUTTON TEXT RESIZING: Implemented TextScaled + UITextSizeConstraint + TextWrapped inside Action Buttons so long names NEVER overflow or clip.
+	- HTTP Image Asset Pipeline & Cache: Saves downloaded images locally under `KazeUI/Cache/` to bypass redundant internet requests.
 --]]
 
 local KazeUI = {}
@@ -29,7 +28,7 @@ KazeUI.Themes = {
 		Name = "Obsidian",
 		Background = Color3.fromRGB(15, 15, 22),
 		Text = Color3.fromRGB(245, 245, 250),
-		MutedText = Color3.fromRGB(200, 200, 215), -- Brighter neutral contrast
+		MutedText = Color3.fromRGB(200, 200, 215),
 		Border = Color3.fromRGB(55, 55, 75),
 		LightnessFactor = 1.4,
 		BackgroundImage = "rbxassetid://13963496525",
@@ -43,21 +42,21 @@ KazeUI.Themes = {
 		MutedText = Color3.fromRGB(215, 210, 225),
 		Border = Color3.fromRGB(55, 55, 60),
 		LightnessFactor = 1,
-		BackgroundImage = "https://pbs.twimg.com/media/Gu-hWtyX0AA5-5s.jpg", -- Automatically set to the requested Yokai image
-		BackgroundImageTransparency = 0.1, -- Perfectly soft wallpaper visibility
-		OverlayTransparency = 0.65 -- Seamless dark horror aesthetic blend
+		BackgroundImage = "https://pbs.twimg.com/media/Gu-hWtyX0AA5-5s.jpg",
+		BackgroundImageTransparency = 0.1,
+		OverlayTransparency = 0.65
 	}
 }
 
 -- Global State (Beautifully Tuned Soft Translucent Defaults)
 KazeUI.CurrentTheme = KazeUI.Themes.CustomWallpaper
-KazeUI.GlowColor = Color3.fromRGB(239, 68, 68) -- Pre-tuned red accent glow color
+KazeUI.GlowColor = Color3.fromRGB(239, 68, 68)
 KazeUI.BackgroundColor = KazeUI.CurrentTheme.Background
-KazeUI.BackgroundTransparency = 0.70 -- Default soft translucent UI panel setting
+KazeUI.BackgroundTransparency = 0.70
 KazeUI.Flags = {}
 KazeUI.ActiveWindows = {}
-KazeUI.IsResizing = false -- Modal lock state
-KazeUI.AuthorName = "Unknown" -- Stores the author name for Config Folder
+KazeUI.IsResizing = false
+KazeUI.AuthorName = "Unknown"
 
 -- UI element registries for theme switching
 KazeUI.TextElements = {}
@@ -196,17 +195,14 @@ local function GetCustomAssetFromURL(url)
 		return url -- Fallback if exploit is not supported
 	end
 	
-	-- Clean string to build a secure filename
 	local hashName = string.gsub(url, "%A", "")
 	local filename = "KazeUI/Cache/" .. string.sub(hashName, 1, 30) .. ".png"
 	
-	-- Return cached resource if file already exists
 	if isfile and isfile(filename) then
 		local s, asset = pcall(getasset, filename)
 		if s and asset then return asset end
 	end
 	
-	-- If uncached, fetch data from link
 	local success, bytes = pcall(function()
 		return game:HttpGet(url)
 	end)
@@ -239,7 +235,6 @@ local function FormatImage(id)
 	
 	if string.find(id, "rbxassetid://") then return id end
 	
-	-- Detect Web Links directly passed into custom images
 	if string.find(id, "^http://") or string.find(id, "^https://") then
 		return GetCustomAssetFromURL(id)
 	end
@@ -264,7 +259,6 @@ function KazeUI:OnGlowChanged(inst, callback)
 	end
 end
 
--- Dynamic text registrations
 function KazeUI:RegisterText(inst, isMuted)
 	if not inst then return end
 	if isMuted then
@@ -338,7 +332,6 @@ local function MakeDraggable(dragPart, targetPart)
 	end
 	
 	dragPart.InputBegan:Connect(function(input)
-		-- Strict Modal Exclusion: Do not permit TopBar dragging if user is resizing
 		if KazeUI.IsResizing then return end
 		
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
@@ -385,9 +378,8 @@ function KazeUI.GetColor(elevation)
 	local theme = KazeUI.CurrentTheme
 	local h, s, v = Color3.toHSV(theme.Background)
 	local factor = theme.LightnessFactor or 1
-	-- Volumetric lighting multiplier (enhanced panel distinctness)
 	local offset = elevation * factor * 2.2
-	local targetS = math.clamp(s - (elevation * 0.5), 0, 1) -- Slightly desaturate elements with high elevation for light reflection effects
+	local targetS = math.clamp(s - (elevation * 0.5), 0, 1)
 	local targetV = math.clamp(v + offset, 0, 1)
 	return Color3.fromHSV(h, targetS, targetV)
 end
@@ -404,7 +396,6 @@ function KazeUI:AddPanel(inst, elevation, ignoreColorUpdate, ignoreTransparencyU
 			inst.BackgroundColor3 = KazeUI.GetColor(elevation or 0)
 		end
 		
-		-- Manage bubble-first translucent layers dynamically
 		if not ignoreTransparencyUpdate then
 			local baseTrans = KazeUI.BackgroundTransparency or 0.70
 			if elevation and elevation > 0 then
@@ -452,8 +443,6 @@ function KazeUI:SetTheme(themeName)
 	local targetTheme = KazeUI.Themes[themeName]
 	
 	if not targetTheme and type(themeName) == "string" and (string.find(themeName, "^http://") or string.find(themeName, "^https://")) then
-		-- UNIFIED OPTION RESOLVER: Map all URLs directly into KazeUI.Themes.CustomWallpaper
-		-- This guarantees only 'CustomWallpaper' and 'Obsidian' exist in the table keys
 		local success, rawTheme = pcall(function()
 			return game:HttpGet(themeName)
 		end)
@@ -510,7 +499,6 @@ function KazeUI:SetTheme(themeName)
 		end
 		
 		if not parsedSuccessfully then
-			-- Not a theme table -> Safely handle URL directly as Wallpaper Asset!
 			KazeUI.Themes.CustomWallpaper.BackgroundImage = themeName
 			KazeUI.Themes.CustomWallpaper.BackgroundImageTransparency = 0.1
 			KazeUI.Themes.CustomWallpaper.OverlayTransparency = 0.65
@@ -525,7 +513,6 @@ function KazeUI:SetTheme(themeName)
 	KazeUI:SetBackgroundColor(targetTheme.Background)
 	KazeUI:SetTransparency(KazeUI.BackgroundTransparency or 0.70)
 	
-	-- Automatically force White Glow on Obsidian Selection
 	if themeName == "Obsidian" then
 		KazeUI:SetGlow(Color3.fromRGB(255, 255, 255))
 	end
@@ -566,7 +553,7 @@ function KazeUI:SetTheme(themeName)
 	end
 end
 
--- Glow loop with high quality breathing effect
+-- Glow loop with breathing effect
 local function StartNeonLoop(target)
 	if not target then return end
 	local propName = pcall(function() return target.Color end) and "Color" or "BackgroundColor3"
@@ -634,14 +621,12 @@ function KazeUI:Notify(config)
 	local titleColor = config.TitleColor or config.Color
 	local isRGBTitle = config.RGBTitle or (titleColor == "RGB")
 	
-	-- Support for dynamic Icons inside notifications
 	local iconId = config.Icon and FormatImage(config.Icon) or ""
 	local hasIcon = (iconId ~= "")
 	local iconColor = config.IconColor or KazeUI.GlowColor
 
-	-- Exact dimensions calculation to prevent text clipping/overflow
 	local textPadding = hasIcon and 54 or 16
-	local rightSafetyPadding = 36 -- Leftover space for close button
+	local rightSafetyPadding = 36 
 	local maxTextWidth = 320 - 24 - textPadding - rightSafetyPadding
 
 	local titleSize = TextService:GetTextSize(title, 13, Enum.Font.GothamBold, Vector2.new(maxTextWidth, 1000))
@@ -650,10 +635,9 @@ function KazeUI:Notify(config)
 	local titleHeight = math.max(16, math.ceil(titleSize.Y))
 	local contentHeight = math.max(14, math.ceil(contentSize.Y))
 	
-	-- 12 (top margin) + title + 4 (gap) + content + 14 (bottom gap for progress bar margin)
 	local calculatedCardHeight = 12 + titleHeight + 4 + contentHeight + 14
 	local finalCardHeight = math.max(68, calculatedCardHeight)
-	local finalHolderHeight = finalCardHeight + 20 -- Spacing for structural layouts
+	local finalHolderHeight = finalCardHeight + 20
 
 	local notifHolder = Instance.new("Frame")
 	notifHolder.Name = "NotifHolder"
@@ -670,12 +654,10 @@ function KazeUI:Notify(config)
 	notifFrame.BorderSizePixel = 0
 	notifFrame.Parent = notifHolder
 	
-	-- Notification utilizes the Medium Shape rule (20px) for compact premium bubbles
 	Instance.new("UICorner", notifFrame).CornerRadius = UDim.new(0, 20)
 	
-	-- Prevent notification frames from adapting to background transparency sliders / glass effects
 	KazeUI:AddPanel(notifFrame, 0.04, false, true)
-	notifFrame.BackgroundTransparency = 0.08 -- Static, high-readability transparency
+	notifFrame.BackgroundTransparency = 0.08 
 
 	local shadow = Instance.new("Frame", notifFrame)
 	shadow.Size = UDim2.new(1, 6, 1, 6)
@@ -693,20 +675,18 @@ function KazeUI:Notify(config)
 	stroke.Thickness = 1.2
 	KazeUI:RegisterBorder(stroke)
 
-	-- Setup optional notification Icon elements
 	local iconLabel
 	if hasIcon then
 		iconLabel = Instance.new("ImageLabel", notifFrame)
 		iconLabel.Name = "NotifIcon"
 		iconLabel.Size = UDim2.fromOffset(24, 24)
-		iconLabel.Position = UDim2.fromOffset(16, 16) -- Kept balanced at top left
+		iconLabel.Position = UDim2.fromOffset(16, 16)
 		iconLabel.BackgroundTransparency = 1
 		iconLabel.Image = iconId
 		iconLabel.ImageColor3 = iconColor
 		iconLabel.ScaleType = Enum.ScaleType.Fit
 	end
 
-	-- Premium Close Button using Texture ID 10747384394 (Fully visible modern standard)
 	local closeBtn = Instance.new("ImageButton")
 	closeBtn.Name = "CloseButton"
 	closeBtn.Size = UDim2.fromOffset(16, 16)
@@ -729,7 +709,6 @@ function KazeUI:Notify(config)
 	titleLab.TextXAlignment = Enum.TextXAlignment.Left
 	titleLab.TextWrapped = true
 
-	-- Dynamic RGB Color Rainbow Cycle or direct Color3 assignment
 	if isRGBTitle then
 		local connection
 		connection = game:GetService("RunService").RenderStepped:Connect(function()
@@ -737,7 +716,7 @@ function KazeUI:Notify(config)
 				connection:Disconnect()
 				return
 			end
-			local hue = (tick() % 4) / 4 -- 4 seconds full color cycle loop
+			local hue = (tick() % 4) / 4
 			local rainbowColor = Color3.fromHSV(hue, 0.8, 1)
 			titleLab.TextColor3 = rainbowColor
 			if iconLabel then
@@ -777,7 +756,6 @@ function KazeUI:Notify(config)
 	
 	KazeUI:OnGlowChanged(progressBar, function(c) progressBar.BackgroundColor3 = c end)
 
-	-- Transition Animations
 	TweenService:Create(notifHolder, TweenInfo.new(0.4, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {Size = UDim2.new(1, 0, 0, finalHolderHeight)}):Play()
 	TweenService:Create(notifFrame, TweenInfo.new(0.5, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Position = UDim2.new(0, 12, 0, 10)}):Play()
 
@@ -802,7 +780,6 @@ function KazeUI:Notify(config)
 		end)
 	end
 
-	-- Interactivity animations for close button
 	closeBtn.MouseEnter:Connect(function()
 		TweenService:Create(closeBtn, TWEEN_FAST, {ImageTransparency = 0.2, Size = UDim2.fromOffset(18, 18), Position = UDim2.new(1, -11, 0, 11)}):Play()
 	end)
@@ -814,7 +791,6 @@ function KazeUI:Notify(config)
 	end)
 	closeBtn.MouseButton1Click:Connect(dismiss)
 
-	-- Auto dismissal handling
 	local autoThread = task.spawn(function()
 		TweenService:Create(progressBar, TweenInfo.new(duration, Enum.EasingStyle.Linear), {Size = UDim2.new(0, 0, 1, 0)}):Play()
 		task.wait(duration)
@@ -866,17 +842,14 @@ function KazeUI:LoadConfig(name)
 		if s then
 			local s2, data = pcall(function() return HttpService:JSONDecode(res) end)
 			if s2 and type(data) == "table" then
-				-- Load priority flags (like KazeUI_Theme_Preset) before others to ensure live customizations apply cleanly
 				local priorityFlags = {
 					["KazeUI_Theme_Preset"] = true
 				}
 				
-				-- 1. Apply active theme setup first
 				if data["KazeUI_Theme_Preset"] ~= nil and KazeUI.Flags["KazeUI_Theme_Preset"] then
 					KazeUI.Flags["KazeUI_Theme_Preset"].Set(data["KazeUI_Theme_Preset"])
 				end
 				
-				-- 2. Populate and apply the remainder of configurations (Wallpapers, sliders, inputs)
 				for flag, val in pairs(data) do
 					if not priorityFlags[flag] then
 						if KazeUI.Flags[flag] then KazeUI.Flags[flag].Set(val) end
@@ -937,7 +910,6 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 	dropFrame.BorderSizePixel = 0
 	dropFrame.AutomaticSize = Enum.AutomaticSize.Y
 	
-	-- Elements utilize the Small Shape rule (14px) for bubble-first consistency
 	Instance.new("UICorner", dropFrame).CornerRadius = UDim.new(0, 14)
 	dropFrame.Parent = wrapper
 	KazeUI:AddPanel(dropFrame, 0.02)
@@ -963,7 +935,6 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 	header.LayoutOrder = 1
 	header.Parent = dropFrame
 
-	-- Title bounds constrained proportionally to prevent overlapping
 	local titleLabel = Instance.new("TextLabel", header)
 	titleLabel.Size = UDim2.new(0.55, -10, 1, 0)
 	titleLabel.BackgroundTransparency = 1
@@ -983,7 +954,6 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 	arrowIcon.Rotation = 0
 	KazeUI:OnThemeChanged(arrowIcon, function(t) arrowIcon.ImageColor3 = t.MutedText end)
 
-	-- Pre-determine initial text before text label instantiation
 	local initialText = ""
 	if isMulti then
 		local count = 0
@@ -1001,7 +971,6 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 		initialText = tostring(selectedSingle)
 	end
 
-	-- Constrain Selection text bounds proportionally
 	local selectedLabel = Instance.new("TextLabel", header)
 	selectedLabel.Size = UDim2.new(0.40, -14, 1, 0)
 	selectedLabel.Position = UDim2.new(0.55, 0, 0, 0)
@@ -1036,7 +1005,6 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 		end
 	end
 
-	-- Clean search wrappers setup
 	local searchWrapper = Instance.new("Frame")
 	searchWrapper.Size = UDim2.new(1, -20, 0, 32)
 	searchWrapper.BackgroundTransparency = 1
@@ -1332,7 +1300,6 @@ local function CreateParagraph(parentFrame, title, body)
 	paraFrame.Size = UDim2.new(0.95, 0, 0, totalHeight)
 	paraFrame.BorderSizePixel = 0
 	
-	-- Paragraph bubble utilizes the Medium Shape rule (20px)
 	Instance.new("UICorner", paraFrame).CornerRadius = UDim.new(0, 20)
 	paraFrame.Parent = wrapper
 	KazeUI:AddPanel(paraFrame, 0.01)
@@ -1416,7 +1383,6 @@ local function CreateClickableParagraph(parentFrame, title, body, callback)
 	paraFrame.Size = UDim2.new(0.95, 0, 0, totalHeight)
 	paraFrame.BorderSizePixel = 0
 	
-	-- Action elements like buttons utilize the Small Shape guide (14px)
 	Instance.new("UICorner", paraFrame).CornerRadius = UDim.new(0, 14)
 	paraFrame.Parent = wrapper
 	KazeUI:AddPanel(paraFrame, 0.02)
@@ -1557,7 +1523,6 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 	paraFrame.Size = UDim2.new(0.95, 0, 0, totalHeight)
 	paraFrame.BorderSizePixel = 0
 	
-	-- Toggles utilize the Small Shape guide (14px)
 	Instance.new("UICorner", paraFrame).CornerRadius = UDim.new(0, 14)
 	paraFrame.Parent = wrapper
 	KazeUI:AddPanel(paraFrame, 0.02)
@@ -1640,7 +1605,6 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 	end
 	setToggleState(state, true)
 
-	-- Auto-refresh switch neutral styling whenever theme is modified
 	KazeUI:OnThemeChanged(switchContainer, function()
 		setToggleState(state, true)
 	end)
@@ -1717,7 +1681,6 @@ local function CreateTextBoxInput(parentFrame, title, placeholder, defaultVal, c
 	paraFrame.Size = UDim2.new(0.95, 0, 0, totalHeight)
 	paraFrame.BorderSizePixel = 0
 	
-	-- TextBoxes utilize the Small Shape guide (14px)
 	Instance.new("UICorner", paraFrame).CornerRadius = UDim.new(0, 14)
 	paraFrame.Parent = wrapper
 	KazeUI:AddPanel(paraFrame, 0.02)
@@ -1844,7 +1807,6 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 	paraFrame.Size = UDim2.new(0.95, 0, 0, totalHeight)
 	paraFrame.BorderSizePixel = 0
 	
-	-- Sliders utilize the Small Shape guide (14px)
 	Instance.new("UICorner", paraFrame).CornerRadius = UDim.new(0, 14)
 	paraFrame.Parent = wrapper
 	KazeUI:AddPanel(paraFrame, 0.02)
@@ -2021,7 +1983,6 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 	dropFrame.BorderSizePixel = 0
 	dropFrame.AutomaticSize = Enum.AutomaticSize.Y
 	
-	-- ColorPickers utilize the Small Shape guide (14px)
 	Instance.new("UICorner", dropFrame).CornerRadius = UDim.new(0, 14)
 	dropFrame.Parent = wrapper
 	KazeUI:AddPanel(dropFrame, 0.02)
@@ -2279,7 +2240,6 @@ local function CreateKeybindInput(parentFrame, title, defaultKey, callback, flag
 	paraFrame.Size = UDim2.new(0.95, 0, 0, totalHeight)
 	paraFrame.BorderSizePixel = 0
 	
-	-- Keybinds utilize the Small Shape guide (14px)
 	Instance.new("UICorner", paraFrame).CornerRadius = UDim.new(0, 14)
 	paraFrame.Parent = wrapper
 	KazeUI:AddPanel(paraFrame, 0.02)
@@ -2454,7 +2414,6 @@ local function CreateVisualDivider(parentFrame, titleArg)
 	wrapper.Parent = parentFrame
 
 	if title == "" or title == " " then
-		-- Minimalist Divider (Without Title)
 		wrapper.Size = UDim2.new(0.95, 0, 0, 14) 
 		
 		local line = Instance.new("Frame")
@@ -2467,7 +2426,6 @@ local function CreateVisualDivider(parentFrame, titleArg)
 			line.BackgroundColor3 = t.Border
 		end)
 	else
-		-- Structural Line-Bounded Text Divider (With Title)
 		wrapper.Size = UDim2.new(0.95, 0, 0, 26) 
 
 		local container = Instance.new("Frame")
@@ -2476,7 +2434,6 @@ local function CreateVisualDivider(parentFrame, titleArg)
 		container.BackgroundTransparency = 1
 		container.Parent = wrapper
 
-		-- Precalculate text width dynamically
 		local ts = TextService:GetTextSize(title, 11, Enum.Font.GothamBold, Vector2.new(1000, 1000))
 		local textWidth = math.min(220, math.ceil(ts.X))
 
@@ -2664,7 +2621,6 @@ CreateCollapsibleSection = function(parentFrame, titleArg, currentDepth)
 	sectionBox.Parent = parentFrame
 	sectionBox.AutomaticSize = Enum.AutomaticSize.Y
 	
-	-- Sections utilize the Medium Shape guide (20px)
 	Instance.new("UICorner", sectionBox).CornerRadius = UDim.new(0, 20)
 	KazeUI:AddPanel(sectionBox, 0.02)
 
@@ -2832,18 +2788,15 @@ CreateGroupBox = function(parentFrame, titleArg, currentDepth, depthOverride)
 	groupFrame.AnchorPoint = Vector2.new(0.5, 0)
 	groupFrame.Position = UDim2.new(0.5, 0, 0, 3)
 	
-	-- Subtract scale size incrementally as depth increases
 	local scaledWidth = math.clamp(0.95 - (currentDepth - 1) * 0.02, 0.88, 0.95)
 	groupFrame.Size = UDim2.new(scaledWidth, 0, 0, 0)
 	groupFrame.BorderSizePixel = 0
 	groupFrame.AutomaticSize = Enum.AutomaticSize.Y
 	groupFrame.Parent = wrapper
 
-	-- Soft premium corners
 	local cornerRadius = math.max(10, 18 - (currentDepth - 1) * 3)
 	Instance.new("UICorner", groupFrame).CornerRadius = UDim.new(0, cornerRadius)
 	
-	-- Volumetric lighting: Elevated layers reflect realistic panel illumination
 	KazeUI:AddPanel(groupFrame, 0.015 + (currentDepth * 0.008))
 
 	local stroke = Instance.new("UIStroke", groupFrame)
@@ -2856,7 +2809,6 @@ CreateGroupBox = function(parentFrame, titleArg, currentDepth, depthOverride)
 	layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 	layout.Padding = UDim.new(0, 0)
 
-	-- Header Frame
 	local header = Instance.new("Frame")
 	header.Name = "Header"
 	header.Size = UDim2.new(1, 0, 0, 44)
@@ -2865,7 +2817,6 @@ CreateGroupBox = function(parentFrame, titleArg, currentDepth, depthOverride)
 	header.Parent = groupFrame
 	Instance.new("UICorner", header).CornerRadius = UDim.new(0, cornerRadius)
 
-	-- Left Accent Line
 	local accentLine = Instance.new("Frame", header)
 	accentLine.Size = UDim2.new(0, 4, 0, 20)
 	accentLine.Position = UDim2.new(0, 14, 0.5, -10)
@@ -2887,7 +2838,6 @@ CreateGroupBox = function(parentFrame, titleArg, currentDepth, depthOverride)
 	label.Parent = header
 	KazeUI:RegisterText(label, false)
 
-	-- Arrow Icon
 	local arrowIcon = Instance.new("ImageLabel")
 	arrowIcon.AnchorPoint = Vector2.new(1, 0.5)
 	arrowIcon.Position = UDim2.new(1, -16, 0.5, 0)
@@ -2900,7 +2850,6 @@ CreateGroupBox = function(parentFrame, titleArg, currentDepth, depthOverride)
 		if not isOpen then arrowIcon.ImageColor3 = t.MutedText end
 	end)
 
-	-- Horizontal Expand Line Divider
 	local divider = Instance.new("Frame")
 	divider.Size = UDim2.new(0.95, 0, 0, 1)
 	divider.BorderSizePixel = 0
@@ -2909,14 +2858,13 @@ CreateGroupBox = function(parentFrame, titleArg, currentDepth, depthOverride)
 	divider.Parent = groupFrame
 	KazeUI:OnThemeChanged(divider, function(t) divider.BackgroundColor3 = t.Border end)
 
-	-- Content container
 	local container = Instance.new("Frame")
 	container.Name = "Container"
 	container.Size = UDim2.new(1, 0, 0, 0)
 	container.BackgroundTransparency = 1
 	container.AutomaticSize = Enum.AutomaticSize.Y
 	container.LayoutOrder = 3
-	container.Visible = false -- CLOSED BY DEFAULT
+	container.Visible = false 
 	container.Parent = groupFrame
 
 	local contentLayout = Instance.new("UIListLayout", container)
@@ -2924,14 +2872,12 @@ CreateGroupBox = function(parentFrame, titleArg, currentDepth, depthOverride)
 	contentLayout.Padding = UDim.new(0, 5)
 	contentLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 
-	-- Structural inner padding 
 	local contentPadding = Instance.new("UIPadding", container)
 	contentPadding.PaddingTop = UDim.new(0, 8)
 	contentPadding.PaddingBottom = UDim.new(0, 10)
 	contentPadding.PaddingLeft = UDim.new(0, 6)
 	contentPadding.PaddingRight = UDim.new(0, 6)
 
-	-- Full Header Interactivity Detector
 	local toggleDetector = Instance.new("TextButton")
 	toggleDetector.Size = UDim2.fromScale(1, 1)
 	toggleDetector.BackgroundTransparency = 1
@@ -2994,7 +2940,6 @@ CreateGroupBox = function(parentFrame, titleArg, currentDepth, depthOverride)
 		Header = header
 	}
 
-	-- Recursive API attachment 
 	AttachElementsToAPI(groupPublic, container, currentDepth + 1)
 
 	function groupPublic:SetText(newText)
@@ -3018,7 +2963,6 @@ function KazeUI:CreateWindow(config)
 	local MainIcon = FormatImage(config.Icon or "house")
 	local OpenIcon = FormatImage((config.OpenButton and config.OpenButton.Icon) or config.Icon or "house")
 	
-	-- Sync author name globally to save folder
 	KazeUI.AuthorName = Author
 	
 	local minWidth = config.MinWidth or 350
@@ -3026,13 +2970,11 @@ function KazeUI:CreateWindow(config)
 	local maxWidth = config.MaxWidth or 900
 	local maxHeight = config.MaxHeight or 700
 
-	-- Automatically set the default theme to CustomWallpaper with translucency
 	local selectedTheme = "CustomWallpaper"
 	if config.Theme then
 		local themeStr = tostring(config.Theme)
 		local lowerTheme = string.lower(themeStr)
 		
-		-- Match static configs
 		local themeMatched = false
 		for k, v in pairs(KazeUI.Themes) do
 			if string.lower(k) == lowerTheme then
@@ -3049,7 +2991,7 @@ function KazeUI:CreateWindow(config)
 				or IconsMap[lowerTheme] ~= nil
 
 			if isUrl then
-				selectedTheme = themeStr -- Resolved dynamic setup on SetTheme
+				selectedTheme = themeStr 
 			elseif isAssetId then
 				KazeUI.Themes.CustomWallpaper.BackgroundImage = themeStr
 				KazeUI.Themes.CustomWallpaper.BackgroundImageTransparency = 0.1
@@ -3061,10 +3003,8 @@ function KazeUI:CreateWindow(config)
 		end
 	end
 	
-	-- Trigger Dynamic Wallpaper Theme Settings
 	KazeUI:SetTheme(selectedTheme)
 
-	-- Accent Glow Color Parser (Tuned to vivid Horror Red default matching the screenshot)
 	if config.Glow then
 		local glowVal = config.Glow
 		if typeof(glowVal) == "Color3" then
@@ -3110,7 +3050,7 @@ function KazeUI:CreateWindow(config)
 			end
 		end
 	else
-		KazeUI:SetGlow(Color3.fromRGB(239, 68, 68)) -- Default Red accent matching The Mimic style
+		KazeUI:SetGlow(Color3.fromRGB(239, 68, 68))
 	end
 
 	local MiniButtonSize = UDim2.fromOffset(48, 48)
@@ -3124,11 +3064,9 @@ function KazeUI:CreateWindow(config)
 	Window.Active = true
 	Window.Parent = ScreenGui
 	
-	-- Windows utilize the Large Shape guide (28px) 
 	Instance.new("UICorner", Window).CornerRadius = UDim.new(0, 28)
 	KazeUI:AddPanel(Window, 0)
 
-	-- Premium Outer Glowing Shadows
 	local outerShadow = Instance.new("Frame", Window)
 	outerShadow.Size = UDim2.new(1, 14, 1, 14)
 	outerShadow.Position = UDim2.fromOffset(-7, -7)
@@ -3153,7 +3091,6 @@ function KazeUI:CreateWindow(config)
 	ContentClipper.Parent = Window
 	Instance.new("UICorner", ContentClipper).CornerRadius = UDim.new(0, 28)
 
-	-- Wallpaper setup
 	local WallpaperImage = Instance.new("ImageLabel")
 	WallpaperImage.Name = "WallpaperImage"
 	WallpaperImage.Size = UDim2.fromScale(1, 1)
@@ -3195,7 +3132,6 @@ function KazeUI:CreateWindow(config)
 		end
 	end)
 
-	-- Launch Transitions
 	Window.Size = UDim2.fromOffset(550, 350)
 	ContentClipper.GroupTransparency = 1
 	TweenService:Create(Window, TweenInfo.new(0.5, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {Size = UDim2.fromOffset(600, 400)}):Play()
@@ -3665,7 +3601,7 @@ function KazeUI:CreateWindow(config)
 	end
 
 	-- ==========================================================
-	-- Premium Floating Dialog Component
+	-- Premium Floating Dialog Component (CRITICAL SECURITY LOCKOUT & GRID FLOW)
 	-- ==========================================================
 	function Win:Dialog(dialogConfig)
 		dialogConfig = dialogConfig or {}
@@ -3675,48 +3611,49 @@ function KazeUI:CreateWindow(config)
 		local hasIcon = (iconId ~= "")
 		local actions = dialogConfig.Actions or {}
 		
-		-- Full-Screen Blocking Modal Overlay
-		local Overlay = Instance.new("Frame", Window)
-		Overlay.Name = "DialogOverlay"
-		Overlay.Size = UDim2.new(1, 0, 1, 0)
+		-- COMPLETE INPUT LOCKOUT OVERLAY
+		-- We parent directly to the ScreenGui! This sits at the absolute top,
+		-- rendering in front of the Window, Sidebar, Tabs, Minimizers, and Resizer blockers!
+		local Overlay = Instance.new("Frame", ScreenGui)
+		Overlay.Name = "DialogLockoutOverlay"
+		Overlay.Size = UDim2.fromScale(1, 1)
+		Overlay.Position = UDim2.fromOffset(0, 0)
 		Overlay.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 		Overlay.BackgroundTransparency = 1
-		Overlay.ZIndex = 100 -- Places it perfectly over standard sidebar/pages layout
+		Overlay.ZIndex = 999999 -- Absolutely supreme overlay layering
 		Overlay.Active = true 
-		Instance.new("UICorner", Overlay).CornerRadius = UDim.new(0, 28)
 
 		TweenService:Create(Overlay, TWEEN_FAST, {BackgroundTransparency = 0.65}):Play()
 
-		-- Animated Floating dialog card matching the Medium Shape guide (20px)
+		-- Animated Floating dialog card
 		local DialogFrame = Instance.new("Frame", Overlay)
 		DialogFrame.Name = "DialogFrame"
-		DialogFrame.Size = UDim2.fromOffset(360, 180) 
+		DialogFrame.Size = UDim2.fromOffset(380, 200) 
 		DialogFrame.AnchorPoint = Vector2.new(0.5, 0.5)
-		DialogFrame.Position = UDim2.fromScale(0.5, 0.4) -- Off-center start for bounce effect
-		DialogFrame.ZIndex = 101
+		DialogFrame.Position = UDim2.fromScale(0.5, 0.4) 
+		DialogFrame.ZIndex = 1000000
 		DialogFrame.Active = true 
 		
 		Instance.new("UICorner", DialogFrame).CornerRadius = UDim.new(0, 20)
-		KazeUI:AddPanel(DialogFrame, 0.02)
+		KazeUI:AddPanel(DialogFrame, 0.04) -- Volumetric light elevation (0.04 matches high prominence)
 
 		local stroke = Instance.new("UIStroke", DialogFrame)
-		stroke.Thickness = 1.2
+		stroke.Thickness = 1.4
 		KazeUI:RegisterBorder(stroke)
 
-		-- Elegant visual transition
 		TweenService:Create(DialogFrame, TWEEN_SPRING, {Position = UDim2.fromScale(0.5, 0.5)}):Play()
 
 		-- Optional top header icon parsing
-		local topOffset = 15
+		local topOffset = 18
 		if hasIcon then
 			local dIcon = Instance.new("ImageLabel", DialogFrame)
 			dIcon.Size = UDim2.fromOffset(36, 36)
-			dIcon.Position = UDim2.new(0.5, -18, 0, 15)
+			dIcon.Position = UDim2.new(0.5, -18, 0, 18)
 			dIcon.BackgroundTransparency = 1
 			dIcon.Image = iconId
-			dIcon.ZIndex = 102
+			dIcon.ZIndex = 1000001
 			KazeUI:OnThemeChanged(dIcon, function(t) dIcon.ImageColor3 = KazeUI.GlowColor end)
-			topOffset = 56
+			topOffset = 62
 		end
 
 		local titleLabel = Instance.new("TextLabel", DialogFrame)
@@ -3727,7 +3664,7 @@ function KazeUI:CreateWindow(config)
 		titleLabel.Font = Enum.Font.GothamBold
 		titleLabel.TextSize = 14
 		titleLabel.TextXAlignment = Enum.TextXAlignment.Center
-		titleLabel.ZIndex = 102
+		titleLabel.ZIndex = 1000001
 		KazeUI:RegisterText(titleLabel, false)
 
 		local contentLabel = Instance.new("TextLabel", DialogFrame)
@@ -3740,25 +3677,32 @@ function KazeUI:CreateWindow(config)
 		contentLabel.TextWrapped = true
 		contentLabel.TextXAlignment = Enum.TextXAlignment.Center
 		contentLabel.TextYAlignment = Enum.TextYAlignment.Top
-		contentLabel.ZIndex = 102
+		contentLabel.ZIndex = 1000001
 		KazeUI:RegisterText(contentLabel, true)
 
-		-- Actions alignment layout
+		-- Dynamic Actions alignment layout
 		local ActionsFrame = Instance.new("Frame", DialogFrame)
-		ActionsFrame.Size = UDim2.new(1, -30, 0, 32)
 		ActionsFrame.Position = UDim2.new(0, 15, 1, -15)
 		ActionsFrame.AnchorPoint = Vector2.new(0, 1)
 		ActionsFrame.BackgroundTransparency = 1
-		ActionsFrame.ZIndex = 102
+		ActionsFrame.ZIndex = 1000001
 
 		local listLayout = Instance.new("UIListLayout", ActionsFrame)
-		listLayout.FillDirection = Enum.FillDirection.Horizontal
+		listLayout.SortOrder = Enum.SortOrder.LayoutOrder
 		listLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 		listLayout.VerticalAlignment = Enum.VerticalAlignment.Center
-		listLayout.Padding = UDim.new(0, 10)
+		listLayout.Padding = UDim.new(0, 8)
 
 		local totalActions = #actions
-		local buttonWidth = totalActions > 0 and (330 - ((totalActions - 1) * 10)) / totalActions or 100
+		local shouldStack = (totalActions >= 4) -- Auto stack if 4 or more buttons are registered
+
+		if shouldStack then
+			listLayout.FillDirection = Enum.FillDirection.Vertical
+			ActionsFrame.Size = UDim2.new(1, -30, 0, (totalActions * 32) + ((totalActions - 1) * 8))
+		else
+			listLayout.FillDirection = Enum.FillDirection.Horizontal
+			ActionsFrame.Size = UDim2.new(1, -30, 0, 32)
+		end
 
 		local function closeDialog()
 			TweenService:Create(Overlay, TWEEN_FAST, {BackgroundTransparency = 1}):Play()
@@ -3768,37 +3712,55 @@ function KazeUI:CreateWindow(config)
 			Overlay:Destroy()
 		end
 
+		-- Math for horizontal button splitting
+		local buttonWidth = shouldStack and 350 or (totalActions > 0 and (350 - ((totalActions - 1) * 8)) / totalActions or 100)
+
 		for i, act in ipairs(actions) do
 			local btnName = act.Name or "Button"
 			local callback = act.Callback
 			
 			local actionBtn = Instance.new("TextButton", ActionsFrame)
-			actionBtn.Size = UDim2.new(0, buttonWidth, 1, 0)
-			actionBtn.Text = btnName
-			actionBtn.Font = Enum.Font.GothamBold
-			actionBtn.TextSize = 11
-			actionBtn.ZIndex = 103
+			actionBtn.Size = UDim2.new(0, buttonWidth, 0, 32)
+			actionBtn.ZIndex = 1000002
+			actionBtn.AutoButtonColor = false
+			actionBtn.Text = "" -- We will use a nested text label to support PERFECT resizing boundaries!
+			actionBtn.LayoutOrder = i
 			Instance.new("UICorner", actionBtn).CornerRadius = UDim.new(0, 10)
 
-			-- Support vivid Color3 and parsed string hex combinations
+			-- Protected inner text configuration to prevent text clipping / "Lumalagpas text"
+			local btnText = Instance.new("TextLabel", actionBtn)
+			btnText.Size = UDim2.new(1, -12, 1, 0)
+			btnText.Position = UDim2.fromOffset(6, 0)
+			btnText.BackgroundTransparency = 1
+			btnText.Text = btnName
+			btnText.Font = Enum.Font.GothamBold
+			btnText.TextSize = 11
+			btnText.TextWrapped = true
+			btnText.TextScaled = true -- Smart Auto-Shrink active!
+			btnText.ZIndex = 1000003
+
+			local textConstraint = Instance.new("UITextSizeConstraint", btnText)
+			textConstraint.MaxTextSize = 11
+			textConstraint.MinTextSize = 7
+
 			local btnColor = act.Color
 			if type(btnColor) == "string" then
 				local cleanHex = string.gsub(btnColor, "#", "")
 				local s, res = pcall(function() return Color3.fromHex(cleanHex) end)
 				if s and res then btnColor = res else btnColor = KazeUI.GlowColor end
 			elseif typeof(btnColor) ~= "Color3" then
-				btnColor = nil -- Falls back elegantly to current panel color elevations
+				btnColor = nil 
 			end
 
 			if btnColor then
 				actionBtn.BackgroundColor3 = btnColor
-				actionBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+				btnText.TextColor3 = Color3.fromRGB(255, 255, 255)
 			else
 				KazeUI:AddPanel(actionBtn, 0.04)
-				KazeUI:RegisterText(actionBtn, false)
+				KazeUI:RegisterText(btnText, false)
 			end
 
-			-- Dynamic Hover visualizers
+			-- Custom Hover Interaction Animations
 			local isHovered = false
 			actionBtn.MouseEnter:Connect(function()
 				isHovered = true
@@ -3828,9 +3790,10 @@ function KazeUI:CreateWindow(config)
 			end)
 		end
 
-		-- Responsive height sizing
-		local finalHeight = topOffset + 24 + 48 + 12 + 32 + 15
-		DialogFrame.Size = UDim2.fromOffset(360, finalHeight)
+		-- Auto Sizing dialog box frame calculation to prevent overlapping elements
+		local actionsHeight = shouldStack and ((totalActions * 32) + ((totalActions - 1) * 8)) or 32
+		local finalHeight = topOffset + 24 + 48 + 15 + actionsHeight + 15
+		DialogFrame.Size = UDim2.fromOffset(380, finalHeight)
 
 		return {
 			Close = closeDialog
@@ -3926,7 +3889,6 @@ function KazeUI:CreateWindow(config)
 			Callback = function(val) KazeUI:SetTransparency(val / 10) end
 		})
 
-		-- Live Wallpaper Control Module
 		local wpSec = tab:SectionUI("Premium Wallpaper System")
 
 		wpSec:TextBox({
@@ -4001,11 +3963,9 @@ function KazeUI:CreateWindow(config)
 		btn.ClipsDescendants = true
 		btn.LayoutOrder = #TabsList:GetChildren() + 1
 		
-		-- Sidebar tab buttons utilize Small Shape guide (14px)
 		Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 14)
 		KazeUI:AddPanel(btn, 0.02, true)
 
-		-- Restored Classic Tab Selection Indicator
 		local leftIndicator = Instance.new("Frame", btn)
 		leftIndicator.Size = UDim2.new(0, 3, 1, 0)
 		leftIndicator.BackgroundColor3 = KazeUI.GlowColor
@@ -4067,7 +4027,6 @@ function KazeUI:CreateWindow(config)
 		contentLayout.Padding = UDim.new(0, 5)
 		contentLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 
-		-- Premium Empty Section Visualizer
 		local EmptyState = Instance.new("CanvasGroup")
 		EmptyState.Name = "EmptyState"
 		EmptyState.Size = UDim2.fromScale(1, 1)
