@@ -1,17 +1,13 @@
 --[[
-	Kaze UI Library v3.6.8 (Premium na Disenyo ng Bubble at Pagbabago ng Engine)
-	Inspirasyon mula sa: Mga Modernong Chat Bubble sa Mobile, iMessage, at Discord Mobile.
-	Napanatili: 100% Backwards Compatibility sa Bersyon 1, 2, 2.2, 2.3, at 3.0 API
+	Kaze UI Library v3.6.8 (Premium Bubble Redesign & Engine Rewrite)
+	Inspirasyon mula sa: Modern Mobile Chat Bubbles, iMessage, at Discord Mobile.
+	Napanatili: 100% Backwards Compatibility para sa Bersyon 1, 2, 2.2, 2.3, at 3.0 na mga API
 	
-	MGA UPDATE SA V3.6.8 (Sola-Sulat ng Error Fix):
-	- NATAMAANG COLOR PICKER BUG: Inayos ang `.Instance` member indexing error sa `hueCursor` ng ColorPicker.
-	- GABAY SA LAYERING NG DISPLAYORDER:
-		* Main UI (ScreenGui): DisplayOrder = 10
-		* Open Floating Button (OpenButtonGui): DisplayOrder = 20
-		* Dialog Overlay Blockers (DialogGui): DisplayOrder = 100
-		* Notification Alerts (NotifScreenGui): DisplayOrder = 300
-	- PROPESYONAL NA INTERACTION BLOCKER: Inilagay ang blocker sa loob mismo ng MainFrame (Window) upang harangan ang clicks sa Sidebar, Tabs, at Content kapag bukas ang Dialog.
-	- AUTOMATIC VERTICAL STACKING: Kapag may 4 o higit pang buttons ang Dialog, awtomatiko silang magpapatong nang patayo upang hindi mag-overflow ang teksto.
+	MGA UPDATE SA V3.6.8 AT CUSTOM TUNING:
+	- INPUT LOCKOUT DIALOGS: Ang mga Dialog ay mayroon nang Interaction Blocker sa loob ng MainFrame!
+	- AUTO-STACKING ACTIONS ENGINE: Kung mayroong 1 hanggang 3 button, nakaayos ang mga ito nang pahalang. Kung 4 o higit pa, awtomatiko silang mag-ii-stack nang patayo!
+	- SMART BUTTON TEXT RESIZING: May TextScaled + UITextSizeConstraint + TextWrapped para hindi lumagpas ang mga mahahabang teksto.
+	- HTTP Image Asset Pipeline & Cache: Sinesave ang mga dinownload na larawan sa `KazeUI/Cache/` upang hindi paulit-ulit ang pag-request sa internet.
 --]]
 
 local KazeUI = {}
@@ -26,7 +22,7 @@ local HttpService = game:GetService("HttpService")
 local LP = Players.LocalPlayer
 local Mouse = LP:GetMouse()
 
--- Configuration ng Tema (High-Contrast at Malinaw na Kulay)
+-- Konpigurasyon ng mga Premium Bubble Theme (Matingkad at May Mataas na Contrast)
 KazeUI.Themes = {
 	Obsidian = {
 		Name = "Obsidian",
@@ -52,9 +48,9 @@ KazeUI.Themes = {
 	}
 }
 
--- Pangkalahatang Estado (Malamlam na Translucent Default)
+-- Global na Estado ng UI (Translucent na Estilo)
 KazeUI.CurrentTheme = KazeUI.Themes.CustomWallpaper
-KazeUI.GlowColor = Color3.fromRGB(239, 68, 68) -- Pulang accent glow para sa nakakatakot na kapaligiran
+KazeUI.GlowColor = Color3.fromRGB(239, 68, 68)
 KazeUI.BackgroundColor = KazeUI.CurrentTheme.Background
 KazeUI.BackgroundTransparency = 0.70
 KazeUI.Flags = {}
@@ -62,20 +58,20 @@ KazeUI.ActiveWindows = {}
 KazeUI.IsResizing = false
 KazeUI.AuthorName = "Unknown"
 
--- Mga listahan para sa dynamic theme swapping
+-- Rehistro ng mga elemento para sa pagpapalit ng tema
 KazeUI.TextElements = {}
 KazeUI.MutedTextElements = {}
 KazeUI.BorderElements = {}
 KazeUI.ThemeCallbacks = {}
 KazeUI.WallpaperElements = {}
 
--- Interactive Neon controllers
+-- Mga kontroler para sa Interactive Neon
 KazeUI.GlowElements = {}
 KazeUI.NeonTweens = {}
 KazeUI.PanelElements = {}
 KazeUI.GlowCallbacks = {}
 
--- Mga Configuration para sa Makinis na Animasyon
+-- Konpigurasyon para sa Makinis na Animasyon
 local TWEEN_FAST = TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 local TWEEN_SPRING = TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
 local TWEEN_SMOOTH = TweenInfo.new(0.35, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
@@ -86,36 +82,46 @@ local function RegisterFlag(flag, getFunc, setFunc)
 	end
 end
 
--- Pag-setup ng Pangunahing ScreenGui (DisplayOrder = 10)
+-- Pagkuha ng Parent para sa ScreenGui (CoreGui o PlayerGui Fallback)
+local success, parent = pcall(function() return game:GetService("CoreGui") end)
+if not success or not parent then
+	parent = LP:WaitForChild("PlayerGui", 15)
+end
+
+-- Pag-setup ng mga ScreenGui ayon sa tamang DisplayOrder Hierarchy
+-- 1. Main Library ScreenGui (DisplayOrder = 10)
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "KazeUI"
 ScreenGui.ResetOnSpawn = false
 ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 ScreenGui.DisplayOrder = 10
-
-local success, parent = pcall(function() return game:GetService("CoreGui") end)
-if not success or not parent then
-	parent = LP:WaitForChild("PlayerGui", 15)
-end
 ScreenGui.Parent = parent
 
--- Pag-setup ng OpenButtonGui para sa Floating Open Button (DisplayOrder = 20)
+-- 2. Floating Open Button ScreenGui (DisplayOrder = 20)
 local OpenButtonGui = Instance.new("ScreenGui")
-OpenButtonGui.Name = "KazeUIOpenButton"
+OpenButtonGui.Name = "KazeUI_OpenButton"
 OpenButtonGui.ResetOnSpawn = false
 OpenButtonGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 OpenButtonGui.DisplayOrder = 20
 OpenButtonGui.Parent = parent
 
--- Pag-setup ng DialogGui ScreenGui (DisplayOrder = 100)
+-- 3. Dialogs / Modals ScreenGui (DisplayOrder = 100)
 local DialogGui = Instance.new("ScreenGui")
-DialogGui.Name = "KazeUIDialogs"
+DialogGui.Name = "KazeUI_Dialogs"
 DialogGui.ResetOnSpawn = false
 DialogGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 DialogGui.DisplayOrder = 100
 DialogGui.Parent = parent
 
--- Lock ng Camera para sa Mobile at Desktop
+-- 4. Bukod na Screen para sa mga Notipikasyon (DisplayOrder = 300)
+local NotifScreenGui = Instance.new("ScreenGui")
+NotifScreenGui.Name = "KazeUINotifications"
+NotifScreenGui.ResetOnSpawn = false
+NotifScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+NotifScreenGui.DisplayOrder = 300
+NotifScreenGui.Parent = parent
+
+-- Sentralisadong Sistema ng Camera Locker
 local CameraLocker = Instance.new("TextButton")
 CameraLocker.Name = "CameraLocker"
 CameraLocker.Size = UDim2.fromOffset(0, 0)
@@ -134,15 +140,7 @@ local function UnlockCamera()
 	CameraLocker.Modal = false
 end
 
--- Pag-setup ng Notification ScreenGui (DisplayOrder = 300)
-local NotifScreenGui = Instance.new("ScreenGui")
-NotifScreenGui.Name = "KazeUINotifications"
-NotifScreenGui.ResetOnSpawn = false
-NotifScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-NotifScreenGui.DisplayOrder = 300
-NotifScreenGui.Parent = parent
-
--- Notification Container
+-- Pag-setup ng Layout para sa Notipikasyon
 local NotifContainer = Instance.new("Frame")
 local notifLayout = Instance.new("UIListLayout", NotifContainer)
 notifLayout.SortOrder = Enum.SortOrder.LayoutOrder
@@ -159,7 +157,7 @@ NotifContainer.Position = UDim2.new(1, -340, 0, 0)
 NotifContainer.BackgroundTransparency = 1
 NotifContainer.Parent = NotifScreenGui
 
--- Adaptive Scaling Engine
+-- Responsive na Pagsusukat ng UI (Adaptive Scaling Engine)
 local UIScale = Instance.new("UIScale")
 UIScale.Parent = ScreenGui
 
@@ -188,7 +186,7 @@ end
 UpdateScale()
 workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(UpdateScale)
 
--- Lucide Icons Setup
+-- Pag-setup ng mga Lucide Icon
 local IconsMap = {}
 pcall(function()
 	if game and game.HttpGet then
@@ -208,7 +206,7 @@ pcall(function()
 	end
 end)
 
--- Web Image Downloader at Caching Pipeline
+-- Pipeline para sa Web Image Caching at Compiler (Exploit Direct Pipeline)
 local function GetCustomAssetFromURL(url)
 	local getasset = (getcustomasset or getsynasset or (drawing and drawing.new and drawing.custom_asset))
 	if not getasset or not writefile or not game or not game.HttpGet then
@@ -265,7 +263,7 @@ local function FormatImage(id)
 end
 
 -- ==========================================
--- Dynamic Color Sync & Registries
+-- Rehistro at Pag-sync ng mga Kulay at Tema
 -- ==========================================
 function KazeUI:OnGlowChanged(inst, callback)
 	table.insert(KazeUI.GlowCallbacks, {Inst = inst, Callback = callback})
@@ -321,7 +319,7 @@ function KazeUI:OnThemeChanged(inst, cb)
 	end)
 end
 
--- Premium Dragging engine
+-- Premium na Sistema ng Pagkaladkad (Drag Engine)
 local lastNormalPosition = UDim2.fromScale(0.5, 0.5)
 local lastNormalAnchor = Vector2.new(0.5, 0.5)
 
@@ -392,7 +390,7 @@ local function MakeDraggable(dragPart, targetPart)
 end
 
 -- ==========================================
--- Theme at Transparency Engine
+-- Sistema ng Tema at Pagka-aninag (Translucent Bubbles)
 -- ==========================================
 function KazeUI.GetColor(elevation)
 	local theme = KazeUI.CurrentTheme
@@ -447,7 +445,7 @@ function KazeUI:SetTransparency(alpha)
 	for _, data in ipairs(KazeUI.PanelElements) do
 		local inst = data.Inst
 		local elevation = data.Elevation or 0
-		if inst and inst.Parent wins and inst:IsA("GuiObject") and not data.IgnoreTransparency then
+		if inst and inst.Parent and inst:IsA("GuiObject") and not data.IgnoreTransparency then
 			local baseTrans = alpha
 			if elevation > 0 then
 				baseTrans = math.clamp(alpha - (elevation * 0.25), 0.05, 1)
@@ -573,7 +571,7 @@ function KazeUI:SetTheme(themeName)
 	end
 end
 
--- Pag-andar ng breathing glow effect
+-- Siklo ng Ningning na may Breathing Effect
 local function StartNeonLoop(target)
 	if not target then return end
 	local propName = pcall(function() return target.Color end) and "Color" or "BackgroundColor3"
@@ -632,10 +630,10 @@ function KazeUI:SetGlow(color)
 	end
 end
 
--- Premium Bubble-style Notification Card
+-- Premium Bubble-style na Notipikasyon Card
 function KazeUI:Notify(config)
 	config = config or {}
-	local title = tostring(config.Title or "Abiso")
+	local title = tostring(config.Title or "Paunawa")
 	local content = tostring(config.Content or "")
 	local duration = tonumber(config.Duration) or 3
 	local titleColor = config.TitleColor or config.Color
@@ -827,7 +825,7 @@ end
 
 function KazeUI:SaveConfig(name)
 	if not name or name == "" then
-		KazeUI:Notify({Title = "Sistem ng Config", Content = "Hindi pwedeng walang pangalan ang config.", Duration = 3})
+		KazeUI:Notify({Title = "Pamamahala ng Config", Content = "Hindi pwedeng walang pangalan ang config.", Duration = 3})
 		return
 	end
 	
@@ -846,12 +844,12 @@ function KazeUI:SaveConfig(name)
 			end
 			
 			writefile(folder .. "/" .. name .. ".json", encoded)
-			KazeUI:Notify({Title = "Naka-save ang Config", Content = "Matagumpay na nai-save ang " .. name, Duration = 3})
+			KazeUI:Notify({Title = "Nai-save na ang Config", Content = "Matagumpay na nai-save ang " .. name, Duration = 3})
 		else
-			KazeUI:Notify({Title = "Error sa Config", Content = "Bigo sa pag-encode ng mga setting.", Duration = 3})
+			KazeUI:Notify({Title = "Error sa Config", Content = "Sira ang pagka-encode ng settings.", Duration = 3})
 		end
 	else
-		KazeUI:Notify({Title = "Error sa Config", Content = "Walang file write support ang executor mo.", Duration = 3})
+		KazeUI:Notify({Title = "Error sa Config", Content = "Hindi suportado ng executor ang pagsusulat ng file.", Duration = 3})
 	end
 end
 
@@ -875,12 +873,12 @@ function KazeUI:LoadConfig(name)
 						if KazeUI.Flags[flag] then KazeUI.Flags[flag].Set(val) end
 					end
 				end
-				KazeUI:Notify({Title = "Na-load ang Config", Content = "Matagumpay na na-load ang " .. name, Duration = 3})
+				KazeUI:Notify({Title = "Nai-load na ang Config", Content = "Matagumpay na nai-load ang " .. name, Duration = 3})
 			else
-				KazeUI:Notify({Title = "Error sa Config", Content = "Sira o hindi balido ang format ng config.", Duration = 3})
+				KazeUI:Notify({Title = "Error sa Config", Content = "Sira o hindi wasto ang format ng config.", Duration = 3})
 			end
 		else
-			KazeUI:Notify({Title = "Error sa Config", Content = "Hindi nahanap ang config file.", Duration = 3})
+			KazeUI:Notify({Title = "Error sa Config", Content = "Hindi mahanap ang file ng config.", Duration = 3})
 		end
 	end
 end
@@ -894,11 +892,11 @@ local function ToggleScrollingAncestors(element, state)
 end
 
 -- =========================================================
--- Mga Elementong Bubble-First
+-- Magagarang Component (Disenyong Inspirado sa Figma / iMessage)
 -- =========================================================
 
 local function CreateDropdown(parentFrame, title, options, defaultOption, callback, isMulti, flag)
-	title = tostring(title or "Dropdown")
+	title = tostring(title or "Pagpipilian")
 	options = type(options) == "table" and options or {}
 	local isOpen = false
 
@@ -1675,7 +1673,7 @@ end
 
 local function CreateTextBoxInput(parentFrame, title, placeholder, defaultVal, callback, flag)
 	title = tostring(title or "Input Text")
-	placeholder = tostring(placeholder or "Mag-type dito...")
+	placeholder = tostring(placeholder or "I-type dito...")
 	
 	local measuredWidth = 598 * 0.92
 	if parentFrame and parentFrame.AbsoluteSize and parentFrame.AbsoluteSize.X > 0 then measuredWidth = parentFrame.AbsoluteSize.X * 0.95 end
@@ -2119,9 +2117,6 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 	hueCursor.Size = UDim2.fromOffset(4, 24)
 	hueCursor.AnchorPoint = Vector2.new(0.5, 0.5)
 	hueCursor.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-	
-	-- NAIWASAN ANG BUSTED "MEMBER OF FRAME" ERROR DETECTED ON USER CONSOLE PICTURES:
-	-- Ginamit ang tamang direct constructor parent at iniiwasan ang custom `.Instance` table property assignment
 	Instance.new("UICorner", hueCursor).CornerRadius = UDim.new(1, 0)
 	Instance.new("UIStroke", hueCursor).Color = Color3.fromRGB(0, 0, 0)
 
@@ -2235,7 +2230,7 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 end
 
 local function CreateKeybindInput(parentFrame, title, defaultKey, callback, flag)
-	title = tostring(title or "Keybind")
+	title = tostring(title or "Pindutan (Keybind)")
 	local currentKey = defaultKey or Enum.KeyCode.Unknown
 	local isBinding = false
 	
@@ -2423,7 +2418,7 @@ local function CreateVisualSectionDivider(parentFrame, titleArg)
 end
 
 -- ==========================================
--- Premium Geometric Divider Component
+-- Premium Geometric Divider Component 
 -- ==========================================
 local function CreateVisualDivider(parentFrame, titleArg)
 	local title = titleArg and tostring(titleArg) or ""
@@ -2976,7 +2971,7 @@ CreateGroupBox = function(parentFrame, titleArg, currentDepth, depthOverride)
 end
 
 -- ==========================================
--- Premium Window Creation & Panel Controllers
+-- Paglikha ng Premium na Window at mga Kontroler
 -- ==========================================
 function KazeUI:CreateWindow(config)
 	config = config or {}
@@ -3078,7 +3073,7 @@ function KazeUI:CreateWindow(config)
 
 	local MiniButtonSize = UDim2.fromOffset(48, 48)
 
-	-- Main Window Setup
+	-- Pangunahing Frame ng Window (MainFrame)
 	local Window = Instance.new("Frame")
 	Window.Size = UDim2.fromOffset(600, 400) 
 	Window.Position = UDim2.fromScale(0.5, 0.5)
@@ -3114,6 +3109,24 @@ function KazeUI:CreateWindow(config)
 	ContentClipper.Parent = Window
 	Instance.new("UICorner", ContentClipper).CornerRadius = UDim.new(0, 28)
 
+	-- ==========================================================
+	-- INTERACTION BLOCKER (Mas Professional at Eleganteng Locking)
+	-- Ito ay nakalagay sa loob mismo ng MainFrame (ContentClipper)
+	-- sa ibabaw ng Content ngunit nasa ilalim ng Dialogues.
+	-- ==========================================================
+	local InteractionBlocker = Instance.new("TextButton")
+	InteractionBlocker.Name = "InteractionBlocker"
+	InteractionBlocker.Size = UDim2.fromScale(1, 1)
+	InteractionBlocker.Position = UDim2.fromScale(0, 0)
+	InteractionBlocker.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+	InteractionBlocker.BackgroundTransparency = 1 -- Transparent kapag walang dialog
+	InteractionBlocker.BorderSizePixel = 0
+	InteractionBlocker.Text = ""
+	InteractionBlocker.ZIndex = 48 -- Mas mataas sa Content (ZIndex <= 47) pero mas mababa sa Dialog (ZIndex 49)
+	InteractionBlocker.Visible = false
+	InteractionBlocker.Active = true -- Hinarang ang lahat ng pag-click
+	InteractionBlocker.Parent = ContentClipper
+
 	local WallpaperImage = Instance.new("ImageLabel")
 	WallpaperImage.Name = "WallpaperImage"
 	WallpaperImage.Size = UDim2.fromScale(1, 1)
@@ -3134,7 +3147,7 @@ function KazeUI:CreateWindow(config)
 	local initialImg = currentTheme.BackgroundImage or ""
 	local initialImgTrans = currentTheme.BackgroundImageTransparency or 1
 	local initialOverlayTrans = currentTheme.OverlayTransparency or 0.25
-	local hasImage = (bgImgId ~= "") and (bgImgTrans < 1)
+	local hasImage = (initialImg ~= "") and (initialImgTrans < 1)
 
 	WallpaperImage.Image = FormatImage(initialImg)
 	WallpaperImage.ImageTransparency = hasImage and initialImgTrans or 1
@@ -3165,6 +3178,7 @@ function KazeUI:CreateWindow(config)
 	TopBar.BorderSizePixel = 0
 	TopBar.Active = true
 	TopBar.Parent = ContentClipper
+	TopBar.ZIndex = 5 -- Mas mataas para gumana ang pag-drag kung walang modal
 	MakeDraggable(TopBar, Window)
 	KazeUI:AddPanel(TopBar, -0.01)
 
@@ -3235,7 +3249,7 @@ function KazeUI:CreateWindow(config)
 	local BtnYellow = createCircleButton("BtnYellow", -56, Color3.fromRGB(234, 179, 8))
 	local BtnRed = createCircleButton("BtnRed", -32, Color3.fromRGB(239, 68, 68))
 
-	-- Floating Open Button sa OpenButtonGui (DisplayOrder = 20)
+	-- Ang Floating Open Button ay parented na ngayon sa OpenButtonGui (DisplayOrder = 20)
 	local MiniButton = Instance.new("TextButton") 
 	MiniButton.Size = MiniButtonSize
 	MiniButton.Position = UDim2.new(0, 24, 0, 85)
@@ -3353,32 +3367,22 @@ function KazeUI:CreateWindow(config)
 		end
 	end)
 
-	-- Propesyonal na Blocker sa loob ng MainFrame (Window)
-	local InteractionBlocker = Instance.new("TextButton")
-	InteractionBlocker.Name = "InteractionBlocker"
-	InteractionBlocker.Size = UDim2.fromScale(1, 1)
-	InteractionBlocker.Position = UDim2.fromOffset(0, 0)
-	InteractionBlocker.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-	InteractionBlocker.BackgroundTransparency = 1
-	InteractionBlocker.Text = ""
-	InteractionBlocker.AutoButtonColor = false
-	InteractionBlocker.ZIndex = 90 -- Mas mataas sa Content (ZIndex <= 10) pero mas mababa sa Dialog
-	InteractionBlocker.Visible = false
-	InteractionBlocker.Parent = ContentClipper
-
 	local confirmActive = false
 	local function ShowCloseConfirm()
 		if confirmActive then return end
 		confirmActive = true
 		BtnYellow.Active = false; BtnGreen.Active = false; BtnRed.Active = false
+		
+		-- Paganahin ang Interaction Blocker sa loob ng Main Window
 		InteractionBlocker.Visible = true
 		TweenService:Create(InteractionBlocker, TWEEN_FAST, {BackgroundTransparency = 0.65}):Play()
 
 		local ConfirmWindow = Instance.new("Frame", ContentClipper)
+		ConfirmWindow.Name = "ExitConfirmDialog"
 		ConfirmWindow.Size = UDim2.fromOffset(340, 140)
 		ConfirmWindow.AnchorPoint = Vector2.new(0.5, 0.5)
 		ConfirmWindow.Position = UDim2.fromScale(0.5, 0.45)
-		ConfirmWindow.ZIndex = 95
+		ConfirmWindow.ZIndex = 49 -- Mas mataas sa InteractionBlocker (48)
 		ConfirmWindow.Active = true 
 		Instance.new("UICorner", ConfirmWindow).CornerRadius = UDim.new(0, 20)
 		KazeUI:AddPanel(ConfirmWindow, 0.02)
@@ -3393,11 +3397,11 @@ function KazeUI:CreateWindow(config)
 		ConfirmText.Size = UDim2.new(1, -40, 0, 50)
 		ConfirmText.Position = UDim2.fromOffset(20, 15)
 		ConfirmText.BackgroundTransparency = 1
-		ConfirmText.Text = "Gusto mo bang isara ang KazeUI?"
+		ConfirmText.Text = "Nais mo bang isara ang KazeUI?"
 		ConfirmText.Font = Enum.Font.GothamBold
 		ConfirmText.TextSize = 13
 		ConfirmText.TextWrapped = true
-		ConfirmText.ZIndex = 96
+		ConfirmText.ZIndex = 53
 		KazeUI:RegisterText(ConfirmText, false)
 
 		local ButtonsFrame = Instance.new("Frame", ConfirmWindow)
@@ -3405,7 +3409,7 @@ function KazeUI:CreateWindow(config)
 		ButtonsFrame.Position = UDim2.new(0, 0, 1, -12)
 		ButtonsFrame.AnchorPoint = Vector2.new(0, 1)
 		ButtonsFrame.BackgroundTransparency = 1
-		ButtonsFrame.ZIndex = 96
+		ButtonsFrame.ZIndex = 53
 		local layout = Instance.new("UIListLayout", ButtonsFrame)
 		layout.FillDirection = Enum.FillDirection.Horizontal
 		layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
@@ -3418,7 +3422,7 @@ function KazeUI:CreateWindow(config)
 		ConfirmBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 		ConfirmBtn.Font = Enum.Font.GothamBold
 		ConfirmBtn.TextSize = 11
-		ConfirmBtn.ZIndex = 97
+		ConfirmBtn.ZIndex = 54
 		Instance.new("UICorner", ConfirmBtn).CornerRadius = UDim.new(0, 10)
 
 		local CancelBtn = Instance.new("TextButton", ButtonsFrame)
@@ -3426,7 +3430,7 @@ function KazeUI:CreateWindow(config)
 		CancelBtn.Text = "Kanselahin"
 		CancelBtn.Font = Enum.Font.GothamBold
 		CancelBtn.TextSize = 11
-		CancelBtn.ZIndex = 97
+		CancelBtn.ZIndex = 54
 		Instance.new("UICorner", CancelBtn).CornerRadius = UDim.new(0, 10)
 		KazeUI:AddPanel(CancelBtn, 0.04)
 		KazeUI:RegisterText(CancelBtn, true)
@@ -3449,6 +3453,7 @@ function KazeUI:CreateWindow(config)
 	Content.Position = UDim2.fromOffset(0, 52)
 	Content.Size = UDim2.new(1, 0, 1, -52)
 	Content.BackgroundTransparency = 1
+	Content.ZIndex = 2 -- Mas mababa sa blocker
 	Content.Parent = ContentClipper
 
 	local SideBarMask = Instance.new("Frame")
@@ -3513,7 +3518,7 @@ function KazeUI:CreateWindow(config)
 	tabsLayout.Padding = UDim.new(0, 5)
 
 	-- ==========================================
-	-- Modal Resize Engine
+	-- Sistema ng Pagbago ng Sukat ng Window (Modal Resize Engine)
 	-- ==========================================
 	local ResizeBlocker = Instance.new("TextButton")
 	ResizeBlocker.Name = "ResizeInputBlocker"
@@ -3631,7 +3636,8 @@ function KazeUI:CreateWindow(config)
 	end
 
 	-- ==========================================================
-	-- Premium Floating Dialog Module (Gumagamit ng InteractionBlocker)
+	-- Premium Floating Dialog Component na may Interaction Blocker
+	-- Ang layout nito ay: MainFrame -> Interaction Blocker -> Dialog Frame
 	-- ==========================================================
 	function Win:Dialog(dialogConfig)
 		dialogConfig = dialogConfig or {}
@@ -3641,17 +3647,17 @@ function KazeUI:CreateWindow(config)
 		local hasIcon = (iconId ~= "")
 		local actions = dialogConfig.Actions or {}
 		
-		-- Paganahin ang Interaction Blocker sa loob ng MainFrame
+		-- Paganahin ang Interaction Blocker sa loob ng Window
 		InteractionBlocker.Visible = true
 		TweenService:Create(InteractionBlocker, TWEEN_FAST, {BackgroundTransparency = 0.65}):Play()
 
-		-- Animated Floating Dialog Frame (ZIndex = 100, nasa ibabaw ng blocker)
+		-- Gumawa ng Dialog Frame sa ibabaw ng Interaction Blocker sa loob ng Main Window (ContentClipper)
 		local DialogFrame = Instance.new("Frame", ContentClipper)
-		DialogFrame.Name = "DialogFrame"
+		DialogFrame.Name = "WindowDialog"
 		DialogFrame.Size = UDim2.fromOffset(380, 200) 
 		DialogFrame.AnchorPoint = Vector2.new(0.5, 0.5)
 		DialogFrame.Position = UDim2.fromScale(0.5, 0.4) 
-		DialogFrame.ZIndex = 100
+		DialogFrame.ZIndex = 49 -- Mas mataas sa InteractionBlocker (48) at Content (<=47)
 		DialogFrame.Active = true 
 		
 		Instance.new("UICorner", DialogFrame).CornerRadius = UDim.new(0, 20)
@@ -3670,7 +3676,7 @@ function KazeUI:CreateWindow(config)
 			dIcon.Position = UDim2.new(0.5, -18, 0, 18)
 			dIcon.BackgroundTransparency = 1
 			dIcon.Image = iconId
-			dIcon.ZIndex = 101
+			dIcon.ZIndex = 50
 			KazeUI:OnThemeChanged(dIcon, function(t) dIcon.ImageColor3 = KazeUI.GlowColor end)
 			topOffset = 62
 		end
@@ -3683,7 +3689,7 @@ function KazeUI:CreateWindow(config)
 		titleLabel.Font = Enum.Font.GothamBold
 		titleLabel.TextSize = 14
 		titleLabel.TextXAlignment = Enum.TextXAlignment.Center
-		titleLabel.ZIndex = 101
+		titleLabel.ZIndex = 50
 		KazeUI:RegisterText(titleLabel, false)
 
 		local contentLabel = Instance.new("TextLabel", DialogFrame)
@@ -3696,14 +3702,14 @@ function KazeUI:CreateWindow(config)
 		contentLabel.TextWrapped = true
 		contentLabel.TextXAlignment = Enum.TextXAlignment.Center
 		contentLabel.TextYAlignment = Enum.TextYAlignment.Top
-		contentLabel.ZIndex = 101
+		contentLabel.ZIndex = 50
 		KazeUI:RegisterText(contentLabel, true)
 
 		local ActionsFrame = Instance.new("Frame", DialogFrame)
 		ActionsFrame.Position = UDim2.new(0, 15, 1, -15)
 		ActionsFrame.AnchorPoint = Vector2.new(0, 1)
 		ActionsFrame.BackgroundTransparency = 1
-		ActionsFrame.ZIndex = 101
+		ActionsFrame.ZIndex = 50
 
 		local listLayout = Instance.new("UIListLayout", ActionsFrame)
 		listLayout.SortOrder = Enum.SortOrder.LayoutOrder
@@ -3712,7 +3718,7 @@ function KazeUI:CreateWindow(config)
 		listLayout.Padding = UDim.new(0, 8)
 
 		local totalActions = #actions
-		local shouldStack = (totalActions >= 4) 
+		local shouldStack = (totalActions >= 4) -- Awtomatikong patayo kung 4 o higit pang buttons
 
 		if shouldStack then
 			listLayout.FillDirection = Enum.FillDirection.Vertical
@@ -3739,7 +3745,7 @@ function KazeUI:CreateWindow(config)
 			
 			local actionBtn = Instance.new("TextButton", ActionsFrame)
 			actionBtn.Size = UDim2.new(0, buttonWidth, 0, 32)
-			actionBtn.ZIndex = 102
+			actionBtn.ZIndex = 51
 			actionBtn.AutoButtonColor = false
 			actionBtn.Text = "" 
 			actionBtn.LayoutOrder = i
@@ -3754,7 +3760,7 @@ function KazeUI:CreateWindow(config)
 			btnText.TextSize = 11
 			btnText.TextWrapped = true
 			btnText.TextScaled = true 
-			btnText.ZIndex = 103
+			btnText.ZIndex = 52
 
 			local textConstraint = Instance.new("UITextSizeConstraint", btnText)
 			textConstraint.MaxTextSize = 11
@@ -3816,7 +3822,7 @@ function KazeUI:CreateWindow(config)
 	end
 
 	function Win:CreateConfigManager(tab)
-		local sec = tab:SectionUI("Config Manager")
+		local sec = tab:SectionUI("Pamamahala ng Config")
 		local cfgName = "Default"
 
 		local function getConfigs()
@@ -3853,7 +3859,7 @@ function KazeUI:CreateWindow(config)
 		end})
 
 		configDropdown = sec:Dropdown({
-			Title = "Pumili ng Naka-save na Config", 
+			Title = "Pumili ng Nakasave na Config", 
 			Options = getConfigs(), 
 			Callback = function(v) cfgName = v end
 		})
@@ -3865,10 +3871,10 @@ function KazeUI:CreateWindow(config)
 			if delfile then
 				local folder = KazeUI.AuthorName
 				pcall(function() delfile(folder .. "/" .. cfgName .. ".json") end)
-				KazeUI:Notify({Title = "Sistem ng Config", Content = "Nabura ang " .. cfgName, Duration = 3})
+				KazeUI:Notify({Title = "Pamamahala ng Config", Content = "Deleted " .. cfgName, Duration = 3})
 				if configDropdown then configDropdown:Refresh(getConfigs()) end
 			else
-				KazeUI:Notify({Title = "Error", Content = "Walang 'delfile' support ang executor mo.", Duration = 3})
+				KazeUI:Notify({Title = "Error", Content = "Hindi suportado ng executor ang 'delfile'.", Duration = 3})
 			end
 		end})
 	end
@@ -3881,7 +3887,7 @@ function KazeUI:CreateWindow(config)
 		table.sort(themeNames)
 
 		sec:Dropdown({
-			Title = "Preset ng Tema ng Interface",
+			Title = "Tema ng Interface",
 			Options = themeNames,
 			Default = KazeUI.CurrentTheme.Name,
 			Flag = "KazeUI_Theme_Preset",
@@ -3889,14 +3895,14 @@ function KazeUI:CreateWindow(config)
 		})
 
 		sec:ColorPicker({
-			Title = "Kulay ng Accent Glow",
+			Title = "Kulay ng Ningning (Glow)",
 			Default = KazeUI.GlowColor,
 			Flag = "KazeUI_Theme_GlowColor", 
 			Callback = function(color) KazeUI:SetGlow(color) end
 		})
 
-		sec:PageConstraint = sec:Slider({
-			Title = "Transparency ng UI Background",
+		sec:Slider({
+			Title = "Aninag ng UI Background",
 			Min = 0,
 			Max = 10,
 			Default = math.floor(KazeUI.BackgroundTransparency * 10),
@@ -3904,11 +3910,11 @@ function KazeUI:CreateWindow(config)
 			Callback = function(val) KazeUI:SetTransparency(val / 10) end
 		})
 
-		local wpSec = tab:SectionUI("Sistemang Premium Wallpaper")
+		local wpSec = tab:SectionUI("Sistemang Wallpaper")
 
 		wpSec:TextBox({
-			Title = "Custom Background Image ID o URL",
-			Placeholder = "rbxassetid://ID o HTTPS Image Link",
+			Title = "Custom na Larawan (ID o URL)",
+			Placeholder = "rbxassetid://ID o HTTPS Link",
 			Default = KazeUI.CurrentTheme.BackgroundImage or "",
 			Flag = "KazeUI_Wallpaper_AssetID",
 			Callback = function(val)
@@ -3930,7 +3936,7 @@ function KazeUI:CreateWindow(config)
 		})
 
 		wpSec:Slider({
-			Title = "Transparency ng Wallpaper",
+			Title = "Aninag ng Wallpaper",
 			Min = 0,
 			Max = 100,
 			Default = math.floor((KazeUI.CurrentTheme.BackgroundImageTransparency or 0) * 100),
@@ -3947,7 +3953,7 @@ function KazeUI:CreateWindow(config)
 		})
 
 		wpSec:Slider({
-			Title = "Lalim ng Soft Dark Overlay",
+			Title = "Dilim ng Overlay",
 			Min = 0,
 			Max = 100,
 			Default = math.floor((KazeUI.CurrentTheme.OverlayTransparency or 0.70) * 100),
@@ -4079,7 +4085,7 @@ function KazeUI:CreateWindow(config)
 		local stateTitle = Instance.new("TextLabel", CenterContent)
 		stateTitle.Size = UDim2.new(0.9, 0, 0, 20)
 		stateTitle.BackgroundTransparency = 1
-		stateTitle.Text = "Wala pang nilalaman dito"
+		stateTitle.Text = "Wala pang laman dito"
 		stateTitle.Font = Enum.Font.GothamBold
 		stateTitle.TextSize = 14
 		stateTitle.TextXAlignment = Enum.TextXAlignment.Center
@@ -4088,7 +4094,7 @@ function KazeUI:CreateWindow(config)
 		local stateDesc = Instance.new("TextLabel", CenterContent)
 		stateDesc.Size = UDim2.new(0.9, 0, 0, 36)
 		stateDesc.BackgroundTransparency = 1
-		stateDesc.Text = "Ang seksyong ito ay wala pang mga elemento.\nMagdagdag ng isa para magsimula."
+		stateDesc.Text = "Wala pang mga elemento ang seksyong ito.\nMagdagdag upang magsimula."
 		stateDesc.Font = Enum.Font.Gotham
 		stateDesc.TextSize = 11
 		stateDesc.TextWrapped = true
