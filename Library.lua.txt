@@ -58,6 +58,9 @@ KazeUI.ActiveWindows = {}
 KazeUI.IsResizing = false
 KazeUI.AuthorName = "Unknown"
 
+-- Centralized Modal / Dialogue State Tracker
+local activeDialogsCount = 0
+
 -- UI element registries for theme switching
 KazeUI.TextElements = {}
 KazeUI.MutedTextElements = {}
@@ -350,7 +353,7 @@ local function MakeDraggable(dragPart, targetPart)
 	end
 	
 	dragPart.InputBegan:Connect(function(input)
-		if KazeUI.IsResizing then return end
+		if KazeUI.IsResizing or activeDialogsCount > 0 then return end
 		
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 			dragging = true
@@ -390,7 +393,7 @@ local function MakeDraggable(dragPart, targetPart)
 end
 
 -- ==========================================================
--- Universal Lock Overlay Implementation (Input & Visual Blocker)
+-- Universal Centered Lock Overlay Implementation (Input & Visual Blocker)
 -- ==========================================================
 local function ApplyLock(componentFrame, isLocked, parentOverride, customSize, customPos, customAnchor)
 	local lockOverlay = Instance.new("TextButton")
@@ -416,9 +419,9 @@ local function ApplyLock(componentFrame, isLocked, parentOverride, customSize, c
 
 	local lockIcon = Instance.new("ImageLabel")
 	lockIcon.Name = "LockIcon"
-	lockIcon.Size = UDim2.fromOffset(16, 16)
-	lockIcon.AnchorPoint = Vector2.new(1, 0.5)
-	lockIcon.Position = UDim2.new(1, -14, 0.5, 0)
+	lockIcon.Size = UDim2.fromOffset(24, 24)
+	lockIcon.AnchorPoint = Vector2.new(0.5, 0.5) -- Centered perfectly
+	lockIcon.Position = UDim2.fromScale(0.5, 0.5) -- Centered perfectly
 	lockIcon.BackgroundTransparency = 1
 	lockIcon.Image = "rbxassetid://78672912777756"
 	lockIcon.ZIndex = 10000
@@ -948,6 +951,7 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 	title = tostring(title or "Dropdown")
 	options = type(options) == "table" and options or {}
 	local isOpen = false
+	local isLockedState = locked or false
 
 	local selectedSingle = ""
 	local selectedMulti = {}
@@ -1103,6 +1107,10 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 	KazeUI:OnThemeChanged(searchBox, function(t) searchBox.PlaceholderColor3 = t.MutedText end)
 
 	searchBox.Focused:Connect(function() 
+		if isLockedState or activeDialogsCount > 0 then
+			searchBox:ReleaseFocus()
+			return
+		end
 		TweenService:Create(searchStroke, TWEEN_FAST, {Color = KazeUI.GlowColor}):Play()
 	end)
 	searchBox.FocusLost:Connect(function() 
@@ -1127,8 +1135,13 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 	listContainer.ScrollBarImageColor3 = Color3.fromRGB(40, 40, 45)
 	listContainer.Parent = dropFrame
 
-	listContainer.MouseEnter:Connect(function() ToggleScrollingAncestors(dropFrame, false) end)
-	listContainer.MouseLeave:Connect(function() ToggleScrollingAncestors(dropFrame, true) end)
+	listContainer.MouseEnter:Connect(function() 
+		if isLockedState or activeDialogsCount > 0 then return end
+		ToggleScrollingAncestors(dropFrame, false) 
+	end)
+	listContainer.MouseLeave:Connect(function() 
+		ToggleScrollingAncestors(dropFrame, true) 
+	end)
 
 	local listLayout = Instance.new("UIListLayout", listContainer)
 	listLayout.SortOrder = Enum.SortOrder.LayoutOrder
@@ -1225,15 +1238,18 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 			end)
 
 			btn.MouseEnter:Connect(function() 
+				if isLockedState or activeDialogsCount > 0 then return end
 				isHovering = true
 				UpdateVisuals(false)
 			end)
 			btn.MouseLeave:Connect(function()
 				isHovering = false
+				if isLockedState or activeDialogsCount > 0 then return end
 				UpdateVisuals(false)
 			end)
 
 			btn.MouseButton1Click:Connect(function()
+				if isLockedState or activeDialogsCount > 0 then return end
 				TweenService:Create(btn, TweenInfo.new(0.1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, 0, true), {Size = UDim2.new(1, -8, 0, 28)}):Play()
 
 				if isMulti then
@@ -1264,6 +1280,7 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 	Refresh(options)
 
 	searchBox:GetPropertyChangedSignal("Text"):Connect(function()
+		if isLockedState or activeDialogsCount > 0 then return end
 		local q = string.lower(searchBox.Text)
 		for _, item in ipairs(optionItems) do
 			item.Btn.Visible = (q == "" or string.find(string.lower(item.Text), q, 1, true)) ~= nil
@@ -1272,6 +1289,7 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 	end)
 
 	clickBtn.MouseButton1Click:Connect(function()
+		if isLockedState or activeDialogsCount > 0 then return end
 		isOpen = not isOpen
 		if isOpen then
 			searchWrapper.Visible = true
@@ -1337,7 +1355,10 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 			return selectedSingle 
 		end,
 		SetText = function(self, newTitle) titleLabel.Text = newTitle end,
-		SetLocked = function(self, state) lockCtrl:SetLocked(state) end
+		SetLocked = function(self, state)
+			isLockedState = state
+			lockCtrl:SetLocked(state)
+		end
 	}
 end
 
@@ -1422,6 +1443,7 @@ end
 local function CreateClickableParagraph(parentFrame, title, body, callback, locked)
 	title = tostring(title or "Button")
 	body = tostring(body or "")
+	local isLockedState = locked or false
 	
 	local measuredWidth = 598 * 0.92
 	if parentFrame and parentFrame.AbsoluteSize and parentFrame.AbsoluteSize.X > 0 then measuredWidth = parentFrame.AbsoluteSize.X * 0.95 end
@@ -1518,6 +1540,7 @@ local function CreateClickableParagraph(parentFrame, title, body, callback, lock
 	clickDetector.Parent = paraFrame
 
 	clickDetector.MouseEnter:Connect(function()
+		if isLockedState or activeDialogsCount > 0 then return end
 		isHovering = true
 		TweenService:Create(paraFrame, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.04)}):Play()
 		TweenService:Create(paraStroke, TWEEN_FAST, {Color = KazeUI.GlowColor}):Play()
@@ -1525,18 +1548,21 @@ local function CreateClickableParagraph(parentFrame, title, body, callback, lock
 	end)
 	clickDetector.MouseLeave:Connect(function()
 		isHovering = false
+		if isLockedState or activeDialogsCount > 0 then return end
 		TweenService:Create(paraFrame, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.02)}):Play()
 		TweenService:Create(paraStroke, TWEEN_FAST, {Color = KazeUI.CurrentTheme.Border}):Play()
 		TweenService:Create(rightIcon, TWEEN_FAST, {ImageColor3 = KazeUI.CurrentTheme.MutedText, Position = UDim2.new(1, -10, 0.5, 0)}):Play()
 	end)
 	
 	clickDetector.MouseButton1Down:Connect(function()
+		if isLockedState or activeDialogsCount > 0 then return end
 		TweenService:Create(paraFrame, TweenInfo.new(0.1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { 
 			Size = UDim2.new(0.93, 0, 0, totalHeight - 2), 
 			Position = UDim2.new(0.5, 0, 0, 4) 
 		}):Play()
 	end)
 	clickDetector.MouseButton1Up:Connect(function()
+		if isLockedState or activeDialogsCount > 0 then return end
 		TweenService:Create(paraFrame, TWEEN_SPRING, { 
 			Size = UDim2.new(0.95, 0, 0, totalHeight), 
 			Position = UDim2.new(0.5, 0, 0, 3) 
@@ -1557,7 +1583,10 @@ local function CreateClickableParagraph(parentFrame, title, body, callback, lock
 			if ptitleLabel and newTitle then ptitleLabel.Text = newTitle end
 			if bodyLabel and newBody then bodyLabel.Text = newBody end
 		end,
-		SetLocked = function(self, state) lockCtrl:SetLocked(state) end
+		SetLocked = function(self, state)
+			isLockedState = state
+			lockCtrl:SetLocked(state)
+		end
 	}
 end
 
@@ -1565,6 +1594,7 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 	title = tostring(title or "Toggle Switch")
 	body = tostring(body or "")
 	local state = defaultState or false
+	local isLockedState = locked or false
 	
 	local measuredWidth = 598 * 0.92
 	if parentFrame and parentFrame.AbsoluteSize and parentFrame.AbsoluteSize.X > 0 then measuredWidth = parentFrame.AbsoluteSize.X * 0.95 end
@@ -1685,19 +1715,23 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 	local isHovering = false
 
 	clickDetector.MouseEnter:Connect(function()
+		if isLockedState or activeDialogsCount > 0 then return end
 		isHovering = true
 		TweenService:Create(paraFrame, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.04)}):Play()
 		TweenService:Create(paraStroke, TWEEN_FAST, {Color = KazeUI.GlowColor}):Play()
 	end)
 	clickDetector.MouseLeave:Connect(function()
 		isHovering = false
+		if isLockedState or activeDialogsCount > 0 then return end
 		TweenService:Create(paraFrame, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.02)}):Play()
 		TweenService:Create(paraStroke, TWEEN_FAST, {Color = KazeUI.CurrentTheme.Border}):Play()
 	end)
 	clickDetector.MouseButton1Down:Connect(function()
+		if isLockedState or activeDialogsCount > 0 then return end
 		TweenService:Create(paraFrame, TWEEN_FAST, {Size = UDim2.new(0.93, 0, 0, totalHeight - 2), Position = UDim2.new(0.5, 0, 0, 4)}):Play()
 	end)
 	clickDetector.MouseButton1Up:Connect(function()
+		if isLockedState or activeDialogsCount > 0 then return end
 		TweenService:Create(paraFrame, TWEEN_SPRING, {Size = UDim2.new(0.95, 0, 0, totalHeight), Position = UDim2.new(0.5, 0, 0, 3)}):Play()
 		setToggleState(not state, false)
 		if typeof(callback) == "function" then task.spawn(callback, state) end
@@ -1725,13 +1759,17 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 			if ptitleLabel and newTitle then ptitleLabel.Text = newTitle end
 			if bodyLabel and newBody then bodyLabel.Text = newBody end
 		end,
-		SetLocked = function(self, state) lockCtrl:SetLocked(state) end
+		SetLocked = function(self, state)
+			isLockedState = state
+			lockCtrl:SetLocked(state)
+		end
 	}
 end
 
 local function CreateTextBoxInput(parentFrame, title, placeholder, defaultVal, callback, flag, locked)
 	title = tostring(title or "Input Text")
 	placeholder = tostring(placeholder or "Type here...")
+	local isLockedState = locked or false
 	
 	local measuredWidth = 598 * 0.92
 	if parentFrame and parentFrame.AbsoluteSize and parentFrame.AbsoluteSize.X > 0 then measuredWidth = parentFrame.AbsoluteSize.X * 0.95 end
@@ -1816,6 +1854,10 @@ local function CreateTextBoxInput(parentFrame, title, placeholder, defaultVal, c
 	local isFocused = false
 
 	textBox.Focused:Connect(function()
+		if isLockedState or activeDialogsCount > 0 then
+			textBox:ReleaseFocus()
+			return
+		end
 		isFocused = true
 		TweenService:Create(innerStroke, TWEEN_FAST, {Color = KazeUI.GlowColor}):Play()
 		TweenService:Create(paraFrame, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.04)}):Play()
@@ -1851,7 +1893,10 @@ local function CreateTextBoxInput(parentFrame, title, placeholder, defaultVal, c
 		SetTitle = function(self, newTitle)
 			if ptitleLabel and newTitle then ptitleLabel.Text = newTitle end
 		end,
-		SetLocked = function(self, state) lockCtrl:SetLocked(state) end
+		SetLocked = function(self, state)
+			isLockedState = state
+			lockCtrl:SetLocked(state)
+		end
 	}
 end
 
@@ -1861,6 +1906,7 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 	max = tonumber(max) or 100
 	default = tonumber(default) or min
 	local value = math.clamp(default, min, max)
+	local isLockedState = locked or false
 	
 	local measuredWidth = 598 * 0.92
 	if parentFrame and parentFrame.AbsoluteSize and parentFrame.AbsoluteSize.X > 0 then measuredWidth = parentFrame.AbsoluteSize.X * 0.95 end
@@ -1985,6 +2031,7 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 	knob.Position = UDim2.new(startingPercentage, 0, 0.5, 0)
 	
 	clickDetector.InputBegan:Connect(function(input)
+		if isLockedState or activeDialogsCount > 0 then return end
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 			isDragging = true
 			ToggleScrollingAncestors(track, false)
@@ -2040,7 +2087,10 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 		SetText = function(self, newTitle)
 			if ptitleLabel and newTitle then ptitleLabel.Text = newTitle end
 		end,
-		SetLocked = function(self, state) lockCtrl:SetLocked(state) end
+		SetLocked = function(self, state)
+			isLockedState = state
+			lockCtrl:SetLocked(state)
+		end
 	}
 	RegisterFlag(flag, function() return value end, function(val) api:SetValue(val) end)
 	return api
@@ -2051,6 +2101,7 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 	local color = defaultColor or Color3.fromRGB(255, 255, 255)
 	local h, s, v = Color3.toHSV(color)
 	local isOpen = false
+	local isLockedState = locked or false
 
 	local wrapper = Instance.new("Frame")
 	wrapper.Size = UDim2.new(1, 0, 0, 0)
@@ -2219,6 +2270,7 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 	end
 
 	svMap.InputBegan:Connect(function(input)
+		if isLockedState or activeDialogsCount > 0 then return end
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 			draggingMap = true
 			ToggleScrollingAncestors(svMap, false)
@@ -2228,6 +2280,7 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 	end)
 
 	hueSlider.InputBegan:Connect(function(input)
+		if isLockedState or activeDialogsCount > 0 then return end
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 			draggingHue = true
 			ToggleScrollingAncestors(hueSlider, false)
@@ -2261,6 +2314,7 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 	end)
 
 	clickBtn.MouseButton1Click:Connect(function()
+		if isLockedState or activeDialogsCount > 0 then return end
 		isOpen = not isOpen
 		pickerArea.Visible = isOpen
 		TweenService:Create(arrowIcon, TWEEN_SPRING, {Rotation = isOpen and 180 or 0}):Play()
@@ -2292,7 +2346,10 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 			UpdateColor()
 		end,
 		SetText = function(self, newTitle) titleLabel.Text = newTitle end,
-		SetLocked = function(self, state) lockCtrl:SetLocked(state) end
+		SetLocked = function(self, state)
+			isLockedState = state
+			lockCtrl:SetLocked(state)
+		end
 	}
 end
 
@@ -2300,6 +2357,7 @@ local function CreateKeybindInput(parentFrame, title, defaultKey, callback, flag
 	title = tostring(title or "Keybind")
 	local currentKey = defaultKey or Enum.KeyCode.Unknown
 	local isBinding = false
+	local isLockedState = locked or false
 	
 	local measuredWidth = 598 * 0.92
 	if parentFrame and parentFrame.AbsoluteSize and parentFrame.AbsoluteSize.X > 0 then measuredWidth = parentFrame.AbsoluteSize.X * 0.95 end
@@ -2377,15 +2435,18 @@ local function CreateKeybindInput(parentFrame, title, defaultKey, callback, flag
 	local isHovering = false
 	
 	bindContainer.MouseEnter:Connect(function()
+		if isLockedState or activeDialogsCount > 0 then return end
 		isHovering = true
 		if not isBinding then TweenService:Create(bindStroke, TWEEN_FAST, {Color = KazeUI.GlowColor}):Play() end
 	end)
 	bindContainer.MouseLeave:Connect(function()
 		isHovering = false
+		if isLockedState or activeDialogsCount > 0 then return end
 		if not isBinding then TweenService:Create(bindStroke, TWEEN_FAST, {Color = KazeUI.CurrentTheme.Border}):Play() end
 	end)
 	
 	bindContainer.MouseButton1Click:Connect(function()
+		if isLockedState or activeDialogsCount > 0 then return end
 		if isBinding then return end
 		isBinding = true
 		bindLabel.Text = "..."
@@ -2447,7 +2508,10 @@ local function CreateKeybindInput(parentFrame, title, defaultKey, callback, flag
 			currentKey = newKey
 			bindLabel.Text = currentKey == Enum.KeyCode.Unknown and "None" or currentKey.Name
 		end,
-		SetLocked = function(self, state) lockCtrl:SetLocked(state) end
+		SetLocked = function(self, state)
+			isLockedState = state
+			lockCtrl:SetLocked(state)
+		end
 	}
 end
 
@@ -2835,6 +2899,7 @@ CreateCollapsibleSection = function(parentFrame, titleArg, currentDepth)
 	end
 
 	toggleDetector.MouseEnter:Connect(function()
+		if activeDialogsCount > 0 then return end
 		TweenService:Create(headerFrame, TweenInfo.new(0.15), {BackgroundColor3 = KazeUI.GetColor(0.04), BackgroundTransparency = 0.4}):Play()
 	end)
 	toggleDetector.MouseLeave:Connect(function()
@@ -2842,9 +2907,11 @@ CreateCollapsibleSection = function(parentFrame, titleArg, currentDepth)
 	end)
 
 	toggleDetector.MouseButton1Down:Connect(function()
+		if activeDialogsCount > 0 then return end
 		TweenService:Create(sectionBox, TweenInfo.new(0.1), {Size = UDim2.new(0.93, 0, 0, 0)}):Play()
 	end)
 	toggleDetector.MouseButton1Up:Connect(function()
+		if activeDialogsCount > 0 then return end
 		TweenService:Create(sectionBox, TweenInfo.new(0.1), {Size = UDim2.new(0.95, 0, 0, 0)}):Play()
 		toggleSection()
 	end)
@@ -3009,6 +3076,7 @@ CreateGroupBox = function(parentFrame, titleArg, currentDepth, depthOverride)
 	end
 
 	toggleDetector.MouseEnter:Connect(function()
+		if activeDialogsCount > 0 then return end
 		TweenService:Create(header, TweenInfo.new(0.15), {BackgroundColor3 = KazeUI.GetColor(0.04), BackgroundTransparency = 0.4}):Play()
 	end)
 	toggleDetector.MouseLeave:Connect(function()
@@ -3016,9 +3084,11 @@ CreateGroupBox = function(parentFrame, titleArg, currentDepth, depthOverride)
 	end)
 
 	toggleDetector.MouseButton1Down:Connect(function()
+		if activeDialogsCount > 0 then return end
 		TweenService:Create(groupFrame, TweenInfo.new(0.1), {Size = UDim2.new(scaledWidth - 0.02, 0, 0, 0)}):Play()
 	end)
 	toggleDetector.MouseButton1Up:Connect(function()
+		if activeDialogsCount > 0 then return end
 		TweenService:Create(groupFrame, TweenInfo.new(0.1), {Size = UDim2.new(scaledWidth, 0, 0, 0)}):Play()
 		toggleGroup()
 	end)
@@ -3322,6 +3392,10 @@ function KazeUI:CreateWindow(config)
 	local BtnGreen = createCircleButton("BtnGreen", -80, Color3.fromRGB(34, 197, 94))
 	local BtnYellow = createCircleButton("BtnYellow", -56, Color3.fromRGB(234, 179, 8))
 	local BtnRed = createCircleButton("BtnRed", -32, Color3.fromRGB(239, 68, 68))
+	
+	BtnGreen.AutoButtonColor = false
+	BtnYellow.AutoButtonColor = false
+	BtnRed.AutoButtonColor = false
 
 	local MiniButton = Instance.new("TextButton") 
 	MiniButton.Size = MiniButtonSize
@@ -3385,7 +3459,10 @@ function KazeUI:CreateWindow(config)
 		end
 	end
 
-	BtnYellow.MouseButton1Click:Connect(minimizeWindow)
+	BtnYellow.MouseButton1Click:Connect(function()
+		if activeDialogsCount > 0 then return end
+		minimizeWindow()
+	end)
 
 	local miniDragStart
 	local miniDragMoved = false
@@ -3425,6 +3502,7 @@ function KazeUI:CreateWindow(config)
 	end)
 
 	BtnGreen.MouseButton1Click:Connect(function()
+		if activeDialogsCount > 0 then return end
 		if not toggledMaximized then
 			lastNormalSize = Window.Size
 			lastNormalPosition = Window.Position
@@ -3444,6 +3522,7 @@ function KazeUI:CreateWindow(config)
 	local function ShowCloseConfirm()
 		if confirmActive then return end
 		confirmActive = true
+		activeDialogsCount = activeDialogsCount + 1
 		BtnYellow.Active = false; BtnGreen.Active = false; BtnRed.Active = false
 		
 		-- Enable the Interaction Blocker overlay
@@ -3517,10 +3596,14 @@ function KazeUI:CreateWindow(config)
 			ConfirmWindow:Destroy()
 			InteractionBlocker.Visible = false
 			confirmActive = false
+			activeDialogsCount = math.max(0, activeDialogsCount - 1)
 			BtnYellow.Active = true; BtnGreen.Active = true; BtnRed.Active = true 
 		end)
 	end
-	BtnRed.MouseButton1Click:Connect(ShowCloseConfirm)
+	BtnRed.MouseButton1Click:Connect(function()
+		if activeDialogsCount > 0 then return end
+		ShowCloseConfirm()
+	end)
 
 	local Content = Instance.new("Frame")
 	Content.Position = UDim2.fromOffset(0, 52)
@@ -3556,6 +3639,7 @@ function KazeUI:CreateWindow(config)
 
 	local isSidebarOpen = true
 	Avatar.MouseButton1Click:Connect(function()
+		if activeDialogsCount > 0 then return end
 		isSidebarOpen = not isSidebarOpen
 		local tInfo = TweenInfo.new(0.35, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
 		if isSidebarOpen then
@@ -3620,6 +3704,7 @@ function KazeUI:CreateWindow(config)
 
 	local hoverCursor = "rbxassetid://10747373117"
 	ResizeHandle.MouseEnter:Connect(function()
+		if activeDialogsCount > 0 then return end
 		if not KazeUI.IsResizing and not toggledMaximized then
 			Mouse.Icon = hoverCursor
 			TweenService:Create(ResizeHandle, TweenInfo.new(0.12), {ImageColor3 = KazeUI.GlowColor}):Play()
@@ -3645,6 +3730,7 @@ function KazeUI:CreateWindow(config)
 	end
 
 	ResizeHandle.InputBegan:Connect(function(input)
+		if activeDialogsCount > 0 then return end
 		if toggledMaximized then return end
 		if KazeUI.IsResizing then return end 
 
@@ -3717,6 +3803,8 @@ function KazeUI:CreateWindow(config)
 		local iconId = dialogConfig.Icon and FormatImage(dialogConfig.Icon) or ""
 		local hasIcon = (iconId ~= "")
 		local actions = dialogConfig.Actions or {}
+		
+		activeDialogsCount = activeDialogsCount + 1
 		
 		-- Enable the Interaction Blocker to dim the Window and swallow inputs
 		InteractionBlocker.Visible = true
@@ -3808,6 +3896,7 @@ function KazeUI:CreateWindow(config)
 			tw.Completed:Wait()
 			DialogFrame:Destroy()
 			InteractionBlocker.Visible = false
+			activeDialogsCount = math.max(0, activeDialogsCount - 1)
 		end
 
 		-- Math for horizontal button splitting
@@ -4238,6 +4327,7 @@ function KazeUI:CreateWindow(config)
 		local isHovering = false
 
 		local function activate()
+			if activeDialogsCount > 0 then return end
 			for _, t in ipairs(self._Tabs) do
 				TweenService:Create(t.Button, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.02)}):Play()
 				t.Indicator.Visible = false
@@ -4257,6 +4347,7 @@ function KazeUI:CreateWindow(config)
 		end
 
 		btn.MouseEnter:Connect(function()
+			if activeDialogsCount > 0 then return end
 			isHovering = true
 			if not leftIndicator.Visible then
 				TweenService:Create(btn, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.03)}):Play()
@@ -4266,6 +4357,7 @@ function KazeUI:CreateWindow(config)
 		end)
 		btn.MouseLeave:Connect(function()
 			isHovering = false
+			if activeDialogsCount > 0 then return end
 			if not leftIndicator.Visible then
 				TweenService:Create(btn, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.02)}):Play()
 				TweenService:Create(txt, TWEEN_FAST, {TextColor3 = KazeUI.CurrentTheme.MutedText}):Play()
