@@ -4,7 +4,6 @@
 	Retained: 100% Backwards Compatibility with Version 1, 2, 2.2, 2.3, and 3.0 APIs
 	
 	UPDATES IN V3.6.9 & CUSTOM TUNING:
-	- CENTRALIZED COMPATIBILITY ENGINE: Added a robust environment abstraction layer for executors to completely prevent crashes.
 	- INTERACTION LOCKOUT DIALOGS: Standard Frame-level Modal Blockers inside the Main Window entirely bypass the Roblox CanvasGroup mobile input routing bug.
 	- COMPONENT LOCKS (Locked = true/false): Support added for locking interactive components (Buttons, Toggles, Sliders, Dropdowns, etc.) preventing clicks and displaying a premium Padlock Icon (Asset: 78672912777756).
 	- AUTO-STACKING ACTIONS ENGINE: Action buttons stack vertically when 4 or more options are defined, and align horizontally for 1-3 buttons.
@@ -21,216 +20,9 @@ local UIS = game:GetService("UserInputService")
 local TextService = game:GetService("TextService")
 local HttpService = game:GetService("HttpService")
 local LP = Players.LocalPlayer
-local Mouse = LP and LP:GetMouse() or nil
+local Mouse = LP:GetMouse()
 
--- ==========================================================
--- 1. High-Performance Centralized Compatibility Engine
--- ==========================================================
-local Compatibility = {
-	Executor = { Name = "Unknown", Version = "1.0" },
-	Capabilities = {},
-	_Cache = {}
-}
-KazeUI.Compatibility = Compatibility
-
--- Safe environment detection executed once on startup
-local function initializeCompatibility()
-	-- Executor Detection
-	local name = "Unknown"
-	local version = "1.0"
-	
-	if identifyexecutor then
-		local s, execName, execVer = pcall(identifyexecutor)
-		if s and execName then
-			name = tostring(execName)
-			if execVer then version = tostring(execVer) end
-		end
-	elseif getexecutorname then
-		local s, execName = pcall(getexecutorname)
-		if s and execName then
-			name = tostring(execName)
-		end
-	else
-		-- Global heuristics fallback
-		if syn and not (getgenv and getgenv()._wave) then
-			name = "Synapse X"
-		elseif getgenv and getgenv()._wave then
-			name = "Wave"
-		elseif fluxus then
-			name = "Fluxus"
-		elseif solara then
-			name = "Solara"
-		elseif swift then
-			name = "Swift"
-		elseif codex then
-			name = "Codex"
-		elseif arceus then
-			name = "Arceus X"
-		elseif delta then
-			name = "Delta"
-		elseif krnl then
-			name = "KRNL"
-		elseif xeno then
-			name = "Xeno"
-		end
-	end
-	
-	Compatibility.Executor.Name = name
-	Compatibility.Executor.Version = version
-
-	-- Safe Capability Mapping (only HTTP, Clipboard, Filesystem, WebSocket, Crypt, QueueTeleport, Debug)
-	local capabilities = {}
-	
-	-- HTTP Detection
-	local hasHttp = false
-	pcall(function()
-		if game and typeof(game.HttpGet) == "function" then
-			hasHttp = true
-		end
-	end)
-	if not hasHttp then
-		hasHttp = (request ~= nil) or (http_request ~= nil) or (syn and syn.request ~= nil) or (fluxus and fluxus.request ~= nil)
-	end
-	capabilities.HTTP = hasHttp
-	
-	-- Clipboard Detection
-	capabilities.Clipboard = (setclipboard ~= nil) or (toclipboard ~= nil) or (syn and syn.write_to_clipboard ~= nil)
-	
-	-- Filesystem Detection
-	capabilities.Filesystem = (writefile ~= nil) and (readfile ~= nil)
-	
-	-- WebSocket Detection
-	capabilities.WebSocket = (WebSocket ~= nil) or (syn and syn.websocket ~= nil)
-	
-	-- Crypt Detection
-	capabilities.Crypt = (crypt ~= nil) or (syn and syn.crypt ~= nil)
-	
-	-- QueueTeleport Detection
-	capabilities.QueueTeleport = (queue_on_teleport ~= nil) or (syn and syn.queue_on_teleport ~= nil) or (fluxus and fluxus.queue_on_teleport ~= nil)
-	
-	-- Debug Detection
-	local hasDebug = false
-	pcall(function()
-		hasDebug = (getgc ~= nil) or (getregistry ~= nil) or (getupvalue ~= nil) or (setupvalue ~= nil) or (getconstants ~= nil) or (getinfo ~= nil) or (debug ~= nil and type(debug) == "table" and (debug.getupvalue ~= nil or debug.getregistry ~= nil))
-	end)
-	capabilities.Debug = hasDebug
-
-	Compatibility.Capabilities = capabilities
-end
-initializeCompatibility()
-
--- safe file operations wrappers
-function Compatibility.WriteFile(filepath, contents)
-	if not writefile then return false, "writefile is unsupported" end
-	local s, err = pcall(writefile, filepath, contents)
-	return s, err or "Successfully wrote file"
-end
-
-function Compatibility.ReadFile(filepath)
-	if not readfile then return false, "readfile is unsupported" end
-	local s, data = pcall(readfile, filepath)
-	return s, data
-end
-
-function Compatibility.AppendFile(filepath, contents)
-	if not appendfile then return false, "appendfile is unsupported" end
-	local s, err = pcall(appendfile, filepath, contents)
-	return s, err
-end
-
-function Compatibility.IsFile(filepath)
-	if not isfile then return false, "isfile is unsupported" end
-	local s, result = pcall(isfile, filepath)
-	return s and result
-end
-
-function Compatibility.IsFolder(folderpath)
-	if not isfolder then return false, "isfolder is unsupported" end
-	local s, result = pcall(isfolder, folderpath)
-	return s and result
-end
-
-function Compatibility.MakeFolder(folderpath)
-	if not makefolder then return false, "makefolder is unsupported" end
-	local s, err = pcall(makefolder, folderpath)
-	return s, err
-end
-
-function Compatibility.Delfile(filepath)
-	if not delfile then return false, "delfile is unsupported" end
-	local s, err = pcall(delfile, filepath)
-	return s, err
-end
-
-function Compatibility.Delfolder(folderpath)
-	if not delfolder then return false, "delfolder is unsupported" end
-	local s, err = pcall(delfolder, folderpath)
-	return s, err
-end
-
-function Compatibility.ListFiles(folderpath)
-	if not listfiles then return false, "listfiles is unsupported" end
-	local s, list = pcall(listfiles, folderpath)
-	return s, list or {}
-end
-
--- safe general wrappers
-function Compatibility.SetClipboard(text)
-	if setclipboard then
-		local s, err = pcall(setclipboard, text)
-		return s, err
-	elseif toclipboard then
-		local s, err = pcall(toclipboard, text)
-		return s, err
-	end
-	return false, "Clipboard actions are unsupported"
-end
-
-function Compatibility.HttpGet(url)
-	if game and game.HttpGet then
-		local s, res = pcall(game.HttpGet, game, url)
-		return s, res
-	end
-	return false, "HttpGet is unsupported"
-end
-
-function Compatibility.Request(options)
-	local reqFunc = request or http_request or (syn and syn.request) or (fluxus and fluxus.request)
-	if not reqFunc then return false, "HTTP request is unsupported" end
-	local s, res = pcall(reqFunc, options)
-	return s, res
-end
-
-function Compatibility.GetCustomAsset(filepath)
-	local assetFunc = getcustomasset or getsynasset or (Drawing and Drawing.new and Drawing.custom_asset)
-	if not assetFunc then return nil, "getcustomasset is unsupported" end
-	local s, asset = pcall(assetFunc, filepath)
-	if s then return asset end
-	return nil, asset
-end
-
-function Compatibility.QueueOnTeleport(source)
-	local qotFunc = queue_on_teleport or (syn and syn.queue_on_teleport) or (fluxus and fluxus.queue_on_teleport)
-	if not qotFunc then return false, "Queue on Teleport is unsupported" end
-	local s, err = pcall(qotFunc, source)
-	return s, err
-end
-
--- Compatibility developer diagnostic output
-function Compatibility:PrintDebug()
-	print("========= KAZEUI COMPATIBILITY DIAGNOSTICS =========")
-	print("Executor Detected: " .. tostring(self.Executor.Name) .. " (" .. tostring(self.Executor.Version) .. ")")
-	print("--- Capabilities Status ---")
-	for capName, capVal in pairs(self.Capabilities) do
-		print("  " .. capName .. " Support: " .. tostring(capVal))
-	end
-	print("====================================================")
-end
-
--- ==========================================================
--- 2. Library Config, State, Registry, & Themes Configuration
--- ==========================================================
-
+-- Premium Bubble Themes Configuration (High-Contrast, Vivid Settings)
 KazeUI.Themes = {
 	Obsidian = {
 		Name = "Obsidian",
@@ -256,7 +48,7 @@ KazeUI.Themes = {
 	}
 }
 
--- Global State & Translucent Defaults
+-- Global State (Beautifully Tuned Soft Translucent Defaults)
 KazeUI.CurrentTheme = KazeUI.Themes.CustomWallpaper
 KazeUI.GlowColor = Color3.fromRGB(239, 68, 68)
 KazeUI.BackgroundColor = KazeUI.CurrentTheme.Background
@@ -266,21 +58,23 @@ KazeUI.ActiveWindows = {}
 KazeUI.IsResizing = false
 KazeUI.AuthorName = "Unknown"
 
--- Dialog Counter
+-- Centralized Modal / Dialogue State Tracker
 local activeDialogsCount = 0
 
--- UI Element Registries
+-- UI element registries for theme switching
 KazeUI.TextElements = {}
 KazeUI.MutedTextElements = {}
 KazeUI.BorderElements = {}
 KazeUI.ThemeCallbacks = {}
 KazeUI.WallpaperElements = {}
+
+-- Interactive Neon controllers
 KazeUI.GlowElements = {}
 KazeUI.NeonTweens = {}
 KazeUI.PanelElements = {}
 KazeUI.GlowCallbacks = {}
 
--- Tween Presets
+-- Spring & Smooth Animation Configurations
 local TWEEN_FAST = TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 local TWEEN_SPRING = TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
 local TWEEN_SMOOTH = TweenInfo.new(0.35, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
@@ -291,13 +85,14 @@ local function RegisterFlag(flag, getFunc, setFunc)
 	end
 end
 
--- ScreenGui Parent Fallbacks
+-- ScreenGui Setup (Supports CoreGui & PlayerGui fallback)
 local success, parent = pcall(function() return game:GetService("CoreGui") end)
 if not success or not parent then
 	parent = LP:WaitForChild("PlayerGui", 15)
 end
 
--- ScreenGui Setup
+-- Centralized ScreenGui Setup with Precise Display Orders
+-- 1. Main Library (DisplayOrder = 10)
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "KazeUI"
 ScreenGui.ResetOnSpawn = false
@@ -305,6 +100,7 @@ ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 ScreenGui.DisplayOrder = 10
 ScreenGui.Parent = parent
 
+-- 2. Floating Open Button (DisplayOrder = 20)
 local OpenButtonGui = Instance.new("ScreenGui")
 OpenButtonGui.Name = "KazeUI_OpenButton"
 OpenButtonGui.ResetOnSpawn = false
@@ -312,6 +108,7 @@ OpenButtonGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 OpenButtonGui.DisplayOrder = 20
 OpenButtonGui.Parent = parent
 
+-- 3. Dialogs / Modals (DisplayOrder = 100)
 local DialogGui = Instance.new("ScreenGui")
 DialogGui.Name = "KazeUI_Dialogs"
 DialogGui.ResetOnSpawn = false
@@ -319,6 +116,7 @@ DialogGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 DialogGui.DisplayOrder = 100
 DialogGui.Parent = parent
 
+-- 4. Separate Notification Screen (DisplayOrder = 300)
 local NotifScreenGui = Instance.new("ScreenGui")
 NotifScreenGui.Name = "KazeUINotifications"
 NotifScreenGui.ResetOnSpawn = false
@@ -326,7 +124,7 @@ NotifScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 NotifScreenGui.DisplayOrder = 300
 NotifScreenGui.Parent = parent
 
--- Camera Modal Locker
+-- Centralized Camera Locker System
 local CameraLocker = Instance.new("TextButton")
 CameraLocker.Name = "CameraLocker"
 CameraLocker.Size = UDim2.fromOffset(0, 0)
@@ -337,10 +135,15 @@ CameraLocker.Modal = false
 CameraLocker.Visible = true
 CameraLocker.Parent = ScreenGui
 
-local function LockCamera() CameraLocker.Modal = true end
-local function UnlockCamera() CameraLocker.Modal = false end
+local function LockCamera()
+	CameraLocker.Modal = true
+end
 
--- Notifications Container
+local function UnlockCamera()
+	CameraLocker.Modal = false
+end
+
+-- Separate notification screen
 local NotifContainer = Instance.new("Frame")
 local notifLayout = Instance.new("UIListLayout", NotifContainer)
 notifLayout.SortOrder = Enum.SortOrder.LayoutOrder
@@ -357,14 +160,12 @@ NotifContainer.Position = UDim2.new(1, -340, 0, 0)
 NotifContainer.BackgroundTransparency = 1
 NotifContainer.Parent = NotifScreenGui
 
--- Scale Controller
+-- Adaptive Scaling Engine
 local UIScale = Instance.new("UIScale")
 UIScale.Parent = ScreenGui
 
 local function UpdateScale()
-	local camera = workspace.CurrentCamera
-	if not camera then return end
-	local size = camera.ViewportSize
+	local size = workspace.CurrentCamera.ViewportSize
 	local width, height = size.X, size.Y
 	local minAxis = math.min(width, height)
 	local targetScale = 1.0
@@ -386,53 +187,55 @@ local function UpdateScale()
 end
 
 UpdateScale()
-if workspace.CurrentCamera then
-	workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(UpdateScale)
-end
+workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(UpdateScale)
 
--- Icons Map Loading
+-- Lucide Icons Setup
 local IconsMap = {}
-task.spawn(function()
-	local successHttp, rawIcons = Compatibility.HttpGet("https://raw.githubusercontent.com/KazeHub/UI/refs/heads/main/Icons.lua.txt")
-	if successHttp and rawIcons then
-		local s, res = pcall(function()
-			local func = loadstring(rawIcons)
-			return func and func()
-		end)
-		if not s or type(res) ~= "table" then
-			s, res = pcall(function() return HttpService:JSONDecode(rawIcons) end)
-		end
-		if type(res) == "table" then
-			for k, v in pairs(res) do IconsMap[string.lower(tostring(k))] = tostring(v) end
+pcall(function()
+	if game and game.HttpGet then
+		local rawIcons = game:HttpGet("https://raw.githubusercontent.com/KazeHub/UI/refs/heads/main/Icons.lua.txt")
+		if rawIcons then
+			local s, res = pcall(function()
+				local func = loadstring(rawIcons)
+				return func and func()
+			end)
+			if not s or type(res) ~= "table" then
+				s, res = pcall(function() return HttpService:JSONDecode(rawIcons) end)
+			end
+			if type(res) == "table" then
+				for k, v in pairs(res) do IconsMap[string.lower(tostring(k))] = tostring(v) end
+			end
 		end
 	end
 end)
 
--- Asset URLs Wrapper Fallbacks using Compatibility Layer
+-- Exploit Direct Web Image Compiler & Caching Pipeline
 local function GetCustomAssetFromURL(url)
-	local hasGetCustomAsset = (getcustomasset ~= nil) or (getsynasset ~= nil) or (Drawing ~= nil and Drawing.new and Drawing.custom_asset ~= nil)
-	if not hasGetCustomAsset or not Compatibility.Capabilities.Filesystem then
-		return url -- Return URL fallback if functionality isn't supported
+	local getasset = (getcustomasset or getsynasset or (drawing and drawing.new and drawing.custom_asset))
+	if not getasset or not writefile or not game or not game.HttpGet then
+		return url -- Fallback if exploit is not supported
 	end
 	
 	local hashName = string.gsub(url, "%A", "")
 	local filename = "KazeUI/Cache/" .. string.sub(hashName, 1, 30) .. ".png"
 	
-	if Compatibility.IsFile(filename) then
-		local asset = Compatibility.GetCustomAsset(filename)
-		if asset then return asset end
+	if isfile and isfile(filename) then
+		local s, asset = pcall(getasset, filename)
+		if s and asset then return asset end
 	end
 	
-	local successHttp, bytes = Compatibility.HttpGet(url)
-	if successHttp and bytes and string.len(bytes) > 0 then
-		Compatibility.MakeFolder("KazeUI")
-		Compatibility.MakeFolder("KazeUI/Cache")
-		
-		local writeSuccess = Compatibility.WriteFile(filename, bytes)
-		if writeSuccess then
-			local asset = Compatibility.GetCustomAsset(filename)
-			if asset then return asset end
+	local success, bytes = pcall(function()
+		return game:HttpGet(url)
+	end)
+	
+	if success and bytes and string.len(bytes) > 0 then
+		if makefolder then
+			pcall(makefolder, "KazeUI")
+			pcall(makefolder, "KazeUI/Cache")
 		end
+		pcall(writefile, filename, bytes)
+		local s, asset = pcall(getasset, filename)
+		if s and asset then return asset end
 	end
 	
 	return url
@@ -462,7 +265,9 @@ local function FormatImage(id)
 	return "rbxassetid://" .. clean
 end
 
--- Registries handlers
+-- ==========================================
+-- Dynamic Color Sync & Registries
+-- ==========================================
 function KazeUI:OnGlowChanged(inst, callback)
 	table.insert(KazeUI.GlowCallbacks, {Inst = inst, Callback = callback})
 	task.spawn(callback, KazeUI.GlowColor)
@@ -517,7 +322,7 @@ function KazeUI:OnThemeChanged(inst, cb)
 	end)
 end
 
--- Premium Dragging Engine
+-- Premium Dragging engine
 local lastNormalPosition = UDim2.fromScale(0.5, 0.5)
 local lastNormalAnchor = Vector2.new(0.5, 0.5)
 
@@ -587,7 +392,9 @@ local function MakeDraggable(dragPart, targetPart)
 	end
 end
 
--- Interactive Locks Overlay
+-- ==========================================================
+-- Universal Centered Lock Overlay Implementation (Input & Visual Blocker)
+-- ==========================================================
 local function ApplyLock(componentFrame, isLocked, parentOverride, customSize, customPos, customAnchor)
 	local lockOverlay = Instance.new("TextButton")
 	lockOverlay.Name = "LockOverlay"
@@ -595,8 +402,8 @@ local function ApplyLock(componentFrame, isLocked, parentOverride, customSize, c
 	lockOverlay.Position = customPos or UDim2.fromScale(0, 0)
 	lockOverlay.AnchorPoint = customAnchor or Vector2.new(0, 0)
 	lockOverlay.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
-	lockOverlay.BackgroundTransparency = 0.55
-	lockOverlay.ZIndex = 9999
+	lockOverlay.BackgroundTransparency = 0.55 -- Semi-translucent glass effect
+	lockOverlay.ZIndex = 9999 -- Draws directly above components
 	lockOverlay.Text = ""
 	lockOverlay.AutoButtonColor = false
 	lockOverlay.Visible = isLocked or false
@@ -613,8 +420,8 @@ local function ApplyLock(componentFrame, isLocked, parentOverride, customSize, c
 	local lockIcon = Instance.new("ImageLabel")
 	lockIcon.Name = "LockIcon"
 	lockIcon.Size = UDim2.fromOffset(24, 24)
-	lockIcon.AnchorPoint = Vector2.new(0.5, 0.5)
-	lockIcon.Position = UDim2.fromScale(0.5, 0.5)
+	lockIcon.AnchorPoint = Vector2.new(0.5, 0.5) -- Centered perfectly
+	lockIcon.Position = UDim2.fromScale(0.5, 0.5) -- Centered perfectly
 	lockIcon.BackgroundTransparency = 1
 	lockIcon.Image = "rbxassetid://78672912777756"
 	lockIcon.ZIndex = 10000
@@ -634,7 +441,9 @@ local function ApplyLock(componentFrame, isLocked, parentOverride, customSize, c
 	}
 end
 
--- Theme & Depth calculations
+-- ==========================================
+-- Theme & Transparency Engine (Translucent Bubbles)
+-- ==========================================
 function KazeUI.GetColor(elevation)
 	local theme = KazeUI.CurrentTheme
 	local h, s, v = Color3.toHSV(theme.Background)
@@ -704,10 +513,12 @@ function KazeUI:SetTheme(themeName)
 	local targetTheme = KazeUI.Themes[themeName]
 	
 	if not targetTheme and type(themeName) == "string" and (string.find(themeName, "^http://") or string.find(themeName, "^https://")) then
-		local successHttp, rawTheme = Compatibility.HttpGet(themeName)
+		local success, rawTheme = pcall(function()
+			return game:HttpGet(themeName)
+		end)
 		
 		local parsedSuccessfully = false
-		if successHttp and rawTheme then
+		if success and rawTheme then
 			local themeTable = nil
 			local s, parsed = pcall(function()
 				return HttpService:JSONDecode(rawTheme)
@@ -812,7 +623,7 @@ function KazeUI:SetTheme(themeName)
 	end
 end
 
--- Breathing Glow Engine
+-- Glow loop with breathing effect
 local function StartNeonLoop(target)
 	if not target then return end
 	local propName = pcall(function() return target.Color end) and "Color" or "BackgroundColor3"
@@ -871,7 +682,7 @@ function KazeUI:SetGlow(color)
 	end
 end
 
--- Premium Notifications
+-- Premium Bubble-style Notification Card
 function KazeUI:Notify(config)
 	config = config or {}
 	local title = tostring(config.Title or "Notification")
@@ -1064,7 +875,6 @@ function KazeUI:Notify(config)
 	end)
 end
 
--- Config Operations using Centralized Compatibility Layer
 function KazeUI:SaveConfig(name)
 	if not name or name == "" then
 		KazeUI:Notify({Title = "Config System", Content = "Config name cannot be empty.", Duration = 3})
@@ -1074,18 +884,19 @@ function KazeUI:SaveConfig(name)
 	local data = {}
 	for flag, obj in pairs(KazeUI.Flags) do data[flag] = obj.Get() end
 	
-	if Compatibility.Capabilities.Filesystem then
-		local successEncode, encoded = pcall(function() return HttpService:JSONEncode(data) end)
-		if successEncode then
+	if writefile then
+		local success, encoded = pcall(function() return HttpService:JSONEncode(data) end)
+		if success then
 			local folder = KazeUI.AuthorName
-			Compatibility.MakeFolder(folder)
-			
-			local sWrite, writeErr = Compatibility.WriteFile(folder .. "/" .. name .. ".json", encoded)
-			if sWrite then
-				KazeUI:Notify({Title = "Config Saved", Content = "Successfully saved " .. name, Duration = 3})
-			else
-				KazeUI:Notify({Title = "Config Error", Content = "Failed to save file: " .. tostring(writeErr), Duration = 3})
+			if makefolder then
+				pcall(function()
+					if isfolder and not isfolder(folder) then makefolder(folder)
+					elseif not isfolder then makefolder(folder) end
+				end)
 			end
+			
+			writefile(folder .. "/" .. name .. ".json", encoded)
+			KazeUI:Notify({Title = "Config Saved", Content = "Successfully saved " .. name, Duration = 3})
 		else
 			KazeUI:Notify({Title = "Config Error", Content = "Failed to encode settings.", Duration = 3})
 		end
@@ -1093,41 +904,6 @@ function KazeUI:SaveConfig(name)
 		KazeUI:Notify({Title = "Config Error", Content = "Executor doesn't support file writes.", Duration = 3})
 	end
 end
-
-function KazeUI:LoadConfig(name)
-	if not name or name == "" then return end
-	local folder = KazeUI.AuthorName
-	local path = folder .. "/" .. name .. ".json"
-	
-	if Compatibility.Capabilities.Filesystem then
-		if Compatibility.IsFile(path) then
-			local successRead, contents = Compatibility.ReadFile(path)
-			if successRead then
-				local successDecode, decoded = pcall(function() return HttpService:JSONDecode(contents) end)
-				if successDecode and type(decoded) == "table" then
-					for flag, val in pairs(decoded) do
-						if KazeUI.Flags[flag] then
-							pcall(KazeUI.Flags[flag].Set, val)
-						end
-					end
-					KazeUI:Notify({Title = "Config Loaded", Content = "Loaded config: " .. name, Duration = 3})
-				else
-					KazeUI:Notify({Title = "Config Error", Content = "Malformed JSON config.", Duration = 3})
-				end
-			end
-		else
-			KazeUI:Notify({Title = "Config Error", Content = "Config file does not exist.", Duration = 3})
-		end
-	else
-		KazeUI:Notify({Title = "Config Error", Content = "Filesystem interaction is unsupported.", Duration = 3})
-	end
-end
-
--- Backwards compatibility mapping for Version 1/2.x/3.x APIs
-function KazeUI:GetExecutor() return Compatibility.Executor end
-function KazeUI:GetCapabilities() return Compatibility.Capabilities end
-function KazeUI:IsSupported(feature) return Compatibility.Capabilities[feature] == true end
-function KazeUI:GetCompatibility() return Compatibility end
 
 local function ToggleScrollingAncestors(element, state)
 	local current = element.Parent
@@ -1138,7 +914,7 @@ local function ToggleScrollingAncestors(element, state)
 end
 
 -- =========================================================
--- Premium Bubble Components
+-- Elegant Bubble-First Components (Figma / iMessage design)
 -- =========================================================
 
 local function CreateDropdown(parentFrame, title, options, defaultOption, callback, isMulti, flag, locked)
@@ -1438,7 +1214,7 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 			end)
 			btn.MouseLeave:Connect(function()
 				isHovering = false
-				UpdateVisuals(false)
+				UpdateVisuals(false) -- Reset visuals unconditionally on leave
 			end)
 
 			btn.MouseButton1Click:Connect(function()
@@ -1737,6 +1513,7 @@ local function CreateClickableParagraph(parentFrame, title, body, callback, lock
 	end)
 	clickDetector.MouseLeave:Connect(function()
 		isHovering = false
+		-- Removed blocking activeDialogsCount check so cleanup can finish when a dialog is spawned
 		TweenService:Create(paraFrame, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.02)}):Play()
 		TweenService:Create(paraStroke, TWEEN_FAST, {Color = KazeUI.CurrentTheme.Border}):Play()
 		TweenService:Create(rightIcon, TWEEN_FAST, {ImageColor3 = KazeUI.CurrentTheme.MutedText, Position = UDim2.new(1, -10, 0.5, 0)}):Play()
@@ -1910,6 +1687,7 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 	end)
 	clickDetector.MouseLeave:Connect(function()
 		isHovering = false
+		-- Removed blocking activeDialogsCount check so cleanup can finish when a dialog is spawned
 		TweenService:Create(paraFrame, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.02)}):Play()
 		TweenService:Create(paraStroke, TWEEN_FAST, {Color = KazeUI.CurrentTheme.Border}):Play()
 	end)
@@ -2513,8 +2291,8 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 	end)
 
 	RegisterFlag(flag, function() return color:ToHex() end, function(val)
-		local successHex, parsed = pcall(function() return Color3.fromHex(val) end)
-		if successHex then
+		local success, parsed = pcall(function() return Color3.fromHex(val) end)
+		if success then
 			color = parsed
 			h, s, v = Color3.toHSV(color)
 			SetCursorPositions()
@@ -2628,6 +2406,7 @@ local function CreateKeybindInput(parentFrame, title, defaultKey, callback, flag
 	end)
 	bindContainer.MouseLeave:Connect(function()
 		isHovering = false
+		-- Removed blocking activeDialogsCount check so cleanup can finish when a dialog is spawned
 		if not isBinding then TweenService:Create(bindStroke, TWEEN_FAST, {Color = KazeUI.CurrentTheme.Border}):Play() end
 	end)
 	
@@ -2737,6 +2516,9 @@ local function CreateVisualSectionDivider(parentFrame, titleArg)
 	}
 end
 
+-- ==========================================================
+-- Premium Geometric Divider Component (With and Without Title)
+-- ==========================================================
 local function CreateVisualDivider(parentFrame, titleArg)
 	local title = titleArg and tostring(titleArg) or ""
 	if type(titleArg) == "table" then
@@ -3105,6 +2887,9 @@ CreateCollapsibleSection = function(parentFrame, titleArg, currentDepth)
 	return sectionPublic
 end
 
+-- ==========================================================
+-- Volumetric Premium Collapsible GroupBox Component 
+-- ==========================================================
 CreateGroupBox = function(parentFrame, titleArg, currentDepth, depthOverride)
 	currentDepth = depthOverride or currentDepth or 1
 	if currentDepth > 3 then currentDepth = 3 end 
@@ -3292,7 +3077,7 @@ CreateGroupBox = function(parentFrame, titleArg, currentDepth, depthOverride)
 end
 
 -- ==========================================
--- Window Management
+-- Premium Window Creation & Panel Controllers
 -- ==========================================
 function KazeUI:CreateWindow(config)
 	config = config or {}
@@ -3430,7 +3215,11 @@ function KazeUI:CreateWindow(config)
 	ContentClipper.Parent = Window
 	Instance.new("UICorner", ContentClipper).CornerRadius = UDim.new(0, 28)
 
-	-- Secure Frame-level Interaction Input Blocker
+	-- ==========================================================
+	-- INTERACTION BLOCKER (Input Lockout Guard)
+	-- Placed directly inside the Window Frame to securely swallow inputs 
+	-- during modal and confirmation prompts (bypasses CanvasGroup touch bug).
+	-- ==========================================================
 	local InteractionBlocker = Instance.new("TextButton")
 	InteractionBlocker.Name = "InteractionBlocker"
 	InteractionBlocker.Size = UDim2.fromScale(1, 1)
@@ -3440,7 +3229,7 @@ function KazeUI:CreateWindow(config)
 	InteractionBlocker.BorderSizePixel = 0
 	InteractionBlocker.Text = ""
 	InteractionBlocker.AutoButtonColor = false
-	InteractionBlocker.ZIndex = 100 
+	InteractionBlocker.ZIndex = 100 -- Draws strictly over ContentClipper (ZIndex 1)
 	InteractionBlocker.Visible = false
 	InteractionBlocker.Active = true
 	InteractionBlocker.Parent = Window
@@ -3530,7 +3319,7 @@ function KazeUI:CreateWindow(config)
 	SubLabel.Size = UDim2.new(1, -200, 0, 16)
 	SubLabel.Position = UDim2.fromOffset(56, 27)
 	SubLabel.BackgroundTransparency = 1
-	SubLabel.Text = Author .. " â€¢ " .. Version
+	SubLabel.Text = Author .. " • " .. Version
 	SubLabel.Font = Enum.Font.GothamMedium
 	SubLabel.TextSize = 12
 	SubLabel.TextXAlignment = Enum.TextXAlignment.Left
@@ -3701,15 +3490,16 @@ function KazeUI:CreateWindow(config)
 		activeDialogsCount = activeDialogsCount + 1
 		BtnYellow.Active = false; BtnGreen.Active = false; BtnRed.Active = false
 		
+		-- Enable the Interaction Blocker overlay
 		InteractionBlocker.Visible = true
 		TweenService:Create(InteractionBlocker, TWEEN_FAST, {BackgroundTransparency = 0.65}):Play()
 
-		local ConfirmWindow = Instance.new("Frame", Window) 
+		local ConfirmWindow = Instance.new("Frame", Window) -- Parent strictly to Window to bypass CanvasGroup touch bugs!
 		ConfirmWindow.Name = "ExitConfirmDialog"
 		ConfirmWindow.Size = UDim2.fromOffset(340, 140)
 		ConfirmWindow.AnchorPoint = Vector2.new(0.5, 0.5)
 		ConfirmWindow.Position = UDim2.fromScale(0.5, 0.45)
-		ConfirmWindow.ZIndex = 101 
+		ConfirmWindow.ZIndex = 101 -- Draws on top of Blocker (100)
 		ConfirmWindow.Active = true 
 		Instance.new("UICorner", ConfirmWindow).CornerRadius = UDim.new(0, 20)
 		KazeUI:AddPanel(ConfirmWindow, 0.02)
@@ -3848,7 +3638,9 @@ function KazeUI:CreateWindow(config)
 	tabsLayout.SortOrder = Enum.SortOrder.LayoutOrder
 	tabsLayout.Padding = UDim.new(0, 5)
 
-	-- Modal Resizing System
+	-- ==========================================
+	-- Modal Resize Engine (System Rewrite)
+	-- ==========================================
 	local ResizeBlocker = Instance.new("TextButton")
 	ResizeBlocker.Name = "ResizeInputBlocker"
 	ResizeBlocker.Size = UDim2.fromScale(100, 100)
@@ -3879,14 +3671,14 @@ function KazeUI:CreateWindow(config)
 	ResizeHandle.MouseEnter:Connect(function()
 		if activeDialogsCount > 0 then return end
 		if not KazeUI.IsResizing and not toggledMaximized then
-			if Mouse then Mouse.Icon = hoverCursor end
+			Mouse.Icon = hoverCursor
 			TweenService:Create(ResizeHandle, TweenInfo.new(0.12), {ImageColor3 = KazeUI.GlowColor}):Play()
 		end
 	end)
 
 	ResizeHandle.MouseLeave:Connect(function()
 		if not KazeUI.IsResizing then
-			if Mouse then Mouse.Icon = "" end
+			Mouse.Icon = ""
 			TweenService:Create(ResizeHandle, TweenInfo.new(0.12), {ImageColor3 = KazeUI.CurrentTheme.MutedText}):Play()
 		end
 	end)
@@ -3916,7 +3708,7 @@ function KazeUI:CreateWindow(config)
 
 			ResizeBlocker.Visible = true
 			LockCamera()
-			if Mouse then Mouse.Icon = hoverCursor end
+			Mouse.Icon = hoverCursor
 			TweenService:Create(ResizeHandle, TweenInfo.new(0.12), {ImageColor3 = KazeUI.GlowColor}):Play()
 		end
 	end)
@@ -3934,7 +3726,7 @@ function KazeUI:CreateWindow(config)
 			
 			ResizeBlocker.Visible = false
 			UnlockCamera()
-			if Mouse then Mouse.Icon = "" end
+			Mouse.Icon = ""
 			TweenService:Create(ResizeHandle, TweenInfo.new(0.12), {ImageColor3 = KazeUI.CurrentTheme.MutedText}):Play()
 		end
 	end)
@@ -3966,7 +3758,9 @@ function KazeUI:CreateWindow(config)
 		return KazeUI:Notify(...)
 	end
 
-	-- Interaction Locks Protected Dialog Box Component
+	-- ==========================================================
+	-- Premium Floating Dialog Component (CRITICAL INPUT LOCKOUT)
+	-- ==========================================================
 	function Win:Dialog(dialogConfig)
 		dialogConfig = dialogConfig or {}
 		local title = tostring(dialogConfig.Title or "Dialog")
@@ -3977,15 +3771,17 @@ function KazeUI:CreateWindow(config)
 		
 		activeDialogsCount = activeDialogsCount + 1
 		
+		-- Enable the Interaction Blocker to dim the Window and swallow inputs
 		InteractionBlocker.Visible = true
 		TweenService:Create(InteractionBlocker, TWEEN_FAST, {BackgroundTransparency = 0.65}):Play()
 
-		local DialogFrame = Instance.new("Frame", Window) 
+		-- Animated Floating dialog card
+		local DialogFrame = Instance.new("Frame", Window) -- Parent strictly to Window to bypass CanvasGroup input bugs!
 		DialogFrame.Name = "WindowDialog"
 		DialogFrame.Size = UDim2.fromOffset(380, 200) 
 		DialogFrame.AnchorPoint = Vector2.new(0.5, 0.5)
 		DialogFrame.Position = UDim2.fromScale(0.5, 0.4) 
-		DialogFrame.ZIndex = 101 
+		DialogFrame.ZIndex = 101 -- Draws strictly over blocker (100)
 		DialogFrame.Active = true 
 		
 		Instance.new("UICorner", DialogFrame).CornerRadius = UDim.new(0, 20)
@@ -3997,6 +3793,7 @@ function KazeUI:CreateWindow(config)
 
 		TweenService:Create(DialogFrame, TWEEN_SPRING, {Position = UDim2.fromScale(0.5, 0.5)}):Play()
 
+		-- Optional top header icon parsing
 		local topOffset = 18
 		if hasIcon then
 			local dIcon = Instance.new("ImageLabel", DialogFrame)
@@ -4033,6 +3830,7 @@ function KazeUI:CreateWindow(config)
 		contentLabel.ZIndex = 102
 		KazeUI:RegisterText(contentLabel, true)
 
+		-- Dynamic Actions alignment layout
 		local ActionsFrame = Instance.new("Frame", DialogFrame)
 		ActionsFrame.Position = UDim2.new(0, 15, 1, -15)
 		ActionsFrame.AnchorPoint = Vector2.new(0, 1)
@@ -4046,7 +3844,7 @@ function KazeUI:CreateWindow(config)
 		listLayout.Padding = UDim.new(0, 8)
 
 		local totalActions = #actions
-		local shouldStack = (totalActions >= 4) 
+		local shouldStack = (totalActions >= 4) -- Auto stack if 4 or more buttons are registered
 
 		if shouldStack then
 			listLayout.FillDirection = Enum.FillDirection.Vertical
@@ -4066,6 +3864,7 @@ function KazeUI:CreateWindow(config)
 			activeDialogsCount = math.max(0, activeDialogsCount - 1)
 		end
 
+		-- Math for horizontal button splitting
 		local buttonWidth = shouldStack and 350 or (totalActions > 0 and (350 - ((totalActions - 1) * 8)) / totalActions or 100)
 
 		for i, act in ipairs(actions) do
@@ -4076,10 +3875,11 @@ function KazeUI:CreateWindow(config)
 			actionBtn.Size = UDim2.new(0, buttonWidth, 0, 32)
 			actionBtn.ZIndex = 103
 			actionBtn.AutoButtonColor = false
-			actionBtn.Text = "" 
+			actionBtn.Text = "" -- We will use a nested text label to support PERFECT resizing boundaries!
 			actionBtn.LayoutOrder = i
 			Instance.new("UICorner", actionBtn).CornerRadius = UDim.new(0, 10)
 
+			-- Protected inner text configuration to prevent text clipping
 			local btnText = Instance.new("TextLabel", actionBtn)
 			btnText.Size = UDim2.new(1, -12, 1, 0)
 			btnText.Position = UDim2.fromOffset(6, 0)
@@ -4088,7 +3888,7 @@ function KazeUI:CreateWindow(config)
 			btnText.Font = Enum.Font.GothamBold
 			btnText.TextSize = 11
 			btnText.TextWrapped = true
-			btnText.TextScaled = true 
+			btnText.TextScaled = true -- Smart Auto-Shrink active!
 			btnText.ZIndex = 104
 
 			local textConstraint = Instance.new("UITextSizeConstraint", btnText)
@@ -4112,6 +3912,7 @@ function KazeUI:CreateWindow(config)
 				KazeUI:RegisterText(btnText, false)
 			end
 
+			-- Custom Hover Interaction Animations
 			local isHovered = false
 			actionBtn.MouseEnter:Connect(function()
 				isHovered = true
@@ -4141,6 +3942,7 @@ function KazeUI:CreateWindow(config)
 			end)
 		end
 
+		-- Auto Sizing dialog box frame calculation to prevent overlapping elements
 		local actionsHeight = shouldStack and ((totalActions * 32) + ((totalActions - 1) * 8)) or 32
 		local finalHeight = topOffset + 24 + 48 + 15 + actionsHeight + 15
 		DialogFrame.Size = UDim2.fromOffset(380, finalHeight)
@@ -4150,7 +3952,6 @@ function KazeUI:CreateWindow(config)
 		}
 	end
 
-	-- Refactored Config Manager utilizing safe Compatibility layer
 	function Win:CreateConfigManager(tab)
 		local sec = tab:SectionUI("Config Manager")
 		local cfgName = "Default"
@@ -4159,10 +3960,16 @@ function KazeUI:CreateWindow(config)
 			local list = {}
 			local folder = KazeUI.AuthorName
 			
-			if Compatibility.Capabilities.Filesystem then
-				Compatibility.MakeFolder(folder)
-				local successList, files = Compatibility.ListFiles(folder)
-				if successList and type(files) == "table" then
+			if makefolder then
+				pcall(function()
+					if isfolder and not isfolder(folder) then makefolder(folder)
+					elseif not isfolder then makefolder(folder) end
+				end)
+			end
+			
+			if listfiles then
+				local s, files = pcall(function() return listfiles(folder) end)
+				if s and type(files) == "table" then
 					for _, f in ipairs(files) do
 						local fileName = string.match(f, "([^/\\]+)$") or f
 						local name = string.match(fileName, "^(.+)%.json$")
@@ -4192,17 +3999,13 @@ function KazeUI:CreateWindow(config)
 		sec:Button({Title = "Load Config", Callback = function() KazeUI:LoadConfig(cfgName) end})
 		
 		sec:Button({Title = "Delete Config", Callback = function()
-			if Compatibility.Capabilities.Filesystem then
+			if delfile then
 				local folder = KazeUI.AuthorName
-				local sDelete, delErr = Compatibility.Delfile(folder .. "/" .. cfgName .. ".json")
-				if sDelete then
-					KazeUI:Notify({Title = "Config System", Content = "Deleted " .. cfgName, Duration = 3})
-				else
-					KazeUI:Notify({Title = "Error", Content = "Failed to delete: " .. tostring(delErr), Duration = 3})
-				end
+				pcall(function() delfile(folder .. "/" .. cfgName .. ".json") end)
+				KazeUI:Notify({Title = "Config System", Content = "Deleted " .. cfgName, Duration = 3})
 				if configDropdown then configDropdown:Refresh(getConfigs()) end
 			else
-				KazeUI:Notify({Title = "Error", Content = "Your executor lacks file delete support.", Duration = 3})
+				KazeUI:Notify({Title = "Error", Content = "Your executor lacks 'delfile' support.", Duration = 3})
 			end
 		end})
 	end
@@ -4519,6 +4322,7 @@ function KazeUI:CreateWindow(config)
 		end)
 		btn.MouseLeave:Connect(function()
 			isHovering = false
+			-- Removed blocking activeDialogsCount check so cleanup can finish when a dialog is spawned
 			if not leftIndicator.Visible then
 				TweenService:Create(btn, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.02)}):Play()
 				TweenService:Create(txt, TWEEN_FAST, {TextColor3 = KazeUI.CurrentTheme.MutedText}):Play()
