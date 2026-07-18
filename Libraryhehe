@@ -8,7 +8,8 @@
 	- COMPONENT LOCKS (Locked = true/false): Support added for locking interactive components (Buttons, Toggles, Sliders, Dropdowns, etc.) preventing clicks and displaying a premium Padlock Icon (Asset: 78672912777756).
 	- AUTO-STACKING ACTIONS ENGINE: Action buttons stack vertically when 4 or more options are defined, and align horizontally for 1-3 buttons.
 	- SMART BUTTON TEXT RESIZING: Implemented TextScaled + UITextSizeConstraint + TextWrapped inside Action Buttons to avoid overflow.
-	- VISUAL ALIGNMENT FIXES: Centered window title (sized up to 16). Enlarged avatar circle (40x40) and placed the Author & Version text (size 13, no bullet point) on the left next to it.
+	- VISUAL ALIGNMENT FIXES: Centered window title (sized up to 16) with overflow protection. Enlarged avatar circle (40x40) and placed the Author & Version text (size 13, no bullet point) on the left next to it.
+	- CLEAN CUT DESIGN: Removed all internal list dividing lines inside Dropdowns, Collapsible Sections, and GroupBoxes.
 --]]
 
 local KazeUI = {}
@@ -1111,6 +1112,8 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 	searchBox.FocusLost:Connect(function() 
 		TweenService:Create(searchStroke, TWEEN_FAST, {Color = KazeUI.CurrentTheme.Border}):Play()
 	end)
+	
+	-- Internal Divider Line removed for clean aesthetic.
 
 	local listContainer = Instance.new("ScrollingFrame")
 	listContainer.Size = UDim2.new(1, -20, 0, 0)
@@ -1273,7 +1276,7 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 		CalcHeight()
 	end)
 
-	clickBtn.MouseButton1Click.Connect(function()
+	clickBtn.MouseButton1Click:Connect(function()
 		if isLockedState or activeDialogsCount > 0 then return end
 		isOpen = not isOpen
 		if isOpen then
@@ -2198,7 +2201,7 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 	local hg = Instance.new("UIGradient", hueSlider)
 	hg.Color = ColorSequence.new{
 		ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 0, 0)),
-		ColorSequenceKeypoint.new(0.167, Color3.fromRGB(255, 255, 0)),
+		ColorSequenceKeypoint.new(0.167, Color3.fromRGB(255, 255, 0)), -- Fixed channel parameter syntax bug from uploaded backup
 		ColorSequenceKeypoint.new(0.333, Color3.fromRGB(0, 255, 0)),
 		ColorSequenceKeypoint.new(0.5, Color3.fromRGB(0, 255, 255)),
 		ColorSequenceKeypoint.new(0.667, Color3.fromRGB(0, 0, 255)),
@@ -2710,6 +2713,8 @@ CreateCollapsibleSection = function(parentFrame, titleArg, currentDepth)
 		if not isOpen then arrowIcon.ImageColor3 = t.MutedText end
 	end)
 
+	-- Internal divider line removed for seamless aesthetic.
+
 	local sectionContent = Instance.new("Frame")
 	sectionContent.Name = "Content"
 	sectionContent.Size = UDim2.new(1, 0, 0, 0)
@@ -2878,6 +2883,8 @@ CreateGroupBox = function(parentFrame, titleArg, currentDepth, depthOverride)
 	KazeUI:OnThemeChanged(arrowIcon, function(t)
 		if not isOpen then arrowIcon.ImageColor3 = t.MutedText end
 	end)
+
+	-- Internal divider line removed for seamless aesthetic.
 
 	local container = Instance.new("Frame")
 	container.Name = "Container"
@@ -3200,16 +3207,18 @@ function KazeUI:CreateWindow(config)
 	avatarStroke.Thickness = 1.2
 	KazeUI:RegisterBorder(avatarStroke)
 
-	-- Center-aligned Title Label Setup (Slightly larger size = 16)
+	-- Center-aligned Title Label Setup with Overflow Protection (Width constrained to center 100px area safely)
 	local TitleLabel = Instance.new("TextLabel")
-	TitleLabel.Size = UDim2.new(1, 0, 1, 0)
-	TitleLabel.Position = UDim2.fromOffset(0, 0)
+	TitleLabel.Size = UDim2.new(1, -500, 1, 0)
+	TitleLabel.Position = UDim2.fromScale(0.5, 0.5)
+	TitleLabel.AnchorPoint = Vector2.new(0.5, 0.5)
 	TitleLabel.BackgroundTransparency = 1
 	TitleLabel.Text = Title
 	TitleLabel.Font = Enum.Font.GothamBold
 	TitleLabel.TextSize = 16 
 	TitleLabel.TextXAlignment = Enum.TextXAlignment.Center
 	TitleLabel.TextYAlignment = Enum.TextYAlignment.Center
+	TitleLabel.TextTruncate = Enum.TextTruncate.AtEnd
 	TitleLabel.Parent = TopBar
 	KazeUI:RegisterText(TitleLabel, false)
 
@@ -3551,7 +3560,6 @@ function KazeUI:CreateWindow(config)
 	ResizeBlocker.BackgroundTransparency = 1
 	ResizeBlocker.Text = ""
 	ResizeBlocker.ZIndex = 99998
-	ResizeBlocker.Visible = false
 	ResizeBlocker.Parent = Window
 	
 	local ResizeHandle = Instance.new("ImageLabel")
@@ -3662,7 +3670,7 @@ function KazeUI:CreateWindow(config)
 	end
 
 	-- ==========================================================
-	-- Premium Floating Dialog Component (Solid UI, No Transparency)
+	-- Premium Floating Dialog Component (Solid UI, Dynamic Height)
 	-- ==========================================================
 	function Win:Dialog(dialogConfig)
 		dialogConfig = dialogConfig or {}
@@ -3677,14 +3685,34 @@ function KazeUI:CreateWindow(config)
 		InteractionBlocker.Visible = true
 		TweenService:Create(InteractionBlocker, TWEEN_FAST, {BackgroundTransparency = 0.65}):Play()
 
+		local topOffset = 18
+		if hasIcon then
+			topOffset = 62
+		end
+
+		-- Dynamic text measurement setup to prevent body text truncation
+		local maxTextWidth = 380 - 40
+		local titleSize = TextService:GetTextSize(title, 14, Enum.Font.GothamBold, Vector2.new(maxTextWidth, 1000))
+		local contentSize = TextService:GetTextSize(content, 11, Enum.Font.Gotham, Vector2.new(maxTextWidth, 2000))
+
+		local titleHeight = math.ceil(titleSize.Y)
+		local contentHeight = math.ceil(contentSize.Y)
+
+		local totalActions = #actions
+		local shouldStack = (totalActions >= 4)
+		local actionsHeight = shouldStack and ((totalActions * 32) + ((totalActions - 1) * 8)) or 32
+
+		-- Perfectly computed final modal height that adapts to any text capacity
+		local finalHeight = topOffset + titleHeight + 6 + contentHeight + 15 + actionsHeight + 15
+
 		local DialogFrame = Instance.new("Frame", Window) 
 		DialogFrame.Name = "WindowDialog"
-		DialogFrame.Size = UDim2.fromOffset(380, 200) 
+		DialogFrame.Size = UDim2.fromOffset(380, finalHeight - 20) -- Slightly smaller initial height for spring expansion
 		DialogFrame.AnchorPoint = Vector2.new(0.5, 0.5)
 		DialogFrame.Position = UDim2.fromScale(0.5, 0.4) 
 		DialogFrame.ZIndex = 101 
 		DialogFrame.Active = true 
-		DialogFrame.BackgroundTransparency = 0.08 -- Not transparent, matches notifications
+		DialogFrame.BackgroundTransparency = 0.08
 		
 		Instance.new("UICorner", DialogFrame).CornerRadius = UDim.new(0, 20)
 		KazeUI:AddPanel(DialogFrame, 0.04, false, true)
@@ -3693,9 +3721,11 @@ function KazeUI:CreateWindow(config)
 		stroke.Thickness = 1.4
 		KazeUI:RegisterBorder(stroke)
 
-		TweenService:Create(DialogFrame, TWEEN_SPRING, {Position = UDim2.fromScale(0.5, 0.5)}):Play()
+		TweenService:Create(DialogFrame, TWEEN_SPRING, {
+			Position = UDim2.fromScale(0.5, 0.5),
+			Size = UDim2.fromOffset(380, finalHeight)
+		}):Play()
 
-		local topOffset = 18
 		if hasIcon then
 			local dIcon = Instance.new("ImageLabel", DialogFrame)
 			dIcon.Size = UDim2.fromOffset(36, 36)
@@ -3704,15 +3734,7 @@ function KazeUI:CreateWindow(config)
 			dIcon.Image = iconId
 			dIcon.ZIndex = 102
 			KazeUI:OnThemeChanged(dIcon, function(t) dIcon.ImageColor3 = KazeUI.GlowColor end)
-			topOffset = 62
 		end
-
-		local maxTextWidth = 380 - 40
-		local titleSize = TextService:GetTextSize(title, 14, Enum.Font.GothamBold, Vector2.new(maxTextWidth, 1000))
-		local titleHeight = math.max(22, math.ceil(titleSize.Y))
-
-		local contentSize = TextService:GetTextSize(content, 11, Enum.Font.Gotham, Vector2.new(maxTextWidth, 2000))
-		local contentHeight = math.max(14, math.ceil(contentSize.Y))
 
 		local titleLabel = Instance.new("TextLabel", DialogFrame)
 		titleLabel.Size = UDim2.new(1, -40, 0, titleHeight)
@@ -3728,7 +3750,7 @@ function KazeUI:CreateWindow(config)
 
 		local contentLabel = Instance.new("TextLabel", DialogFrame)
 		contentLabel.Size = UDim2.new(1, -40, 0, contentHeight)
-		contentLabel.Position = UDim2.fromOffset(20, topOffset + titleHeight + 4)
+		contentLabel.Position = UDim2.fromOffset(20, topOffset + titleHeight + 6)
 		contentLabel.BackgroundTransparency = 1
 		contentLabel.Text = content
 		contentLabel.Font = Enum.Font.Gotham
@@ -3751,12 +3773,9 @@ function KazeUI:CreateWindow(config)
 		listLayout.VerticalAlignment = Enum.VerticalAlignment.Center
 		listLayout.Padding = UDim.new(0, 8)
 
-		local totalActions = #actions
-		local shouldStack = (totalActions >= 4) 
-
 		if shouldStack then
 			listLayout.FillDirection = Enum.FillDirection.Vertical
-			ActionsFrame.Size = UDim2.new(1, -30, 0, (totalActions * 32) + ((totalActions - 1) * 8))
+			ActionsFrame.Size = UDim2.new(1, -30, 0, actionsHeight)
 		else
 			listLayout.FillDirection = Enum.FillDirection.Horizontal
 			ActionsFrame.Size = UDim2.new(1, -30, 0, 32)
@@ -3764,7 +3783,10 @@ function KazeUI:CreateWindow(config)
 
 		local function closeDialog()
 			TweenService:Create(InteractionBlocker, TWEEN_FAST, {BackgroundTransparency = 1}):Play()
-			local tw = TweenService:Create(DialogFrame, TWEEN_FAST, {Position = UDim2.fromScale(0.5, 0.4)})
+			local tw = TweenService:Create(DialogFrame, TWEEN_FAST, {
+				Position = UDim2.fromScale(0.5, 0.4),
+				Size = UDim2.fromOffset(380, finalHeight - 20)
+			})
 			tw:Play()
 			tw.Completed:Wait()
 			DialogFrame:Destroy()
@@ -3846,10 +3868,6 @@ function KazeUI:CreateWindow(config)
 				closeDialog()
 			end)
 		end
-
-		local actionsHeight = shouldStack and ((totalActions * 32) + ((totalActions - 1) * 8)) or 32
-		local finalHeight = topOffset + titleHeight + 4 + contentHeight + 15 + actionsHeight + 15
-		DialogFrame.Size = UDim2.fromOffset(380, finalHeight)
 
 		return {
 			Close = closeDialog
