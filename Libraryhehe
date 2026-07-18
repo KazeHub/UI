@@ -1,14 +1,13 @@
 --[[
-	Kaze UI Library v3.7.0 (Premium Bubble Redesign & Engine Rewrite)
+	Kaze UI Library v3.7.0 (Responsive Engine Update & Crisp Rendering Engine)
 	Inspired by: Modern Mobile Chat Bubbles, iMessage, and Discord Mobile.
-	Retained: 100% Backwards Compatibility with Version 1, 2, 2.2, 2.3, and 3.0 APIs
+	Retained: 100% Backwards Compatibility with Version 1, 2, 2.2, 2.3, and 3.0+ APIs
 	
-	UPDATES IN V3.7.0 & CUSTOM TUNING:
-	- REMOVED UISCALE SYSTEM: High-contrast native rendering prevents blurry icons, text, and strokes.
-	- ADDED config.Size OPTION: Custom window bounds are supported with a fallback to 600x400.
-	- SMART NO-TRUNCATE WINDOW TITLE: Centered window title dynamically scales to fit mid-space boundaries.
-	- EXPANDING & SCROLLABLE DIALOGS: Multi-line dialogs expand automatically, switching to ScrollingFrames to prevent clipping.
-	- FIXED RAINBOW PALETTE ERROR: Corrected standard hue sequence color typo.
+	UPDATES IN V3.7.0:
+	- REMOVED GLOBAL UISCALE: UI now renders at native crisp pixel boundaries (no scaling blur).
+	- NATIVE SIZE CONFIG: Supports config.Size = UDim2.fromOffset(X, Y) with 600x400 fallback.
+	- AUTOMATIC RESPONSIVE CENTERING: Windows open centered on mobile/tablet/desktop. Keeps center during orientation updates unless dragged.
+	- VIEWPORT MARGIN CLAMP: Clamps window size and offsets to keep the interface safely inside screen boundaries.
 --]]
 
 local KazeUI = {}
@@ -294,9 +293,10 @@ function KazeUI:OnThemeChanged(inst, cb)
 	end)
 end
 
--- Premium Dragging engine
+-- Premium Dragging engine (Upgraded with boundaries checking)
 local lastNormalPosition = UDim2.fromScale(0.5, 0.5)
 local lastNormalAnchor = Vector2.new(0.5, 0.5)
+local hasManuallyDragged = false
 
 local function MakeDraggable(dragPart, targetPart)
 	local dragging = false
@@ -311,14 +311,30 @@ local function MakeDraggable(dragPart, targetPart)
 		
 		if dragActive or delta.Magnitude > 8 then
 			dragActive = true
+			
+			local viewportSize = workspace.CurrentCamera.ViewportSize
+			local targetXOffset = startPos.X.Offset + delta.X
+			local targetYOffset = startPos.Y.Offset + delta.Y
+			
+			-- Keep the center point of the window within viewport bounds with 20px safety padding
+			local screenPadding = 20
+			local minX = -(viewportSize.X / 2) + screenPadding
+			local maxX = (viewportSize.X / 2) - screenPadding
+			local minY = -(viewportSize.Y / 2) + screenPadding
+			local maxY = (viewportSize.Y / 2) - screenPadding
+			
+			targetXOffset = math.clamp(targetXOffset, minX, maxX)
+			targetYOffset = math.clamp(targetYOffset, minY, maxY)
+			
 			targetPart.Position = UDim2.new(
-				startPos.X.Scale, startPos.X.Offset + delta.X,
-				startPos.Y.Scale, startPos.Y.Offset + delta.Y
+				startPos.X.Scale, targetXOffset,
+				startPos.Y.Scale, targetYOffset
 			)
 			
 			if targetPart.Name == "Frame" or targetPart:IsA("Frame") then
 				lastNormalPosition = targetPart.Position
 				lastNormalAnchor = targetPart.AnchorPoint
+				hasManuallyDragged = true
 			end
 		end
 	end
@@ -978,6 +994,7 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 	titleLabel.Font = Enum.Font.GothamBold
 	titleLabel.TextSize = 13
 	titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+	titleLabel.TextTruncate = Enum.TextTruncate.AtEnd 
 	KazeUI:RegisterText(titleLabel, false)
 
 	local arrowIcon = Instance.new("ImageLabel", header)
@@ -1013,6 +1030,7 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 	selectedLabel.Font = Enum.Font.Gotham
 	selectedLabel.TextSize = 11
 	selectedLabel.TextXAlignment = Enum.TextXAlignment.Right
+	selectedLabel.TextTruncate = Enum.TextTruncate.AtEnd 
 	selectedLabel.Text = initialText 
 	KazeUI:RegisterText(selectedLabel, true)
 
@@ -2177,7 +2195,7 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 	local hg = Instance.new("UIGradient", hueSlider)
 	hg.Color = ColorSequence.new{
 		ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 0, 0)),
-		ColorSequenceKeypoint.new(0.167, Color3.fromRGB(255, 255, 0)),
+		ColorSequenceKeypoint.new(0.167, Color3.fromRGB(255, 255, 255)),
 		ColorSequenceKeypoint.new(0.333, Color3.fromRGB(0, 255, 0)),
 		ColorSequenceKeypoint.new(0.5, Color3.fromRGB(0, 255, 255)),
 		ColorSequenceKeypoint.new(0.667, Color3.fromRGB(0, 0, 255)),
@@ -2190,9 +2208,8 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 	hueCursor.Size = UDim2.fromOffset(4, 24)
 	hueCursor.AnchorPoint = Vector2.new(0.5, 0.5)
 	hueCursor.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-	hueCursor.CornerRadius = UDim.new(1, 0)
-	local hStroke = Instance.new("UIStroke", hueCursor)
-	hStroke.Color = Color3.fromRGB(0, 0, 0)
+	Instance.new("UICorner", hueCursor).CornerRadius = UDim.new(1, 0)
+	Instance.new("UIStroke", hueCursor).Color = Color3.fromRGB(0, 0, 0)
 
 	local function UpdateColor()
 		color = Color3.fromHSV(h, s, v)
@@ -2993,6 +3010,12 @@ function KazeUI:CreateWindow(config)
 	local maxWidth = config.MaxWidth or 900
 	local maxHeight = config.MaxHeight or 700
 
+	-- Parse Custom Native Window Size Config property
+	local targetWindowSize = config.Size
+	if typeof(targetWindowSize) ~= "UDim2" then
+		targetWindowSize = UDim2.fromOffset(600, 400)
+	end
+
 	local selectedTheme = "CustomWallpaper"
 	if config.Theme then
 		local themeStr = tostring(config.Theme)
@@ -3078,11 +3101,12 @@ function KazeUI:CreateWindow(config)
 
 	local MiniButtonSize = UDim2.fromOffset(48, 48)
 
-	-- Main Window Setup with Custom Sizing config support
-	local defaultWindowSize = config.Size or UDim2.fromOffset(600, 400)
-	local lastNormalSize = defaultWindowSize
-
+	-- Main Window Setup
 	local Window = Instance.new("Frame")
+	-- Perfect visual native centering from start using scale coords
+	Window.Size = UDim2.fromOffset(10, 10) 
+	Window.Position = UDim2.fromScale(0.5, 0.5)
+	Window.AnchorPoint = Vector2.new(0.5, 0.5)
 	Window.BorderSizePixel = 0
 	Window.Active = true
 	Window.Parent = ScreenGui
@@ -3173,16 +3197,74 @@ function KazeUI:CreateWindow(config)
 		end
 	end)
 
-	-- Window spawn physics
-	local initialWidth = math.max(100, defaultWindowSize.Width.Offset - 50)
-	local initialHeight = math.max(100, defaultWindowSize.Height.Offset - 50)
-	Window.Size = UDim2.fromOffset(initialWidth, initialHeight)
-	Window.Position = UDim2.fromScale(0.5, 0.5)
-	Window.AnchorPoint = Vector2.new(0.5, 0.5)
+	local defaultWindowSize = targetWindowSize
+	local lastNormalSize = defaultWindowSize
+	local toggledMaximized = false
 
+	-- Smart Viewport Adaptive Bounds Sizing Function
+	local function FitWindowToScreen()
+		if toggledMaximized then return end
+		
+		local viewportSize = workspace.CurrentCamera.ViewportSize
+		local marginWidth = 24
+		local marginHeight = 24
+
+		local maxAllowedWidth = math.max(minWidth, viewportSize.X - (marginWidth * 2))
+		local maxAllowedHeight = math.max(minHeight, viewportSize.Y - (marginHeight * 2))
+
+		local currentTargetWidth = math.clamp(defaultWindowSize.X.Offset, minWidth, maxAllowedWidth)
+		local currentTargetHeight = math.clamp(defaultWindowSize.Y.Offset, minHeight, maxAllowedHeight)
+
+		local newWindowSize = UDim2.fromOffset(currentTargetWidth, currentTargetHeight)
+		lastNormalSize = newWindowSize
+
+		if not hasManuallyDragged then
+			Window.AnchorPoint = Vector2.new(0.5, 0.5)
+			Window.Position = UDim2.fromScale(0.5, 0.5)
+			lastNormalPosition = Window.Position
+			lastNormalAnchor = Window.AnchorPoint
+		else
+			-- Validate dragging offsets to avoid pushing parts of the window off-screen
+			local currentPos = Window.Position
+			local halfWidth = currentTargetWidth / 2
+			local halfHeight = currentTargetHeight / 2
+			
+			local screenPadding = 20
+			local minX = -(viewportSize.X / 2) + screenPadding
+			local maxX = (viewportSize.X / 2) - screenPadding
+			local minY = -(viewportSize.Y / 2) + screenPadding
+			local maxY = (viewportSize.Y / 2) - screenPadding
+			
+			local clampedOffsetX = math.clamp(currentPos.X.Offset, minX, maxX)
+			local clampedOffsetY = math.clamp(currentPos.Y.Offset, minY, maxY)
+			
+			Window.Position = UDim2.new(currentPos.X.Scale, clampedOffsetX, currentPos.Y.Scale, clampedOffsetY)
+			lastNormalPosition = Window.Position
+		end
+
+		TweenService:Create(Window, TWEEN_SMOOTH, {Size = newWindowSize}):Play()
+	end
+
+	-- Trigger structural entrance transition
 	ContentClipper.GroupTransparency = 1
-	TweenService:Create(Window, TweenInfo.new(0.5, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {Size = defaultWindowSize}):Play()
+	Window.Size = UDim2.fromOffset(targetWindowSize.X.Offset - 50, targetWindowSize.Y.Offset - 50)
+	FitWindowToScreen()
 	TweenService:Create(ContentClipper, TweenInfo.new(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {GroupTransparency = 0}):Play()
+
+	-- Monitor viewport updates to keep window boundaries fluid and safe
+	local camViewportConn = workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(function()
+		if not toggledMaximized then
+			FitWindowToScreen()
+		else
+			Window.AnchorPoint = Vector2.new(0.5, 0.5)
+			Window.Position = UDim2.fromScale(0.5, 0.5)
+			TweenService:Create(Window, TWEEN_SMOOTH, {Size = UDim2.fromScale(0.95, 0.9)}):Play()
+		end
+	end)
+	
+	Window.Destroying:Connect(function()
+		if camViewportConn then camViewportConn:Disconnect() end
+	end)
 
 	local TopBar = Instance.new("Frame")
 	TopBar.Size = UDim2.new(1, 0, 0, 52)
@@ -3206,22 +3288,18 @@ function KazeUI:CreateWindow(config)
 	avatarStroke.Thickness = 1.2
 	KazeUI:RegisterBorder(avatarStroke)
 
-	-- Center-aligned Title Label Setup (Dynamically scales, no text cutouts or truncation)
+	-- Center-aligned Title Label Setup (Slightly larger size = 16)
 	local TitleLabel = Instance.new("TextLabel")
-	TitleLabel.Position = UDim2.new(0, 260, 0, 0)
-	TitleLabel.Size = UDim2.new(1, -360, 1, 0)
+	TitleLabel.Size = UDim2.new(1, 0, 1, 0)
+	TitleLabel.Position = UDim2.fromOffset(0, 0)
 	TitleLabel.BackgroundTransparency = 1
 	TitleLabel.Text = Title
 	TitleLabel.Font = Enum.Font.GothamBold
+	TitleLabel.TextSize = 16 
 	TitleLabel.TextXAlignment = Enum.TextXAlignment.Center
 	TitleLabel.TextYAlignment = Enum.TextYAlignment.Center
-	TitleLabel.TextScaled = true
 	TitleLabel.Parent = TopBar
 	KazeUI:RegisterText(TitleLabel, false)
-
-	local titleSizeConstraint = Instance.new("UITextSizeConstraint", TitleLabel)
-	titleSizeConstraint.MaxTextSize = 16
-	titleSizeConstraint.MinTextSize = 10
 
 	-- Left-aligned Author and Version next to avatar (TextSize = 13, no dot separator)
 	local SubLabel = Instance.new("TextLabel")
@@ -3244,8 +3322,6 @@ function KazeUI:CreateWindow(config)
 	TopDivider.ZIndex = 5
 	TopDivider.Parent = TopBar
 	KazeUI:OnThemeChanged(TopDivider, function(t) TopDivider.BackgroundColor3 = t.Border end)
-
-	local toggledMaximized = false
 
 	local function createCircleButton(name, offsetX, color)
 		local btn = Instance.new("TextButton")
@@ -3498,7 +3574,7 @@ function KazeUI:CreateWindow(config)
 	SideBar.Parent = SideBarMask
 	KazeUI:AddPanel(SideBar, 0.01)
 
-	-- Restored tab/sidebar vertical separating line
+	-- Restored structural Tab / Sidebar vertical separating line
 	local VertDivider = Instance.new("Frame")
 	VertDivider.Size = UDim2.new(0, 1, 1, 0)
 	VertDivider.Position = UDim2.new(0, 190, 0, 0)
@@ -3550,7 +3626,7 @@ function KazeUI:CreateWindow(config)
 	tabsLayout.Padding = UDim.new(0, 5)
 
 	-- ==========================================
-	-- Modal Resize Engine (Native Pixel Calculations)
+	-- Modal Resize Engine (System Rewrite)
 	-- ==========================================
 	local ResizeBlocker = Instance.new("TextButton")
 	ResizeBlocker.Name = "ResizeInputBlocker"
@@ -3599,6 +3675,11 @@ function KazeUI:CreateWindow(config)
 
 		local newWidth = math.clamp(resizeStartSize.X + delta.X, minWidth, maxWidth)
 		local newHeight = math.clamp(resizeStartSize.Y + delta.Y, minHeight, maxHeight)
+
+		-- Limit custom window resizing manually to match viewport size limits
+		local viewportSize = workspace.CurrentCamera.ViewportSize
+		newWidth = math.min(newWidth, viewportSize.X - 48)
+		newHeight = math.min(newHeight, viewportSize.Y - 48)
 
 		Window.Size = UDim2.fromOffset(newWidth, newHeight)
 		lastNormalSize = Window.Size
@@ -3669,7 +3750,7 @@ function KazeUI:CreateWindow(config)
 	end
 
 	-- ==========================================================
-	-- Premium Floating Dialog Component (Dynamically Expanding, Scrolling Fallback)
+	-- Premium Floating Dialog Component (Solid UI, No Transparency)
 	-- ==========================================================
 	function Win:Dialog(dialogConfig)
 		dialogConfig = dialogConfig or {}
@@ -3686,11 +3767,12 @@ function KazeUI:CreateWindow(config)
 
 		local DialogFrame = Instance.new("Frame", Window) 
 		DialogFrame.Name = "WindowDialog"
+		DialogFrame.Size = UDim2.fromOffset(380, 200) 
 		DialogFrame.AnchorPoint = Vector2.new(0.5, 0.5)
 		DialogFrame.Position = UDim2.fromScale(0.5, 0.4) 
 		DialogFrame.ZIndex = 101 
 		DialogFrame.Active = true 
-		DialogFrame.BackgroundTransparency = 0.08 -- solid design consistency
+		DialogFrame.BackgroundTransparency = 0.08 -- Not transparent, matches notifications
 		
 		Instance.new("UICorner", DialogFrame).CornerRadius = UDim.new(0, 20)
 		KazeUI:AddPanel(DialogFrame, 0.04, false, true)
@@ -3713,53 +3795,33 @@ function KazeUI:CreateWindow(config)
 			topOffset = 62
 		end
 
-		-- Title text bounds checking
-		local titleSize = TextService:GetTextSize(title, 14, Enum.Font.GothamBold, Vector2.new(340, 1000))
 		local titleLabel = Instance.new("TextLabel", DialogFrame)
-		titleLabel.Size = UDim2.new(1, -40, 0, titleSize.Y + 4)
+		titleLabel.Size = UDim2.new(1, -40, 0, 22)
 		titleLabel.Position = UDim2.fromOffset(20, topOffset)
 		titleLabel.BackgroundTransparency = 1
 		titleLabel.Text = title
 		titleLabel.Font = Enum.Font.GothamBold
 		titleLabel.TextSize = 14
 		titleLabel.TextXAlignment = Enum.TextXAlignment.Center
-		titleLabel.TextWrapped = true
 		titleLabel.ZIndex = 102
 		KazeUI:RegisterText(titleLabel, false)
 
-		-- Dynamic description bounds calculations (High-Contrast body)
-		local contentSize = TextService:GetTextSize(content, 12, Enum.Font.Gotham, Vector2.new(340, 3000))
-		local maxContentHeight = 150
-		local isScrollable = contentSize.Y > maxContentHeight
-		local contentHeight = math.clamp(contentSize.Y, 30, maxContentHeight)
-
-		local contentContainer = Instance.new(isScrollable and "ScrollingFrame" or "Frame", DialogFrame)
-		contentContainer.Size = UDim2.new(1, -40, 0, contentHeight)
-		contentContainer.Position = UDim2.fromOffset(20, topOffset + titleSize.Y + 12)
-		contentContainer.BackgroundTransparency = 1
-		contentContainer.BorderSizePixel = 0
-		contentContainer.ZIndex = 102
-
-		if isScrollable then
-			contentContainer.ScrollBarThickness = 3
-			contentContainer.CanvasSize = UDim2.new(0, 0, 0, contentSize.Y + 10)
-			contentContainer.ScrollBarImageColor3 = Color3.fromRGB(60, 60, 65)
-			contentContainer.ScrollingEnabled = true
-		end
-
-		local contentLabel = Instance.new("TextLabel", contentContainer)
-		contentLabel.Size = UDim2.new(1, isScrollable and -12 or 0, 0, contentSize.Y)
+		local contentLabel = Instance.new("TextLabel", DialogFrame)
+		contentLabel.Size = UDim2.new(1, -40, 0, 48)
+		contentLabel.Position = UDim2.fromOffset(20, topOffset + 24)
 		contentLabel.BackgroundTransparency = 1
 		contentLabel.Text = content
 		contentLabel.Font = Enum.Font.Gotham
-		contentLabel.TextSize = 12 -- enlarged from 11 for accessibility
+		contentLabel.TextSize = 11
 		contentLabel.TextWrapped = true
 		contentLabel.TextXAlignment = Enum.TextXAlignment.Center
 		contentLabel.TextYAlignment = Enum.TextYAlignment.Top
-		contentLabel.ZIndex = 103
+		contentLabel.ZIndex = 102
 		KazeUI:RegisterText(contentLabel, true)
 
 		local ActionsFrame = Instance.new("Frame", DialogFrame)
+		ActionsFrame.Position = UDim2.new(0, 15, 1, -15)
+		ActionsFrame.AnchorPoint = Vector2.new(0, 1)
 		ActionsFrame.BackgroundTransparency = 1
 		ActionsFrame.ZIndex = 102
 
@@ -3779,14 +3841,6 @@ function KazeUI:CreateWindow(config)
 			listLayout.FillDirection = Enum.FillDirection.Horizontal
 			ActionsFrame.Size = UDim2.new(1, -30, 0, 32)
 		end
-
-		-- Dialogue Layout positioning logic
-		local actionsHeight = shouldStack and ((totalActions * 32) + ((totalActions - 1) * 8)) or 32
-		local finalHeight = topOffset + titleSize.Y + 12 + contentHeight + 20 + actionsHeight + 18
-		DialogFrame.Size = UDim2.fromOffset(380, finalHeight)
-
-		ActionsFrame.Position = UDim2.new(0, 15, 1, -15)
-		ActionsFrame.AnchorPoint = Vector2.new(0, 1)
 
 		local function closeDialog()
 			TweenService:Create(InteractionBlocker, TWEEN_FAST, {BackgroundTransparency = 1}):Play()
@@ -3873,6 +3927,10 @@ function KazeUI:CreateWindow(config)
 			end)
 		end
 
+		local actionsHeight = shouldStack and ((totalActions * 32) + ((totalActions - 1) * 8)) or 32
+		local finalHeight = topOffset + 24 + 48 + 15 + actionsHeight + 15
+		DialogFrame.Size = UDim2.fromOffset(380, finalHeight)
+
 		return {
 			Close = closeDialog
 		}
@@ -3943,6 +4001,7 @@ function KazeUI:CreateWindow(config)
 		for name, _ in pairs(KazeUI.Themes) do table.insert(themeNames, name) end
 		table.sort(themeNames)
 
+		-- Removed structural config flags so Visual parameters do not write into configurations
 		sec:Dropdown({
 			Title = "Interface Theme Preset",
 			Options = themeNames,
