@@ -717,8 +717,9 @@ function KazeUI:Notify(config)
 	local rightSafetyPadding = 36 
 	local maxTextWidth = 320 - 24 - textPadding - rightSafetyPadding
 
-	local titleSize = TextService:GetTextSize(title, 13, Enum.Font.GothamBold, Vector2.new(maxTextWidth, 1000))
-	local contentSize = TextService:GetTextSize(content, 11, Enum.Font.Gotham, Vector2.new(maxTextWidth, 2000))
+	-- Upgraded Text Bounds Calculations for more readable layouts
+	local titleSize = TextService:GetTextSize(title, 14, Enum.Font.GothamBold, Vector2.new(maxTextWidth, 1000))
+	local contentSize = TextService:GetTextSize(content, 12, Enum.Font.GothamMedium, Vector2.new(maxTextWidth, 2000))
 
 	local titleHeight = math.max(16, math.ceil(titleSize.Y))
 	local contentHeight = math.max(14, math.ceil(contentSize.Y))
@@ -793,7 +794,7 @@ function KazeUI:Notify(config)
 	titleLab.BackgroundTransparency = 1
 	titleLab.Text = title
 	titleLab.Font = Enum.Font.GothamBold
-	titleLab.TextSize = 13
+	titleLab.TextSize = 14 -- Increased from 13 to 14 for readability
 	titleLab.TextXAlignment = Enum.TextXAlignment.Left
 	titleLab.TextWrapped = true
 
@@ -814,7 +815,7 @@ function KazeUI:Notify(config)
 	elseif typeof(titleColor) == "Color3" then
 		titleLab.TextColor3 = titleColor
 	else
-		KazeUI:RegisterText(titleLab, false)
+		KazeUI:RegisterText(titleLab, false) -- Solid white/high-contrast text
 	end
 
 	local contentLab = Instance.new("TextLabel", notifFrame)
@@ -822,12 +823,12 @@ function KazeUI:Notify(config)
 	contentLab.Position = UDim2.fromOffset(textPadding, 12 + titleHeight + 4)
 	contentLab.BackgroundTransparency = 1
 	contentLab.Text = content
-	contentLab.Font = Enum.Font.Gotham
-	contentLab.TextSize = 11
+	contentLab.Font = Enum.Font.GothamMedium
+	contentLab.TextSize = 12 -- Increased from 11 to 12 for readability
 	contentLab.TextWrapped = true
 	contentLab.TextXAlignment = Enum.TextXAlignment.Left
 	contentLab.TextYAlignment = Enum.TextYAlignment.Top
-	KazeUI:RegisterText(contentLab, true)
+	KazeUI:RegisterText(contentLab, false) -- Swapped from muted text to solid white text for outstanding readability!
 
 	local progressTrack = Instance.new("Frame", notifFrame)
 	progressTrack.Size = UDim2.new(1, -32, 0, 2.5)
@@ -3195,6 +3196,7 @@ function KazeUI:CreateWindow(config)
 	WallpaperImage.ScaleType = Enum.ScaleType.Crop
 	WallpaperImage.ZIndex = -2
 	WallpaperImage.Parent = ContentClipper
+	Instance.new("UICorner", WallpaperImage).CornerRadius = UDim.new(0, 28) -- Restore background wallpaper corner rounding
 
 	local DarkOverlay = Instance.new("Frame")
 	DarkOverlay.Name = "DarkOverlay"
@@ -3203,31 +3205,7 @@ function KazeUI:CreateWindow(config)
 	DarkOverlay.ZIndex = -1
 	DarkOverlay.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 	DarkOverlay.Parent = ContentClipper
-
-	local currentTheme = KazeUI.CurrentTheme
-	local initialImg = currentTheme.BackgroundImage or ""
-	local initialImgTrans = currentTheme.BackgroundImageTransparency or 1
-	local initialOverlayTrans = currentTheme.OverlayTransparency or 0.25
-	local hasImage = (initialImg ~= "") and (initialImgTrans < 1)
-
-	WallpaperImage.Image = FormatImage(initialImg)
-	WallpaperImage.ImageTransparency = hasImage and initialImgTrans or 1
-	WallpaperImage.ImageColor3 = currentTheme.BackgroundImageColor3 or Color3.fromRGB(255, 255, 255)
-	DarkOverlay.BackgroundTransparency = hasImage and initialOverlayTrans or 1
-
-	table.insert(KazeUI.WallpaperElements, {
-		ImageLabel = WallpaperImage,
-		OverlayFrame = DarkOverlay,
-		Window = Window
-	})
-
-	Window.Destroying:Connect(function()
-		for i = #KazeUI.WallpaperElements, 1, -1 do
-			if KazeUI.WallpaperElements[i].Window == Window then
-				table.remove(KazeUI.WallpaperElements, i)
-			end
-		end
-	end)
+	Instance.new("UICorner", DarkOverlay).CornerRadius = UDim.new(0, 28) -- Restore dark overlay corner rounding
 
 	Window.Size = UDim2.fromOffset(math.max(100, initialSize.X.Offset - 50), math.max(100, initialSize.Y.Offset - 50))
 	TweenService:Create(Window, TweenInfo.new(0.5, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {Size = initialSize}):Play()
@@ -3239,6 +3217,17 @@ function KazeUI:CreateWindow(config)
 	TopBar.Parent = ContentClipper
 	MakeDraggable(TopBar, Window)
 	KazeUI:AddPanel(TopBar, -0.01)
+
+	-- TopBar Corner Emulation Setup: Create round top corners while maintaining non-clipping high-fidelity Frame masking
+	local topBarCorner = Instance.new("UICorner", TopBar)
+	topBarCorner.CornerRadius = UDim.new(0, 28)
+	
+	local topBarOverlap = Instance.new("Frame", TopBar)
+	topBarOverlap.Size = UDim2.new(1, 0, 0, 28)
+	topBarOverlap.Position = UDim2.new(0, 0, 1, -28)
+	topBarOverlap.BorderSizePixel = 0
+	topBarOverlap.ZIndex = -1
+	KazeUI:AddPanel(topBarOverlap, -0.01)
 
 	-- Enlarged Avatar Circle Setup (40x40 perfectly centered vertically in 52px height topbar)
 	local Avatar = Instance.new("ImageButton")
@@ -3543,6 +3532,24 @@ function KazeUI:CreateWindow(config)
 	SideBar.Parent = SideBarMask
 	KazeUI:AddPanel(SideBar, 0.01)
 
+	-- SideBar Corner Emulation Setup: Create round bottom-left corner while maintaining non-clipping high-fidelity masking
+	local sideBarCorner = Instance.new("UICorner", SideBar)
+	sideBarCorner.CornerRadius = UDim.new(0, 28)
+
+	local sideBarOverlap = Instance.new("Frame", SideBar)
+	sideBarOverlap.Size = UDim2.new(1, 0, 1, -28)
+	sideBarOverlap.Position = UDim2.new(0, 0, 0, 0)
+	sideBarOverlap.BorderSizePixel = 0
+	sideBarOverlap.ZIndex = -1
+	KazeUI:AddPanel(sideBarOverlap, 0.01)
+
+	local sideBarOverlap2 = Instance.new("Frame", SideBar)
+	sideBarOverlap2.Size = UDim2.new(0, 28, 0, 28)
+	sideBarOverlap2.Position = UDim2.new(1, -28, 1, -28)
+	sideBarOverlap2.BorderSizePixel = 0
+	sideBarOverlap2.ZIndex = -1
+	KazeUI:AddPanel(sideBarOverlap2, 0.01)
+
 	-- Restored structural Tab / Sidebar vertical separating line
 	local VertDivider = Instance.new("Frame")
 	VertDivider.Size = UDim2.new(0, 1, 1, 0)
@@ -3557,6 +3564,24 @@ function KazeUI:CreateWindow(config)
 	Pages.BorderSizePixel = 0
 	Pages.Parent = Content
 	KazeUI:AddPanel(Pages, -0.01)
+
+	-- Pages Corner Emulation Setup: Create round bottom-right corner while maintaining non-clipping high-fidelity masking
+	local pagesCorner = Instance.new("UICorner", Pages)
+	pagesCorner.CornerRadius = UDim.new(0, 28)
+
+	local pagesOverlap = Instance.new("Frame", Pages)
+	pagesOverlap.Size = UDim2.new(1, 0, 1, -28)
+	pagesOverlap.Position = UDim2.new(0, 0, 0, 0)
+	pagesOverlap.BorderSizePixel = 0
+	pagesOverlap.ZIndex = -1
+	KazeUI:AddPanel(pagesOverlap, -0.01)
+
+	local pagesOverlap2 = Instance.new("Frame", Pages)
+	pagesOverlap2.Size = UDim2.new(0, 28, 0, 28)
+	pagesOverlap2.Position = UDim2.new(0, 0, 1, -28)
+	pagesOverlap2.BorderSizePixel = 0
+	pagesOverlap2.ZIndex = -1
+	KazeUI:AddPanel(pagesOverlap2, -0.01)
 
 	local isSidebarOpen = true
 	Avatar.MouseButton1Click:Connect(function()
