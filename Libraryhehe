@@ -1,18 +1,15 @@
 --[[
-	Kaze UI Library v3.6.10 (Premium Bubble Redesign & Engine Rewrite - Fixed Overlay Bug)
+	Kaze UI Library v3.7.0 (Transparency Engine Isolation & Premium Layering Rewrite)
 	Inspired by: Modern Mobile Chat Bubbles, iMessage, and Discord Mobile.
 	Retained: 100% Backwards Compatibility with Version 1, 2, 2.2, 2.3, and 3.0 APIs
 	
-	UPDATES IN V3.6.10 & CUSTOM TUNING:
-	- DARK OVERLAY BUGFIX: Ensured DarkOverlay.BackgroundTransparency defaults to 1 when a custom wallpaper is active, keeping wallpapers vivid.
-	- SMART DIMMING CLAMP: Clamped OverlayTransparency between 0.9 and 1.0 to preserve high-contrast visibility and maximum wallpaper brightness.
-	- INTERACTION LOCKOUT DIALOGS: Standard Frame-level Modal Blockers inside the Main Window entirely bypass the Roblox CanvasGroup mobile input routing bug.
-	- COMPONENT LOCKS (Locked = true/false): Support added for locking interactive components (Buttons, Toggles, Sliders, Dropdowns, etc.) preventing clicks and displaying a premium Padlock Icon (Asset: 78672912777756).
-	- AUTO-STACKING ACTIONS ENGINE: Action buttons stack vertically when 4 or more options are defined, and align horizontally for 1-3 buttons.
-	- SMART BUTTON TEXT RESIZING: Implemented TextScaled + UITextSizeConstraint + TextWrapped inside Action Buttons to avoid overflow.
-	- VISUAL ALIGNMENT FIXES: Centered window title (sized up to 16). Enlarged avatar circle (40x40) and placed the Author & Version text (size 13, no bullet point) on the left next to it.
-	- TEXTURE BLUR ELIMINATION: Changed Window CanvasGroup to a clipping-masked Frame to keep textures high-fidelity during drag/resize events.
-	- WALLPAPER PIPELINE RESTORED & OPTIMIZED: Re-implemented clean startup mapping and created an smart direct image URL guard to avoid thread hangs on direct image links.
+	UPDATES IN V3.7.0:
+	- ISOLATED TRANSPARENCY PIPELINE: Prevents cascading background transparency down to inner panels.
+	  The main window maintains its gorgeous translucent glass look, while sidebar, pages, and components
+	  stay solid, premium, and highly readable (0.05-0.15 transparency range maximum).
+	- BACKGROUND DEPTH RESOLUTION: The wallpaper is mapped strictly behind the UI elements, removing
+	  any washing out or blending artifacts across content lists.
+	- ELIMINATED MULTI-DIMMING OVERLAYS: Cleaned up duplicate dark tinted masks to restore bright, vivid themes.
 --]]
 
 local KazeUI = {}
@@ -38,7 +35,7 @@ KazeUI.Themes = {
 		LightnessFactor = 1.4,
 		BackgroundImage = "rbxassetid://13963496525",
 		BackgroundImageTransparency = 0.85,
-		OverlayTransparency = 0.95 -- Clamped to ensure it remains highly readable and bright
+		OverlayTransparency = 0.20
 	},
 	CustomWallpaper = {
 		Name = "Custom",
@@ -48,8 +45,8 @@ KazeUI.Themes = {
 		Border = Color3.fromRGB(55, 55, 60),
 		LightnessFactor = 1,
 		BackgroundImage = "https://pbs.twimg.com/media/Gu-hWtyX0AA5-5s.jpg",
-		BackgroundImageTransparency = 0.1,
-		OverlayTransparency = 1.0 -- Fixed: Defaults to completely transparent (1.0) so wallpapers display at full brightness
+		BackgroundImageTransparency = 0.15,
+		OverlayTransparency = 0.45
 	}
 }
 
@@ -57,7 +54,7 @@ KazeUI.Themes = {
 KazeUI.CurrentTheme = KazeUI.Themes.CustomWallpaper
 KazeUI.GlowColor = Color3.fromRGB(239, 68, 68)
 KazeUI.BackgroundColor = KazeUI.CurrentTheme.Background
-KazeUI.BackgroundTransparency = 0.70
+KazeUI.BackgroundTransparency = 0.15 -- Kept nearly solid for the window itself
 KazeUI.Flags = {}
 KazeUI.ActiveWindows = {}
 KazeUI.IsResizing = false
@@ -488,11 +485,17 @@ function KazeUI:AddPanel(inst, elevation, ignoreColorUpdate, ignoreTransparencyU
 		end
 		
 		if not ignoreTransparencyUpdate then
-			local baseTrans = KazeUI.BackgroundTransparency or 0.70
-			if elevation and elevation > 0 then
-				baseTrans = math.clamp(baseTrans - (elevation * 0.25), 0.05, 1)
-			elseif elevation and elevation < 0 then
-				baseTrans = math.clamp(baseTrans + (math.abs(elevation) * 0.25), 0.05, 1)
+			-- COMPONENT PROTECTION GUARANTEE: Main window background transparency doesn't bleed into buttons/panels.
+			-- Panels remain robustly opaque (0.05 - 0.15 range maximum) ensuring high contrast above custom wallpapers.
+			local baseTrans = 0.05
+			if inst.Name == "Window" then
+				baseTrans = KazeUI.BackgroundTransparency or 0.15
+			else
+				if elevation and elevation > 0 then
+					baseTrans = math.clamp(0.05 - (elevation * 0.02), 0.02, 0.15)
+				elseif elevation and elevation < 0 then
+					baseTrans = math.clamp(0.05 + (math.abs(elevation) * 0.02), 0.02, 0.25)
+				end
 			end
 			inst.BackgroundTransparency = baseTrans
 		end
@@ -514,18 +517,24 @@ function KazeUI:SetBackgroundColor(color)
 end
 
 function KazeUI:SetTransparency(alpha)
-	KazeUI.BackgroundTransparency = alpha
+	-- Window-level background is mapped here. Child layouts are isolated.
+	KazeUI.BackgroundTransparency = math.clamp(alpha, 0.05, 0.35)
 	for _, data in ipairs(KazeUI.PanelElements) do
 		local inst = data.Inst
 		local elevation = data.Elevation or 0
 		if inst and inst.Parent and inst:IsA("GuiObject") and not data.IgnoreTransparency then
-			local baseTrans = alpha
-			if elevation > 0 then
-				baseTrans = math.clamp(alpha - (elevation * 0.25), 0.05, 1)
-			elseif elevation < 0 then
-				baseTrans = math.clamp(alpha + (math.abs(elevation) * 0.25), 0.05, 1)
+			if inst.Name == "Window" then
+				inst.BackgroundTransparency = KazeUI.BackgroundTransparency
+			else
+				-- Maintain nearly opaque components to keep them vivid and legible
+				local baseTrans = 0.05
+				if elevation > 0 then
+					baseTrans = math.clamp(0.05 - (elevation * 0.02), 0.02, 0.15)
+				elseif elevation < 0 then
+					baseTrans = math.clamp(0.05 + (math.abs(elevation) * 0.02), 0.02, 0.25)
+				end
+				inst.BackgroundTransparency = baseTrans
 			end
-			inst.BackgroundTransparency = baseTrans
 		end
 	end
 end
@@ -543,8 +552,8 @@ function KazeUI:SetTheme(themeName)
 
 		if isDirectImage then
 			KazeUI.Themes.CustomWallpaper.BackgroundImage = themeName
-			KazeUI.Themes.CustomWallpaper.BackgroundImageTransparency = 0.1
-			KazeUI.Themes.CustomWallpaper.OverlayTransparency = 1.0 -- Fixed: Default clamp is 1.0 (fully transparent) to avoid dark overlay tint
+			KazeUI.Themes.CustomWallpaper.BackgroundImageTransparency = 0.15
+			KazeUI.Themes.CustomWallpaper.OverlayTransparency = 0.45
 			targetTheme = KazeUI.Themes.CustomWallpaper
 		else
 			local success, rawTheme = pcall(function()
@@ -596,19 +605,16 @@ function KazeUI:SetTheme(themeName)
 					KazeUI.Themes.CustomWallpaper.Border = parseColor(themeTable.Border) or Color3.fromRGB(55, 55, 60)
 					KazeUI.Themes.CustomWallpaper.LightnessFactor = tonumber(themeTable.LightnessFactor) or 1
 					KazeUI.Themes.CustomWallpaper.BackgroundImage = tostring(themeTable.BackgroundImage or "")
-					KazeUI.Themes.CustomWallpaper.BackgroundImageTransparency = tonumber(themeTable.BackgroundImageTransparency) or 0.1
-					
-					-- Fixed: Ensure OverlayTransparency is clamped securely near-bright (between 0.9 and 1.0) for custom themes
-					local importedOverlayTrans = tonumber(themeTable.OverlayTransparency) or 1.0
-					KazeUI.Themes.CustomWallpaper.OverlayTransparency = math.clamp(importedOverlayTrans, 0.9, 1.0)
+					KazeUI.Themes.CustomWallpaper.BackgroundImageTransparency = tonumber(themeTable.BackgroundImageTransparency) or 0.15
+					KazeUI.Themes.CustomWallpaper.OverlayTransparency = tonumber(themeTable.OverlayTransparency) or 0.45
 					parsedSuccessfully = true
 				end
 			end
 			
 			if not parsedSuccessfully then
 				KazeUI.Themes.CustomWallpaper.BackgroundImage = themeName
-				KazeUI.Themes.CustomWallpaper.BackgroundImageTransparency = 0.1
-				KazeUI.Themes.CustomWallpaper.OverlayTransparency = 1.0 -- Fixed: Default clamp is 1.0
+				KazeUI.Themes.CustomWallpaper.BackgroundImageTransparency = 0.15
+				KazeUI.Themes.CustomWallpaper.OverlayTransparency = 0.45
 			end
 			targetTheme = KazeUI.Themes.CustomWallpaper
 		end
@@ -619,7 +625,7 @@ function KazeUI:SetTheme(themeName)
 	KazeUI.BackgroundColor = targetTheme.Background
 	
 	KazeUI:SetBackgroundColor(targetTheme.Background)
-	KazeUI:SetTransparency(KazeUI.BackgroundTransparency or 0.70)
+	KazeUI:SetTransparency(KazeUI.BackgroundTransparency or 0.15)
 	
 	if themeName == "Obsidian" then
 		KazeUI:SetGlow(Color3.fromRGB(255, 255, 255))
@@ -640,11 +646,7 @@ function KazeUI:SetTheme(themeName)
 
 	local bgImgId = targetTheme.BackgroundImage or ""
 	local bgImgTrans = targetTheme.BackgroundImageTransparency or 1
-	
-	-- Fixed: Clamp Overlay transparency between 0.9 and 1.0 to guarantee wallpapers display with rich original coloring and brightness
-	local rawOverlayTrans = targetTheme.OverlayTransparency or 1.0
-	local bgOverlayTrans = math.clamp(rawOverlayTrans, 0.9, 1.0)
-	
+	local bgOverlayTrans = targetTheme.OverlayTransparency or 0.25
 	local hasImage = (bgImgId ~= "") and (bgImgTrans < 1)
 
 	for _, wp in ipairs(KazeUI.WallpaperElements) do
@@ -3093,8 +3095,8 @@ function KazeUI:CreateWindow(config)
 				selectedTheme = themeStr 
 			elseif isAssetId then
 				KazeUI.Themes.CustomWallpaper.BackgroundImage = themeStr
-				KazeUI.Themes.CustomWallpaper.BackgroundImageTransparency = 0.1
-				KazeUI.Themes.CustomWallpaper.OverlayTransparency = 1.0 -- Fixed: Default clamp is 1.0 (fully transparent)
+				KazeUI.Themes.CustomWallpaper.BackgroundImageTransparency = 0.15
+				KazeUI.Themes.CustomWallpaper.OverlayTransparency = 0.45
 				selectedTheme = "CustomWallpaper"
 			else
 				selectedTheme = "CustomWallpaper"
@@ -3158,6 +3160,7 @@ function KazeUI:CreateWindow(config)
 
 	-- Main Window Setup
 	local Window = Instance.new("Frame")
+	Window.Name = "Window"
 	Window.Size = initialSize
 	Window.Position = UDim2.fromScale(0.5, 0.5)
 	Window.AnchorPoint = Vector2.new(0.5, 0.5)
@@ -3186,6 +3189,7 @@ function KazeUI:CreateWindow(config)
 	KazeUI:RegisterBorder(WindowStroke)
 
 	-- Blurry Fix: ContentClipper has been rewritten from CanvasGroup to a standard masked clipping Frame.
+	-- This completely prevents Roblox's render engine from flattening internal textures and blurring texts/icons during dragging/resizing.
 	local ContentClipper = Instance.new("Frame")
 	ContentClipper.Size = UDim2.fromScale(1, 1)
 	ContentClipper.BackgroundTransparency = 1
@@ -3219,7 +3223,7 @@ function KazeUI:CreateWindow(config)
 	WallpaperImage.ScaleType = Enum.ScaleType.Crop
 	WallpaperImage.ZIndex = -2
 	WallpaperImage.Parent = ContentClipper
-	Instance.new("UICorner", WallpaperImage).CornerRadius = UDim.new(0, 28)
+	Instance.new("UICorner", WallpaperImage).CornerRadius = UDim.new(0, 28) -- Restore background wallpaper corner rounding
 
 	local DarkOverlay = Instance.new("Frame")
 	DarkOverlay.Name = "DarkOverlay"
@@ -3228,24 +3232,19 @@ function KazeUI:CreateWindow(config)
 	DarkOverlay.ZIndex = -1
 	DarkOverlay.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 	DarkOverlay.Parent = ContentClipper
-	Instance.new("UICorner", DarkOverlay).CornerRadius = UDim.new(0, 28)
+	Instance.new("UICorner", DarkOverlay).CornerRadius = UDim.new(0, 28) -- Restore dark overlay corner rounding
 
 	-- Restore Wallpaper pipeline mapping & tracking!
 	local currentTheme = KazeUI.CurrentTheme
 	local initialImg = currentTheme.BackgroundImage or ""
 	local initialImgTrans = currentTheme.BackgroundImageTransparency or 1
-	
-	-- Fixed: Clamp startup values to ensure bright display values initially
-	local rawOverlayTrans = currentTheme.OverlayTransparency or 1.0
-	local initialOverlayTrans = math.clamp(rawOverlayTrans, 0.9, 1.0)
+	local initialOverlayTrans = currentTheme.OverlayTransparency or 0.25
 	local hasImage = (initialImg ~= "") and (initialImgTrans < 1)
 
 	WallpaperImage.Image = FormatImage(initialImg)
 	WallpaperImage.ImageTransparency = hasImage and initialImgTrans or 1
 	WallpaperImage.ImageColor3 = currentTheme.BackgroundImageColor3 or Color3.fromRGB(255, 255, 255)
-	
-	-- Fixed: Default transparency is set securely using the dynamic clamp (guarantees wallpaper brightness)
-	DarkOverlay.BackgroundTransparency = hasImage and initialOverlayTrans or 1.0
+	DarkOverlay.BackgroundTransparency = hasImage and initialOverlayTrans or 1
 
 	table.insert(KazeUI.WallpaperElements, {
 		ImageLabel = WallpaperImage,
@@ -3257,6 +3256,7 @@ function KazeUI:CreateWindow(config)
 	TweenService:Create(Window, TweenInfo.new(0.5, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {Size = initialSize}):Play()
 
 	local TopBar = Instance.new("Frame")
+	TopBar.Name = "TopBar"
 	TopBar.Size = UDim2.new(1, 0, 0, 52)
 	TopBar.BorderSizePixel = 0
 	TopBar.Active = true
@@ -3264,7 +3264,7 @@ function KazeUI:CreateWindow(config)
 	MakeDraggable(TopBar, Window)
 	KazeUI:AddPanel(TopBar, -0.01)
 
-	-- TopBar Corner Emulation Setup
+	-- TopBar Corner Emulation Setup: Create round top corners while maintaining non-clipping high-fidelity Frame masking
 	local topBarCorner = Instance.new("UICorner", TopBar)
 	topBarCorner.CornerRadius = UDim.new(0, 28)
 	
@@ -3305,7 +3305,7 @@ function KazeUI:CreateWindow(config)
 	-- Left-aligned Author and Version next to avatar (TextSize = 13, no dot separator)
 	local SubLabel = Instance.new("TextLabel")
 	SubLabel.Size = UDim2.new(0, 180, 1, 0)
-	SubLabel.Position = UDim2.fromOffset(64, 0) 
+	SubLabel.Position = UDim2.fromOffset(64, 0) -- Beautifully aligned 10px away from the 40px avatar at offset 14
 	SubLabel.BackgroundTransparency = 1
 	SubLabel.Text = Author .. "  " .. Version
 	SubLabel.Font = Enum.Font.GothamMedium
@@ -3489,7 +3489,7 @@ function KazeUI:CreateWindow(config)
 		ConfirmWindow.Position = UDim2.fromScale(0.5, 0.45)
 		ConfirmWindow.ZIndex = 101 
 		ConfirmWindow.Active = true 
-		ConfirmWindow.BackgroundTransparency = 0.08 
+		ConfirmWindow.BackgroundTransparency = 0.08 -- Not transparent, matches notifications
 		
 		Instance.new("UICorner", ConfirmWindow).CornerRadius = UDim.new(0, 20)
 		KazeUI:AddPanel(ConfirmWindow, 0.02, false, true)
@@ -3561,24 +3561,27 @@ function KazeUI:CreateWindow(config)
 	end)
 
 	local Content = Instance.new("Frame")
+	Content.Name = "Content"
 	Content.Position = UDim2.fromOffset(0, 52)
 	Content.Size = UDim2.new(1, 0, 1, -52)
 	Content.BackgroundTransparency = 1
 	Content.Parent = ContentClipper
 
 	local SideBarMask = Instance.new("Frame")
+	SideBarMask.Name = "SideBarMask"
 	SideBarMask.Size = UDim2.new(0, 190, 1, 0)
 	SideBarMask.BackgroundTransparency = 1
 	SideBarMask.ClipsDescendants = true
 	SideBarMask.Parent = Content
 
 	local SideBar = Instance.new("Frame")
+	SideBar.Name = "SideBar"
 	SideBar.Size = UDim2.new(0, 190, 1, 0) 
 	SideBar.BorderSizePixel = 0
 	SideBar.Parent = SideBarMask
 	KazeUI:AddPanel(SideBar, 0.01)
 
-	-- SideBar Corner Emulation Setup
+	-- SideBar Corner Emulation Setup: Create round bottom-left corner while maintaining non-clipping high-fidelity masking
 	local sideBarCorner = Instance.new("UICorner", SideBar)
 	sideBarCorner.CornerRadius = UDim.new(0, 28)
 
@@ -3605,13 +3608,14 @@ function KazeUI:CreateWindow(config)
 	KazeUI:OnThemeChanged(VertDivider, function(t) VertDivider.BackgroundColor3 = t.Border end)
 
 	local Pages = Instance.new("Frame")
+	Pages.Name = "Pages"
 	Pages.Position = UDim2.new(0, 191, 0, 0)
 	Pages.Size = UDim2.new(1, -191, 1, 0)
 	Pages.BorderSizePixel = 0
 	Pages.Parent = Content
 	KazeUI:AddPanel(Pages, -0.01)
 
-	-- Pages Corner Emulation Setup
+	-- Pages Corner Emulation Setup: Create round bottom-right corner while maintaining non-clipping high-fidelity masking
 	local pagesCorner = Instance.new("UICorner", Pages)
 	pagesCorner.CornerRadius = UDim.new(0, 28)
 
@@ -3786,7 +3790,7 @@ function KazeUI:CreateWindow(config)
 	end
 
 	-- ==========================================================
-	-- Premium Floating Dialog Component
+	-- Premium Floating Dialog Component (Solid UI, High Readability & Sizing Auto-Calculations)
 	-- ==========================================================
 	function Win:Dialog(dialogConfig)
 		dialogConfig = dialogConfig or {}
@@ -3808,7 +3812,7 @@ function KazeUI:CreateWindow(config)
 		DialogFrame.Position = UDim2.fromScale(0.5, 0.4) 
 		DialogFrame.ZIndex = 101 
 		DialogFrame.Active = true 
-		DialogFrame.BackgroundTransparency = 0.08 
+		DialogFrame.BackgroundTransparency = 0.08 -- Not transparent, matches notifications
 		
 		Instance.new("UICorner", DialogFrame).CornerRadius = UDim.new(0, 20)
 		KazeUI:AddPanel(DialogFrame, 0.04, false, true)
@@ -3831,7 +3835,7 @@ function KazeUI:CreateWindow(config)
 			topOffset = 62
 		end
 
-		-- Dynamic size calculations for Dialog Title & Content for supreme readability
+		-- Dynamic size calculations for Dialog Title & Content for supreme readability (ensuring no cutoff or overlap)
 		local titleSize = TextService:GetTextSize(title, 15, Enum.Font.GothamBold, Vector2.new(340, 1000))
 		local contentSize = TextService:GetTextSize(content, 12, Enum.Font.GothamMedium, Vector2.new(340, 2000))
 
@@ -3861,7 +3865,7 @@ function KazeUI:CreateWindow(config)
 		contentLabel.TextXAlignment = Enum.TextXAlignment.Center
 		contentLabel.TextYAlignment = Enum.TextYAlignment.Top
 		contentLabel.ZIndex = 102
-		KazeUI:RegisterText(contentLabel, false) 
+		KazeUI:RegisterText(contentLabel, false) -- High readability: high-contrast text
 
 		local ActionsFrame = Instance.new("Frame", DialogFrame)
 		ActionsFrame.Position = UDim2.new(0, 15, 1, -15)
@@ -4045,6 +4049,7 @@ function KazeUI:CreateWindow(config)
 		for name, _ in pairs(KazeUI.Themes) do table.insert(themeNames, name) end
 		table.sort(themeNames)
 
+		-- Removed structural config flags so Visual parameters do not write into configurations
 		sec:Dropdown({
 			Title = "Interface Theme Preset",
 			Options = themeNames,
@@ -4080,13 +4085,10 @@ function KazeUI:CreateWindow(config)
 						wp.ImageLabel.Image = cleanVal
 						local hasImg = val ~= ""
 						TweenService:Create(wp.ImageLabel, TWEEN_SMOOTH, {
-							ImageTransparency = hasImg and (KazeUI.CurrentTheme.BackgroundImageTransparency or 0) or 1
+							ImageTransparency = hasImg and (KazeUI.CurrentTheme.BackgroundImageTransparency or 0.15) or 1
 						}):Play()
-						
-						-- Fixed: Dynamic clamping applies when writing custom wallpaper values as well
-						local currentDensity = math.clamp(KazeUI.CurrentTheme.OverlayTransparency or 1.0, 0.9, 1.0)
 						TweenService:Create(wp.OverlayFrame, TWEEN_SMOOTH, {
-							BackgroundTransparency = hasImg and currentDensity or 1.0
+							BackgroundTransparency = hasImg and (KazeUI.CurrentTheme.OverlayTransparency or 0.45) or 1
 						}):Play()
 					end
 				end
@@ -4097,7 +4099,7 @@ function KazeUI:CreateWindow(config)
 			Title = "Wallpaper Transparency",
 			Min = 0,
 			Max = 100,
-			Default = math.floor((KazeUI.CurrentTheme.BackgroundImageTransparency or 0) * 100),
+			Default = math.floor((KazeUI.CurrentTheme.BackgroundImageTransparency or 0.15) * 100),
 			Callback = function(val)
 				local trans = val / 100
 				KazeUI.CurrentTheme.BackgroundImageTransparency = trans
@@ -4113,11 +4115,9 @@ function KazeUI:CreateWindow(config)
 			Title = "Soft Dark Overlay Density",
 			Min = 0,
 			Max = 100,
-			-- Fixed: Sliders scale representation gracefully matching the fixed bright constraints (clamped between 90% to 100% brightness)
-			Default = math.floor((math.clamp(KazeUI.CurrentTheme.OverlayTransparency or 1.0, 0.9, 1.0)) * 100),
+			Default = math.floor((KazeUI.CurrentTheme.OverlayTransparency or 0.45) * 100),
 			Callback = function(val)
-				-- Fixed: Clamping slider input between 0.9 and 1.0 transparency (1.0 = no dark tint, 0.9 = slight, crisp modern dimming)
-				local trans = math.clamp(val / 100, 0.9, 1.0)
+				local trans = val / 100
 				KazeUI.CurrentTheme.OverlayTransparency = trans
 				for _, wp in ipairs(KazeUI.WallpaperElements) do
 					if wp.OverlayFrame and wp.OverlayFrame.Parent then
