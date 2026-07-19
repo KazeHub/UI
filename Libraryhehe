@@ -10,6 +10,7 @@
 	- SMART BUTTON TEXT RESIZING: Implemented TextScaled + UITextSizeConstraint + TextWrapped inside Action Buttons to avoid overflow.
 	- VISUAL ALIGNMENT FIXES: Centered window title (sized up to 16). Enlarged avatar circle (40x40) and placed the Author & Version text (size 13, no bullet point) on the left next to it.
 	- TEXTURE BLUR ELIMINATION: Changed Window CanvasGroup to a clipping-masked Frame to keep textures high-fidelity during drag/resize events.
+	- ROBUX THUMBNAIL RESOLVER: Formats purely numeric IDs using 'rbxthumb' to natively resolve Decals into image assets.
 --]]
 
 local KazeUI = {}
@@ -23,6 +24,28 @@ local TextService = game:GetService("TextService")
 local HttpService = game:GetService("HttpService")
 local LP = Players.LocalPlayer
 local Mouse = LP:GetMouse()
+
+-- Unified Multi-Executor HTTP Scraper
+local function HttpGet(url)
+	local success, res
+	local requestFunc = (request or http_request or (syn and syn.request))
+	if requestFunc then
+		success, res = pcall(requestFunc, {
+			Url = url,
+			Method = "GET"
+		})
+		if success and type(res) == "table" and res.Body then
+			return res.Body
+		end
+	end
+	if game and game.HttpGet then
+		success, res = pcall(game.HttpGet, game, url)
+		if success and res then return res end
+	end
+	success, res = pcall(HttpService.GetAsync, HttpService, url)
+	if success and res then return res end
+	return nil
+end
 
 -- Premium Bubble Themes Configuration (High-Contrast, Vivid Settings)
 KazeUI.Themes = {
@@ -207,30 +230,10 @@ end
 UpdateScale()
 workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(UpdateScale)
 
--- Lucide Icons Setup
-local IconsMap = {}
-pcall(function()
-	if game and game.HttpGet then
-		local rawIcons = game:HttpGet("https://raw.githubusercontent.com/KazeHub/UI/refs/heads/main/Icons.lua.txt")
-		if rawIcons then
-			local s, res = pcall(function()
-				local func = loadstring(rawIcons)
-				return func and func()
-			end)
-			if not s or type(res) ~= "table" then
-				s, res = pcall(function() return HttpService:JSONDecode(rawIcons) end)
-			end
-			if type(res) == "table" then
-				for k, v in pairs(res) do IconsMap[string.lower(tostring(k))] = tostring(v) end
-			end
-		end
-	end
-end)
-
 -- Exploit Direct Web Image Compiler & Caching Pipeline
 local function GetCustomAssetFromURL(url)
 	local getasset = (getcustomasset or getsynasset or (drawing and drawing.new and drawing.custom_asset))
-	if not getasset or not writefile or not game or not game.HttpGet then
+	if not getasset or not writefile or not game then
 		return url -- Fallback if exploit is not supported
 	end
 	
@@ -242,11 +245,9 @@ local function GetCustomAssetFromURL(url)
 		if s and asset then return asset end
 	end
 	
-	local success, bytes = pcall(function()
-		return game:HttpGet(url)
-	end)
+	local bytes = HttpGet(url)
 	
-	if success and bytes and string.len(bytes) > 0 then
+	if bytes and string.len(bytes) > 0 then
 		if makefolder then
 			pcall(makefolder, "KazeUI")
 			pcall(makefolder, "KazeUI/Cache")
@@ -267,12 +268,15 @@ local function FormatImage(id)
 		local mapped = IconsMap[lowerId]
 		if not string.find(mapped, "rbxassetid://") and not string.find(mapped, "http") then
 			local clean = string.gsub(mapped, "%D", "")
-			if clean ~= "" then return "rbxassetid://" .. clean end
+			if clean ~= "" then return "rbxthumb://type=Asset&id=" .. clean .. "&w=420&h=420" end
 		end
 		return mapped
 	end
 	
-	if string.find(id, "rbxassetid://") then return id end
+	if string.find(id, "rbxassetid://") then 
+		local clean = string.gsub(id, "%D", "")
+		return "rbxthumb://type=Asset&id=" .. clean .. "&w=420&h=420"
+	end
 	
 	if string.find(id, "^http://") or string.find(id, "^https://") then
 		return GetCustomAssetFromURL(id)
@@ -280,7 +284,7 @@ local function FormatImage(id)
 	
 	local clean = string.gsub(id, "%D", "")
 	if clean == "" then return id end
-	return "rbxassetid://" .. clean
+	return "rbxthumb://type=Asset&id=" .. clean .. "&w=420&h=420"
 end
 
 -- ==========================================
@@ -531,12 +535,10 @@ function KazeUI:SetTheme(themeName)
 	local targetTheme = KazeUI.Themes[themeName]
 	
 	if not targetTheme and type(themeName) == "string" and (string.find(themeName, "^http://") or string.find(themeName, "^https://")) then
-		local success, rawTheme = pcall(function()
-			return game:HttpGet(themeName)
-		end)
+		local rawTheme = HttpGet(themeName)
 		
 		local parsedSuccessfully = false
-		if success and rawTheme then
+		if rawTheme then
 			local themeTable = nil
 			local s, parsed = pcall(function()
 				return HttpService:JSONDecode(rawTheme)
@@ -2837,9 +2839,9 @@ CreateCollapsibleSection = function(parentFrame, titleArg, currentDepth)
 	return sectionPublic
 end
 
--- ==========================================================
+-- ==========================================
 -- Volumetric Premium Collapsible GroupBox Component 
--- ==========================================================
+-- ==========================================
 CreateGroupBox = function(parentFrame, titleArg, currentDepth, depthOverride)
 	currentDepth = depthOverride or currentDepth or 1
 	if currentDepth > 3 then currentDepth = 3 end 
