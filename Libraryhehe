@@ -35,7 +35,9 @@ KazeUI.Themes = {
 		LightnessFactor = 1.4,
 		BackgroundImage = "rbxassetid://13963496525",
 		BackgroundImageTransparency = 0.85,
-		OverlayTransparency = 0.20
+		OverlayTransparency = 0.20,
+		ScaleType = Enum.ScaleType.Tile,
+		TileSize = UDim2.fromOffset(128, 128)
 	},
 	CustomWallpaper = {
 		Name = "Custom",
@@ -46,7 +48,8 @@ KazeUI.Themes = {
 		LightnessFactor = 1,
 		BackgroundImage = "https://pbs.twimg.com/media/Gu-hWtyX0AA5-5s.jpg",
 		BackgroundImageTransparency = 0.1,
-		OverlayTransparency = 0.65
+		OverlayTransparency = 0.65,
+		ScaleType = Enum.ScaleType.Crop
 	}
 }
 
@@ -627,6 +630,23 @@ function KazeUI:SetTheme(themeName)
 		if wp.ImageLabel and wp.ImageLabel.Parent then
 			if hasImage then
 				wp.ImageLabel.Image = FormatImage(bgImgId)
+				
+				-- SMART WALLPAPER AUTODETECTION: Grid AssetIDs / local numbers tile nicely. Photos Crop.
+				local scaleType = targetTheme.ScaleType
+				if not scaleType then
+					local lowerBg = string.lower(bgImgId)
+					if string.find(lowerBg, "rbxassetid://") or tonumber(bgImgId) ~= nil then
+						scaleType = Enum.ScaleType.Tile
+					else
+						scaleType = Enum.ScaleType.Crop
+					end
+				end
+				
+				wp.ImageLabel.ScaleType = scaleType
+				if scaleType == Enum.ScaleType.Tile then
+					wp.ImageLabel.TileSize = targetTheme.TileSize or UDim2.fromOffset(128, 128)
+				end
+
 				TweenService:Create(wp.ImageLabel, TWEEN_SMOOTH, {ImageTransparency = bgImgTrans}):Play()
 				TweenService:Create(wp.OverlayFrame, TWEEN_SMOOTH, {BackgroundTransparency = bgOverlayTrans}):Play()
 			else
@@ -2243,7 +2263,7 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 	hueCursor.Size = UDim2.fromOffset(4, 24)
 	hueCursor.AnchorPoint = Vector2.new(0.5, 0.5)
 	hueCursor.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-	hueCursor.CornerRadius = UDim.new(1, 0)
+	Instance.new("UICorner", hueCursor).CornerRadius = UDim.new(1, 0)
 	Instance.new("UIStroke", hueCursor).Color = Color3.fromRGB(0, 0, 0)
 
 	local function UpdateColor()
@@ -4036,9 +4056,19 @@ function KazeUI:CreateWindow(config)
 			Callback = function(val)
 				local cleanVal = FormatImage(val)
 				KazeUI.CurrentTheme.BackgroundImage = val
+				
+				-- Dynamic wallpaper scale type decision
+				local lowerVal = string.lower(val)
+				local isTile = string.find(lowerVal, "rbxassetid://") or tonumber(val) ~= nil
+				local scaleType = isTile and Enum.ScaleType.Tile or Enum.ScaleType.Crop
+				
 				for _, wp in ipairs(KazeUI.WallpaperElements) do
 					if wp.ImageLabel and wp.ImageLabel.Parent then
 						wp.ImageLabel.Image = cleanVal
+						wp.ImageLabel.ScaleType = scaleType
+						if scaleType == Enum.ScaleType.Tile then
+							wp.ImageLabel.TileSize = KazeUI.CurrentTheme.TileSize or UDim2.fromOffset(128, 128)
+						end
 						local hasImg = val ~= ""
 						TweenService:Create(wp.ImageLabel, TWEEN_SMOOTH, {
 							ImageTransparency = hasImg and (KazeUI.CurrentTheme.BackgroundImageTransparency or 0) or 1
