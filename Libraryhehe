@@ -1,13 +1,14 @@
 --[[
-	Kaze UI Library v3.7.0 (Responsive Engine Update & Crisp Rendering Engine)
+	Kaze UI Library v3.6.9 (Premium Bubble Redesign & Engine Rewrite)
 	Inspired by: Modern Mobile Chat Bubbles, iMessage, and Discord Mobile.
-	Retained: 100% Backwards Compatibility with Version 1, 2, 2.2, 2.3, and 3.0+ APIs
+	Retained: 100% Backwards Compatibility with Version 1, 2, 2.2, 2.3, and 3.0 APIs
 	
-	UPDATES IN V3.7.0:
-	- REMOVED GLOBAL UISCALE: UI now renders at native crisp pixel boundaries (no scaling blur).
-	- NATIVE SIZE CONFIG: Supports config.Size = UDim2.fromOffset(X, Y) with 600x400 fallback.
-	- AUTOMATIC RESPONSIVE CENTERING: Windows open centered on mobile/tablet/desktop. Keeps center during orientation updates unless dragged.
-	- VIEWPORT MARGIN CLAMP: Clamps window size and offsets to keep the interface safely inside screen boundaries.
+	UPDATES IN V3.6.9 & CUSTOM TUNING:
+	- INTERACTION LOCKOUT DIALOGS: Standard Frame-level Modal Blockers inside the Main Window entirely bypass the Roblox CanvasGroup mobile input routing bug.
+	- COMPONENT LOCKS (Locked = true/false): Support added for locking interactive components (Buttons, Toggles, Sliders, Dropdowns, etc.) preventing clicks and displaying a premium Padlock Icon (Asset: 78672912777756).
+	- AUTO-STACKING ACTIONS ENGINE: Action buttons stack vertically when 4 or more options are defined, and align horizontally for 1-3 buttons.
+	- SMART BUTTON TEXT RESIZING: Implemented TextScaled + UITextSizeConstraint + TextWrapped inside Action Buttons to avoid overflow.
+	- VISUAL ALIGNMENT FIXES: Centered window title (sized up to 16). Enlarged avatar circle (40x40) and placed the Author & Version text (size 13, no bullet point) on the left next to it.
 --]]
 
 local KazeUI = {}
@@ -160,6 +161,35 @@ NotifContainer.Position = UDim2.new(1, -340, 0, 0)
 NotifContainer.BackgroundTransparency = 1
 NotifContainer.Parent = NotifScreenGui
 
+-- Adaptive Scaling Engine
+local UIScale = Instance.new("UIScale")
+UIScale.Parent = ScreenGui
+
+local function UpdateScale()
+	local size = workspace.CurrentCamera.ViewportSize
+	local width, height = size.X, size.Y
+	local minAxis = math.min(width, height)
+	local targetScale = 1.0
+
+	if UIS.TouchEnabled then
+		targetScale = (minAxis < 500) and 0.85 or 1.0
+	else
+		if width >= 1920 or height >= 1080 then
+			targetScale = 1.12
+		elseif width <= 1366 then
+			targetScale = 0.95
+		else
+			targetScale = 1.0
+		end
+	end
+
+	UIScale.Scale = targetScale
+	ScreenGui.IgnoreGuiInset = true
+end
+
+UpdateScale()
+workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(UpdateScale)
+
 -- Lucide Icons Setup
 local IconsMap = {}
 pcall(function()
@@ -293,10 +323,9 @@ function KazeUI:OnThemeChanged(inst, cb)
 	end)
 end
 
--- Premium Dragging engine (Upgraded with boundaries checking)
+-- Premium Dragging engine
 local lastNormalPosition = UDim2.fromScale(0.5, 0.5)
 local lastNormalAnchor = Vector2.new(0.5, 0.5)
-local hasManuallyDragged = false
 
 local function MakeDraggable(dragPart, targetPart)
 	local dragging = false
@@ -308,33 +337,18 @@ local function MakeDraggable(dragPart, targetPart)
 	local function update(input)
 		if not dragStart or not startPos then return end
 		local delta = input.Position - dragStart
+		local scale = UIScale.Scale
 		
 		if dragActive or delta.Magnitude > 8 then
 			dragActive = true
-			
-			local viewportSize = workspace.CurrentCamera.ViewportSize
-			local targetXOffset = startPos.X.Offset + delta.X
-			local targetYOffset = startPos.Y.Offset + delta.Y
-			
-			-- Keep the center point of the window within viewport bounds with 20px safety padding
-			local screenPadding = 20
-			local minX = -(viewportSize.X / 2) + screenPadding
-			local maxX = (viewportSize.X / 2) - screenPadding
-			local minY = -(viewportSize.Y / 2) + screenPadding
-			local maxY = (viewportSize.Y / 2) - screenPadding
-			
-			targetXOffset = math.clamp(targetXOffset, minX, maxX)
-			targetYOffset = math.clamp(targetYOffset, minY, maxY)
-			
 			targetPart.Position = UDim2.new(
-				startPos.X.Scale, targetXOffset,
-				startPos.Y.Scale, targetYOffset
+				startPos.X.Scale, startPos.X.Offset + (delta.X / scale),
+				startPos.Y.Scale, startPos.Y.Offset + (delta.Y / scale)
 			)
 			
 			if targetPart.Name == "Frame" or targetPart:IsA("Frame") then
 				lastNormalPosition = targetPart.Position
 				lastNormalAnchor = targetPart.AnchorPoint
-				hasManuallyDragged = true
 			end
 		end
 	end
@@ -795,6 +809,7 @@ function KazeUI:Notify(config)
 	contentLab.TextSize = 11
 	contentLab.TextWrapped = true
 	contentLab.TextXAlignment = Enum.TextXAlignment.Left
+	contentLab.TextYAlignment = Enum.TextYAlignment.Top
 	KazeUI:RegisterText(contentLab, true)
 
 	local progressTrack = Instance.new("Frame", notifFrame)
@@ -2167,6 +2182,7 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 	whiteOverlay.BackgroundTransparency = 0 
 	whiteOverlay.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
 	local wg = Instance.new("UIGradient", whiteOverlay)
+	whiteOverlay.Parent = svMap
 	wg.Transparency = NumberSequence.new{NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(1, 1)}
 	Instance.new("UICorner", whiteOverlay).CornerRadius = UDim.new(0, 8)
 
@@ -2175,6 +2191,7 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 	blackOverlay.BackgroundTransparency = 0 
 	blackOverlay.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 	local bg = Instance.new("UIGradient", blackOverlay)
+	blackOverlay.Parent = svMap
 	bg.Transparency = NumberSequence.new{NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(1, 0)}
 	bg.Rotation = 90
 	Instance.new("UICorner", blackOverlay).CornerRadius = UDim.new(0, 8)
@@ -2195,7 +2212,7 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 	local hg = Instance.new("UIGradient", hueSlider)
 	hg.Color = ColorSequence.new{
 		ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 0, 0)),
-		ColorSequenceKeypoint.new(0.167, Color3.fromRGB(255, 255, 255)),
+		ColorSequenceKeypoint.new(0.167, Color3.fromRGB(255, 255, 0)),
 		ColorSequenceKeypoint.new(0.333, Color3.fromRGB(0, 255, 0)),
 		ColorSequenceKeypoint.new(0.5, Color3.fromRGB(0, 255, 255)),
 		ColorSequenceKeypoint.new(0.667, Color3.fromRGB(0, 0, 255)),
@@ -3010,12 +3027,6 @@ function KazeUI:CreateWindow(config)
 	local maxWidth = config.MaxWidth or 900
 	local maxHeight = config.MaxHeight or 700
 
-	-- Parse Custom Native Window Size Config property
-	local targetWindowSize = config.Size
-	if typeof(targetWindowSize) ~= "UDim2" then
-		targetWindowSize = UDim2.fromOffset(600, 400)
-	end
-
 	local selectedTheme = "CustomWallpaper"
 	if config.Theme then
 		local themeStr = tostring(config.Theme)
@@ -3103,8 +3114,7 @@ function KazeUI:CreateWindow(config)
 
 	-- Main Window Setup
 	local Window = Instance.new("Frame")
-	-- Perfect visual native centering from start using scale coords
-	Window.Size = UDim2.fromOffset(10, 10) 
+	Window.Size = UDim2.fromOffset(600, 400) 
 	Window.Position = UDim2.fromScale(0.5, 0.5)
 	Window.AnchorPoint = Vector2.new(0.5, 0.5)
 	Window.BorderSizePixel = 0
@@ -3197,74 +3207,10 @@ function KazeUI:CreateWindow(config)
 		end
 	end)
 
-	local defaultWindowSize = targetWindowSize
-	local lastNormalSize = defaultWindowSize
-	local toggledMaximized = false
-
-	-- Smart Viewport Adaptive Bounds Sizing Function
-	local function FitWindowToScreen()
-		if toggledMaximized then return end
-		
-		local viewportSize = workspace.CurrentCamera.ViewportSize
-		local marginWidth = 24
-		local marginHeight = 24
-
-		local maxAllowedWidth = math.max(minWidth, viewportSize.X - (marginWidth * 2))
-		local maxAllowedHeight = math.max(minHeight, viewportSize.Y - (marginHeight * 2))
-
-		local currentTargetWidth = math.clamp(defaultWindowSize.X.Offset, minWidth, maxAllowedWidth)
-		local currentTargetHeight = math.clamp(defaultWindowSize.Y.Offset, minHeight, maxAllowedHeight)
-
-		local newWindowSize = UDim2.fromOffset(currentTargetWidth, currentTargetHeight)
-		lastNormalSize = newWindowSize
-
-		if not hasManuallyDragged then
-			Window.AnchorPoint = Vector2.new(0.5, 0.5)
-			Window.Position = UDim2.fromScale(0.5, 0.5)
-			lastNormalPosition = Window.Position
-			lastNormalAnchor = Window.AnchorPoint
-		else
-			-- Validate dragging offsets to avoid pushing parts of the window off-screen
-			local currentPos = Window.Position
-			local halfWidth = currentTargetWidth / 2
-			local halfHeight = currentTargetHeight / 2
-			
-			local screenPadding = 20
-			local minX = -(viewportSize.X / 2) + screenPadding
-			local maxX = (viewportSize.X / 2) - screenPadding
-			local minY = -(viewportSize.Y / 2) + screenPadding
-			local maxY = (viewportSize.Y / 2) - screenPadding
-			
-			local clampedOffsetX = math.clamp(currentPos.X.Offset, minX, maxX)
-			local clampedOffsetY = math.clamp(currentPos.Y.Offset, minY, maxY)
-			
-			Window.Position = UDim2.new(currentPos.X.Scale, clampedOffsetX, currentPos.Y.Scale, clampedOffsetY)
-			lastNormalPosition = Window.Position
-		end
-
-		TweenService:Create(Window, TWEEN_SMOOTH, {Size = newWindowSize}):Play()
-	end
-
-	-- Trigger structural entrance transition
+	Window.Size = UDim2.fromOffset(550, 350)
 	ContentClipper.GroupTransparency = 1
-	Window.Size = UDim2.fromOffset(targetWindowSize.X.Offset - 50, targetWindowSize.Y.Offset - 50)
-	FitWindowToScreen()
+	TweenService:Create(Window, TweenInfo.new(0.5, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {Size = UDim2.fromOffset(600, 400)}):Play()
 	TweenService:Create(ContentClipper, TweenInfo.new(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {GroupTransparency = 0}):Play()
-
-	-- Monitor viewport updates to keep window boundaries fluid and safe
-	local camViewportConn = workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(function()
-		if not toggledMaximized then
-			FitWindowToScreen()
-		else
-			Window.AnchorPoint = Vector2.new(0.5, 0.5)
-			Window.Position = UDim2.fromScale(0.5, 0.5)
-			TweenService:Create(Window, TWEEN_SMOOTH, {Size = UDim2.fromScale(0.95, 0.9)}):Play()
-		end
-	end)
-	
-	Window.Destroying:Connect(function()
-		if camViewportConn then camViewportConn:Disconnect() end
-	end)
 
 	local TopBar = Instance.new("Frame")
 	TopBar.Size = UDim2.new(1, 0, 0, 52)
@@ -3322,6 +3268,10 @@ function KazeUI:CreateWindow(config)
 	TopDivider.ZIndex = 5
 	TopDivider.Parent = TopBar
 	KazeUI:OnThemeChanged(TopDivider, function(t) TopDivider.BackgroundColor3 = t.Border end)
+
+	local defaultWindowSize = UDim2.fromOffset(600, 400)
+	local lastNormalSize = defaultWindowSize
+	local toggledMaximized = false
 
 	local function createCircleButton(name, offsetX, color)
 		local btn = Instance.new("TextButton")
@@ -3672,14 +3622,10 @@ function KazeUI:CreateWindow(config)
 
 	local function UpdateResize(inputPos)
 		local delta = inputPos - resizeStartPos
+		local scale = UIScale.Scale
 
-		local newWidth = math.clamp(resizeStartSize.X + delta.X, minWidth, maxWidth)
-		local newHeight = math.clamp(resizeStartSize.Y + delta.Y, minHeight, maxHeight)
-
-		-- Limit custom window resizing manually to match viewport size limits
-		local viewportSize = workspace.CurrentCamera.ViewportSize
-		newWidth = math.min(newWidth, viewportSize.X - 48)
-		newHeight = math.min(newHeight, viewportSize.Y - 48)
+		local newWidth = math.clamp(resizeStartSize.X + (delta.X / scale), minWidth, maxWidth)
+		local newHeight = math.clamp(resizeStartSize.Y + (delta.Y / scale), minHeight, maxHeight)
 
 		Window.Size = UDim2.fromOffset(newWidth, newHeight)
 		lastNormalSize = Window.Size
@@ -3694,7 +3640,7 @@ function KazeUI:CreateWindow(config)
 			KazeUI.IsResizing = true
 			resizeTouchID = input
 
-			resizeStartSize = Vector2.new(Window.AbsoluteSize.X, Window.AbsoluteSize.Y)
+			resizeStartSize = Vector2.new(Window.AbsoluteSize.X / UIScale.Scale, Window.AbsoluteSize.Y / UIScale.Scale)
 			resizeStartPos = Vector2.new(input.Position.X, input.Position.Y)
 
 			ResizeBlocker.Visible = true
