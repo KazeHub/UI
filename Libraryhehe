@@ -9,6 +9,7 @@
 	- AUTO-STACKING ACTIONS ENGINE: Action buttons stack vertically when 4 or more options are defined, and align horizontally for 1-3 buttons.
 	- SMART BUTTON TEXT RESIZING: Implemented TextScaled + UITextSizeConstraint + TextWrapped inside Action Buttons to avoid overflow.
 	- VISUAL ALIGNMENT FIXES: Centered window title (sized up to 16). Enlarged avatar circle (40x40) and placed the Author & Version text (size 13, no bullet point) on the left next to it.
+	- TEXTURE BLUR ELIMINATION: Changed Window CanvasGroup to a clipping-masked Frame to keep textures high-fidelity during drag/resize events.
 --]]
 
 local KazeUI = {}
@@ -161,7 +162,7 @@ NotifContainer.Position = UDim2.new(1, -340, 0, 0)
 NotifContainer.BackgroundTransparency = 1
 NotifContainer.Parent = NotifScreenGui
 
--- Adaptive Scaling Engine (Synchronized Scalers for Main Window, Floating Open Button, Dialogs, and Notifications)
+-- Adaptive Scaling Engine
 local UIScale = Instance.new("UIScale")
 UIScale.Parent = ScreenGui
 
@@ -3126,11 +3127,13 @@ function KazeUI:CreateWindow(config)
 		KazeUI:SetGlow(Color3.fromRGB(239, 68, 68))
 	end
 
-	local MiniButtonSize = UDim2.fromOffset(48, 48)
+	-- Window sizing configuration mapping
+	local initialSize = config.Size or UDim2.fromOffset(600, 400)
+	local MiniButtonSize = (config.OpenButton and config.OpenButton.Size) or UDim2.fromOffset(48, 48)
 
 	-- Main Window Setup
 	local Window = Instance.new("Frame")
-	Window.Size = UDim2.fromOffset(600, 400) 
+	Window.Size = initialSize
 	Window.Position = UDim2.fromScale(0.5, 0.5)
 	Window.AnchorPoint = Vector2.new(0.5, 0.5)
 	Window.BorderSizePixel = 0
@@ -3157,10 +3160,13 @@ function KazeUI:CreateWindow(config)
 	WindowStroke.Parent = Window
 	KazeUI:RegisterBorder(WindowStroke)
 
-	local ContentClipper = Instance.new("CanvasGroup")
+	-- Blurry Fix: ContentClipper has been rewritten from CanvasGroup to a standard masked clipping Frame.
+	-- This completely prevents Roblox's render engine from flattening internal textures and blurring texts/icons during dragging/resizing.
+	local ContentClipper = Instance.new("Frame")
 	ContentClipper.Size = UDim2.fromScale(1, 1)
 	ContentClipper.BackgroundTransparency = 1
 	ContentClipper.BorderSizePixel = 0
+	ContentClipper.ClipsDescendants = true
 	ContentClipper.Parent = Window
 	Instance.new("UICorner", ContentClipper).CornerRadius = UDim.new(0, 28)
 
@@ -3223,10 +3229,8 @@ function KazeUI:CreateWindow(config)
 		end
 	end)
 
-	Window.Size = UDim2.fromOffset(550, 350)
-	ContentClipper.GroupTransparency = 1
-	TweenService:Create(Window, TweenInfo.new(0.5, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {Size = UDim2.fromOffset(600, 400)}):Play()
-	TweenService:Create(ContentClipper, TweenInfo.new(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {GroupTransparency = 0}):Play()
+	Window.Size = UDim2.fromOffset(math.max(100, initialSize.X.Offset - 50), math.max(100, initialSize.Y.Offset - 50))
+	TweenService:Create(Window, TweenInfo.new(0.5, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {Size = initialSize}):Play()
 
 	local TopBar = Instance.new("Frame")
 	TopBar.Size = UDim2.new(1, 0, 0, 52)
@@ -3285,8 +3289,7 @@ function KazeUI:CreateWindow(config)
 	TopDivider.Parent = TopBar
 	KazeUI:OnThemeChanged(TopDivider, function(t) TopDivider.BackgroundColor3 = t.Border end)
 
-	local defaultWindowSize = UDim2.fromOffset(600, 400)
-	local lastNormalSize = defaultWindowSize
+	local lastNormalSize = initialSize
 	local toggledMaximized = false
 
 	local function createCircleButton(name, offsetX, color)
