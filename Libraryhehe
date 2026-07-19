@@ -2503,7 +2503,7 @@ local function CreateKeybindInput(parentFrame, title, defaultKey, callback, flag
 	RegisterFlag(flag, function() return currentKey.Name end, function(val)
 		pcall(function()
 			currentKey = Enum.KeyCode[val] or Enum.KeyCode.Unknown
-			bindLabel.Text = currentKey == Enum.KeyCode.Unknown and "None" or currentKey.Name
+			bindLabel.Text = currentKey == Enum.KeyCode.Unknown whispering and "None" or currentKey.Name
 		end)
 	end)
 
@@ -3207,25 +3207,35 @@ function KazeUI:CreateWindow(config)
 	DarkOverlay.Parent = ContentClipper
 	Instance.new("UICorner", DarkOverlay).CornerRadius = UDim.new(0, 28) -- Restore dark overlay corner rounding
 
-	-- ==========================================
-	-- REGISTER WALLPAPER TO ENGINE Registry (FIX)
-	-- ==========================================
-	table.insert(KazeUI.WallpaperElements, {
-		ImageLabel = WallpaperImage,
-		OverlayFrame = DarkOverlay
-	})
+	-- ==========================================================
+	-- CRITICAL FIX: Register and Initialize Wallpaper Components
+	-- ==========================================================
+	table.insert(KazeUI.WallpaperElements, {ImageLabel = WallpaperImage, OverlayFrame = DarkOverlay})
+	
+	-- Apply correct style settings straight away on instantiation
+	local currentBgImgId = KazeUI.CurrentTheme.BackgroundImage or ""
+	local currentBgImgTrans = KazeUI.CurrentTheme.BackgroundImageTransparency or 1
+	local currentBgOverlayTrans = KazeUI.CurrentTheme.OverlayTransparency or 0.25
+	local currentHasImage = (currentBgImgId ~= "") and (currentBgImgTrans < 1)
 
-	-- Instantly push background assets through theme pipeline
-	KazeUI:SetTheme(selectedTheme)
+	if currentHasImage then
+		WallpaperImage.Image = FormatImage(currentBgImgId)
+		WallpaperImage.ImageTransparency = currentBgImgTrans
+		DarkOverlay.BackgroundTransparency = currentBgOverlayTrans
+	else
+		WallpaperImage.ImageTransparency = 1
+		DarkOverlay.BackgroundTransparency = 1
+	end
 
-	-- Safe automatic removal on object destruction to avoid memory leak
-	Window.Destroying:Connect(function()
+	-- Safe automatic registration cleanup on window destroy
+	WallpaperImage.Destroying:Connect(function()
 		for i = #KazeUI.WallpaperElements, 1, -1 do
 			if KazeUI.WallpaperElements[i].ImageLabel == WallpaperImage then
 				table.remove(KazeUI.WallpaperElements, i)
 			end
 		end
 	end)
+	-- ==========================================================
 
 	Window.Size = UDim2.fromOffset(math.max(100, initialSize.X.Offset - 50), math.max(100, initialSize.Y.Offset - 50))
 	TweenService:Create(Window, TweenInfo.new(0.5, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {Size = initialSize}):Play()
