@@ -10,7 +10,6 @@
 	- SMART BUTTON TEXT RESIZING: Implemented TextScaled + UITextSizeConstraint + TextWrapped inside Action Buttons to avoid overflow.
 	- VISUAL ALIGNMENT FIXES: Centered window title (sized up to 16). Enlarged avatar circle (40x40) and placed the Author & Version text (size 13, no bullet point) on the left next to it.
 	- TEXTURE BLUR ELIMINATION: Changed Window CanvasGroup to a clipping-masked Frame to keep textures high-fidelity during drag/resize events.
-	- WALLPAPER PIPELINE RESTORED & OPTIMIZED: Re-implemented clean startup mapping and created an smart direct image URL guard to avoid thread hangs on direct image links.
 --]]
 
 local KazeUI = {}
@@ -532,81 +531,67 @@ function KazeUI:SetTheme(themeName)
 	local targetTheme = KazeUI.Themes[themeName]
 	
 	if not targetTheme and type(themeName) == "string" and (string.find(themeName, "^http://") or string.find(themeName, "^https://")) then
-		local lowerName = string.lower(themeName)
-		local isDirectImage = string.find(lowerName, "%.png") 
-			or string.find(lowerName, "%.jpg") 
-			or string.find(lowerName, "%.jpeg") 
-			or string.find(lowerName, "%.webp")
-			or string.find(lowerName, "format=")
-
-		if isDirectImage then
+		local success, rawTheme = pcall(function()
+			return game:HttpGet(themeName)
+		end)
+		
+		local parsedSuccessfully = false
+		if success and rawTheme then
+			local themeTable = nil
+			local s, parsed = pcall(function()
+				return HttpService:JSONDecode(rawTheme)
+			end)
+			if s and type(parsed) == "table" then
+				themeTable = parsed
+			else
+				local s2, func = pcall(loadstring, rawTheme)
+				if s2 and func then
+					local s3, res = pcall(func)
+					if s3 and type(res) == "table" then
+						themeTable = res
+					end
+				end
+			end
+			
+			if themeTable then
+				local function parseColor(val)
+					if typeof(val) == "Color3" then
+						return val
+					elseif type(val) == "string" then
+						local cleanHex = string.gsub(val, "#", "")
+						local s4, res = pcall(function() return Color3.fromHex(cleanHex) end)
+						if s4 and res then return res end
+					elseif type(val) == "table" then
+						local r = val.r or val.R or val[1] or 0
+						local g = val.g or val.G or val[2] or 0
+						local b = val.b or val.B or val[3] or 0
+						if r > 1 or g > 1 or b > 1 then
+							return Color3.fromRGB(r, g, b)
+						else
+							return Color3.new(r, g, b)
+						end
+					end
+					return nil
+				end
+				
+				KazeUI.Themes.CustomWallpaper.Background = parseColor(themeTable.Background) or Color3.fromRGB(12, 12, 14)
+				KazeUI.Themes.CustomWallpaper.Text = parseColor(themeTable.Text) or Color3.fromRGB(255, 255, 255)
+				KazeUI.Themes.CustomWallpaper.MutedText = parseColor(themeTable.MutedText) or Color3.fromRGB(215, 210, 225)
+				KazeUI.Themes.CustomWallpaper.Border = parseColor(themeTable.Border) or Color3.fromRGB(55, 55, 60)
+				KazeUI.Themes.CustomWallpaper.LightnessFactor = tonumber(themeTable.LightnessFactor) or 1
+				KazeUI.Themes.CustomWallpaper.BackgroundImage = tostring(themeTable.BackgroundImage or "")
+				KazeUI.Themes.CustomWallpaper.BackgroundImageTransparency = tonumber(themeTable.BackgroundImageTransparency) or 0.1
+				KazeUI.Themes.CustomWallpaper.OverlayTransparency = tonumber(themeTable.OverlayTransparency) or 0.65
+				parsedSuccessfully = true
+			end
+		end
+		
+		if not parsedSuccessfully then
 			KazeUI.Themes.CustomWallpaper.BackgroundImage = themeName
 			KazeUI.Themes.CustomWallpaper.BackgroundImageTransparency = 0.1
 			KazeUI.Themes.CustomWallpaper.OverlayTransparency = 0.65
-			targetTheme = KazeUI.Themes.CustomWallpaper
-		else
-			local success, rawTheme = pcall(function()
-				return game:HttpGet(themeName)
-			end)
-			
-			local parsedSuccessfully = false
-			if success and rawTheme then
-				local themeTable = nil
-				local s, parsed = pcall(function()
-					return HttpService:JSONDecode(rawTheme)
-				end)
-				if s and type(parsed) == "table" then
-					themeTable = parsed
-				else
-					local s2, func = pcall(loadstring, rawTheme)
-					if s2 and func then
-						local s3, res = pcall(func)
-						if s3 and type(res) == "table" then
-							themeTable = res
-						end
-					end
-				end
-				
-				if themeTable then
-					local function parseColor(val)
-						if typeof(val) == "Color3" then
-							return val
-						elseif type(val) == "string" then
-							local cleanHex = string.gsub(val, "#", "")
-							local s4, res = pcall(function() return Color3.fromHex(cleanHex) end)
-							if s4 and res then return res end
-						elseif type(val) == "table" then
-							local r = val.r or val.R or val[1] or 0
-							local g = val.g or val.G or val[2] or 0
-							local b = val.b or val.B or val[3] or 0
-							if r > 1 or g > 1 or b > 1 then
-								return Color3.fromRGB(r, g, b)
-							else
-								return Color3.new(r, g, b)
-							end
-						end
-						return nil
-					end
-					
-					KazeUI.Themes.CustomWallpaper.Background = parseColor(themeTable.Background) or Color3.fromRGB(12, 12, 14)
-					KazeUI.Themes.CustomWallpaper.Text = parseColor(themeTable.Text) or Color3.fromRGB(255, 255, 255)
-					KazeUI.Themes.CustomWallpaper.MutedText = parseColor(themeTable.MutedText) or Color3.fromRGB(215, 210, 225)
-					KazeUI.Themes.CustomWallpaper.Border = parseColor(themeTable.Border) or Color3.fromRGB(55, 55, 60)
-					KazeUI.Themes.CustomWallpaper.LightnessFactor = tonumber(themeTable.LightnessFactor) or 1
-					KazeUI.Themes.CustomWallpaper.BackgroundImage = tostring(themeTable.BackgroundImage or "")
-					KazeUI.Themes.CustomWallpaper.BackgroundImageTransparency = tonumber(themeTable.BackgroundImageTransparency) or 0.1
-					KazeUI.Themes.CustomWallpaper.OverlayTransparency = tonumber(themeTable.OverlayTransparency) or 0.65
-					parsedSuccessfully = true
-				end
-			end
-			
-			if not parsedSuccessfully then
-				KazeUI.Themes.CustomWallpaper.BackgroundImage = themeName
-				KazeUI.Themes.CustomWallpaper.BackgroundImageTransparency = 0.1
-				KazeUI.Themes.CustomWallpaper.OverlayTransparency = 0.65
-			end
-			targetTheme = KazeUI.Themes.CustomWallpaper
 		end
+		targetTheme = KazeUI.Themes.CustomWallpaper
 	end
 
 	targetTheme = targetTheme or KazeUI.Themes[themeName] or KazeUI.Themes.CustomWallpaper
@@ -2245,7 +2230,7 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 	local hg = Instance.new("UIGradient", hueSlider)
 	hg.Color = ColorSequence.new{
 		ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 0, 0)),
-		ColorSequenceKeypoint.new(0.167, Color3.fromRGB(255, 255, 0)), -- Fixed Yellow Typo! Changed from undefined variable yellow to numerical 0
+		ColorSequenceKeypoint.new(0.167, Color3.fromRGB(255, 255, 0)),
 		ColorSequenceKeypoint.new(0.333, Color3.fromRGB(0, 255, 0)),
 		ColorSequenceKeypoint.new(0.5, Color3.fromRGB(0, 255, 255)),
 		ColorSequenceKeypoint.new(0.667, Color3.fromRGB(0, 0, 255)),
@@ -2719,7 +2704,7 @@ CreateCollapsibleSection = function(parentFrame, titleArg, currentDepth)
 	local headerFrame = Instance.new("Frame")
 	headerFrame.Name = "Header"
 	headerFrame.Size = UDim2.new(1, 0, 0, 44)
-	headerFrame.BackgroundTransparency = 1
+	headerFrame.BackgroundTransparency = 0
 	headerFrame.LayoutOrder = 1
 	headerFrame.Parent = sectionBox
 	Instance.new("UICorner", headerFrame).CornerRadius = UDim.new(0, 20)
@@ -3221,24 +3206,6 @@ function KazeUI:CreateWindow(config)
 	DarkOverlay.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 	DarkOverlay.Parent = ContentClipper
 	Instance.new("UICorner", DarkOverlay).CornerRadius = UDim.new(0, 28) -- Restore dark overlay corner rounding
-
-	-- Restore Wallpaper pipeline mapping & tracking!
-	local currentTheme = KazeUI.CurrentTheme
-	local initialImg = currentTheme.BackgroundImage or ""
-	local initialImgTrans = currentTheme.BackgroundImageTransparency or 1
-	local initialOverlayTrans = currentTheme.OverlayTransparency or 0.25
-	local hasImage = (initialImg ~= "") and (initialImgTrans < 1)
-
-	WallpaperImage.Image = FormatImage(initialImg)
-	WallpaperImage.ImageTransparency = hasImage and initialImgTrans or 1
-	WallpaperImage.ImageColor3 = currentTheme.BackgroundImageColor3 or Color3.fromRGB(255, 255, 255)
-	DarkOverlay.BackgroundTransparency = hasImage and initialOverlayTrans or 1
-
-	table.insert(KazeUI.WallpaperElements, {
-		ImageLabel = WallpaperImage,
-		OverlayFrame = DarkOverlay,
-		Window = Window
-	})
 
 	Window.Size = UDim2.fromOffset(math.max(100, initialSize.X.Offset - 50), math.max(100, initialSize.Y.Offset - 50))
 	TweenService:Create(Window, TweenInfo.new(0.5, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {Size = initialSize}):Play()
