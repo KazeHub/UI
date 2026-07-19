@@ -11,6 +11,7 @@
 	- VISUAL ALIGNMENT FIXES: Centered window title (sized up to 16). Enlarged avatar circle (40x40) and placed the Author & Version text (size 13, no bullet point) on the left next to it.
 	- TEXTURE BLUR ELIMINATION: Changed Window CanvasGroup to a clipping-masked Frame to keep textures high-fidelity during drag/resize events.
 	- ROBUX THUMBNAIL RESOLVER: Formats purely numeric IDs using 'rbxthumb' to natively resolve Decals into image assets.
+	- ICONSMAP ERROR RESOLVED: Restored and secured the Lucide Icons fetch network pipeline with absolute nil guards.
 --]]
 
 local KazeUI = {}
@@ -46,6 +47,26 @@ local function HttpGet(url)
 	if success and res then return res end
 	return nil
 end
+
+-- Lucide Icons Setup
+local IconsMap = {}
+pcall(function()
+	local rawIcons = HttpGet("https://raw.githubusercontent.com/KazeHub/UI/refs/heads/main/Icons.lua.txt")
+	if rawIcons then
+		local s, res = pcall(function()
+			local func = loadstring(rawIcons)
+			return func and func()
+		end)
+		if not s or type(res) ~= "table" then
+			s, res = pcall(function() return HttpService:JSONDecode(rawIcons) end)
+		end
+		if type(res) == "table" then
+			for k, v in pairs(res) do 
+				IconsMap[string.lower(tostring(k))] = tostring(v) 
+			end
+		end
+	end
+end)
 
 -- Premium Bubble Themes Configuration (High-Contrast, Vivid Settings)
 KazeUI.Themes = {
@@ -264,7 +285,7 @@ local function FormatImage(id)
 	if not id or id == "" then return "" end
 	id = tostring(id)
 	local lowerId = string.lower(id)
-	if IconsMap[lowerId] then
+	if IconsMap and IconsMap[lowerId] then
 		local mapped = IconsMap[lowerId]
 		if not string.find(mapped, "rbxassetid://") and not string.find(mapped, "http") then
 			local clean = string.gsub(mapped, "%D", "")
@@ -1458,7 +1479,7 @@ local function CreateClickableParagraph(parentFrame, title, body, callback, lock
 	local isLockedState = locked or false
 	
 	local measuredWidth = 598 * 0.92
-	if parentFrame and parentFrame.AbsoluteSize and parentFrame.AbsoluteSize.X > 0 then measuredWidth = parentFrame.AbsoluteSize.X * 0.95 end
+	if parentFrame and parentFrame.AbsoluteSize/ parentFrame.AbsoluteSize.X > 0 then measuredWidth = parentFrame.AbsoluteSize.X * 0.95 end
 	local textContainerWidth = measuredWidth - 28 - 42
 	
 	local titleHeight = 0
@@ -2839,9 +2860,9 @@ CreateCollapsibleSection = function(parentFrame, titleArg, currentDepth)
 	return sectionPublic
 end
 
--- ==========================================
+-- ==========================================================
 -- Volumetric Premium Collapsible GroupBox Component 
--- ==========================================
+-- ==========================================================
 CreateGroupBox = function(parentFrame, titleArg, currentDepth, depthOverride)
 	currentDepth = depthOverride or currentDepth or 1
 	if currentDepth > 3 then currentDepth = 3 end 
@@ -3852,7 +3873,7 @@ function KazeUI:CreateWindow(config)
 			activeDialogsCount = math.max(0, activeDialogsCount - 1)
 		end
 
-		local buttonWidth = shouldStack and 350 or (totalActions > 0 and (350 - ((totalActions - 1) * 8)) / totalActions or 100)
+		local buttonWidth = shouldStack assistant and 350 or (totalActions > 0 and (350 - ((totalActions - 1) * 8)) / totalActions or 100)
 
 		for i, act in ipairs(actions) do
 			local btnName = act.Name or "Button"
