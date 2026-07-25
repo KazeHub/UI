@@ -672,11 +672,13 @@ local function ComputeGlowColor(dt)
 			-- Full spectrum, constant speed
 			hue = (glowClock / GLOW_CYCLE_PERIOD) % 1
 		else
-			-- Continuous one-direction hue rotation anchored to the chosen
-			-- accent color (never reverses — a bounded back-and-forth swing
-			-- is what Breathing already does, so Cycle always spins all the
-			-- way around instead, just at its own pace/starting point).
-			hue = (baseH + (glowClock / GLOW_SHIMMER_PERIOD)) % 1
+			-- Chases forward through a band around the accent hue and resets
+			-- to the start once per period (sawtooth) — one full sweep before
+			-- it repeats, moving only in one direction the whole time. A sine
+			-- swing here would reverse direction every half-period, which is
+			-- exactly what Breathing does, not a "cycle".
+			local progress = (glowClock % GLOW_SHIMMER_PERIOD) / GLOW_SHIMMER_PERIOD
+			hue = ((baseH * 360) - GLOW_SHIMMER_ARC + progress * (GLOW_SHIMMER_ARC * 2)) / 360 % 1
 		end
 		return Color3.fromHSV(hue, baseS, math.clamp(baseV * 1.05, 0, 1))
 	else -- "Breathing"
@@ -2935,9 +2937,6 @@ CreateCollapsibleSection = function(parentFrame, titleArg, currentDepth)
 				Rotation = 0,
 				ImageColor3 = KazeUI.CurrentTheme.Text
 			}):Play()
-			TweenService:Create(accentLine, TweenInfo.new(animDuration, easeStyle, easeDir), {
-				BackgroundColor3 = KazeUI.GlowColor
-			}):Play()
 			StartNeonLoop(boxStroke)
 			StartNeonLoop(accentLine)
 		else
@@ -2976,8 +2975,10 @@ CreateCollapsibleSection = function(parentFrame, titleArg, currentDepth)
 			TweenService:Create(sectionBox, TweenInfo.new(0.1), {Size = UDim2.new(0.93, 0, curY.Scale, curY.Offset)}):Play()
 		end,
 		function()
-			local curY = sectionBox.Size.Y
-			TweenService:Create(sectionBox, TweenInfo.new(0.1), {Size = UDim2.new(0.95, 0, curY.Scale, curY.Offset)}):Play()
+			task.defer(function()
+				local curY = sectionBox.Size.Y
+				TweenService:Create(sectionBox, TweenInfo.new(0.1), {Size = UDim2.new(0.95, 0, curY.Scale, curY.Offset)}):Play()
+			end)
 		end,
 		toggleSection
 	)
@@ -3122,9 +3123,6 @@ CreateGroupBox = function(parentFrame, titleArg, currentDepth, depthOverride)
 			TweenService:Create(arrowIcon, TweenInfo.new(animDuration, easeStyle, easeDir), {
 				Rotation = 0,
 				ImageColor3 = KazeUI.CurrentTheme.Text
-			}):Play()
-			TweenService:Create(accentLine, TweenInfo.new(animDuration, easeStyle, easeDir), {
-				BackgroundColor3 = KazeUI.GlowColor
 			}):Play()
 			StartNeonLoop(stroke)
 			StartNeonLoop(accentLine)
@@ -4546,7 +4544,7 @@ function KazeUI:CreateWindow(config)
 			txt.TextColor3 = KazeUI.CurrentTheme.Text
 			txt.Font = Enum.Font.GothamBold
 			
-			TweenService:Create(iconLabel, TWEEN_FAST, {ImageColor3 = KazeUI.GlowColor}):Play()
+			TweenService:Create(iconLabel, TWEEN_FAST, {ImageColor3 = KazeUI.CurrentTheme.Text}):Play()
 			StartNeonLoop(leftIndicator)
 		end
 
@@ -4573,7 +4571,7 @@ function KazeUI:CreateWindow(config)
 		KazeUI:OnThemeChanged(btn, function(t)
 			if leftIndicator.Visible then
 				txt.TextColor3 = t.Text
-				if not isHovering then iconLabel.ImageColor3 = KazeUI.GlowColor end
+				if not isHovering then iconLabel.ImageColor3 = t.Text end
 				btn.BackgroundColor3 = KazeUI.GetColor(0.04)
 			else
 				txt.TextColor3 = t.MutedText
