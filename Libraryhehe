@@ -1,5 +1,4 @@
 --[[
-    Updated
 	Kaze UI Library v3.6.9 (Premium Bubble Redesign & Engine Rewrite)
 	Inspired by: Modern Mobile Chat Bubbles, iMessage, and Discord Mobile.
 	Retained: 100% Backwards Compatibility with Version 1, 2, 2.2, 2.3, and 3.0 APIs
@@ -2832,6 +2831,18 @@ CreateCollapsibleSection = function(parentFrame, titleArg, currentDepth)
 	sectionWrapper.Name = "SectionWrapper_" .. title
 	sectionWrapper.Size = UDim2.new(1, 0, 0, 0)
 	sectionWrapper.BackgroundTransparency = 1
+	-- FIX (overlap/clip bug): this used to be sized by a Lua-side mirror that
+	-- read sectionBox.AbsoluteSize on a PropertyChangedSignal + task.defer.
+	-- That mirror only fires AFTER sectionBox's own AutomaticSize has already
+	-- resolved (itself 1+ frames behind sectionContent becoming visible), so
+	-- the outer list's UIListLayout (which lays out siblings using THIS
+	-- frame's Size, not sectionBox's) was always 2-3 frames stale -> next
+	-- section didn't move down in time -> overlap, and pageContent's
+	-- AutomaticCanvasSize (downstream of the same stale size) clipped it.
+	-- Native AutomaticSize.Y here means the engine resolves this wrapper in
+	-- the SAME layout pass as sectionBox and the outer UIListLayout/
+	-- AutomaticCanvasSize, with no Lua round-trip in between.
+	sectionWrapper.AutomaticSize = Enum.AutomaticSize.Y
 	sectionWrapper.Parent = parentFrame
 
 	local sectionBox = Instance.new("Frame")
@@ -2843,17 +2854,20 @@ CreateCollapsibleSection = function(parentFrame, titleArg, currentDepth)
 	sectionBox.Parent = sectionWrapper
 	sectionBox.AutomaticSize = Enum.AutomaticSize.Y
 
-	local function syncWrapperHeight()
-		sectionWrapper.Size = UDim2.new(1, 0, 0, sectionBox.AbsoluteSize.Y)
-	end
-	sectionBox:GetPropertyChangedSignal("AbsoluteSize"):Connect(syncWrapperHeight)
-	task.defer(syncWrapperHeight)
-	
 	Instance.new("UICorner", sectionBox).CornerRadius = UDim.new(0, 20)
 	KazeUI:AddPanel(sectionBox, 0.02)
 
 	local sectionShadow = Instance.new("Frame", sectionWrapper)
-	sectionShadow.Size = UDim2.new(0.95, 10, 1, 10)
+	-- FIX: this was UDim2.new(0.95, 10, 1, 10) -- Scale 1 on Y, relative to
+	-- sectionWrapper. Now that sectionWrapper has AutomaticSize.Y, sizing a
+	-- child off the wrapper's OWN scale on that same axis is a circular
+	-- reference (wrapper height depends on shadow height, shadow height
+	-- depends on wrapper height) -- a known AutomaticSize footgun that
+	-- produces stuck/incorrect sizes. Drive it off sectionBox's AbsoluteSize
+	-- instead (a sibling, not the wrapper) so there's no cycle. This is
+	-- purely a decorative glow behind the box, so it may lag a cosmetic
+	-- frame -- it never gates real layout, unlike the old wrapper mirror did.
+	sectionShadow.Size = UDim2.new(0.95, 10, 0, sectionBox.AbsoluteSize.Y + 10)
 	sectionShadow.Position = UDim2.new(0.5, 0, 0, -5)
 	sectionShadow.AnchorPoint = Vector2.new(0.5, 0)
 	sectionShadow.BackgroundTransparency = 1
@@ -2863,6 +2877,11 @@ CreateCollapsibleSection = function(parentFrame, titleArg, currentDepth)
 	sectionShadowStroke.Thickness = 4
 	sectionShadowStroke.Color = Color3.fromRGB(0, 0, 0)
 	sectionShadowStroke.Transparency = 0.72
+
+	local function syncShadowHeight()
+		sectionShadow.Size = UDim2.new(0.95, 10, 0, sectionBox.AbsoluteSize.Y + 10)
+	end
+	sectionBox:GetPropertyChangedSignal("AbsoluteSize"):Connect(syncShadowHeight)
 
 	local boxStroke = Instance.new("UIStroke", sectionBox)
 	boxStroke.Thickness = 1.8
@@ -3034,6 +3053,13 @@ CreateGroupBox = function(parentFrame, titleArg, currentDepth, depthOverride)
 	wrapper.Name = "GroupBoxWrapper_" .. title
 	wrapper.Size = UDim2.new(1, 0, 0, 0)
 	wrapper.BackgroundTransparency = 1
+	-- FIX (overlap/clip bug): see the identical fix + full explanation in
+	-- CreateCollapsibleSection above. Same root cause: this wrapper was
+	-- resized by a Lua-side mirror off groupFrame.AbsoluteSize, which lagged
+	-- the outer UIListLayout/AutomaticCanvasSize by 2-3 frames whenever the
+	-- group was toggled open. Native AutomaticSize.Y resolves it in the same
+	-- engine layout pass as everything downstream, with no Lua round-trip.
+	wrapper.AutomaticSize = Enum.AutomaticSize.Y
 	wrapper.Parent = parentFrame
 
 	local groupFrame = Instance.new("Frame")
@@ -3047,12 +3073,6 @@ CreateGroupBox = function(parentFrame, titleArg, currentDepth, depthOverride)
 	groupFrame.AutomaticSize = Enum.AutomaticSize.Y
 	groupFrame.Parent = wrapper
 
-	local function syncGroupWrapperHeight()
-		wrapper.Size = UDim2.new(1, 0, 0, groupFrame.AbsoluteSize.Y + 3)
-	end
-	groupFrame:GetPropertyChangedSignal("AbsoluteSize"):Connect(syncGroupWrapperHeight)
-	task.defer(syncGroupWrapperHeight)
-
 	local cornerRadius = math.max(10, 18 - (currentDepth - 1) * 3)
 	Instance.new("UICorner", groupFrame).CornerRadius = UDim.new(0, cornerRadius)
 	
@@ -3060,7 +3080,11 @@ CreateGroupBox = function(parentFrame, titleArg, currentDepth, depthOverride)
 
 	local groupShadow = Instance.new("Frame", wrapper)
 	groupShadow.AnchorPoint = Vector2.new(0.5, 0)
-	groupShadow.Size = UDim2.new(scaledWidth, 10, 1, 10)
+	-- FIX: was UDim2.new(scaledWidth, 10, 1, 10) -- Scale 1 on Y relative to
+	-- `wrapper`, which is now AutomaticSize.Y on that same axis -> circular
+	-- reference. Drive the height off groupFrame's AbsoluteSize (a sibling)
+	-- instead, so wrapper's automatic height has no cycle to resolve.
+	groupShadow.Size = UDim2.new(scaledWidth, 10, 0, groupFrame.AbsoluteSize.Y + 10)
 	groupShadow.Position = UDim2.new(0.5, 0, 0, -2)
 	groupShadow.BackgroundTransparency = 1
 	groupShadow.ZIndex = -1
@@ -3069,6 +3093,11 @@ CreateGroupBox = function(parentFrame, titleArg, currentDepth, depthOverride)
 	groupShadowStroke.Thickness = 4
 	groupShadowStroke.Color = Color3.fromRGB(0, 0, 0)
 	groupShadowStroke.Transparency = 0.72
+
+	local function syncGroupShadowHeight()
+		groupShadow.Size = UDim2.new(scaledWidth, 10, 0, groupFrame.AbsoluteSize.Y + 10)
+	end
+	groupFrame:GetPropertyChangedSignal("AbsoluteSize"):Connect(syncGroupShadowHeight)
 
 	local stroke = Instance.new("UIStroke", groupFrame)
 	stroke.Thickness = math.max(1.2, 1.8 - (currentDepth - 1) * 0.15)
