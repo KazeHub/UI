@@ -753,8 +753,26 @@ end
 local function KickStroke(strokeInst)
 	if not strokeInst then return end
 	task.defer(function()
-		RunService.Heartbeat:Wait()
-		RunService.Heartbeat:Wait()
+		-- FIX (nested case): a fixed 2-heartbeat wait undershoots whenever this
+		-- stroke's parent sits beneath OTHER AutomaticSize frames that are still
+		-- cascading -- e.g. opening a GroupBox nested inside an already-open
+		-- Section: the GroupBox's own container resolves first, THEN the
+		-- Section's content, THEN the Section's box, THEN the wrapper, THEN the
+		-- ScrollingFrame's canvas -- each one only recalculates a frame after its
+		-- child settles, so 2 heartbeats isn't always enough. Poll AbsoluteSize
+		-- until it actually stops changing (capped so we never hang forever).
+		local target = strokeInst.Parent
+		if not target then return end
+		local lastSize = target.AbsoluteSize
+		for _ = 1, 20 do
+			RunService.Heartbeat:Wait()
+			if not (strokeInst.Parent and target.Parent) then return end
+			local newSize = target.AbsoluteSize
+			if newSize == lastSize then
+				break
+			end
+			lastSize = newSize
+		end
 		if strokeInst and strokeInst.Parent then
 			strokeInst.Enabled = false
 			task.wait()
@@ -763,6 +781,29 @@ local function KickStroke(strokeInst)
 			end
 		end
 	end)
+end
+
+-- FIX (nested Section/GroupBox outline): when a GroupBox toggles open INSIDE
+-- an already-open Section (or another GroupBox), only that GroupBox's own
+-- stroke used to get kicked. But the parent Section's box also grew taller
+-- because of it, and the parent's UIStroke never got told to rebuild -- that's
+-- the "outline disappears on the outer box" case (Section 3 + Main in the
+-- screenshot: both go invisible together). Walk up the ancestry from the
+-- toggled box and kick every UIStroke belonging to a Section/GroupBox frame
+-- above it too.
+local function KickAncestorStrokes(fromInstance)
+	local node = fromInstance
+	while node do
+		local parent = node.Parent
+		if not parent then break end
+		if parent:IsA("Frame") or parent:IsA("ScrollingFrame") then
+			local strokeChild = parent:FindFirstChildOfClass("UIStroke")
+			if strokeChild then
+				KickStroke(strokeChild)
+			end
+		end
+		node = parent
+	end
 end
 
 function KazeUI:SetGlow(color)
@@ -2988,6 +3029,7 @@ CreateCollapsibleSection = function(parentFrame, titleArg, currentDepth)
 			StartNeonLoop(boxStroke)
 			StartNeonLoop(accentLine)
 			KickStroke(boxStroke)
+			KickAncestorStrokes(sectionBox)
 		else
 			TweenService:Create(arrowIcon, TWEEN_COLLAPSE, {
 				Rotation = -90,
@@ -3179,6 +3221,7 @@ CreateGroupBox = function(parentFrame, titleArg, currentDepth, depthOverride)
 			StartNeonLoop(stroke)
 			StartNeonLoop(accentLine)
 			KickStroke(stroke)
+			KickAncestorStrokes(groupFrame)
 		else
 			TweenService:Create(arrowIcon, TWEEN_COLLAPSE, {
 				Rotation = -90,
