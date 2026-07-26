@@ -322,99 +322,10 @@ function KazeUI:RegisterText(inst, isMuted)
 	end)
 end
 
--- FIX (outline/UIStroke invisible on ANY panel further down a ScrollingFrame):
--- when a box using AutomaticSize.Y sits below the ScrollingFrame's current
--- CanvasSize, Roblox sometimes finishes resizing it WITHOUT ever repainting
--- its UIStroke -- the stroke mesh was built for the old (usually zero)
--- height and never gets told to rebuild, since nothing about the Stroke
--- itself changed, only its parent's size. Boxes near the top rarely hit this
--- because they're already inside the rendered canvas region, so their stroke
--- repaints as a side effect of normal on-screen layout passes.
-local function KickStroke(strokeInst)
-	-- Flips Enabled off/on to force the stroke mesh to rebuild against
-	-- whatever the box's CURRENT AbsoluteSize actually is right now.
-	if not (strokeInst and strokeInst.Parent) then return end
-	strokeInst.Enabled = false
-	task.wait()
-	if strokeInst and strokeInst.Parent then
-		strokeInst.Enabled = true
-	end
-end
-
--- Watches a box's OWN AbsoluteSize and re-kicks ITS OWN stroke any time that
--- size actually changes, for ANY reason -- its own open/close toggle, a
--- nested GroupBox/Section opening or closing INSIDE it, content being added
--- later, a ScrollingFrame catching up on AutomaticCanvasSize further down
--- the list, etc. Each box is fully self-sufficient: it doesn't matter WHY it
--- resized, it notices and fixes itself -- no call site anywhere else in the
--- codebase has to remember to kick anything.
-local function WatchStrokeOnResize(frame, strokeInst)
-	if not (frame and strokeInst) then return end
-	local pending = false
-	local generation = 0
-
-	local function scheduleKick()
-		generation = generation + 1
-		local myGeneration = generation
-		if pending then return end
-		pending = true
-		task.defer(function()
-			-- FIX (many components): a box holding a LOT of children (many
-			-- toggles/sliders/dropdowns/paragraphs) doesn't resolve its final
-			-- AutomaticSize in one or two frames -- each child settles its own
-			-- AutomaticSize first, and that cascades upward one layer per
-			-- frame, so the more components there are, the more frames it
-			-- genuinely takes. A single frame-to-frame size match can just be
-			-- a coincidental plateau mid-layout, not the real final size -- so
-			-- require several CONSECUTIVE stable reads before trusting it, and
-			-- cap generously (up to 180 heartbeats, ~3s, only actually used if
-			-- content keeps changing that long).
-			local stableCount = 0
-			local lastSize = frame.AbsoluteSize
-			for _ = 1, 180 do
-				RunService.Heartbeat:Wait()
-				if not (frame.Parent and strokeInst.Parent) then
-					pending = false
-					return
-				end
-				local newSize = frame.AbsoluteSize
-				if newSize == lastSize then
-					stableCount = stableCount + 1
-					if stableCount >= 5 then break end
-				else
-					stableCount = 0
-					lastSize = newSize
-				end
-			end
-			KickStroke(strokeInst)
-			pending = false
-			-- If the size changed again WHILE we were mid-poll (more
-			-- components still being added), immediately re-arm instead of
-			-- waiting on the next natural AbsoluteSize signal, which may not
-			-- fire again if nothing changes after this point.
-			if generation ~= myGeneration then
-				scheduleKick()
-			end
-		end)
-	end
-
-	frame:GetPropertyChangedSignal("AbsoluteSize"):Connect(scheduleKick)
-end
-
--- FIX (systemic): every UIStroke in the entire library is registered through
--- this one function (~24 call sites -- Sections, GroupBoxes, the main
--- window, dropdowns, notifications, avatar frames, confirm dialogs, etc).
--- Auto-attaching the resize watcher HERE means every single one of them
--- self-heals its outline automatically, forever, including any new
--- component added later that calls RegisterBorder -- nobody has to
--- remember to wire it up per-component again.
 function KazeUI:RegisterBorder(inst)
 	if not inst then return end
 	table.insert(KazeUI.BorderElements, inst)
 	inst.Color = KazeUI.CurrentTheme.Border
-	if inst.Parent and (inst.Parent:IsA("GuiObject")) then
-		WatchStrokeOnResize(inst.Parent, inst)
-	end
 	inst.Destroying:Connect(function()
 		for i = #KazeUI.BorderElements, 1, -1 do
 			if KazeUI.BorderElements[i] == inst then table.remove(KazeUI.BorderElements, i) end
@@ -825,6 +736,33 @@ local function StopNeonLoop(target)
 	for i = #KazeUI.GlowElements, 1, -1 do
 		if KazeUI.GlowElements[i].Target == target then table.remove(KazeUI.GlowElements, i) end
 	end
+end
+
+-- FIX (outline/UIStroke invisible on Sections & GroupBoxes further down a
+-- ScrollingFrame): when a collapsible box sits below the ScrollingFrame's
+-- current CanvasSize, Roblox sometimes finishes resizing the box's
+-- AutomaticSize.Y frame WITHOUT ever repainting its UIStroke — the stroke
+-- mesh was built for the old (usually zero) height and never gets told to
+-- rebuild, since nothing about the Stroke itself changed, only its parent's
+-- size. Boxes near the top rarely hit this because they're already inside
+-- the rendered canvas region when they open, so their stroke repaints as a
+-- side effect of normal on-screen layout passes. Toggling Enabled off/on
+-- after the layout (and the ScrollingFrame's AutomaticCanvasSize) have had a
+-- couple of Heartbeats to settle forces the stroke to rebuild against the
+-- box's real, final size.
+local function KickStroke(strokeInst)
+	if not strokeInst then return end
+	task.defer(function()
+		RunService.Heartbeat:Wait()
+		RunService.Heartbeat:Wait()
+		if strokeInst and strokeInst.Parent then
+			strokeInst.Enabled = false
+			task.wait()
+			if strokeInst and strokeInst.Parent then
+				strokeInst.Enabled = true
+			end
+		end
+	end)
 end
 
 function KazeUI:SetGlow(color)
@@ -3049,6 +2987,7 @@ CreateCollapsibleSection = function(parentFrame, titleArg, currentDepth)
 			}):Play()
 			StartNeonLoop(boxStroke)
 			StartNeonLoop(accentLine)
+			KickStroke(boxStroke)
 		else
 			TweenService:Create(arrowIcon, TWEEN_COLLAPSE, {
 				Rotation = -90,
@@ -3239,6 +3178,7 @@ CreateGroupBox = function(parentFrame, titleArg, currentDepth, depthOverride)
 			}):Play()
 			StartNeonLoop(stroke)
 			StartNeonLoop(accentLine)
+			KickStroke(stroke)
 		else
 			TweenService:Create(arrowIcon, TWEEN_COLLAPSE, {
 				Rotation = -90,
