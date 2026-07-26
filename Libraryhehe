@@ -779,28 +779,56 @@ end
 local function WatchStrokeOnResize(frame, strokeInst)
 	if not (frame and strokeInst) then return end
 	local pending = false
-	frame:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+	local generation = 0
+
+	local function scheduleKick()
+		generation = generation + 1
+		local myGeneration = generation
 		if pending then return end
 		pending = true
 		task.defer(function()
-			-- Let the burst of resize events from a cascading layout pass
-			-- (child -> this box -> its own parent -> ... ) settle before
-			-- doing the actual (visible) kick, capped so we never hang.
+			-- FIX (many components): a Section/GroupBox holding a LOT of
+			-- children (many toggles/sliders/dropdowns/paragraphs) doesn't
+			-- resolve its final AutomaticSize in one or two frames -- each
+			-- child settles its own AutomaticSize first, and that cascades
+			-- upward one layer per frame, so the more components there are
+			-- (and the more of THEM that are AutomaticSize themselves), the
+			-- more frames it genuinely takes. A single frame-to-frame size
+			-- match can just be a coincidental plateau mid-layout, not the
+			-- real final size -- so require several CONSECUTIVE stable reads
+			-- before trusting it, and raise the cap so a big list has enough
+			-- time to actually finish (was 20 heartbeats, ~0.3s; now up to
+			-- 180, ~3s, which only gets used if content keeps changing).
+			local stableCount = 0
 			local lastSize = frame.AbsoluteSize
-			for _ = 1, 20 do
+			for _ = 1, 180 do
 				RunService.Heartbeat:Wait()
 				if not (frame.Parent and strokeInst.Parent) then
 					pending = false
 					return
 				end
 				local newSize = frame.AbsoluteSize
-				if newSize == lastSize then break end
-				lastSize = newSize
+				if newSize == lastSize then
+					stableCount = stableCount + 1
+					if stableCount >= 5 then break end
+				else
+					stableCount = 0
+					lastSize = newSize
+				end
 			end
 			KickStroke(strokeInst)
 			pending = false
+			-- If the size changed again WHILE we were mid-poll (more
+			-- components still being added), immediately re-arm instead of
+			-- waiting on the next natural AbsoluteSize signal, which may not
+			-- fire again if nothing changes after this point.
+			if generation ~= myGeneration then
+				scheduleKick()
+			end
 		end)
-	end)
+	end
+
+	frame:GetPropertyChangedSignal("AbsoluteSize"):Connect(scheduleKick)
 end
 
 function KazeUI:SetGlow(color)
