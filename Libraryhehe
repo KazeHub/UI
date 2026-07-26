@@ -85,9 +85,16 @@ local TWEEN_SPRING = TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirect
 local TWEEN_SMOOTH = TweenInfo.new(0.35, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
 local TWEEN_COLLAPSE = TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out) -- shared by Section/GroupBox open-close
 
-local function RegisterFlag(flag, getFunc, setFunc)
+local function RegisterFlag(flag, getFunc, setFunc, ownerInst)
 	if flag then
 		KazeUI.Flags[flag] = { Get = getFunc, Set = setFunc }
+		if ownerInst and typeof(ownerInst) == "Instance" then
+			ownerInst.Destroying:Connect(function()
+				if KazeUI.Flags[flag] and KazeUI.Flags[flag].Get == getFunc then
+					KazeUI.Flags[flag] = nil
+				end
+			end)
+		end
 	end
 end
 
@@ -141,12 +148,17 @@ CameraLocker.Modal = false
 CameraLocker.Visible = true
 CameraLocker.Parent = ScreenGui
 
+local cameraLockCount = 0
 local function LockCamera()
+	cameraLockCount = cameraLockCount + 1
 	CameraLocker.Modal = true
 end
 
 local function UnlockCamera()
-	CameraLocker.Modal = false
+	cameraLockCount = math.max(0, cameraLockCount - 1)
+	if cameraLockCount == 0 then
+		CameraLocker.Modal = false
+	end
 end
 
 -- Separate notification screen container
@@ -212,8 +224,10 @@ UpdateScale()
 workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(UpdateScale)
 
 -- Lucide Icons Setup
+-- Deferred via task.spawn so a slow/unreachable network doesn't stall the whole
+-- module load; FormatImage() already falls back safely while IconsMap is empty.
 local IconsMap = {}
-pcall(function()
+task.spawn(function() pcall(function()
 	if game and game.HttpGet then
 		local rawIcons = game:HttpGet("https://raw.githubusercontent.com/KazeHub/UI/refs/heads/main/Icons.lua.txt")
 		if rawIcons then
@@ -229,7 +243,7 @@ pcall(function()
 			end
 		end
 	end
-end)
+end) end)
 
 -- Exploit Direct Web Image Compiler & Caching Pipeline
 local function GetCustomAssetFromURL(url)
@@ -322,99 +336,10 @@ function KazeUI:RegisterText(inst, isMuted)
 	end)
 end
 
--- FIX (outline/UIStroke invisible on ANY panel further down a ScrollingFrame):
--- when a box using AutomaticSize.Y sits below the ScrollingFrame's current
--- CanvasSize, Roblox sometimes finishes resizing it WITHOUT ever repainting
--- its UIStroke -- the stroke mesh was built for the old (usually zero)
--- height and never gets told to rebuild, since nothing about the Stroke
--- itself changed, only its parent's size. Boxes near the top rarely hit this
--- because they're already inside the rendered canvas region, so their stroke
--- repaints as a side effect of normal on-screen layout passes.
-local function KickStroke(strokeInst)
-	-- Flips Enabled off/on to force the stroke mesh to rebuild against
-	-- whatever the box's CURRENT AbsoluteSize actually is right now.
-	if not (strokeInst and strokeInst.Parent) then return end
-	strokeInst.Enabled = false
-	task.wait()
-	if strokeInst and strokeInst.Parent then
-		strokeInst.Enabled = true
-	end
-end
-
--- Watches a box's OWN AbsoluteSize and re-kicks ITS OWN stroke any time that
--- size actually changes, for ANY reason -- its own open/close toggle, a
--- nested GroupBox/Section opening or closing INSIDE it, content being added
--- later, a ScrollingFrame catching up on AutomaticCanvasSize further down
--- the list, etc. Each box is fully self-sufficient: it doesn't matter WHY it
--- resized, it notices and fixes itself -- no call site anywhere else in the
--- codebase has to remember to kick anything.
-local function WatchStrokeOnResize(frame, strokeInst)
-	if not (frame and strokeInst) then return end
-	local pending = false
-	local generation = 0
-
-	local function scheduleKick()
-		generation = generation + 1
-		local myGeneration = generation
-		if pending then return end
-		pending = true
-		task.defer(function()
-			-- FIX (many components): a box holding a LOT of children (many
-			-- toggles/sliders/dropdowns/paragraphs) doesn't resolve its final
-			-- AutomaticSize in one or two frames -- each child settles its own
-			-- AutomaticSize first, and that cascades upward one layer per
-			-- frame, so the more components there are, the more frames it
-			-- genuinely takes. A single frame-to-frame size match can just be
-			-- a coincidental plateau mid-layout, not the real final size -- so
-			-- require several CONSECUTIVE stable reads before trusting it, and
-			-- cap generously (up to 180 heartbeats, ~3s, only actually used if
-			-- content keeps changing that long).
-			local stableCount = 0
-			local lastSize = frame.AbsoluteSize
-			for _ = 1, 180 do
-				RunService.Heartbeat:Wait()
-				if not (frame.Parent and strokeInst.Parent) then
-					pending = false
-					return
-				end
-				local newSize = frame.AbsoluteSize
-				if newSize == lastSize then
-					stableCount = stableCount + 1
-					if stableCount >= 5 then break end
-				else
-					stableCount = 0
-					lastSize = newSize
-				end
-			end
-			KickStroke(strokeInst)
-			pending = false
-			-- If the size changed again WHILE we were mid-poll (more
-			-- components still being added), immediately re-arm instead of
-			-- waiting on the next natural AbsoluteSize signal, which may not
-			-- fire again if nothing changes after this point.
-			if generation ~= myGeneration then
-				scheduleKick()
-			end
-		end)
-	end
-
-	frame:GetPropertyChangedSignal("AbsoluteSize"):Connect(scheduleKick)
-end
-
--- FIX (systemic): every UIStroke in the entire library is registered through
--- this one function (~24 call sites -- Sections, GroupBoxes, the main
--- window, dropdowns, notifications, avatar frames, confirm dialogs, etc).
--- Auto-attaching the resize watcher HERE means every single one of them
--- self-heals its outline automatically, forever, including any new
--- component added later that calls RegisterBorder -- nobody has to
--- remember to wire it up per-component again.
 function KazeUI:RegisterBorder(inst)
 	if not inst then return end
 	table.insert(KazeUI.BorderElements, inst)
 	inst.Color = KazeUI.CurrentTheme.Border
-	if inst.Parent and (inst.Parent:IsA("GuiObject")) then
-		WatchStrokeOnResize(inst.Parent, inst)
-	end
 	inst.Destroying:Connect(function()
 		for i = #KazeUI.BorderElements, 1, -1 do
 			if KazeUI.BorderElements[i] == inst then table.remove(KazeUI.BorderElements, i) end
@@ -542,8 +467,8 @@ local function ApplyLock(componentFrame, isLocked, parentOverride, customSize, c
 		lockIcon.ImageColor3 = t.MutedText
 	end)
 
-	local function setLocked(state)
-		lockOverlay.Visible = state
+	local function setLocked(self, state)
+		lockOverlay.Visible = state and true or false
 	end
 
 	return {
@@ -631,19 +556,15 @@ function KazeUI:SetTheme(themeName)
 		local parsedSuccessfully = false
 		if success and rawTheme then
 			local themeTable = nil
+			-- SECURITY: only JSON is accepted for remote themes. A loadstring() fallback
+			-- here used to execute arbitrary Lua fetched from whatever URL is passed to
+			-- SetTheme/config.Theme, which is an unnecessary RCE vector for a feature
+			-- that only ever needs a flat color/string table.
 			local s, parsed = pcall(function()
 				return HttpService:JSONDecode(rawTheme)
 			end)
 			if s and type(parsed) == "table" then
 				themeTable = parsed
-			else
-				local s2, func = pcall(loadstring, rawTheme)
-				if s2 and func then
-					local s3, res = pcall(func)
-					if s3 and type(res) == "table" then
-						themeTable = res
-					end
-				end
 			end
 			
 			if themeTable then
@@ -827,6 +748,40 @@ local function StopNeonLoop(target)
 	end
 end
 
+-- FIX (outline/UIStroke invisible on Sections & GroupBoxes further down a
+-- ScrollingFrame): when a collapsible box sits below the ScrollingFrame's
+-- current CanvasSize, Roblox sometimes finishes resizing the box's
+-- AutomaticSize.Y frame WITHOUT ever repainting its UIStroke — the stroke
+-- mesh was built for the old (usually zero) height and never gets told to
+-- rebuild, since nothing about the Stroke itself changed, only its parent's
+-- size. Boxes near the top rarely hit this because they're already inside
+-- the rendered canvas region when they open, so their stroke repaints as a
+-- side effect of normal on-screen layout passes. Toggling Enabled off/on
+-- after the layout (and the ScrollingFrame's AutomaticCanvasSize) have had a
+-- couple of Heartbeats to settle forces the stroke to rebuild against the
+-- box's real, final size.
+local kickStrokeGeneration = setmetatable({}, {__mode = "k"})
+local function KickStroke(strokeInst)
+	if not strokeInst then return end
+	local myGen = (kickStrokeGeneration[strokeInst] or 0) + 1
+	kickStrokeGeneration[strokeInst] = myGen
+	task.defer(function()
+		RunService.Heartbeat:Wait()
+		RunService.Heartbeat:Wait()
+		-- if another KickStroke call for the same stroke started after us, let that
+		-- newer call own the Enabled flip and bail out here to avoid fighting it.
+		if kickStrokeGeneration[strokeInst] ~= myGen then return end
+		if strokeInst and strokeInst.Parent then
+			strokeInst.Enabled = false
+			task.wait()
+			if kickStrokeGeneration[strokeInst] ~= myGen then return end
+			if strokeInst and strokeInst.Parent then
+				strokeInst.Enabled = true
+			end
+		end
+	end)
+end
+
 function KazeUI:SetGlow(color)
 	KazeUI.GlowColor = color
 
@@ -950,11 +905,11 @@ function KazeUI:Notify(config)
 	titleLab.TextXAlignment = Enum.TextXAlignment.Left
 	titleLab.TextWrapped = true
 
+	local rgbTitleConn
 	if isRGBTitle then
-		local connection
-		connection = game:GetService("RunService").RenderStepped:Connect(function()
+		rgbTitleConn = RunService.RenderStepped:Connect(function()
 			if not titleLab or not titleLab.Parent then
-				connection:Disconnect()
+				if rgbTitleConn then rgbTitleConn:Disconnect() end
 				return
 			end
 			local hue = (tick() % 4) / 4
@@ -1044,6 +999,7 @@ function KazeUI:Notify(config)
 	notifHolder.Destroying:Connect(function()
 		task.cancel(autoThread)
 		if dismissTweenCon then dismissTweenCon:Disconnect() end
+		if rgbTitleConn then rgbTitleConn:Disconnect() end
 	end)
 end
 
@@ -1498,7 +1454,7 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 				task.spawn(callback, selectedSingle)
 			end
 		end
-	end)
+	end, wrapper)
 
 	local lockCtrl = ApplyLock(dropFrame, locked, wrapper, UDim2.new(0.95, 0, 1, -3), UDim2.new(0.5, 0, 0, 3), Vector2.new(0.5, 0))
 
@@ -1984,7 +1940,7 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 	RegisterFlag(flag, function() return state end, function(val)
 		setToggleState(val, false)
 		if typeof(callback) == "function" then task.spawn(callback, state) end
-	end)
+	end, wrapper)
 	
 	local lockCtrl = ApplyLock(paraFrame, locked, wrapper, UDim2.new(0.95, 0, 1, -3), UDim2.new(0.5, 0, 0, 3), Vector2.new(0.5, 0))
 
@@ -2120,7 +2076,7 @@ local function CreateTextBoxInput(parentFrame, title, placeholder, defaultVal, c
 	RegisterFlag(flag, function() return textBox.Text end, function(val)
 		textBox.Text = val
 		if typeof(callback) == "function" then task.spawn(callback, val) end
-	end)
+	end, wrapper)
 
 	local lockCtrl = ApplyLock(paraFrame, locked, wrapper, UDim2.new(0.95, 0, 1, -3), UDim2.new(0.5, 0, 0, 3), Vector2.new(0.5, 0))
 
@@ -2270,9 +2226,17 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 	fill.Size = UDim2.new(startingPercentage, 0, 1, 0)
 	knob.Position = UDim2.new(startingPercentage, 0, 0.5, 0)
 	
+	local sliderMoveCon, sliderEndCon
+
+	local function cleanupSliderDrag()
+		if sliderMoveCon then sliderMoveCon:Disconnect(); sliderMoveCon = nil end
+		if sliderEndCon then sliderEndCon:Disconnect(); sliderEndCon = nil end
+	end
+
 	clickDetector.InputBegan:Connect(function(input)
 		if isLockedState or activeDialogsCount > 0 then return end
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			cleanupSliderDrag() -- guard against an overlapping press (e.g. multitouch) leaving a stale pair connected
 			isDragging = true
 			ToggleScrollingAncestors(track, false)
 			LockCamera()
@@ -2281,13 +2245,12 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 			TweenService:Create(knob, TWEEN_FAST, {Size = UDim2.fromOffset(16, 16)}):Play()
 			StartNeonLoop(paraStroke)
 			
-			local moveCon, endCon
-			moveCon = UIS.InputChanged:Connect(function(moveInput)
+			sliderMoveCon = UIS.InputChanged:Connect(function(moveInput)
 				if isDragging and (moveInput.UserInputType == Enum.UserInputType.MouseMovement or moveInput.UserInputType == Enum.UserInputType.Touch) then
 					UpdateValueFromInput(moveInput)
 				end
 			end)
-			endCon = UIS.InputEnded:Connect(function(endInput)
+			sliderEndCon = UIS.InputEnded:Connect(function(endInput)
 				if endInput.UserInputType == Enum.UserInputType.MouseButton1 or endInput.UserInputType == Enum.UserInputType.Touch then
 					isDragging = false
 					ToggleScrollingAncestors(track, true)
@@ -2296,12 +2259,13 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 					TweenService:Create(knob, TWEEN_FAST, {Size = UDim2.fromOffset(12, 12)}):Play()
 					StopNeonLoop(paraStroke)
 					TweenService:Create(paraStroke, TWEEN_FAST, {Color = KazeUI.CurrentTheme.Border}):Play()
-					if moveCon then moveCon:Disconnect() end
-					if endCon then endCon:Disconnect() end
+					cleanupSliderDrag()
 				end
 			end)
 		end
 	end)
+
+	wrapper.Destroying:Connect(cleanupSliderDrag)
 
 	KazeUI:OnGlowChanged(paraStroke, function(c)
 		if isDragging then paraStroke.Color = c end
@@ -2328,7 +2292,7 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 			lockCtrl:SetLocked(state)
 		end
 	}
-	RegisterFlag(flag, function() return value end, function(val) api:SetValue(val) end)
+	RegisterFlag(flag, function() return value end, function(val) api:SetValue(val) end, wrapper)
 	return api
 end
 
@@ -2573,7 +2537,7 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 			SetCursorPositions()
 			UpdateColor()
 		end
-	end)
+	end, wrapper)
 
 	local lockCtrl = ApplyLock(dropFrame, locked, wrapper, UDim2.new(0.95, 0, 1, -3), UDim2.new(0.5, 0, 0, 3), Vector2.new(0.5, 0))
 
@@ -2722,6 +2686,7 @@ local function CreateKeybindInput(parentFrame, title, defaultKey, callback, flag
 	end)
 	
 	local uisConn = UIS.InputBegan:Connect(function(input, gp)
+		if isLockedState or activeDialogsCount > 0 then return end
 		if not gp and not isBinding and currentKey ~= Enum.KeyCode.Unknown and input.KeyCode == currentKey then
 			if typeof(callback) == "function" then task.spawn(callback, currentKey) end
 		end
@@ -2740,7 +2705,7 @@ local function CreateKeybindInput(parentFrame, title, defaultKey, callback, flag
 			currentKey = Enum.KeyCode[val] or Enum.KeyCode.Unknown
 			bindLabel.Text = currentKey == Enum.KeyCode.Unknown and "None" or currentKey.Name
 		end)
-	end)
+	end, wrapper)
 
 	local lockCtrl = ApplyLock(paraFrame, locked, wrapper, UDim2.new(0.95, 0, 1, -3), UDim2.new(0.5, 0, 0, 3), Vector2.new(0.5, 0))
 
@@ -3049,6 +3014,7 @@ CreateCollapsibleSection = function(parentFrame, titleArg, currentDepth)
 			}):Play()
 			StartNeonLoop(boxStroke)
 			StartNeonLoop(accentLine)
+			KickStroke(boxStroke)
 		else
 			TweenService:Create(arrowIcon, TWEEN_COLLAPSE, {
 				Rotation = -90,
@@ -3239,6 +3205,7 @@ CreateGroupBox = function(parentFrame, titleArg, currentDepth, depthOverride)
 			}):Play()
 			StartNeonLoop(stroke)
 			StartNeonLoop(accentLine)
+			KickStroke(stroke)
 		else
 			TweenService:Create(arrowIcon, TWEEN_COLLAPSE, {
 				Rotation = -90,
@@ -3724,6 +3691,7 @@ function KazeUI:CreateWindow(config)
 	local miniDragMoved = false
 	
 	MiniButton.InputBegan:Connect(function(input)
+		if activeDialogsCount > 0 then return end
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 			miniDragStart = input.Position
 			miniDragMoved = false
@@ -3746,7 +3714,7 @@ function KazeUI:CreateWindow(config)
 	
 	local miniDragConn2 = UIS.InputEnded:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-			if miniDragStart and not miniDragMoved then unminimizeWindow() end
+			if miniDragStart and not miniDragMoved and activeDialogsCount == 0 then unminimizeWindow() end
 			miniDragStart = nil
 			miniDragMoved = false
 		end
@@ -3844,8 +3812,17 @@ function KazeUI:CreateWindow(config)
 		KazeUI:AddPanel(CancelBtn, 0.04)
 		KazeUI:RegisterText(CancelBtn, true)
 
-		ConfirmBtn.MouseButton1Click:Connect(function() ScreenGui:Destroy() end)
+		ConfirmBtn.MouseButton1Click:Connect(function()
+			for i = #KazeUI.ActiveWindows, 1, -1 do
+				if KazeUI.ActiveWindows[i] == Window then table.remove(KazeUI.ActiveWindows, i) end
+			end
+			Window:Destroy()
+			MiniButton:Destroy()
+		end)
+		local isClosingConfirm = false
 		CancelBtn.MouseButton1Click:Connect(function() 
+			if isClosingConfirm then return end
+			isClosingConfirm = true
 			TweenService:Create(InteractionBlocker, TWEEN_FAST, {BackgroundTransparency = 1}):Play()
 			local tw = TweenService:Create(ConfirmWindow, TWEEN_FAST, {Position = UDim2.fromScale(0.5, 0.45)})
 			tw:Play()
@@ -4222,7 +4199,10 @@ function KazeUI:CreateWindow(config)
 			ActionsFrame.Size = UDim2.new(1, -30, 0, 32)
 		end
 
+		local isClosingDialog = false
 		local function closeDialog()
+			if isClosingDialog then return end
+			isClosingDialog = true
 			TweenService:Create(InteractionBlocker, TWEEN_FAST, {BackgroundTransparency = 1}):Play()
 			local tw = TweenService:Create(DialogFrame, TWEEN_FAST, {Position = UDim2.fromScale(0.5, 0.4)})
 			tw:Play()
