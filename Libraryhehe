@@ -751,59 +751,56 @@ end
 -- couple of Heartbeats to settle forces the stroke to rebuild against the
 -- box's real, final size.
 local function KickStroke(strokeInst)
-	if not strokeInst then return end
-	task.defer(function()
-		-- FIX (nested case): a fixed 2-heartbeat wait undershoots whenever this
-		-- stroke's parent sits beneath OTHER AutomaticSize frames that are still
-		-- cascading -- e.g. opening a GroupBox nested inside an already-open
-		-- Section: the GroupBox's own container resolves first, THEN the
-		-- Section's content, THEN the Section's box, THEN the wrapper, THEN the
-		-- ScrollingFrame's canvas -- each one only recalculates a frame after its
-		-- child settles, so 2 heartbeats isn't always enough. Poll AbsoluteSize
-		-- until it actually stops changing (capped so we never hang forever).
-		local target = strokeInst.Parent
-		if not target then return end
-		local lastSize = target.AbsoluteSize
-		for _ = 1, 20 do
-			RunService.Heartbeat:Wait()
-			if not (strokeInst.Parent and target.Parent) then return end
-			local newSize = target.AbsoluteSize
-			if newSize == lastSize then
-				break
-			end
-			lastSize = newSize
-		end
-		if strokeInst and strokeInst.Parent then
-			strokeInst.Enabled = false
-			task.wait()
-			if strokeInst and strokeInst.Parent then
-				strokeInst.Enabled = true
-			end
-		end
-	end)
+	-- Flips Enabled off/on to force the stroke mesh to rebuild against
+	-- whatever the box's CURRENT AbsoluteSize actually is right now.
+	if not (strokeInst and strokeInst.Parent) then return end
+	strokeInst.Enabled = false
+	task.wait()
+	if strokeInst and strokeInst.Parent then
+		strokeInst.Enabled = true
+	end
 end
 
--- FIX (nested Section/GroupBox outline): when a GroupBox toggles open INSIDE
--- an already-open Section (or another GroupBox), only that GroupBox's own
--- stroke used to get kicked. But the parent Section's box also grew taller
--- because of it, and the parent's UIStroke never got told to rebuild -- that's
--- the "outline disappears on the outer box" case (Section 3 + Main in the
--- screenshot: both go invisible together). Walk up the ancestry from the
--- toggled box and kick every UIStroke belonging to a Section/GroupBox frame
--- above it too.
-local function KickAncestorStrokes(fromInstance)
-	local node = fromInstance
-	while node do
-		local parent = node.Parent
-		if not parent then break end
-		if parent:IsA("Frame") or parent:IsA("ScrollingFrame") then
-			local strokeChild = parent:FindFirstChildOfClass("UIStroke")
-			if strokeChild then
-				KickStroke(strokeChild)
+-- FIX (outline/UIStroke invisible on Sections & GroupBoxes, including nested
+-- ones): watches a box's OWN AbsoluteSize and re-kicks ITS OWN stroke any
+-- time that size actually changes, for ANY reason -- its own open/close
+-- toggle, a nested GroupBox/Section opening or closing INSIDE it, content
+-- being added later, a ScrollingFrame catching up on AutomaticCanvasSize
+-- further down the list, etc.
+--
+-- The previous version only re-kicked a box's stroke from that SAME box's
+-- own toggle function (or, briefly, by manually walking ancestors from the
+-- toggle site) -- so a Section whose height changed because a GroupBox
+-- nested inside it toggled open never got its own stroke re-kicked in time.
+-- That's exactly the "Section's outline disappears the moment you open the
+-- GroupBox inside it" bug from the recording. Watching AbsoluteSize directly
+-- means each box is self-sufficient: it doesn't matter WHY it resized, it
+-- notices and fixes itself.
+local function WatchStrokeOnResize(frame, strokeInst)
+	if not (frame and strokeInst) then return end
+	local pending = false
+	frame:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+		if pending then return end
+		pending = true
+		task.defer(function()
+			-- Let the burst of resize events from a cascading layout pass
+			-- (child -> this box -> its own parent -> ... ) settle before
+			-- doing the actual (visible) kick, capped so we never hang.
+			local lastSize = frame.AbsoluteSize
+			for _ = 1, 20 do
+				RunService.Heartbeat:Wait()
+				if not (frame.Parent and strokeInst.Parent) then
+					pending = false
+					return
+				end
+				local newSize = frame.AbsoluteSize
+				if newSize == lastSize then break end
+				lastSize = newSize
 			end
-		end
-		node = parent
-	end
+			KickStroke(strokeInst)
+			pending = false
+		end)
+	end)
 end
 
 function KazeUI:SetGlow(color)
@@ -2930,6 +2927,7 @@ CreateCollapsibleSection = function(parentFrame, titleArg, currentDepth)
 	boxStroke.Thickness = 1.8
 	boxStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 	KazeUI:RegisterBorder(boxStroke)
+	WatchStrokeOnResize(sectionBox, boxStroke)
 
 	local boxLayout = Instance.new("UIListLayout", sectionBox)
 	boxLayout.SortOrder = Enum.SortOrder.LayoutOrder
@@ -3028,8 +3026,6 @@ CreateCollapsibleSection = function(parentFrame, titleArg, currentDepth)
 			}):Play()
 			StartNeonLoop(boxStroke)
 			StartNeonLoop(accentLine)
-			KickStroke(boxStroke)
-			KickAncestorStrokes(sectionBox)
 		else
 			TweenService:Create(arrowIcon, TWEEN_COLLAPSE, {
 				Rotation = -90,
@@ -3123,6 +3119,7 @@ CreateGroupBox = function(parentFrame, titleArg, currentDepth, depthOverride)
 	stroke.Thickness = math.max(1.2, 1.8 - (currentDepth - 1) * 0.15)
 	stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 	KazeUI:RegisterBorder(stroke)
+	WatchStrokeOnResize(groupFrame, stroke)
 
 	local layout = Instance.new("UIListLayout", groupFrame)
 	layout.SortOrder = Enum.SortOrder.LayoutOrder
@@ -3220,8 +3217,6 @@ CreateGroupBox = function(parentFrame, titleArg, currentDepth, depthOverride)
 			}):Play()
 			StartNeonLoop(stroke)
 			StartNeonLoop(accentLine)
-			KickStroke(stroke)
-			KickAncestorStrokes(groupFrame)
 		else
 			TweenService:Create(arrowIcon, TWEEN_COLLAPSE, {
 				Rotation = -90,
