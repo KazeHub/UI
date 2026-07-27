@@ -2910,21 +2910,36 @@ CreateCollapsibleSection = function(parentFrame, titleArg, currentDepth)
 	Instance.new("UICorner", sectionBox).CornerRadius = UDim.new(0, 20)
 	KazeUI:AddPanel(sectionBox, 0.02)
 
-	-- Shadow outline: same soft drop-shadow technique used on the Window and
-	-- Notification cards (offset Frame behind the box, ZIndex -1, oversized
-	-- corner-matched UICorner + a soft black UIStroke) instead of a flat
-	-- border stroke sitting directly on the box edge.
-	local boxShadow = Instance.new("Frame", sectionBox)
-	boxShadow.Name = "Shadow"
-	boxShadow.Size = UDim2.new(1, 6, 1, 6)
-	boxShadow.Position = UDim2.fromOffset(-3, -3)
-	boxShadow.BackgroundTransparency = 1
-	boxShadow.ZIndex = -1
-	Instance.new("UICorner", boxShadow).CornerRadius = UDim.new(0, 22)
-	local boxShadowStroke = Instance.new("UIStroke", boxShadow)
-	boxShadowStroke.Thickness = 3
-	boxShadowStroke.Color = Color3.fromRGB(0, 0, 0)
-	boxShadowStroke.Transparency = 0.8
+	-- Shadow outline (same look as the Window/Notification drop-shadow), replacing
+	-- the old animated neon glow on the box's own UIStroke below.
+	-- IMPORTANT: this is parented to sectionWrapper, NOT sectionBox. sectionBox has
+	-- its own UIListLayout (boxLayout, arranging Header/Divider/Content) — a plain
+	-- Frame sibling dropped straight into sectionBox would get swept into that list
+	-- as a phantom entry (UIListLayout doesn't care about ZIndex/negative offsets,
+	-- it just stacks every GuiObject child in order), silently pushing the header
+	-- down and reintroducing the exact overlap/clip bug already fixed above for
+	-- AutomaticSize. sectionWrapper has no list layout, only AutomaticSize, so a
+	-- sibling here is safe. To avoid feeding back into sectionWrapper's own
+	-- AutomaticSize.Y in the negative direction (which is the "possible bug" a
+	-- naive copy-paste of the Window shadow would introduce — a child positioned
+	-- above y=0 is undefined/inconsistent for AutomaticSize bounding boxes), the
+	-- shadow's top edge stays flush with sectionBox's (no negative Y offset) and
+	-- only grows outward to the sides and below, which AutomaticSize handles
+	-- consistently.
+	local sectionShadow = Instance.new("Frame")
+	sectionShadow.Name = "SectionShadow"
+	sectionShadow.AnchorPoint = Vector2.new(0.5, 0)
+	sectionShadow.Position = UDim2.new(0.5, 0, 0, 0)
+	sectionShadow.Size = UDim2.new(0.95, 8, 1, 8)
+	sectionShadow.BackgroundTransparency = 1
+	sectionShadow.ZIndex = -1
+	sectionShadow.Parent = sectionWrapper
+	local sectionShadowCorner = Instance.new("UICorner", sectionShadow)
+	sectionShadowCorner.CornerRadius = UDim.new(0, 24)
+	local sectionShadowStroke = Instance.new("UIStroke", sectionShadow)
+	sectionShadowStroke.Thickness = 4
+	sectionShadowStroke.Color = Color3.fromRGB(0, 0, 0)
+	sectionShadowStroke.Transparency = 0.8
 
 	local boxStroke = Instance.new("UIStroke", sectionBox)
 	boxStroke.Thickness = 1.8
@@ -3026,9 +3041,8 @@ CreateCollapsibleSection = function(parentFrame, titleArg, currentDepth)
 				Rotation = 0,
 				ImageColor3 = KazeUI.CurrentTheme.Text
 			}):Play()
-			StartNeonLoop(boxStroke)
 			StartNeonLoop(accentLine)
-			KickStroke(boxStroke)
+			KickStroke(boxStroke) -- still needed: forces the outline to repaint at its real final size when opening below the ScrollingFrame's rendered canvas (see fix note above KickStroke's definition) — unrelated to the removed glow.
 		else
 			TweenService:Create(arrowIcon, TWEEN_COLLAPSE, {
 				Rotation = -90,
@@ -3037,9 +3051,7 @@ CreateCollapsibleSection = function(parentFrame, titleArg, currentDepth)
 			TweenService:Create(accentLine, TWEEN_COLLAPSE, {
 				BackgroundColor3 = KazeUI.CurrentTheme.MutedText
 			}):Play()
-			StopNeonLoop(boxStroke)
 			StopNeonLoop(accentLine)
-			boxStroke.Color = KazeUI.CurrentTheme.Border
 			accentLine.BackgroundColor3 = KazeUI.CurrentTheme.MutedText
 		end
 	end
@@ -3118,20 +3130,31 @@ CreateGroupBox = function(parentFrame, titleArg, currentDepth, depthOverride)
 	
 	KazeUI:AddPanel(groupFrame, 0.015 + (currentDepth * 0.008))
 
-	-- Shadow outline: same soft drop-shadow technique used on the Window and
-	-- Notification cards (offset Frame behind the box, ZIndex -1, oversized
-	-- corner-matched UICorner + a soft black UIStroke) instead of a flat
-	-- border stroke sitting directly on the box edge. Scales down slightly
-	-- with nesting depth, same as the existing border stroke does.
-	local groupShadow = Instance.new("Frame", groupFrame)
-	groupShadow.Name = "Shadow"
-	groupShadow.Size = UDim2.new(1, 6, 1, 6)
-	groupShadow.Position = UDim2.fromOffset(-3, -3)
+	-- Shadow outline (same look as the Window/Notification drop-shadow), replacing
+	-- the old animated neon glow on the box's own UIStroke below.
+	-- Parented to wrapper, NOT groupFrame — groupFrame has its own UIListLayout
+	-- (layout, arranging Header/Divider/Container). A plain Frame sibling dropped
+	-- straight into groupFrame would get swept into that list as a phantom entry
+	-- (UIListLayout stacks every GuiObject child regardless of ZIndex or negative
+	-- offsets), silently pushing the header down and reintroducing the exact
+	-- overlap/clip bug already fixed above for AutomaticSize — this is the same
+	-- gotcha called out for CreateCollapsibleSection's SectionShadow. wrapper has
+	-- no list layout, only AutomaticSize, so a sibling here is safe. The shadow's
+	-- top edge stays flush with groupFrame's (no negative Y offset) and only
+	-- grows outward to the sides and below, so it can never feed back into
+	-- wrapper's own AutomaticSize.Y in the unsupported negative direction.
+	local groupShadow = Instance.new("Frame")
+	groupShadow.Name = "GroupShadow"
+	groupShadow.AnchorPoint = Vector2.new(0.5, 0)
+	groupShadow.Position = UDim2.new(0.5, 0, 0, 3)
+	groupShadow.Size = UDim2.new(scaledWidth, 8, 1, 8)
 	groupShadow.BackgroundTransparency = 1
 	groupShadow.ZIndex = -1
-	Instance.new("UICorner", groupShadow).CornerRadius = UDim.new(0, cornerRadius + 2)
+	groupShadow.Parent = wrapper
+	local groupShadowCorner = Instance.new("UICorner", groupShadow)
+	groupShadowCorner.CornerRadius = UDim.new(0, cornerRadius + 4)
 	local groupShadowStroke = Instance.new("UIStroke", groupShadow)
-	groupShadowStroke.Thickness = math.max(1.5, 3 - (currentDepth - 1) * 0.5)
+	groupShadowStroke.Thickness = math.max(3, 4 - (currentDepth - 1) * 0.3)
 	groupShadowStroke.Color = Color3.fromRGB(0, 0, 0)
 	groupShadowStroke.Transparency = 0.8
 
@@ -3234,9 +3257,8 @@ CreateGroupBox = function(parentFrame, titleArg, currentDepth, depthOverride)
 				Rotation = 0,
 				ImageColor3 = KazeUI.CurrentTheme.Text
 			}):Play()
-			StartNeonLoop(stroke)
 			StartNeonLoop(accentLine)
-			KickStroke(stroke)
+			KickStroke(stroke) -- still needed: forces the outline to repaint at its real final size when opening below the ScrollingFrame's rendered canvas (see fix note above KickStroke's definition) — unrelated to the removed glow.
 		else
 			TweenService:Create(arrowIcon, TWEEN_COLLAPSE, {
 				Rotation = -90,
@@ -3245,9 +3267,7 @@ CreateGroupBox = function(parentFrame, titleArg, currentDepth, depthOverride)
 			TweenService:Create(accentLine, TWEEN_COLLAPSE, {
 				BackgroundColor3 = KazeUI.CurrentTheme.MutedText
 			}):Play()
-			StopNeonLoop(stroke)
 			StopNeonLoop(accentLine)
-			stroke.Color = KazeUI.CurrentTheme.Border
 			accentLine.BackgroundColor3 = KazeUI.CurrentTheme.MutedText
 		end
 	end
