@@ -751,30 +751,76 @@ local function StopNeonLoop(target)
 	end
 end
 
--- FIX (outline/UIStroke invisible on Sections & GroupBoxes further down a
--- ScrollingFrame): when a collapsible box sits below the ScrollingFrame's
--- current CanvasSize, Roblox sometimes finishes resizing the box's
--- AutomaticSize.Y frame WITHOUT ever repainting its UIStroke — the stroke
--- mesh was built for the old (usually zero) height and never gets told to
--- rebuild, since nothing about the Stroke itself changed, only its parent's
--- size. Boxes near the top rarely hit this because they're already inside
--- the rendered canvas region when they open, so their stroke repaints as a
--- side effect of normal on-screen layout passes. Toggling Enabled off/on
--- after the layout (and the ScrollingFrame's AutomaticCanvasSize) have had a
--- couple of Heartbeats to settle forces the stroke to rebuild against the
--- box's real, final size.
-local function KickStroke(strokeInst)
-	if not strokeInst then return end
-	task.defer(function()
-		RunService.Heartbeat:Wait()
-		RunService.Heartbeat:Wait()
+-- FIX (outline/UIStroke invisible or warped on Sections & GroupBoxes):
+-- the previous version only kicked a box's OWN stroke at the moment ITS OWN
+-- header was clicked. That covers the simple case, but a Section/GroupBox's
+-- resolved height also changes whenever anything INSIDE it changes -- a
+-- nested GroupBox opening/closing, an element being added, a Dropdown
+-- expanding, etc. None of those inner changes re-kicked the OUTER box's
+-- stroke, so the outline on ancestor/stacked boxes still visibly warped or
+-- disappeared -- and this gets worse the more Sections/GroupBoxes a window
+-- has, i.e. exactly the 1000+ component case.
+--
+-- Fix: instead of kicking only from click sites, every stroke-owning box
+-- watches its own AbsoluteSize and queues a repaint the moment that size
+-- actually changes, no matter what caused the change (its own toggle, a
+-- nested child, a dynamically added element, a scale change, etc). All
+-- pending repaints funnel through ONE shared queue flushed on a couple of
+-- Heartbeats, so this stays O(boxes that actually changed) instead of
+-- spawning a new pair of waiting coroutines per box per resize -- important
+-- once there are hundreds of these on screen at once.
+local strokeRepaintQueue = {}
+local strokeRepaintScheduled = false
+
+local function FlushStrokeRepaints()
+	local queue = strokeRepaintQueue
+	strokeRepaintQueue = {}
+	strokeRepaintScheduled = false
+	for strokeInst in pairs(queue) do
 		if strokeInst and strokeInst.Parent then
 			strokeInst.Enabled = false
-			task.wait()
+		end
+	end
+	task.defer(function()
+		for strokeInst in pairs(queue) do
 			if strokeInst and strokeInst.Parent then
 				strokeInst.Enabled = true
 			end
 		end
+	end)
+end
+
+local function KickStroke(strokeInst)
+	if not strokeInst then return end
+	strokeRepaintQueue[strokeInst] = true
+	if not strokeRepaintScheduled then
+		strokeRepaintScheduled = true
+		task.defer(function()
+			RunService.Heartbeat:Wait()
+			RunService.Heartbeat:Wait()
+			FlushStrokeRepaints()
+		end)
+	end
+end
+
+-- Ties a UIStroke to the box that owns it: any time the box's resolved
+-- height changes for ANY reason (self-toggle, nested content, dynamic
+-- additions), the stroke gets queued for a repaint automatically. This is
+-- what actually fixes the "still bugging after I open a nested group"
+-- case -- call-site kicks alone can't see those changes.
+local function WatchStrokeAutoSize(strokeInst, sizeSrc)
+	if not strokeInst or not sizeSrc then return end
+	local lastY = sizeSrc.AbsoluteSize.Y
+	local conn
+	conn = sizeSrc:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+		local y = sizeSrc.AbsoluteSize.Y
+		if y ~= lastY then
+			lastY = y
+			KickStroke(strokeInst)
+		end
+	end)
+	strokeInst.Destroying:Connect(function()
+		if conn then conn:Disconnect() end
 	end)
 end
 
@@ -2910,41 +2956,11 @@ CreateCollapsibleSection = function(parentFrame, titleArg, currentDepth)
 	Instance.new("UICorner", sectionBox).CornerRadius = UDim.new(0, 20)
 	KazeUI:AddPanel(sectionBox, 0.02)
 
-	-- Shadow outline (same look as the Window/Notification drop-shadow), replacing
-	-- the old animated neon glow on the box's own UIStroke below.
-	-- IMPORTANT: this is parented to sectionWrapper, NOT sectionBox. sectionBox has
-	-- its own UIListLayout (boxLayout, arranging Header/Divider/Content) — a plain
-	-- Frame sibling dropped straight into sectionBox would get swept into that list
-	-- as a phantom entry (UIListLayout doesn't care about ZIndex/negative offsets,
-	-- it just stacks every GuiObject child in order), silently pushing the header
-	-- down and reintroducing the exact overlap/clip bug already fixed above for
-	-- AutomaticSize. sectionWrapper has no list layout, only AutomaticSize, so a
-	-- sibling here is safe. To avoid feeding back into sectionWrapper's own
-	-- AutomaticSize.Y in the negative direction (which is the "possible bug" a
-	-- naive copy-paste of the Window shadow would introduce — a child positioned
-	-- above y=0 is undefined/inconsistent for AutomaticSize bounding boxes), the
-	-- shadow's top edge stays flush with sectionBox's (no negative Y offset) and
-	-- only grows outward to the sides and below, which AutomaticSize handles
-	-- consistently.
-	local sectionShadow = Instance.new("Frame")
-	sectionShadow.Name = "SectionShadow"
-	sectionShadow.AnchorPoint = Vector2.new(0.5, 0)
-	sectionShadow.Position = UDim2.new(0.5, 0, 0, 0)
-	sectionShadow.Size = UDim2.new(0.95, 8, 1, 8)
-	sectionShadow.BackgroundTransparency = 1
-	sectionShadow.ZIndex = -1
-	sectionShadow.Parent = sectionWrapper
-	local sectionShadowCorner = Instance.new("UICorner", sectionShadow)
-	sectionShadowCorner.CornerRadius = UDim.new(0, 24)
-	local sectionShadowStroke = Instance.new("UIStroke", sectionShadow)
-	sectionShadowStroke.Thickness = 4
-	sectionShadowStroke.Color = Color3.fromRGB(0, 0, 0)
-	sectionShadowStroke.Transparency = 0.8
-
 	local boxStroke = Instance.new("UIStroke", sectionBox)
 	boxStroke.Thickness = 1.8
 	boxStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 	KazeUI:RegisterBorder(boxStroke)
+	WatchStrokeAutoSize(boxStroke, sectionBox)
 
 	local boxLayout = Instance.new("UIListLayout", sectionBox)
 	boxLayout.SortOrder = Enum.SortOrder.LayoutOrder
@@ -3041,8 +3057,9 @@ CreateCollapsibleSection = function(parentFrame, titleArg, currentDepth)
 				Rotation = 0,
 				ImageColor3 = KazeUI.CurrentTheme.Text
 			}):Play()
+			StartNeonLoop(boxStroke)
 			StartNeonLoop(accentLine)
-			KickStroke(boxStroke) -- still needed: forces the outline to repaint at its real final size when opening below the ScrollingFrame's rendered canvas (see fix note above KickStroke's definition) — unrelated to the removed glow.
+			KickStroke(boxStroke)
 		else
 			TweenService:Create(arrowIcon, TWEEN_COLLAPSE, {
 				Rotation = -90,
@@ -3051,7 +3068,9 @@ CreateCollapsibleSection = function(parentFrame, titleArg, currentDepth)
 			TweenService:Create(accentLine, TWEEN_COLLAPSE, {
 				BackgroundColor3 = KazeUI.CurrentTheme.MutedText
 			}):Play()
+			StopNeonLoop(boxStroke)
 			StopNeonLoop(accentLine)
+			boxStroke.Color = KazeUI.CurrentTheme.Border
 			accentLine.BackgroundColor3 = KazeUI.CurrentTheme.MutedText
 		end
 	end
@@ -3130,38 +3149,11 @@ CreateGroupBox = function(parentFrame, titleArg, currentDepth, depthOverride)
 	
 	KazeUI:AddPanel(groupFrame, 0.015 + (currentDepth * 0.008))
 
-	-- Shadow outline (same look as the Window/Notification drop-shadow), replacing
-	-- the old animated neon glow on the box's own UIStroke below.
-	-- Parented to wrapper, NOT groupFrame — groupFrame has its own UIListLayout
-	-- (layout, arranging Header/Divider/Container). A plain Frame sibling dropped
-	-- straight into groupFrame would get swept into that list as a phantom entry
-	-- (UIListLayout stacks every GuiObject child regardless of ZIndex or negative
-	-- offsets), silently pushing the header down and reintroducing the exact
-	-- overlap/clip bug already fixed above for AutomaticSize — this is the same
-	-- gotcha called out for CreateCollapsibleSection's SectionShadow. wrapper has
-	-- no list layout, only AutomaticSize, so a sibling here is safe. The shadow's
-	-- top edge stays flush with groupFrame's (no negative Y offset) and only
-	-- grows outward to the sides and below, so it can never feed back into
-	-- wrapper's own AutomaticSize.Y in the unsupported negative direction.
-	local groupShadow = Instance.new("Frame")
-	groupShadow.Name = "GroupShadow"
-	groupShadow.AnchorPoint = Vector2.new(0.5, 0)
-	groupShadow.Position = UDim2.new(0.5, 0, 0, 3)
-	groupShadow.Size = UDim2.new(scaledWidth, 8, 1, 8)
-	groupShadow.BackgroundTransparency = 1
-	groupShadow.ZIndex = -1
-	groupShadow.Parent = wrapper
-	local groupShadowCorner = Instance.new("UICorner", groupShadow)
-	groupShadowCorner.CornerRadius = UDim.new(0, cornerRadius + 4)
-	local groupShadowStroke = Instance.new("UIStroke", groupShadow)
-	groupShadowStroke.Thickness = math.max(3, 4 - (currentDepth - 1) * 0.3)
-	groupShadowStroke.Color = Color3.fromRGB(0, 0, 0)
-	groupShadowStroke.Transparency = 0.8
-
 	local stroke = Instance.new("UIStroke", groupFrame)
 	stroke.Thickness = math.max(1.2, 1.8 - (currentDepth - 1) * 0.15)
 	stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 	KazeUI:RegisterBorder(stroke)
+	WatchStrokeAutoSize(stroke, groupFrame)
 
 	local layout = Instance.new("UIListLayout", groupFrame)
 	layout.SortOrder = Enum.SortOrder.LayoutOrder
@@ -3257,8 +3249,9 @@ CreateGroupBox = function(parentFrame, titleArg, currentDepth, depthOverride)
 				Rotation = 0,
 				ImageColor3 = KazeUI.CurrentTheme.Text
 			}):Play()
+			StartNeonLoop(stroke)
 			StartNeonLoop(accentLine)
-			KickStroke(stroke) -- still needed: forces the outline to repaint at its real final size when opening below the ScrollingFrame's rendered canvas (see fix note above KickStroke's definition) — unrelated to the removed glow.
+			KickStroke(stroke)
 		else
 			TweenService:Create(arrowIcon, TWEEN_COLLAPSE, {
 				Rotation = -90,
@@ -3267,7 +3260,9 @@ CreateGroupBox = function(parentFrame, titleArg, currentDepth, depthOverride)
 			TweenService:Create(accentLine, TWEEN_COLLAPSE, {
 				BackgroundColor3 = KazeUI.CurrentTheme.MutedText
 			}):Play()
+			StopNeonLoop(stroke)
 			StopNeonLoop(accentLine)
+			stroke.Color = KazeUI.CurrentTheme.Border
 			accentLine.BackgroundColor3 = KazeUI.CurrentTheme.MutedText
 		end
 	end
@@ -4660,23 +4655,52 @@ function KazeUI:CreateWindow(config)
 			end)
 		end
 
-		local function updateState()
-			local count = 0
-			for _, child in ipairs(pageContent:GetChildren()) do
-				if child:IsA("GuiObject") and child.Visible then count = count + 1 end
-			end
-			if count == 0 then showEmpty() else hideEmpty() end
+		-- FIX (1000+ components lag): this used to rescan pageContent:GetChildren()
+		-- on every single ChildAdded, and permanently attached a NEW Visible-changed
+		-- connection per child on top of that. Populating a page with N elements was
+		-- therefore O(n^2) work plus N leaked-forever connections -- fine for a
+		-- handful of components, but it's exactly what makes windows crawl once
+		-- you're adding hundreds/thousands of components. Track a running visible
+		-- count instead: O(1) per add/remove, one connection per child that's
+		-- cleaned up when the child is destroyed.
+		local visibleCount = 0
+
+		local function setVisibleState()
+			if visibleCount <= 0 then showEmpty() else hideEmpty() end
 		end
 
-		pageContent.ChildAdded:Connect(function(child)
-			if child:IsA("GuiObject") then
-				child:GetPropertyChangedSignal("Visible"):Connect(updateState)
-				updateState()
-			end
-		end)
-		pageContent.ChildRemoved:Connect(updateState)
-		
-		updateState()
+		local function trackChild(child)
+			if not child:IsA("GuiObject") then return end
+			if child.Visible then visibleCount += 1 end
+			local wasVisible = child.Visible
+			local visConn = child:GetPropertyChangedSignal("Visible"):Connect(function()
+				if child.Visible and not wasVisible then
+					visibleCount += 1
+				elseif not child.Visible and wasVisible then
+					visibleCount -= 1
+				end
+				wasVisible = child.Visible
+				setVisibleState()
+			end)
+			local ancestryConn
+			ancestryConn = child.AncestryChanged:Connect(function(_, newParent)
+				if newParent == pageContent then return end
+				visConn:Disconnect()
+				ancestryConn:Disconnect()
+				if wasVisible then
+					visibleCount -= 1
+					setVisibleState()
+				end
+			end)
+			setVisibleState()
+		end
+
+		for _, child in ipairs(pageContent:GetChildren()) do
+			trackChild(child)
+		end
+		pageContent.ChildAdded:Connect(trackChild)
+
+		setVisibleState()
 
 		table.insert(self._Tabs, {Button = btn, Indicator = leftIndicator, Label = txt, Page = page, Icon = iconLabel})
 
