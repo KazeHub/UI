@@ -1,5 +1,4 @@
 --[[
-    Update
 	Kaze UI Library v3.6.9 (Premium Bubble Redesign & Engine Rewrite)
 	Inspired by: Modern Mobile Chat Bubbles, iMessage, and Discord Mobile.
 	Retained: 100% Backwards Compatibility with Version 1, 2, 2.2, 2.3, and 3.0 APIs
@@ -30,10 +29,10 @@ local Mouse = LP:GetMouse()
 KazeUI.Themes = {
 	Obsidian = {
 		Name = "Obsidian",
-		Background = Color3.fromRGB(15, 15, 22),
-		Text = Color3.fromRGB(245, 245, 250),
-		MutedText = Color3.fromRGB(200, 200, 215),
-		Border = Color3.fromRGB(78, 78, 100),
+		Background = Color3.fromRGB(9, 9, 14),
+		Text = Color3.fromRGB(248, 248, 252),
+		MutedText = Color3.fromRGB(158, 158, 182),
+		Border = Color3.fromRGB(64, 62, 92),
 		LightnessFactor = 1.4,
 		BackgroundImage = "rbxassetid://13963496525",
 		BackgroundImageTransparency = 0.85,
@@ -41,10 +40,10 @@ KazeUI.Themes = {
 	},
 	CustomWallpaper = {
 		Name = "Custom",
-		Background = Color3.fromRGB(12, 12, 14),
+		Background = Color3.fromRGB(7, 7, 11),
 		Text = Color3.fromRGB(255, 255, 255),
-		MutedText = Color3.fromRGB(215, 210, 225),
-		Border = Color3.fromRGB(95, 95, 100),
+		MutedText = Color3.fromRGB(172, 168, 196),
+		Border = Color3.fromRGB(72, 68, 108),
 		LightnessFactor = 1,
 		BackgroundImage = "https://pbs.twimg.com/media/Gu-hWtyX0AA5-5s.jpg",
 		BackgroundImageTransparency = 0.1,
@@ -54,7 +53,9 @@ KazeUI.Themes = {
 
 -- Global State (Beautifully Tuned Soft Translucent Defaults)
 KazeUI.CurrentTheme = KazeUI.Themes.CustomWallpaper
-KazeUI.GlowColor = Color3.fromRGB(239, 68, 68)
+-- Signature accent: refined violet (was flat red) — richer, more premium "glow" identity
+KazeUI.GlowColor = Color3.fromRGB(138, 99, 255)
+KazeUI.GlowColorSecondary = Color3.fromRGB(56, 189, 248) -- cool cyan companion, used for gradient sheens
 KazeUI.GlowMode = "Breathing" -- "Breathing" (pulse) or "Cycle" (hue rotation)
 KazeUI.GlowRainbow = false -- true = glow sweeps the full color spectrum in either mode
 KazeUI.BackgroundColor = KazeUI.CurrentTheme.Background
@@ -81,51 +82,10 @@ KazeUI.PanelElements = {}
 KazeUI.GlowCallbacks = {}
 
 -- Spring & Smooth Animation Configurations
-local TWEEN_FAST = TweenInfo.new(0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-local TWEEN_SPRING = TweenInfo.new(0.42, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
-local TWEEN_SMOOTH = TweenInfo.new(0.32, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
+local TWEEN_FAST = TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+local TWEEN_SPRING = TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+local TWEEN_SMOOTH = TweenInfo.new(0.35, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
 local TWEEN_COLLAPSE = TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out) -- shared by Section/GroupBox open-close
-local TWEEN_PRESS = TweenInfo.new(0.09, Enum.EasingStyle.Quad, Enum.EasingDirection.Out) -- tactile press-down feedback
-local TWEEN_POP = TweenInfo.new(0.45, Enum.EasingStyle.Back, Enum.EasingDirection.Out) -- release/pop-back feedback
-
--- ==========================================================
--- Shared Premium Surface Helpers (used across every redesigned component)
--- ==========================================================
--- Subtle vertical glass sheen: brighter at the top, fading out — gives flat
--- panels a soft "premium glass" depth cue without any extra images.
-local function ApplySheen(inst, topTransparency, bottomTransparency)
-	local grad = Instance.new("UIGradient")
-	grad.Name = "Sheen"
-	grad.Rotation = 90
-	grad.Transparency = NumberSequence.new({
-		NumberSequenceKeypoint.new(0, topTransparency or 0.75),
-		NumberSequenceKeypoint.new(0.5, math.clamp(((topTransparency or 0.75) + (bottomTransparency or 0.97)) / 2, 0, 1)),
-		NumberSequenceKeypoint.new(1, bottomTransparency or 0.97)
-	})
-	grad.Color = ColorSequence.new(Color3.fromRGB(255, 255, 255))
-	grad.Parent = inst
-	return grad
-end
-
--- Tactile press feedback: scales an interactive element down slightly on
--- press and pops it back on release, mirroring modern mobile UI touch.
-local function ApplyPressFeel(button, targetScale)
-	targetScale = targetScale or 0.96
-	local scale = Instance.new("UIScale")
-	scale.Scale = 1
-	scale.Parent = button
-	button.InputBegan:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-			TweenService:Create(scale, TWEEN_PRESS, {Scale = targetScale}):Play()
-		end
-	end)
-	button.InputEnded:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-			TweenService:Create(scale, TWEEN_POP, {Scale = 1}):Play()
-		end
-	end)
-	return scale
-end
 
 local function RegisterFlag(flag, getFunc, setFunc)
 	if flag then
@@ -531,6 +491,58 @@ function KazeUI.GetColor(elevation)
 	return Color3.fromHSV(h, targetS, targetV)
 end
 
+-- Premium visual helpers (used across window/notification/dialog/button/tab redesign)
+
+-- Diagonal accent-to-secondary gradient (used on primary buttons, progress fills, active indicators)
+function KazeUI:ApplyAccentGradient(inst, rotation)
+	local grad = Instance.new("UIGradient")
+	grad.Color = ColorSequence.new(KazeUI.GlowColor, KazeUI.GlowColorSecondary)
+	grad.Rotation = rotation or 90
+	grad.Parent = inst
+	KazeUI.GlowElements[grad] = true
+	KazeUI:OnGlowChanged(grad, function(c)
+		grad.Color = ColorSequence.new(c, KazeUI.GlowColorSecondary)
+	end)
+	return grad
+end
+
+-- Subtle top-lit glass sheen for cards/windows: brighter at the top edge, fading out
+function KazeUI:ApplySheen(inst, intensity)
+	local sheen = Instance.new("UIGradient")
+	sheen.Color = ColorSequence.new(Color3.fromRGB(255, 255, 255), Color3.fromRGB(255, 255, 255))
+	sheen.Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 1 - (intensity or 0.92)),
+		NumberSequenceKeypoint.new(0.35, 1),
+		NumberSequenceKeypoint.new(1, 1)
+	})
+	sheen.Rotation = 90
+	sheen.Parent = inst
+	return sheen
+end
+
+-- Soft, layered depth shadow (replaces flat single-stroke shadows on cards/windows/dialogs)
+function KazeUI:ApplyDepthShadow(parent, cornerRadius, strength)
+	local shadow = Instance.new("Frame")
+	shadow.Name = "DepthShadow"
+	shadow.Size = UDim2.new(1, 10, 1, 10)
+	shadow.Position = UDim2.fromOffset(-5, -3)
+	shadow.BackgroundTransparency = 1
+	shadow.ZIndex = -2
+	shadow.Parent = parent
+
+	local corner = Instance.new("UICorner", shadow)
+	corner.CornerRadius = UDim.new(0, (cornerRadius or 20) + 3)
+
+	for i = 1, 3 do
+		local layer = Instance.new("UIStroke", shadow)
+		layer.Thickness = 2 + (i * 2.5)
+		layer.Color = Color3.fromRGB(0, 0, 0)
+		layer.Transparency = 0.72 + (i * 0.06) * (strength or 1)
+	end
+
+	return shadow
+end
+
 function KazeUI:AddPanel(inst, elevation, ignoreColorUpdate, ignoreTransparencyUpdate)
 	table.insert(KazeUI.PanelElements, {
 		Inst = inst, 
@@ -858,7 +870,7 @@ function KazeUI:Notify(config)
 	local hasIcon = (iconId ~= "")
 	local iconColor = config.IconColor or KazeUI.GlowColor
 
-	local textPadding = hasIcon and 54 or 16
+	local textPadding = hasIcon and 58 or 18
 	local rightSafetyPadding = 36 
 	local maxTextWidth = 320 - 24 - textPadding - rightSafetyPadding
 
@@ -888,39 +900,38 @@ function KazeUI:Notify(config)
 	notifFrame.BorderSizePixel = 0
 	notifFrame.Parent = notifHolder
 	
-	Instance.new("UICorner", notifFrame).CornerRadius = UDim.new(0, 20)
+	Instance.new("UICorner", notifFrame).CornerRadius = UDim.new(0, 18)
 	
-	KazeUI:AddPanel(notifFrame, 0.04, false, true)
-	notifFrame.BackgroundTransparency = 0.08 
+	KazeUI:AddPanel(notifFrame, 0.05, false, true)
+	notifFrame.BackgroundTransparency = 0.06
+	notifFrame.ClipsDescendants = true
 
-	local shadow = Instance.new("Frame", notifFrame)
-	shadow.Size = UDim2.new(1, 6, 1, 6)
-	shadow.Position = UDim2.fromOffset(-3, -3)
-	shadow.BackgroundTransparency = 1
-	shadow.ZIndex = -1
-	local shCorner = Instance.new("UICorner", shadow)
-	shCorner.CornerRadius = UDim.new(0, 22)
-	local shadowStroke = Instance.new("UIStroke", shadow)
-	shadowStroke.Thickness = 3
-	shadowStroke.Color = Color3.fromRGB(0, 0, 0)
-	shadowStroke.Transparency = 0.8
+	KazeUI:ApplyDepthShadow(notifFrame, 18, 1)
+	KazeUI:ApplySheen(notifFrame, 0.85)
+
+	local accentBar = Instance.new("Frame", notifFrame)
+	accentBar.Name = "AccentBar"
+	accentBar.Size = UDim2.new(0, 3, 1, 0)
+	accentBar.BorderSizePixel = 0
+	accentBar.BackgroundColor3 = iconColor
+	accentBar.ZIndex = 3
+	KazeUI:ApplyAccentGradient(accentBar, 0)
 
 	local stroke = Instance.new("UIStroke", notifFrame)
-	stroke.Thickness = 1.2
-	stroke.Transparency = 0.35
+	stroke.Thickness = 1
+	stroke.Transparency = 0.4
 	KazeUI:RegisterBorder(stroke)
-	ApplySheen(notifFrame, 0.82, 1)
 
 	local iconLabel
 	if hasIcon then
 		local iconBadge = Instance.new("Frame", notifFrame)
 		iconBadge.Name = "IconBadge"
-		iconBadge.Size = UDim2.fromOffset(34, 34)
-		iconBadge.Position = UDim2.fromOffset(10, 10)
+		iconBadge.Size = UDim2.fromOffset(32, 32)
+		iconBadge.Position = UDim2.fromOffset(12, 12)
 		iconBadge.BackgroundColor3 = iconColor
-		iconBadge.BackgroundTransparency = 0.85
+		iconBadge.BackgroundTransparency = 0.82
 		iconBadge.BorderSizePixel = 0
-		Instance.new("UICorner", iconBadge).CornerRadius = UDim.new(0, 12)
+		Instance.new("UICorner", iconBadge).CornerRadius = UDim.new(0, 10)
 
 		iconLabel = Instance.new("ImageLabel", iconBadge)
 		iconLabel.Name = "NotifIcon"
@@ -940,13 +951,10 @@ function KazeUI:Notify(config)
 	closeBtn.AnchorPoint = Vector2.new(1, 0)
 	closeBtn.BackgroundTransparency = 1
 	closeBtn.Image = "rbxassetid://10747384394"
-	closeBtn.ImageTransparency = 0.3
+	closeBtn.ImageTransparency = 0
 	closeBtn.ZIndex = 10
 	closeBtn.Parent = notifFrame
 	KazeUI:OnThemeChanged(closeBtn, function(t) closeBtn.ImageColor3 = t.Text end)
-	closeBtn.MouseEnter:Connect(function() TweenService:Create(closeBtn, TWEEN_FAST, {ImageTransparency = 0}):Play() end)
-	closeBtn.MouseLeave:Connect(function() TweenService:Create(closeBtn, TWEEN_FAST, {ImageTransparency = 0.3}):Play() end)
-	ApplyPressFeel(closeBtn, 0.8)
 
 	local titleLab = Instance.new("TextLabel", notifFrame)
 	titleLab.Size = UDim2.new(0, maxTextWidth, 0, titleHeight)
@@ -991,10 +999,9 @@ function KazeUI:Notify(config)
 	KazeUI:RegisterText(contentLab, false) -- Swapped from muted text to solid white text for outstanding readability!
 
 	local progressTrack = Instance.new("Frame", notifFrame)
-	progressTrack.Size = UDim2.new(1, -32, 0, 3)
-	progressTrack.Position = UDim2.new(0, 16, 1, -7)
+	progressTrack.Size = UDim2.new(1, -32, 0, 2.5)
+	progressTrack.Position = UDim2.new(0, 16, 1, -6)
 	progressTrack.BorderSizePixel = 0
-	progressTrack.BackgroundTransparency = 0.3
 	Instance.new("UICorner", progressTrack).CornerRadius = UDim.new(1, 0)
 	KazeUI:OnThemeChanged(progressTrack, function(t) progressTrack.BackgroundColor3 = t.Border end)
 
@@ -1003,8 +1010,7 @@ function KazeUI:Notify(config)
 	progressBar.BackgroundColor3 = KazeUI.GlowColor
 	progressBar.BorderSizePixel = 0
 	Instance.new("UICorner", progressBar).CornerRadius = UDim.new(1, 0)
-	local progressGrad = Instance.new("UIGradient", progressBar)
-	progressGrad.Transparency = NumberSequence.new({NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(1, 0.35)})
+	KazeUI:ApplyAccentGradient(progressBar, 0)
 	StartNeonLoop(progressBar)
 	
 	KazeUI:OnGlowChanged(progressBar, function(c) progressBar.BackgroundColor3 = c end)
@@ -1158,17 +1164,17 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 	dropFrame.BorderSizePixel = 0
 	dropFrame.AutomaticSize = Enum.AutomaticSize.Y
 	
-	Instance.new("UICorner", dropFrame).CornerRadius = UDim.new(0, 14)
+	Instance.new("UICorner", dropFrame).CornerRadius = UDim.new(0, 16)
 	dropFrame.Parent = wrapper
 	KazeUI:AddPanel(dropFrame, 0.02)
-	ApplySheen(dropFrame, 0.85, 1)
 
 	local padding = Instance.new("UIPadding", dropFrame)
 	padding.PaddingTop = UDim.new(0, 5)
 	padding.PaddingBottom = UDim.new(0, 5)
 
 	local boxStroke = Instance.new("UIStroke", dropFrame)
-	boxStroke.Thickness = 1.2
+	boxStroke.Thickness = 1
+	boxStroke.Transparency = 0.45
 	boxStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 	KazeUI:RegisterBorder(boxStroke)
 
@@ -1265,6 +1271,7 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 
 	local searchStroke = Instance.new("UIStroke", searchWrapper)
 	searchStroke.Thickness = 1
+	searchStroke.Transparency = 0.35
 	KazeUI:RegisterBorder(searchStroke)
 
 	local searchBox = Instance.new("TextBox")
@@ -1566,11 +1573,10 @@ local function CreateParagraph(parentFrame, title, body)
 	Instance.new("UICorner", paraFrame).CornerRadius = UDim.new(0, 20)
 	paraFrame.Parent = wrapper
 	KazeUI:AddPanel(paraFrame, 0.01)
-	ApplySheen(paraFrame, 0.88, 1)
 	
 	local paraStroke = Instance.new("UIStroke", paraFrame)
-	paraStroke.Thickness = 1.2
-	paraStroke.Transparency = 0.4
+	paraStroke.Thickness = 1
+	paraStroke.Transparency = 0.45
 	paraStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 	KazeUI:RegisterBorder(paraStroke)
 	
@@ -1713,14 +1719,13 @@ local function CreateClickableParagraph(parentFrame, title, body, callback, lock
 	paraFrame.Size = UDim2.new(0.95, 0, 0, totalHeight)
 	paraFrame.BorderSizePixel = 0
 	
-	Instance.new("UICorner", paraFrame).CornerRadius = UDim.new(0, 14)
+	Instance.new("UICorner", paraFrame).CornerRadius = UDim.new(0, 16)
 	paraFrame.Parent = wrapper
-	KazeUI:AddPanel(paraFrame, 0.02)
-	ApplySheen(paraFrame, 0.85, 1)
+	KazeUI:AddPanel(paraFrame, 0.03)
 	
 	local paraStroke = Instance.new("UIStroke", paraFrame)
-	paraStroke.Thickness = 1.2
-	paraStroke.Transparency = 0.35
+	paraStroke.Thickness = 1
+	paraStroke.Transparency = 0.45
 	paraStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 	KazeUI:RegisterBorder(paraStroke)
 	
@@ -1869,14 +1874,13 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 	paraFrame.Size = UDim2.new(0.95, 0, 0, totalHeight)
 	paraFrame.BorderSizePixel = 0
 	
-	Instance.new("UICorner", paraFrame).CornerRadius = UDim.new(0, 14)
+	Instance.new("UICorner", paraFrame).CornerRadius = UDim.new(0, 16)
 	paraFrame.Parent = wrapper
-	KazeUI:AddPanel(paraFrame, 0.02)
-	ApplySheen(paraFrame, 0.85, 1)
+	KazeUI:AddPanel(paraFrame, 0.03)
 	
 	local paraStroke = Instance.new("UIStroke", paraFrame)
-	paraStroke.Thickness = 1.2
-	paraStroke.Transparency = 0.35
+	paraStroke.Thickness = 1
+	paraStroke.Transparency = 0.45
 	paraStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 	KazeUI:RegisterBorder(paraStroke)
 	
@@ -1888,19 +1892,17 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 	local switchContainer = Instance.new("Frame")
 	switchContainer.AnchorPoint = Vector2.new(1, 0.5)
 	switchContainer.Position = UDim2.new(1, -4, 0.5, 0)
-	switchContainer.Size = UDim2.fromOffset(42, 22)
+	switchContainer.Size = UDim2.fromOffset(38, 20)
 	switchContainer.BorderSizePixel = 0
 	Instance.new("UICorner", switchContainer).CornerRadius = UDim.new(1, 0)
 	switchContainer.Parent = inner
-	local switchInnerStroke = Instance.new("UIStroke", switchContainer)
-	switchInnerStroke.Thickness = 1
-	switchInnerStroke.Transparency = 0.55
-	KazeUI:RegisterBorder(switchInnerStroke)
-	
+	local switchGradient = KazeUI:ApplyAccentGradient(switchContainer, 0)
+	switchGradient.Enabled = state
+
 	local switchIndicator = Instance.new("Frame")
 	switchIndicator.AnchorPoint = Vector2.new(0, 0.5)
-	switchIndicator.Position = state and UDim2.new(1, -20, 0.5, 0) or UDim2.new(0, 2, 0.5, 0)
-	switchIndicator.Size = UDim2.fromOffset(18, 18)
+	switchIndicator.Position = state and UDim2.new(1, -18, 0.5, 0) or UDim2.new(0, 2, 0.5, 0)
+	switchIndicator.Size = UDim2.fromOffset(16, 16)
 	switchIndicator.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
 	switchIndicator.BorderSizePixel = 0
 	Instance.new("UICorner", switchIndicator).CornerRadius = UDim.new(1, 0)
@@ -1948,10 +1950,11 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 
 	local function setToggleState(newState, instant)
 		state = newState
-		local targetPos = state and UDim2.new(1, -20, 0.5, 0) or UDim2.new(0, 2, 0.5, 0)
+		local targetPos = state and UDim2.new(1, -18, 0.5, 0) or UDim2.new(0, 2, 0.5, 0)
 		
 		if instant then
 			switchIndicator.Position = targetPos
+			switchGradient.Enabled = state
 			if state then
 				switchContainer.BackgroundColor3 = KazeUI.GlowColor
 				StartNeonLoop(switchContainer)
@@ -1961,6 +1964,7 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 			end
 		else
 			TweenService:Create(switchIndicator, TWEEN_SPRING, {Position = targetPos}):Play()
+			switchGradient.Enabled = state
 			if state then
 				StartNeonLoop(switchContainer)
 			else
@@ -2057,14 +2061,13 @@ local function CreateTextBoxInput(parentFrame, title, placeholder, defaultVal, c
 	paraFrame.Size = UDim2.new(0.95, 0, 0, totalHeight)
 	paraFrame.BorderSizePixel = 0
 	
-	Instance.new("UICorner", paraFrame).CornerRadius = UDim.new(0, 14)
+	Instance.new("UICorner", paraFrame).CornerRadius = UDim.new(0, 16)
 	paraFrame.Parent = wrapper
 	KazeUI:AddPanel(paraFrame, 0.02)
-	ApplySheen(paraFrame, 0.85, 1)
 	
 	local paraStroke = Instance.new("UIStroke", paraFrame)
-	paraStroke.Thickness = 1.2
-	paraStroke.Transparency = 0.35
+	paraStroke.Thickness = 1
+	paraStroke.Transparency = 0.45
 	paraStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 	KazeUI:RegisterBorder(paraStroke)
 	
@@ -2087,7 +2090,7 @@ local function CreateTextBoxInput(parentFrame, title, placeholder, defaultVal, c
 	end
 	
 	local textBoxContainer = Instance.new("Frame")
-	textBoxContainer.Size = UDim2.new(1, 0, 0, 32)
+	textBoxContainer.Size = UDim2.new(1, 0, 0, 30)
 	textBoxContainer.Position = UDim2.new(0, 0, 0, titleHeight + 4)
 	textBoxContainer.BorderSizePixel = 0
 	textBoxContainer.ClipsDescendants = true 
@@ -2198,14 +2201,13 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 	paraFrame.Size = UDim2.new(0.95, 0, 0, totalHeight)
 	paraFrame.BorderSizePixel = 0
 	
-	Instance.new("UICorner", paraFrame).CornerRadius = UDim.new(0, 14)
+	Instance.new("UICorner", paraFrame).CornerRadius = UDim.new(0, 16)
 	paraFrame.Parent = wrapper
-	KazeUI:AddPanel(paraFrame, 0.02)
-	ApplySheen(paraFrame, 0.85, 1)
+	KazeUI:AddPanel(paraFrame, 0.03)
 	
 	local paraStroke = Instance.new("UIStroke", paraFrame)
-	paraStroke.Thickness = 1.2
-	paraStroke.Transparency = 0.35
+	paraStroke.Thickness = 1
+	paraStroke.Transparency = 0.45
 	paraStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 	KazeUI:RegisterBorder(paraStroke)
 	
@@ -2227,27 +2229,19 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 		KazeUI:RegisterText(ptitleLabel, false)
 	end
 	
-	local valuePill = Instance.new("Frame", inner)
-	valuePill.Size = UDim2.new(0, 56, 0, titleHeight > 0 and titleHeight or 18)
-	valuePill.Position = UDim2.new(1, -56, 0, 0)
-	valuePill.BackgroundColor3 = KazeUI.GlowColor
-	valuePill.BackgroundTransparency = 0.85
-	valuePill.BorderSizePixel = 0
-	Instance.new("UICorner", valuePill).CornerRadius = UDim.new(1, 0)
-	KazeUI:OnGlowChanged(valuePill, function(c) valuePill.BackgroundColor3 = c end)
-
-	local valueLabel = Instance.new("TextLabel", valuePill)
-	valueLabel.Size = UDim2.fromScale(1, 1)
+	local valueLabel = Instance.new("TextLabel", inner)
+	valueLabel.Size = UDim2.new(0, 70, 0, titleHeight > 0 and titleHeight or 18)
+	valueLabel.Position = UDim2.new(1, -70, 0, 0)
 	valueLabel.BackgroundTransparency = 1
 	valueLabel.Text = tostring(value)
 	valueLabel.Font = Enum.Font.GothamBold
 	valueLabel.TextSize = 11
-	valueLabel.TextXAlignment = Enum.TextXAlignment.Center
+	valueLabel.TextXAlignment = Enum.TextXAlignment.Right
 	KazeUI:RegisterText(valueLabel, false)
 	
 	local track = Instance.new("Frame")
 	track.Size = UDim2.new(1, 0, 0, 6)
-	track.Position = UDim2.new(0, 0, 0, titleHeight + 10)
+	track.Position = UDim2.new(0, 0, 0, titleHeight + 8)
 	track.BorderSizePixel = 0
 	track.Parent = inner
 	Instance.new("UICorner", track).CornerRadius = UDim.new(1, 0)
@@ -2259,8 +2253,7 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 	fill.BorderSizePixel = 0
 	fill.Parent = track
 	Instance.new("UICorner", fill).CornerRadius = UDim.new(1, 0)
-	local fillGrad = Instance.new("UIGradient", fill)
-	fillGrad.Transparency = NumberSequence.new({NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(1, 0.3)})
+	KazeUI:ApplyAccentGradient(fill, 0)
 	
 	local knob = Instance.new("Frame")
 	knob.AnchorPoint = Vector2.new(0.5, 0.5)
@@ -2268,15 +2261,27 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 	knob.Position = UDim2.new(0, 0, 0.5, 0)
 	knob.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
 	knob.BorderSizePixel = 0
-	knob.ZIndex = 3
+	knob.ZIndex = 5
 	knob.Parent = track
 	Instance.new("UICorner", knob).CornerRadius = UDim.new(1, 0)
-	local knobScale = Instance.new("UIScale", knob)
-	knobScale.Scale = 1
+
+	local knobShadow = Instance.new("UIStroke", knob)
+	knobShadow.Thickness = 1
+	knobShadow.Color = Color3.fromRGB(0, 0, 0)
+	knobShadow.Transparency = 0.85
 	
-	local knobStroke = Instance.new("UIStroke", knob)
-	knobStroke.Thickness = 2
+	local knobRing = Instance.new("Frame")
+	knobRing.AnchorPoint = Vector2.new(0.5, 0.5)
+	knobRing.Size = UDim2.fromOffset(22, 22)
+	knobRing.Position = UDim2.fromScale(0.5, 0.5)
+	knobRing.BackgroundTransparency = 1
+	knobRing.ZIndex = 4
+	knobRing.Parent = knob
+	Instance.new("UICorner", knobRing).CornerRadius = UDim.new(1, 0)
+	local knobStroke = Instance.new("UIStroke", knobRing)
+	knobStroke.Thickness = 1.5
 	knobStroke.Color = KazeUI.GlowColor
+	knobStroke.Transparency = 0.3
 	StartNeonLoop(fill)
 	StartNeonLoop(knobStroke)
 
@@ -2321,7 +2326,7 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 			LockCamera()
 			UpdateValueFromInput(input)
 			
-			TweenService:Create(knob, TWEEN_SPRING, {Size = UDim2.fromOffset(19, 19)}):Play()
+			TweenService:Create(knob, TWEEN_FAST, {Size = UDim2.fromOffset(16, 16)}):Play()
 			StartNeonLoop(paraStroke)
 			
 			local moveCon, endCon
@@ -2336,7 +2341,7 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 					ToggleScrollingAncestors(track, true)
 					UnlockCamera()
 					
-					TweenService:Create(knob, TWEEN_SPRING, {Size = UDim2.fromOffset(14, 14)}):Play()
+					TweenService:Create(knob, TWEEN_FAST, {Size = UDim2.fromOffset(12, 12)}):Play()
 					StopNeonLoop(paraStroke)
 					TweenService:Create(paraStroke, TWEEN_FAST, {Color = KazeUI.CurrentTheme.Border}):Play()
 					if moveCon then moveCon:Disconnect() end
@@ -2395,17 +2400,17 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 	dropFrame.BorderSizePixel = 0
 	dropFrame.AutomaticSize = Enum.AutomaticSize.Y
 	
-	Instance.new("UICorner", dropFrame).CornerRadius = UDim.new(0, 14)
+	Instance.new("UICorner", dropFrame).CornerRadius = UDim.new(0, 16)
 	dropFrame.Parent = wrapper
 	KazeUI:AddPanel(dropFrame, 0.02)
-	ApplySheen(dropFrame, 0.85, 1)
 
 	local padding = Instance.new("UIPadding", dropFrame)
 	padding.PaddingTop = UDim.new(0, 5)
 	padding.PaddingBottom = UDim.new(0, 5)
 
 	local boxStroke = Instance.new("UIStroke", dropFrame)
-	boxStroke.Thickness = 1.2
+	boxStroke.Thickness = 1
+	boxStroke.Transparency = 0.45
 	boxStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 	KazeUI:RegisterBorder(boxStroke)
 
@@ -2438,7 +2443,8 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 	Instance.new("UICorner", previewColor).CornerRadius = UDim.new(0, 9)
 	
 	local prevStroke = Instance.new("UIStroke", previewColor)
-	prevStroke.Thickness = 1.4
+	prevStroke.Thickness = 1
+	prevStroke.Transparency = 0.3
 	KazeUI:RegisterBorder(prevStroke)
 
 	local arrowIcon = Instance.new("ImageLabel", header)
@@ -2488,15 +2494,11 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 	Instance.new("UICorner", blackOverlay).CornerRadius = UDim.new(0, 8)
 
 	local svCursor = Instance.new("Frame", svMap)
-	svCursor.Size = UDim2.fromOffset(14, 14)
+	svCursor.Size = UDim2.fromOffset(8, 8)
 	svCursor.AnchorPoint = Vector2.new(0.5, 0.5)
 	svCursor.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-	svCursor.ZIndex = 3
 	Instance.new("UICorner", svCursor).CornerRadius = UDim.new(1, 0)
-	local svCursorStroke = Instance.new("UIStroke", svCursor)
-	svCursorStroke.Thickness = 2
-	svCursorStroke.Color = Color3.fromRGB(0, 0, 0)
-	svCursorStroke.Transparency = 0.4
+	Instance.new("UIStroke", svCursor).Color = Color3.fromRGB(0, 0, 0)
 
 	local hueSlider = Instance.new("TextButton", pickerArea)
 	hueSlider.Size = UDim2.new(1, 0, 0, 22)
@@ -2517,15 +2519,11 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 	Instance.new("UICorner", hueSlider).CornerRadius = UDim.new(0, 8)
 
 	local hueCursor = Instance.new("Frame", hueSlider)
-	hueCursor.Size = UDim2.fromOffset(6, 28)
+	hueCursor.Size = UDim2.fromOffset(4, 24)
 	hueCursor.AnchorPoint = Vector2.new(0.5, 0.5)
 	hueCursor.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-	hueCursor.ZIndex = 3
 	Instance.new("UICorner", hueCursor).CornerRadius = UDim.new(1, 0)
-	local hueCursorStroke = Instance.new("UIStroke", hueCursor)
-	hueCursorStroke.Thickness = 2
-	hueCursorStroke.Color = Color3.fromRGB(0, 0, 0)
-	hueCursorStroke.Transparency = 0.4
+	Instance.new("UIStroke", hueCursor).Color = Color3.fromRGB(0, 0, 0)
 
 	local function UpdateColor()
 		color = Color3.fromHSV(h, s, v)
@@ -2676,14 +2674,13 @@ local function CreateKeybindInput(parentFrame, title, defaultKey, callback, flag
 	paraFrame.Size = UDim2.new(0.95, 0, 0, totalHeight)
 	paraFrame.BorderSizePixel = 0
 	
-	Instance.new("UICorner", paraFrame).CornerRadius = UDim.new(0, 14)
+	Instance.new("UICorner", paraFrame).CornerRadius = UDim.new(0, 16)
 	paraFrame.Parent = wrapper
 	KazeUI:AddPanel(paraFrame, 0.02)
-	ApplySheen(paraFrame, 0.85, 1)
 	
 	local paraStroke = Instance.new("UIStroke", paraFrame)
-	paraStroke.Thickness = 1.2
-	paraStroke.Transparency = 0.35
+	paraStroke.Thickness = 1
+	paraStroke.Transparency = 0.45
 	paraStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 	KazeUI:RegisterBorder(paraStroke)
 	
@@ -2706,15 +2703,14 @@ local function CreateKeybindInput(parentFrame, title, defaultKey, callback, flag
 	end
 	
 	local bindContainer = Instance.new("TextButton", inner)
-	bindContainer.Size = UDim2.new(0, 80, 0, 26)
+	bindContainer.Size = UDim2.new(0, 80, 0, 24)
 	bindContainer.AnchorPoint = Vector2.new(1, 0.5)
 	bindContainer.Position = UDim2.new(1, 0, 0.5, 0)
 	bindContainer.BorderSizePixel = 0
 	bindContainer.Text = ""
 	bindContainer.AutoButtonColor = false
-	Instance.new("UICorner", bindContainer).CornerRadius = UDim.new(0, 9)
+	Instance.new("UICorner", bindContainer).CornerRadius = UDim.new(0, 8)
 	KazeUI:AddPanel(bindContainer, 0.05)
-	ApplyPressFeel(bindContainer, 0.94)
 
 	local bindStroke = Instance.new("UIStroke", bindContainer)
 	bindStroke.Thickness = 1
@@ -3206,11 +3202,9 @@ CreateGroupBox = function(parentFrame, titleArg, currentDepth, depthOverride)
 	Instance.new("UICorner", groupFrame).CornerRadius = UDim.new(0, cornerRadius)
 	
 	KazeUI:AddPanel(groupFrame, 0.015 + (currentDepth * 0.008))
-	ApplySheen(groupFrame, 0.88, 1)
 
 	local stroke = Instance.new("UIStroke", groupFrame)
 	stroke.Thickness = math.max(1.2, 1.8 - (currentDepth - 1) * 0.15)
-	stroke.Transparency = 0.35
 	stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 	KazeUI:RegisterBorder(stroke)
 
@@ -3236,9 +3230,6 @@ CreateGroupBox = function(parentFrame, titleArg, currentDepth, depthOverride)
 	
 	KazeUI:OnThemeChanged(accentLine, function(t)
 		if not isOpen then accentLine.BackgroundColor3 = t.MutedText end
-	end)
-	KazeUI:OnGlowChanged(accentLine, function(c)
-		if isOpen then accentLine.BackgroundColor3 = c end
 	end)
 
 	local label = Instance.new("TextLabel")
@@ -3454,7 +3445,7 @@ function KazeUI:CreateWindow(config)
 				if s and res then
 					KazeUI:SetGlow(res)
 				else
-					KazeUI:SetGlow(Color3.fromRGB(239, 68, 68)) 
+					KazeUI:SetGlow(Color3.fromRGB(138, 99, 255)) 
 				end
 			end
 		end
@@ -3468,17 +3459,17 @@ function KazeUI:CreateWindow(config)
 			if s and res then
 				KazeUI:SetGlow(res)
 			else
-				KazeUI:SetGlow(Color3.fromRGB(239, 68, 68))
+				KazeUI:SetGlow(Color3.fromRGB(138, 99, 255))
 			end
 		elseif glowColorVal == true then
 			-- Boolean true = "always rainbow" shorthand
-			KazeUI:SetGlow(Color3.fromRGB(239, 68, 68))
+			KazeUI:SetGlow(Color3.fromRGB(138, 99, 255))
 			KazeUI:SetGlowRainbow(true)
 		else
-			KazeUI:SetGlow(Color3.fromRGB(239, 68, 68))
+			KazeUI:SetGlow(Color3.fromRGB(138, 99, 255))
 		end
 	else
-		KazeUI:SetGlow(Color3.fromRGB(239, 68, 68))
+		KazeUI:SetGlow(Color3.fromRGB(138, 99, 255))
 	end
 
 	-- Glow animation style: config.GlowStyle / config.GlowMode accepts "Breathing" or "Cycle" (strings)
@@ -3505,23 +3496,14 @@ function KazeUI:CreateWindow(config)
 	Window.Active = true
 	Window.Parent = ScreenGui
 	
-	Instance.new("UICorner", Window).CornerRadius = UDim.new(0, 28)
+	Instance.new("UICorner", Window).CornerRadius = UDim.new(0, 24)
 	KazeUI:AddPanel(Window, 0)
-
-	local outerShadow = Instance.new("Frame", Window)
-	outerShadow.Size = UDim2.new(1, 14, 1, 14)
-	outerShadow.Position = UDim2.fromOffset(-7, -7)
-	outerShadow.BackgroundTransparency = 1
-	outerShadow.ZIndex = -1
-	local shCorner = Instance.new("UICorner", outerShadow)
-	shCorner.CornerRadius = UDim.new(0, 32)
-	local shadowStroke = Instance.new("UIStroke", outerShadow)
-	shadowStroke.Thickness = 6
-	shadowStroke.Color = Color3.fromRGB(0, 0, 0)
-	shadowStroke.Transparency = 0.8
+	KazeUI:ApplyDepthShadow(Window, 24, 1.3)
+	KazeUI:ApplySheen(Window, 0.9)
 
 	local WindowStroke = Instance.new("UIStroke")
-	WindowStroke.Thickness = 1.8
+	WindowStroke.Thickness = 1.2
+	WindowStroke.Transparency = 0.35
 	WindowStroke.Parent = Window
 	KazeUI:RegisterBorder(WindowStroke)
 	StartNeonLoop(WindowStroke)
@@ -3534,7 +3516,7 @@ function KazeUI:CreateWindow(config)
 	ContentClipper.BorderSizePixel = 0
 	ContentClipper.ClipsDescendants = true
 	ContentClipper.Parent = Window
-	Instance.new("UICorner", ContentClipper).CornerRadius = UDim.new(0, 28)
+	Instance.new("UICorner", ContentClipper).CornerRadius = UDim.new(0, 24)
 
 	-- INTERACTION BLOCKER (Input Lockout Guard)
 	local InteractionBlocker = Instance.new("TextButton")
@@ -3552,7 +3534,7 @@ function KazeUI:CreateWindow(config)
 	InteractionBlocker.Parent = Window
 
 	local blockerCorner = Instance.new("UICorner", InteractionBlocker)
-	blockerCorner.CornerRadius = UDim.new(0, 28)
+	blockerCorner.CornerRadius = UDim.new(0, 24)
 
 	local WallpaperImage = Instance.new("ImageLabel")
 	WallpaperImage.Name = "WallpaperImage"
@@ -3561,7 +3543,7 @@ function KazeUI:CreateWindow(config)
 	WallpaperImage.ScaleType = Enum.ScaleType.Crop
 	WallpaperImage.ZIndex = -2
 	WallpaperImage.Parent = ContentClipper
-	Instance.new("UICorner", WallpaperImage).CornerRadius = UDim.new(0, 28) -- Restore background wallpaper corner rounding
+	Instance.new("UICorner", WallpaperImage).CornerRadius = UDim.new(0, 24) -- Restore background wallpaper corner rounding
 
 	local DarkOverlay = Instance.new("Frame")
 	DarkOverlay.Name = "DarkOverlay"
@@ -3570,7 +3552,7 @@ function KazeUI:CreateWindow(config)
 	DarkOverlay.ZIndex = -1
 	DarkOverlay.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 	DarkOverlay.Parent = ContentClipper
-	Instance.new("UICorner", DarkOverlay).CornerRadius = UDim.new(0, 28) -- Restore dark overlay corner rounding
+	Instance.new("UICorner", DarkOverlay).CornerRadius = UDim.new(0, 24) -- Restore dark overlay corner rounding
 
 	-- CRITICAL FIX: Registering these elements and safely removing them on Window Destroy
 	table.insert(KazeUI.WallpaperElements, {
@@ -3604,7 +3586,7 @@ function KazeUI:CreateWindow(config)
 	MakeDraggable(TopBar, Window, dragState)
 
 	-- TopBar Non-Overlapping Corner Emulation Setup (Uniform Translucent Background)
-	local R = 28
+	local R = 24
 	local TopBarElevation = -0.01
 
 	local TopBarMainBody = Instance.new("Frame", TopBar)
@@ -3666,8 +3648,8 @@ function KazeUI:CreateWindow(config)
 	Instance.new("UICorner", Avatar).CornerRadius = UDim.new(1, 0)
 	
 	local avatarStroke = Instance.new("UIStroke", Avatar)
-	avatarStroke.Thickness = 1.6
-	KazeUI:OnGlowChanged(avatarStroke, function(c) avatarStroke.Color = c end)
+	avatarStroke.Thickness = 1.2
+	KazeUI:RegisterBorder(avatarStroke)
 
 	-- Center-aligned Title Label Setup (Slightly larger size = 16)
 	local TitleLabel = Instance.new("TextLabel")
@@ -3720,9 +3702,6 @@ function KazeUI:CreateWindow(config)
 		local innerStroke = Instance.new("UIStroke", btn)
 		innerStroke.Thickness = 1
 		innerStroke.Color = Color3.fromRGB(20, 20, 22)
-		ApplyPressFeel(btn, 0.8)
-		btn.MouseEnter:Connect(function() TweenService:Create(btn, TWEEN_FAST, {BackgroundTransparency = 0.15}):Play() end)
-		btn.MouseLeave:Connect(function() TweenService:Create(btn, TWEEN_FAST, {BackgroundTransparency = 0}):Play() end)
 		return btn
 	end
 
@@ -3872,15 +3851,17 @@ function KazeUI:CreateWindow(config)
 		ConfirmWindow.Position = UDim2.fromScale(0.5, 0.45)
 		ConfirmWindow.ZIndex = 101 
 		ConfirmWindow.Active = true 
-		ConfirmWindow.BackgroundTransparency = 0.08 -- Not transparent, matches notifications
+		ConfirmWindow.BackgroundTransparency = 0.05 -- Not transparent, matches notifications
+		ConfirmWindow.ClipsDescendants = true
 		
-		Instance.new("UICorner", ConfirmWindow).CornerRadius = UDim.new(0, 20)
-		KazeUI:AddPanel(ConfirmWindow, 0.02, false, true)
-		ApplySheen(ConfirmWindow, 0.85, 1)
+		Instance.new("UICorner", ConfirmWindow).CornerRadius = UDim.new(0, 22)
+		KazeUI:AddPanel(ConfirmWindow, 0.05, false, true)
+		KazeUI:ApplyDepthShadow(ConfirmWindow, 22, 1)
+		KazeUI:ApplySheen(ConfirmWindow, 0.85)
 
 		local confirmStroke = Instance.new("UIStroke", ConfirmWindow)
-		confirmStroke.Thickness = 1.2
-		confirmStroke.Transparency = 0.35
+		confirmStroke.Thickness = 1
+		confirmStroke.Transparency = 0.4
 		KazeUI:RegisterBorder(confirmStroke)
 
 		TweenService:Create(ConfirmWindow, TWEEN_SPRING, {Position = UDim2.fromScale(0.5, 0.5)}):Play()
@@ -3908,32 +3889,36 @@ function KazeUI:CreateWindow(config)
 		layout.Padding = UDim.new(0, 12)
 
 		local ConfirmBtn = Instance.new("TextButton", ButtonsFrame)
-		ConfirmBtn.Size = UDim2.new(0, 100, 0, 32)
-		ConfirmBtn.BackgroundColor3 = Color3.fromRGB(239, 68, 68)
+		ConfirmBtn.Size = UDim2.new(0, 108, 0, 32)
+		ConfirmBtn.BackgroundColor3 = Color3.fromRGB(224, 66, 74)
+		ConfirmBtn.AutoButtonColor = false
 		ConfirmBtn.Text = "Confirm"
 		ConfirmBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 		ConfirmBtn.Font = Enum.Font.GothamBold
-		ConfirmBtn.TextSize = 11
+		ConfirmBtn.TextSize = 12
 		ConfirmBtn.ZIndex = 103
-		ConfirmBtn.AutoButtonColor = false
-		Instance.new("UICorner", ConfirmBtn).CornerRadius = UDim.new(0, 11)
-		ApplyPressFeel(ConfirmBtn, 0.94)
-		ConfirmBtn.MouseEnter:Connect(function() TweenService:Create(ConfirmBtn, TWEEN_FAST, {BackgroundColor3 = Color3.fromRGB(255, 90, 90)}):Play() end)
-		ConfirmBtn.MouseLeave:Connect(function() TweenService:Create(ConfirmBtn, TWEEN_FAST, {BackgroundColor3 = Color3.fromRGB(239, 68, 68)}):Play() end)
+		Instance.new("UICorner", ConfirmBtn).CornerRadius = UDim.new(0, 12)
+		ConfirmBtn.MouseEnter:Connect(function()
+			TweenService:Create(ConfirmBtn, TWEEN_FAST, {BackgroundColor3 = Color3.fromRGB(240, 82, 90)}):Play()
+		end)
+		ConfirmBtn.MouseLeave:Connect(function()
+			TweenService:Create(ConfirmBtn, TWEEN_FAST, {BackgroundColor3 = Color3.fromRGB(224, 66, 74)}):Play()
+		end)
 
 		local CancelBtn = Instance.new("TextButton", ButtonsFrame)
-		CancelBtn.Size = UDim2.new(0, 100, 0, 32)
+		CancelBtn.Size = UDim2.new(0, 108, 0, 32)
+		CancelBtn.AutoButtonColor = false
 		CancelBtn.Text = "Cancel"
 		CancelBtn.Font = Enum.Font.GothamBold
-		CancelBtn.TextSize = 11
+		CancelBtn.TextSize = 12
 		CancelBtn.ZIndex = 103
-		CancelBtn.AutoButtonColor = false
-		Instance.new("UICorner", CancelBtn).CornerRadius = UDim.new(0, 11)
-		KazeUI:AddPanel(CancelBtn, 0.04)
+		Instance.new("UICorner", CancelBtn).CornerRadius = UDim.new(0, 12)
+		KazeUI:AddPanel(CancelBtn, 0.07)
 		KazeUI:RegisterText(CancelBtn, true)
-		ApplyPressFeel(CancelBtn, 0.94)
-		CancelBtn.MouseEnter:Connect(function() TweenService:Create(CancelBtn, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.08)}):Play() end)
-		CancelBtn.MouseLeave:Connect(function() TweenService:Create(CancelBtn, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.04)}):Play() end)
+		local cancelStroke = Instance.new("UIStroke", CancelBtn)
+		cancelStroke.Thickness = 1
+		cancelStroke.Transparency = 0.5
+		KazeUI:RegisterBorder(cancelStroke)
 
 		-- BUGFIX: this used to only Destroy() the main ScreenGui. The Open
 		-- Button, Dialog, and Notification ScreenGuis (separate top-level
@@ -4246,29 +4231,43 @@ function KazeUI:CreateWindow(config)
 		DialogFrame.Position = UDim2.fromScale(0.5, 0.4) 
 		DialogFrame.ZIndex = 101 
 		DialogFrame.Active = true 
-		DialogFrame.BackgroundTransparency = 0.08 -- Not transparent, matches notifications
+		DialogFrame.BackgroundTransparency = 0.05 -- Not transparent, matches notifications
+		DialogFrame.ClipsDescendants = true
 		
-		Instance.new("UICorner", DialogFrame).CornerRadius = UDim.new(0, 20)
-		KazeUI:AddPanel(DialogFrame, 0.04, false, true)
-		ApplySheen(DialogFrame, 0.85, 1)
+		Instance.new("UICorner", DialogFrame).CornerRadius = UDim.new(0, 22)
+		KazeUI:AddPanel(DialogFrame, 0.05, false, true)
+		KazeUI:ApplyDepthShadow(DialogFrame, 22, 1.2)
+		KazeUI:ApplySheen(DialogFrame, 0.85)
 
 		local stroke = Instance.new("UIStroke", DialogFrame)
-		stroke.Thickness = 1.4
-		stroke.Transparency = 0.3
+		stroke.Thickness = 1
+		stroke.Transparency = 0.4
 		KazeUI:RegisterBorder(stroke)
 
 		TweenService:Create(DialogFrame, TWEEN_SPRING, {Position = UDim2.fromScale(0.5, 0.5)}):Play()
 
 		local topOffset = 18
 		if hasIcon then
-			local dIcon = Instance.new("ImageLabel", DialogFrame)
-			dIcon.Size = UDim2.fromOffset(36, 36)
-			dIcon.Position = UDim2.new(0.5, -18, 0, 18)
+			local dIconBadge = Instance.new("Frame", DialogFrame)
+			dIconBadge.Size = UDim2.fromOffset(52, 52)
+			dIconBadge.Position = UDim2.new(0.5, -26, 0, 16)
+			dIconBadge.BackgroundColor3 = KazeUI.GlowColor
+			dIconBadge.BackgroundTransparency = 0.85
+			dIconBadge.BorderSizePixel = 0
+			dIconBadge.ZIndex = 102
+			Instance.new("UICorner", dIconBadge).CornerRadius = UDim.new(0, 16)
+			KazeUI:OnGlowChanged(dIconBadge, function(c) dIconBadge.BackgroundColor3 = c end)
+
+			local dIcon = Instance.new("ImageLabel", dIconBadge)
+			dIcon.Size = UDim2.fromOffset(26, 26)
+			dIcon.AnchorPoint = Vector2.new(0.5, 0.5)
+			dIcon.Position = UDim2.fromScale(0.5, 0.5)
 			dIcon.BackgroundTransparency = 1
 			dIcon.Image = iconId
-			dIcon.ZIndex = 102
-			KazeUI:OnThemeChanged(dIcon, function(t) dIcon.ImageColor3 = KazeUI.GlowColor end)
-			topOffset = 62
+			dIcon.ZIndex = 103
+			KazeUI:OnGlowChanged(dIcon, function(c) dIcon.ImageColor3 = c end)
+			dIcon.ImageColor3 = KazeUI.GlowColor
+			topOffset = 80
 		end
 
 		-- Dynamic size calculations for Dialog Title & Content for supreme readability (ensuring no cutoff or overlap)
@@ -4348,8 +4347,7 @@ function KazeUI:CreateWindow(config)
 			actionBtn.AutoButtonColor = false
 			actionBtn.Text = "" 
 			actionBtn.LayoutOrder = i
-			Instance.new("UICorner", actionBtn).CornerRadius = UDim.new(0, 11)
-			ApplyPressFeel(actionBtn, 0.94)
+			Instance.new("UICorner", actionBtn).CornerRadius = UDim.new(0, 12)
 
 			local btnText = Instance.new("TextLabel", actionBtn)
 			btnText.Size = UDim2.new(1, -12, 1, 0)
@@ -4580,17 +4578,19 @@ function KazeUI:CreateWindow(config)
 		btn.LayoutOrder = #TabsList:GetChildren() + 1
 		
 		Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 14)
-		KazeUI:AddPanel(btn, 0.02, true)
-		ApplyPressFeel(btn, 0.97)
+		KazeUI:AddPanel(btn, 0.03, true)
 
 		local leftIndicator = Instance.new("Frame", btn)
-		leftIndicator.Size = UDim2.new(0, 3, 1, 0)
+		leftIndicator.Size = UDim2.new(0, 3, 0.6, 0)
+		leftIndicator.AnchorPoint = Vector2.new(0, 0.5)
+		leftIndicator.Position = UDim2.new(0, 0, 0.5, 0)
 		leftIndicator.BackgroundColor3 = KazeUI.GlowColor
 		leftIndicator.BorderSizePixel = 0
 		leftIndicator.Visible = false
 		
 		local indicatorCorner = Instance.new("UICorner", leftIndicator)
-		indicatorCorner.CornerRadius = UDim.new(0, 6)
+		indicatorCorner.CornerRadius = UDim.new(1, 0)
+		KazeUI:ApplyAccentGradient(leftIndicator, 90)
 
 		KazeUI:OnGlowChanged(leftIndicator, function(c) leftIndicator.BackgroundColor3 = c end)
 
