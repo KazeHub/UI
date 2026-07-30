@@ -1159,13 +1159,26 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 		initialText = tostring(selectedSingle)
 	end
 
-	local selectedLabel = Instance.new("TextLabel", header)
-	selectedLabel.Size = UDim2.new(0.40, -14, 1, 0)
-	selectedLabel.Position = UDim2.new(0.55, 0, 0, 0)
+	local selectedPill = Instance.new("Frame", header)
+	selectedPill.Name = "SelectedPill"
+	selectedPill.AnchorPoint = Vector2.new(0, 0.5)
+	selectedPill.Position = UDim2.new(0.55, 0, 0.5, 0)
+	selectedPill.Size = UDim2.new(0.40, -14, 0, 22)
+	selectedPill.BorderSizePixel = 0
+	Instance.new("UICorner", selectedPill).CornerRadius = UDim.new(0, 8)
+	KazeUI:AddPanel(selectedPill, 0.05)
+
+	local pillStroke = Instance.new("UIStroke", selectedPill)
+	pillStroke.Thickness = 1
+	KazeUI:RegisterBorder(pillStroke)
+
+	local selectedLabel = Instance.new("TextLabel", selectedPill)
+	selectedLabel.Size = UDim2.new(1, -12, 1, 0)
+	selectedLabel.Position = UDim2.new(0, 6, 0, 0)
 	selectedLabel.BackgroundTransparency = 1
-	selectedLabel.Font = Enum.Font.Gotham
+	selectedLabel.Font = Enum.Font.GothamMedium
 	selectedLabel.TextSize = 11
-	selectedLabel.TextXAlignment = Enum.TextXAlignment.Right
+	selectedLabel.TextXAlignment = Enum.TextXAlignment.Center
 	selectedLabel.TextTruncate = Enum.TextTruncate.AtEnd 
 	selectedLabel.Text = initialText 
 	KazeUI:RegisterText(selectedLabel, true)
@@ -1284,7 +1297,8 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 		listContainer.Visible = false
 		TweenService:Create(arrowIcon, TWEEN_SPRING, {Rotation = 0}):Play()
 		StopNeonLoop(boxStroke)
-		TweenService:Create(boxStroke, TWEEN_FAST, {Color = KazeUI.CurrentTheme.Border}):Play()
+		TweenService:Create(boxStroke, TWEEN_FAST, {Color = KazeUI.CurrentTheme.Border, Thickness = 1.2}):Play()
+		TweenService:Create(dropFrame, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.02)}):Play()
 	end
 
 	local function Refresh(newOptions)
@@ -1416,6 +1430,8 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 			listContainer.Visible = true
 			CalcHeight()
 			TweenService:Create(arrowIcon, TWEEN_SPRING, {Rotation = 180}):Play()
+			TweenService:Create(dropFrame, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.04)}):Play()
+			TweenService:Create(boxStroke, TWEEN_FAST, {Thickness = 1.6}):Play()
 			StartNeonLoop(boxStroke)
 		else
 			CloseDropdown()
@@ -2148,15 +2164,18 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 		KazeUI:RegisterText(ptitleLabel, false)
 	end
 	
-	local valueLabel = Instance.new("TextLabel", inner)
-	valueLabel.Size = UDim2.new(0, 70, 0, titleHeight > 0 and titleHeight or 18)
-	valueLabel.Position = UDim2.new(1, -70, 0, 0)
-	valueLabel.BackgroundTransparency = 1
-	valueLabel.Text = tostring(value)
-	valueLabel.Font = Enum.Font.GothamBold
-	valueLabel.TextSize = 11
-	valueLabel.TextXAlignment = Enum.TextXAlignment.Right
-	KazeUI:RegisterText(valueLabel, false)
+	local valueBox = Instance.new("TextBox", inner)
+	valueBox.Size = UDim2.new(0, 70, 0, titleHeight > 0 and titleHeight or 18)
+	valueBox.Position = UDim2.new(1, -70, 0, 0)
+	valueBox.BackgroundTransparency = 1
+	valueBox.Text = tostring(value)
+	valueBox.Font = Enum.Font.GothamBold
+	valueBox.TextSize = 11
+	valueBox.TextXAlignment = Enum.TextXAlignment.Right
+	valueBox.ClearTextOnFocus = false
+	valueBox.ClipsDescendants = true
+	valueBox.TextWrapped = false
+	KazeUI:RegisterText(valueBox, false)
 	
 	local track = Instance.new("Frame")
 	track.Size = UDim2.new(1, 0, 0, 6)
@@ -2206,7 +2225,7 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 		local newVal = min + (max - min) * percentage
 		newVal = math.clamp(math.floor(newVal + 0.5), min, max)
 		value = newVal
-		valueLabel.Text = tostring(value)
+		valueBox.Text = tostring(value)
 		
 		local visualPercentage = 0
 		if max > min then visualPercentage = (value - min) / (max - min) end
@@ -2254,6 +2273,33 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 		end
 	end)
 
+	valueBox.Focused:Connect(function()
+		if isLockedState or activeDialogsCount > 0 then
+			valueBox:ReleaseFocus()
+			return
+		end
+		StartNeonLoop(paraStroke)
+	end)
+
+	valueBox.FocusLost:Connect(function()
+		local num = tonumber(valueBox.Text)
+		if num then
+			value = math.clamp(math.floor(num + 0.5), min, max)
+		end
+		valueBox.Text = tostring(value)
+
+		local visualPercentage = 0
+		if max > min then visualPercentage = (value - min) / (max - min) end
+		TweenService:Create(fill, TWEEN_FAST, {Size = UDim2.new(visualPercentage, 0, 1, 0)}):Play()
+		TweenService:Create(knob, TWEEN_FAST, {Position = UDim2.new(visualPercentage, 0, 0.5, 0)}):Play()
+
+		if not isDragging then
+			StopNeonLoop(paraStroke)
+			TweenService:Create(paraStroke, TWEEN_FAST, {Color = KazeUI.CurrentTheme.Border}):Play()
+		end
+		if typeof(callback) == "function" then task.spawn(callback, value) end
+	end)
+
 	KazeUI:OnGlowChanged(paraStroke, function(c)
 		if isDragging then paraStroke.Color = c end
 	end)
@@ -2264,7 +2310,7 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 		Wrapper = wrapper,
 		SetValue = function(self, newVal)
 			value = math.clamp(tonumber(newVal) or min, min, max)
-			valueLabel.Text = tostring(value)
+			valueBox.Text = tostring(value)
 			local valPercentage = 0
 			if max > min then valPercentage = (value - min) / (max - min) end
 			fill.Size = UDim2.new(valPercentage, 0, 1, 0)
@@ -3049,7 +3095,7 @@ CreateCollapsibleSection = function(parentFrame, titleArg, currentDepth)
 
 	local contentLayout = Instance.new("UIListLayout", sectionContent)
 	contentLayout.SortOrder = Enum.SortOrder.LayoutOrder
-	contentLayout.Padding = UDim.new(0, 3)
+	contentLayout.Padding = UDim.new(0, 5)
 	contentLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 
 	local contentPadding = Instance.new("UIPadding", sectionContent)
@@ -3240,7 +3286,7 @@ CreateGroupBox = function(parentFrame, titleArg, currentDepth, depthOverride)
 
 	local contentLayout = Instance.new("UIListLayout", container)
 	contentLayout.SortOrder = Enum.SortOrder.LayoutOrder
-	contentLayout.Padding = UDim.new(0, 3)
+	contentLayout.Padding = UDim.new(0, 5)
 	contentLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 
 	local contentPadding = Instance.new("UIPadding", container)
