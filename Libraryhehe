@@ -56,6 +56,7 @@ KazeUI.CurrentTheme = KazeUI.Themes.CustomWallpaper
 KazeUI.GlowColor = Color3.fromRGB(239, 68, 68)
 KazeUI.GlowMode = "Breathing" -- "Breathing" (pulse) or "Cycle" (hue rotation)
 KazeUI.GlowRainbow = false -- true = glow sweeps the full color spectrum in either mode
+KazeUI._userSetGlow = false -- tracks whether a glow color has been explicitly set yet (see SetTheme Obsidian fix)
 KazeUI.BackgroundColor = KazeUI.CurrentTheme.Background
 KazeUI.BackgroundTransparency = 0.70
 KazeUI.Flags = {}
@@ -618,7 +619,11 @@ function KazeUI:SetTheme(themeName)
 	KazeUI:SetBackgroundColor(targetTheme.Background)
 	KazeUI:SetTransparency(KazeUI.BackgroundTransparency or 0.70)
 	
-	if themeName == "Obsidian" then
+	-- BUGFIX: this used to force the glow to white every single time Obsidian was
+	-- selected, even if the user had already picked a custom Accent Glow Color --
+	-- silently discarding their choice. Now it only applies the white default the
+	-- first time a glow color is established (fresh load, nothing set yet).
+	if themeName == "Obsidian" and not KazeUI._userSetGlow then
 		KazeUI:SetGlow(Color3.fromRGB(255, 255, 255))
 	end
 	
@@ -780,6 +785,7 @@ end
 
 function KazeUI:SetGlow(color)
 	KazeUI.GlowColor = color
+	KazeUI._userSetGlow = true
 
 	for i = #KazeUI.GlowCallbacks, 1, -1 do
 		local data = KazeUI.GlowCallbacks[i]
@@ -4110,6 +4116,7 @@ function KazeUI:CreateWindow(config)
 		local iconId = dialogConfig.Icon and FormatImage(dialogConfig.Icon) or ""
 		local hasIcon = (iconId ~= "")
 		local actions = dialogConfig.Actions or {}
+		if #actions == 0 then actions = {{ Name = "OK" }} end -- BUGFIX: a Dialog with no Actions had no way to close, permanently freezing the window (activeDialogsCount never dropped back to 0)
 		
 		activeDialogsCount = activeDialogsCount + 1
 		
@@ -4360,11 +4367,21 @@ function KazeUI:CreateWindow(config)
 		for name, _ in pairs(KazeUI.Themes) do table.insert(themeNames, name) end
 		table.sort(themeNames)
 
+		-- BUGFIX: this used to default to KazeUI.CurrentTheme.Name (a cosmetic
+		-- label like "Custom"), which never matched any entry in `themeNames`
+		-- (the actual table keys, e.g. "CustomWallpaper") -- so the dropdown's
+		-- default selection never lined up with any real option. Look up the
+		-- key that actually points at the current theme instead.
+		local currentThemeKey = themeNames[1]
+		for name, themeData in pairs(KazeUI.Themes) do
+			if themeData == KazeUI.CurrentTheme then currentThemeKey = name break end
+		end
+
 		-- Removed structural config flags so Visual parameters do not write into configurations
 		sec:Dropdown({
 			Title = "Interface Theme Preset",
 			Options = themeNames,
-			Default = KazeUI.CurrentTheme.Name,
+			Default = currentThemeKey,
 			Callback = function(val) KazeUI:SetTheme(val) end
 		})
 
