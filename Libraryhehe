@@ -226,6 +226,22 @@ local function RegisterFlag(flag, getFunc, setFunc)
 	end
 end
 
+-- Wrap any block of your own script in this to stop a single mistake (typo,
+-- nil callback, bad option, etc.) from silently killing everything AFTER it --
+-- Lua normally aborts the whole script on the first uncaught error. On failure
+-- this prints a clear warning (with the label you gave it) to the output
+-- instead, and the rest of your script keeps running.
+--   KazeUI:SafeCall(function()
+--       Group1:Slider({ ... })
+--   end, "Group1 Slider")
+function KazeUI:SafeCall(fn, label)
+	local ok, err = pcall(fn)
+	if not ok then
+		warn("[KazeUI] Error in " .. tostring(label or "SafeCall block") .. ": " .. tostring(err))
+	end
+	return ok
+end
+
 -- ScreenGui Setup (Supports CoreGui & PlayerGui fallback)
 local success, parent = pcall(function() return game:GetService("CoreGui") end)
 if not success or not parent then
@@ -3418,7 +3434,7 @@ end
 -- ==========================================
 -- Premium Window Creation & Panel Controllers
 -- ==========================================
-function KazeUI:CreateWindow(config)
+local function BuildWindow(config)
 	config = config or {}
 	local Title = config.Title or "Kaze UI"
 	local Author = config.Author or "Unknown"
@@ -4871,6 +4887,28 @@ function KazeUI:CreateWindow(config)
 	table.insert(KazeUI.ActiveWindows, Window)
 	if typeof(config.Callback) == "function" then pcall(config.Callback) end
 	return Win
+end
+
+-- BUGFIX/FEATURE: window construction used to run un-guarded -- any error
+-- anywhere while building the UI (a bad Icon, a malformed OpenButton table,
+-- an internal issue, etc.) aborted the ENTIRE script silently, so nothing
+-- ever showed up with no clue why. Now it's pcall-guarded: on failure you get
+-- a clear warn() with the actual error, plus a native Roblox notification
+-- (via StarterGui, so it still shows even if KazeUI itself never renders).
+function KazeUI:CreateWindow(config)
+	local ok, resultOrErr = pcall(BuildWindow, config)
+	if not ok then
+		warn("[KazeUI] CreateWindow failed -- the UI will not show. Error: " .. tostring(resultOrErr))
+		pcall(function()
+			game:GetService("StarterGui"):SetCore("SendNotification", {
+				Title = "KazeUI failed to load",
+				Text = "Check the developer console/output for the error.",
+				Duration = 6
+			})
+		end)
+		return nil
+	end
+	return resultOrErr
 end
 
 return KazeUI
