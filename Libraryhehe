@@ -3837,6 +3837,19 @@ local function BuildWindow(config)
 	KazeUI:RegisterBorder(MiniStroke)
 
 	local isMinimized = false
+	-- Computes the Position/Size a frame needs to START at so that, once it
+	-- tweens up to (finalPos, finalSize), it visually expands outward from a
+	-- thin centered line -- top edge moving up, bottom edge moving down --
+	-- instead of scaling up from a corner. Works with whatever AnchorPoint.Y
+	-- the frame currently has (0 = top-anchored, 0.5 = center-anchored, etc).
+	local function computeCenterGrowStart(anchorPoint, finalPos, finalSize)
+		local shiftScale = (0.5 - anchorPoint.Y) * finalSize.Y.Scale
+		local shiftOffset = (0.5 - anchorPoint.Y) * finalSize.Y.Offset
+		local startPos = UDim2.new(finalPos.X.Scale, finalPos.X.Offset, finalPos.Y.Scale + shiftScale, finalPos.Y.Offset + shiftOffset)
+		local startSize = UDim2.new(finalSize.X.Scale, finalSize.X.Offset, 0, 2) -- full width immediately, ~0 height (the "line")
+		return startPos, startSize
+	end
+
 	local function minimizeWindow()
 		if isMinimized then return end
 		isMinimized = true
@@ -3857,43 +3870,57 @@ local function BuildWindow(config)
 		
 		MiniButton.Visible = false
 		Window.Visible = true
-		Window.Size = UDim2.fromOffset(0, 0)
 
-		-- BUGFIX: Window pops open by tweening its Size from (0,0) up to full
-		-- size. Any ScrollingFrame inside it (a tab page, most visibly one
-		-- with a lot of SectionUI content and the last section left open)
-		-- fills that animating container, so its viewport size changes every
-		-- frame of the tween -- if it still had a leftover scroll position
-		-- from before minimizing, that produced a visible "scrolling" jump
-		-- as CanvasSize caught up mid-animation. Snap every scroller back to
-		-- the top before the tween starts, and hold scrolling off until it
-		-- finishes so the resize itself can't be seen as scroll motion.
-		local resetScrollers = {}
+		-- BUGFIX: this used to snap every scroller back to the top before
+		-- popping the window open. That avoided the visual "scrolling" jump,
+		-- but also threw away exactly where the player had scrolled to.
+		-- Instead: remember each scroller's exact position, then pin it back
+		-- to that same spot every frame for as long as the open animation is
+		-- playing (the resize itself is what makes CanvasSize recalculate
+		-- and visually "jump" -- pinning cancels that out), and let go once
+		-- the animation finishes. End result: no jump during the animation,
+		-- and the scroll position is left exactly where it was.
+		local savedPositions = {}
 		for _, sf in ipairs(Window:GetDescendants()) do
 			if sf:IsA("ScrollingFrame") then
-				sf.CanvasPosition = Vector2.new(0, 0)
-				table.insert(resetScrollers, sf)
+				savedPositions[sf] = sf.CanvasPosition
 				sf.ScrollingEnabled = false
 			end
 		end
 
-		local function restoreScrolling()
-			for _, sf in ipairs(resetScrollers) do
+		local pinConn
+		pinConn = RunService.Heartbeat:Connect(function()
+			for sf, pos in pairs(savedPositions) do
+				if sf and sf.Parent then
+					sf.CanvasPosition = pos
+				end
+			end
+		end)
+
+		local function finishRestore()
+			if pinConn then pinConn:Disconnect() pinConn = nil end
+			for sf in pairs(savedPositions) do
 				if sf and sf.Parent then sf.ScrollingEnabled = true end
 			end
 		end
 
 		if toggledMaximized then
 			Window.AnchorPoint = Vector2.new(0.5, 0.5)
-			Window.Position = UDim2.fromScale(0.5, 0.5)
-			local tween = TweenService:Create(Window, TWEEN_SPRING, {Size = UDim2.fromScale(0.95, 0.9)})
-			tween.Completed:Connect(restoreScrolling)
+			local finalPos, finalSize = UDim2.fromScale(0.5, 0.5), UDim2.fromScale(0.95, 0.9)
+			local startPos, startSize = computeCenterGrowStart(Window.AnchorPoint, finalPos, finalSize)
+			Window.Position = startPos
+			Window.Size = startSize
+			local tween = TweenService:Create(Window, TWEEN_SPRING, {Position = finalPos, Size = finalSize})
+			tween.Completed:Connect(finishRestore)
 			tween:Play()
 		else
 			Window.AnchorPoint = dragState.Anchor
-			Window.Position = dragState.Position
-			local tween = TweenService:Create(Window, TWEEN_SPRING, {Size = lastNormalSize, Position = dragState.Position})
-			tween.Completed:Connect(restoreScrolling)
+			local finalPos, finalSize = dragState.Position, lastNormalSize
+			local startPos, startSize = computeCenterGrowStart(Window.AnchorPoint, finalPos, finalSize)
+			Window.Position = startPos
+			Window.Size = startSize
+			local tween = TweenService:Create(Window, TWEEN_SPRING, {Position = finalPos, Size = finalSize})
+			tween.Completed:Connect(finishRestore)
 			tween:Play()
 		end
 	end
