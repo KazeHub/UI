@@ -921,8 +921,29 @@ end
 local function KickStroke(strokeInst)
 	if not strokeInst then return end
 	task.defer(function()
-		RunService.Heartbeat:Wait()
-		RunService.Heartbeat:Wait()
+		-- BUGFIX: this used to just wait a fixed 2 Heartbeats before kicking
+		-- the stroke, on the assumption that's always enough time for the
+		-- AutomaticSize.Y chain above it to settle. That's true for small
+		-- boxes, but a Section/GroupBox with a lot of components (or nested
+		-- Groups) can take noticeably longer than 2 frames to fully resolve
+		-- its final height -- so the stroke got kicked too early and stayed
+		-- stale (invisible) until something else (like scrolling) forced a
+		-- fresh layout pass. Now it waits for the box's AbsoluteSize to
+		-- actually stop changing between frames (capped so it can't hang).
+		local ref = strokeInst.Parent
+		if ref then
+			local lastSize = ref.AbsoluteSize
+			for _ = 1, 30 do
+				RunService.Heartbeat:Wait()
+				if not ref.Parent then return end
+				local newSize = ref.AbsoluteSize
+				if newSize == lastSize then break end
+				lastSize = newSize
+			end
+		else
+			RunService.Heartbeat:Wait()
+			RunService.Heartbeat:Wait()
+		end
 		if strokeInst and strokeInst.Parent then
 			strokeInst.Enabled = false
 			task.wait()
@@ -3837,14 +3858,43 @@ local function BuildWindow(config)
 		MiniButton.Visible = false
 		Window.Visible = true
 		Window.Size = UDim2.fromOffset(0, 0)
+
+		-- BUGFIX: Window pops open by tweening its Size from (0,0) up to full
+		-- size. Any ScrollingFrame inside it (a tab page, most visibly one
+		-- with a lot of SectionUI content and the last section left open)
+		-- fills that animating container, so its viewport size changes every
+		-- frame of the tween -- if it still had a leftover scroll position
+		-- from before minimizing, that produced a visible "scrolling" jump
+		-- as CanvasSize caught up mid-animation. Snap every scroller back to
+		-- the top before the tween starts, and hold scrolling off until it
+		-- finishes so the resize itself can't be seen as scroll motion.
+		local resetScrollers = {}
+		for _, sf in ipairs(Window:GetDescendants()) do
+			if sf:IsA("ScrollingFrame") then
+				sf.CanvasPosition = Vector2.new(0, 0)
+				table.insert(resetScrollers, sf)
+				sf.ScrollingEnabled = false
+			end
+		end
+
+		local function restoreScrolling()
+			for _, sf in ipairs(resetScrollers) do
+				if sf and sf.Parent then sf.ScrollingEnabled = true end
+			end
+		end
+
 		if toggledMaximized then
 			Window.AnchorPoint = Vector2.new(0.5, 0.5)
 			Window.Position = UDim2.fromScale(0.5, 0.5)
-			TweenService:Create(Window, TWEEN_SPRING, {Size = UDim2.fromScale(0.95, 0.9)}):Play()
+			local tween = TweenService:Create(Window, TWEEN_SPRING, {Size = UDim2.fromScale(0.95, 0.9)})
+			tween.Completed:Connect(restoreScrolling)
+			tween:Play()
 		else
 			Window.AnchorPoint = dragState.Anchor
 			Window.Position = dragState.Position
-			TweenService:Create(Window, TWEEN_SPRING, {Size = lastNormalSize, Position = dragState.Position}):Play()
+			local tween = TweenService:Create(Window, TWEEN_SPRING, {Size = lastNormalSize, Position = dragState.Position})
+			tween.Completed:Connect(restoreScrolling)
+			tween:Play()
 		end
 	end
 
