@@ -3151,15 +3151,42 @@ CreateCollapsibleSection = function(parentFrame, titleArg, currentDepth)
 	divider.Parent = sectionBox
 	KazeUI:OnThemeChanged(divider, function(t) divider.BackgroundColor3 = t.Border end)
 
+	-- FIX (root cause of the outline/UIStroke-invisible + "need to scroll to fix
+	-- it" + "can't handle many components" bugs): Roblox's engine has a long-
+	-- standing, still-unfixed bug where AutomaticSize (and, downstream,
+	-- ScrollingFrame.AutomaticCanvasSize) simply does NOT recompute for an
+	-- instance -- or any of its AutomaticSize descendants -- while that
+	-- instance's Visible is false. The old code set sectionContent.Visible =
+	-- false when collapsed, so every button/toggle/slider added while closed
+	-- (or the very act of opening it) never triggered a real layout pass; the
+	-- stroke, the section's own height, and the outer ScrollingFrame's canvas
+	-- all stayed stale until something UNRELATED forced a fresh layout pass
+	-- (like the user scrolling). More components = more places for this to go
+	-- stale, hence "can't handle many components".
+	--
+	-- The fix: sectionContent is now ALWAYS Visible = true (so AutomaticSize
+	-- keeps computing normally, all the time, exactly like Roblox intends) and
+	-- collapsing is done purely via a wrapping "clipper" frame with
+	-- ClipsDescendants = true, whose own Size.Y is what actually animates
+	-- between 0 and the content's real height. ClipsDescendants only affects
+	-- rendering/clipping, not layout math, so this sidesteps the engine bug
+	-- entirely instead of racing against it.
+	local contentClipper = Instance.new("Frame")
+	contentClipper.Name = "ContentClipper"
+	contentClipper.Size = UDim2.new(1, 0, 0, 0)
+	contentClipper.BackgroundTransparency = 1
+	contentClipper.BorderSizePixel = 0
+	contentClipper.ClipsDescendants = true
+	contentClipper.LayoutOrder = 3
+	contentClipper.Parent = sectionBox
+
 	local sectionContent = Instance.new("Frame")
 	sectionContent.Name = "Content"
 	sectionContent.Size = UDim2.new(1, 0, 0, 0)
 	sectionContent.BackgroundTransparency = 1
 	sectionContent.BorderSizePixel = 0
-	sectionContent.Visible = false
 	sectionContent.AutomaticSize = Enum.AutomaticSize.Y
-	sectionContent.LayoutOrder = 3
-	sectionContent.Parent = sectionBox
+	sectionContent.Parent = contentClipper
 
 	local contentLayout = Instance.new("UIListLayout", sectionContent)
 	contentLayout.SortOrder = Enum.SortOrder.LayoutOrder
@@ -3179,10 +3206,42 @@ CreateCollapsibleSection = function(parentFrame, titleArg, currentDepth)
 	toggleDetector.ZIndex = 10
 	toggleDetector.Parent = headerFrame
 
+	-- Drives contentClipper's height. sectionContent is always Visible = true
+	-- now, so its AutomaticSize (and AbsoluteSize) is always live and correct
+	-- -- no more racing the engine's invisible-AutomaticSize bug.
+	local openTween
+	local function setClipperOpen(open)
+		if openTween then openTween:Cancel() end
+		if open then
+			-- Freeze at whatever height it's currently at, tween up to the
+			-- content's real (always up-to-date) height, then hand control
+			-- back to AutomaticSize so components added/removed later while
+			-- open keep the box's height correct with zero extra code.
+			contentClipper.AutomaticSize = Enum.AutomaticSize.None
+			local targetHeight = sectionContent.AbsoluteSize.Y
+			openTween = TweenService:Create(contentClipper, TWEEN_COLLAPSE, {Size = UDim2.new(1, 0, 0, targetHeight)})
+			local thisTween = openTween
+			thisTween.Completed:Connect(function()
+				if isOpen and contentClipper.Parent then
+					contentClipper.AutomaticSize = Enum.AutomaticSize.Y
+				end
+			end)
+			thisTween:Play()
+		else
+			-- Freeze at the real current height (in case AutomaticSize was
+			-- driving it) before collapsing, so the tween starts from the
+			-- true height instead of a stale one.
+			contentClipper.Size = UDim2.new(1, 0, 0, contentClipper.AbsoluteSize.Y)
+			contentClipper.AutomaticSize = Enum.AutomaticSize.None
+			openTween = TweenService:Create(contentClipper, TWEEN_COLLAPSE, {Size = UDim2.new(1, 0, 0, 0)})
+			openTween:Play()
+		end
+	end
+
 	local function toggleSection()
 		isOpen = not isOpen
-		sectionContent.Visible = isOpen
 		divider.Visible = isOpen
+		setClipperOpen(isOpen)
 
 		if isOpen then
 			TweenService:Create(arrowIcon, TWEEN_COLLAPSE, {
@@ -3191,7 +3250,6 @@ CreateCollapsibleSection = function(parentFrame, titleArg, currentDepth)
 			}):Play()
 			StartNeonLoop(boxStroke)
 			StartNeonLoop(accentLine)
-			KickStroke(boxStroke)
 		else
 			TweenService:Create(arrowIcon, TWEEN_COLLAPSE, {
 				Rotation = -90,
@@ -3347,14 +3405,24 @@ CreateGroupBox = function(parentFrame, titleArg, currentDepth, depthOverride)
 	divider.Parent = groupFrame
 	KazeUI:OnThemeChanged(divider, function(t) divider.BackgroundColor3 = t.Border end)
 
+	-- FIX: same root-cause fix as CreateCollapsibleSection above -- container
+	-- is now ALWAYS Visible = true (so its AutomaticSize keeps computing
+	-- normally instead of hitting Roblox's invisible-AutomaticSize engine bug),
+	-- and the wrapping containerClipper's height is what actually animates.
+	local containerClipper = Instance.new("Frame")
+	containerClipper.Name = "ContainerClipper"
+	containerClipper.Size = UDim2.new(1, 0, 0, 0)
+	containerClipper.BackgroundTransparency = 1
+	containerClipper.ClipsDescendants = true
+	containerClipper.LayoutOrder = 3
+	containerClipper.Parent = groupFrame
+
 	local container = Instance.new("Frame")
 	container.Name = "Container"
 	container.Size = UDim2.new(1, 0, 0, 0)
 	container.BackgroundTransparency = 1
 	container.AutomaticSize = Enum.AutomaticSize.Y
-	container.LayoutOrder = 3
-	container.Visible = false 
-	container.Parent = groupFrame
+	container.Parent = containerClipper
 
 	local contentLayout = Instance.new("UIListLayout", container)
 	contentLayout.SortOrder = Enum.SortOrder.LayoutOrder
@@ -3374,10 +3442,32 @@ CreateGroupBox = function(parentFrame, titleArg, currentDepth, depthOverride)
 	toggleDetector.ZIndex = 10
 	toggleDetector.Parent = header
 
+	local openTween
+	local function setClipperOpen(open)
+		if openTween then openTween:Cancel() end
+		if open then
+			containerClipper.AutomaticSize = Enum.AutomaticSize.None
+			local targetHeight = container.AbsoluteSize.Y
+			openTween = TweenService:Create(containerClipper, TWEEN_COLLAPSE, {Size = UDim2.new(1, 0, 0, targetHeight)})
+			local thisTween = openTween
+			thisTween.Completed:Connect(function()
+				if isOpen and containerClipper.Parent then
+					containerClipper.AutomaticSize = Enum.AutomaticSize.Y
+				end
+			end)
+			thisTween:Play()
+		else
+			containerClipper.Size = UDim2.new(1, 0, 0, containerClipper.AbsoluteSize.Y)
+			containerClipper.AutomaticSize = Enum.AutomaticSize.None
+			openTween = TweenService:Create(containerClipper, TWEEN_COLLAPSE, {Size = UDim2.new(1, 0, 0, 0)})
+			openTween:Play()
+		end
+	end
+
 	local function toggleGroup()
 		isOpen = not isOpen
-		container.Visible = isOpen
 		divider.Visible = isOpen
+		setClipperOpen(isOpen)
 
 		if isOpen then
 			TweenService:Create(arrowIcon, TWEEN_COLLAPSE, {
@@ -3386,7 +3476,6 @@ CreateGroupBox = function(parentFrame, titleArg, currentDepth, depthOverride)
 			}):Play()
 			StartNeonLoop(stroke)
 			StartNeonLoop(accentLine)
-			KickStroke(stroke)
 		else
 			TweenService:Create(arrowIcon, TWEEN_COLLAPSE, {
 				Rotation = -90,
