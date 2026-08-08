@@ -1,7 +1,7 @@
 --[[
-	Kaze UI Library v3.7.0 (Premium Bubble Redesign & Engine Rewrite)
+	Kaze UI Library v3.6.9 (Premium Bubble Redesign & Engine Rewrite)
 	Inspired by: Modern Mobile Chat Bubbles, iMessage, and Discord Mobile.
-	Retained: 100% Backwards Compatibility with Version 1, 2, 2.2, 2.3, 3.0, and 3.6.9 APIs
+	Retained: 100% Backwards Compatibility with Version 1, 2, 2.2, 2.3, and 3.0 APIs
 	
 	UPDATES IN V3.6.9 & CUSTOM TUNING:
 	- INTERACTION LOCKOUT DIALOGS: Standard Frame-level Modal Blockers inside the Main Window entirely bypass the Roblox CanvasGroup mobile input routing bug.
@@ -10,28 +10,6 @@
 	- SMART BUTTON TEXT RESIZING: Implemented TextScaled + UITextSizeConstraint + TextWrapped inside Action Buttons to avoid overflow.
 	- VISUAL ALIGNMENT FIXES: Centered window title (sized up to 16). Enlarged avatar circle (40x40) and placed the Author & Version text (size 13, no bullet point) on the left next to it.
 	- TEXTURE BLUR ELIMINATION: Changed Window CanvasGroup to a clipping-masked Frame to keep textures high-fidelity during drag/resize events.
-
-	UPDATES IN V3.7.0 -- GLOBAL LOCALIZATION ENGINE:
-	- KazeUI.Localization: a centralized registry (Dictionaries + CustomTranslations +
-	  RegisteredTexts) that automatically tracks every piece of user-facing text KazeUI
-	  itself creates (tab names, section/groupbox titles, button/toggle/slider/dropdown
-	  titles & descriptions, textbox titles & placeholders, dialog title/content/actions,
-	  notifications, tooltips, paragraphs, labels, empty-state copy, window title, etc).
-	- KazeUI:SetLanguage(...) now automatically re-applies every registered piece of text
-	  in the new language with ZERO extra developer code -- no manual .Text swapping needed.
-	- Developer-supplied strings (Title = "Auto Collect") keep working exactly as before AND
-	  are now automatically re-translated on language change, using either a small built-in
-	  dictionary or -- for a per-string custom translation -- the optional
-	  Title = { Text = "Auto Collect", Translations = { Filipino = "...", Spanish = "..." } }
-	  form. If no translation is registered/known for a string, it safely falls back to the
-	  original text (never silently produces a broken/empty label).
-	- Elements created AFTER KazeUI:SetLanguage(...) has already run automatically render in
-	  whatever language is currently selected -- no second SetLanguage() call required.
-	- Destroyed instances automatically unregister themselves (Destroying signal), so the
-	  localization registry never leaks memory.
-	- Optional best-effort system-locale detection via LocalizationService, see
-	  KazeUI:DetectSystemLanguage() and CreateWindow's config.AutoDetectLanguage flag.
-	  Always falls back to "English" if detection fails or the locale isn't supported.
 --]]
 
 local KazeUI = {}
@@ -44,7 +22,6 @@ local UIS = game:GetService("UserInputService")
 local TextService = game:GetService("TextService")
 local HttpService = game:GetService("HttpService")
 local RunService = game:GetService("RunService")
-local LocalizationService = game:GetService("LocalizationService")
 local LP = Players.LocalPlayer
 local Mouse = LP:GetMouse()
 
@@ -221,983 +198,6 @@ KazeUI.ActiveWindows = {}
 KazeUI.IsResizing = false
 KazeUI.AuthorName = "Unknown"
 
--- ==========================================
--- Language / Global Localization Engine
--- ==========================================
--- KazeUI.Language / KazeUI.Languages / KazeUI:SetLanguage / KazeUI:OnLanguageChanged
--- are kept 100% compatible with earlier versions. On top of that plumbing,
--- KazeUI.Localization below is a real, automatic, global translation engine:
--- every component KazeUI builds registers its own original (source) text into
--- KazeUI.Localization.RegisteredTexts, and KazeUI:SetLanguage(...) walks that
--- registry and updates every instance in place -- developers never have to
--- hook OnLanguageChanged manually just to translate normal Title/Description
--- strings anymore (that hook still exists and still fires, for advanced/custom
--- use, e.g. translating text YOU render outside of KazeUI's own components).
-KazeUI.Language = "English"
-KazeUI.Languages = {
-	"English", "Filipino", "Spanish", "French", "German", "Portuguese",
-	"Italian", "Russian", "Japanese", "Korean", "Chinese (Simplified)",
-	"Chinese (Traditional)", "Vietnamese", "Thai", "Indonesian", "Arabic",
-	"Hindi", "Turkish", "Polish", "Dutch"
-}
-KazeUI.LanguageCallbacks = {}
-
--- Maps Roblox LocalizationService locale IDs to KazeUI.Languages entries, used
--- only by KazeUI:DetectSystemLanguage(). Never guessed at random -- unmapped
--- or unrecognized locales simply fall back to "English".
-KazeUI.LocaleMap = {
-	en = "English", ["en-us"] = "English", ["en-gb"] = "English",
-	fil = "Filipino", tl = "Filipino",
-	es = "Spanish", ["es-es"] = "Spanish", ["es-419"] = "Spanish",
-	fr = "French", ["fr-fr"] = "French",
-	de = "German", ["de-de"] = "German",
-	pt = "Portuguese", ["pt-br"] = "Portuguese",
-	it = "Italian",
-	ru = "Russian",
-	ja = "Japanese",
-	ko = "Korean",
-	["zh-hans"] = "Chinese (Simplified)", ["zh-cn"] = "Chinese (Simplified)",
-	["zh-hant"] = "Chinese (Traditional)", ["zh-tw"] = "Chinese (Traditional)", ["zh-hk"] = "Chinese (Traditional)",
-	vi = "Vietnamese",
-	th = "Thai",
-	id = "Indonesian",
-	ar = "Arabic",
-	hi = "Hindi",
-	tr = "Turkish",
-	pl = "Polish",
-	nl = "Dutch",
-}
-
--- Centralized localization registry. Dictionaries = built-in translations for
--- KazeUI's own chrome strings ("Cancel", "Nothing here yet", etc), keyed
--- [LanguageName][SourceEnglishText] = "translated text". CustomTranslations =
--- developer-supplied per-string overrides, keyed the same way, populated via
--- KazeUI:AddTranslation(...) or the optional Title = {Text=, Translations=}
--- component config form -- these always take priority over the built-in
--- dictionary. RegisteredTexts = every live Instance/property pair currently
--- displaying localized text, walked by KazeUI:RefreshLocalization().
-KazeUI.Localization = {
-	Dictionaries = {},
-	CustomTranslations = {},
-	RegisteredTexts = {},
-}
-
--- Built-in dictionary for KazeUI's own chrome/UI text (empty-states, dialog
--- defaults, common action words, etc). This is intentionally a small, curated,
--- fully-offline dictionary -- not a machine translation of arbitrary developer
--- strings (that would require a live translation API, which this library
--- deliberately does NOT depend on; see KazeUI:Translate). Developer-authored
--- text (your own Tab/Button/Toggle/etc titles) is translated via
--- KazeUI.Localization.CustomTranslations instead, which you populate with
--- KazeUI:AddTranslation(...) or the Title = {Text=, Translations=} form.
--- Any word/language pair missing here simply falls back to the English source
--- text, exactly as required -- it never produces broken or empty labels.
-local function RegisterBuiltInDictionary()
-	local D = KazeUI.Localization.Dictionaries
-	local packs = {
-		Filipino = {
-			["Nothing here yet"] = "Wala pang laman dito",
-			["This section doesn't contain any elements yet.\nAdd one to get started."] = "Wala pang laman ang seksyong ito.\nMagdagdag ng isa para magsimula.",
-			["Do you want to exit KazeUI?"] = "Gusto mo bang lumabas sa KazeUI?",
-			["Confirm"] = "Kumpirmahin",
-			["Cancel"] = "Kanselahin",
-			["OK"] = "Sige",
-			["Apply"] = "I-apply",
-			["Apply Language"] = "I-apply ang Wika",
-			["Save"] = "I-save",
-			["Load"] = "I-load",
-			["Close"] = "Isara",
-			["Delete"] = "Burahin",
-			["Refresh"] = "I-refresh",
-			["Refresh Configs"] = "I-refresh ang mga Config",
-			["None"] = "Wala",
-			["Selected"] = "Napili",
-			["Search options..."] = "Maghanap ng mga opsyon...",
-			["Type here..."] = "Mag-type dito...",
-			["Language"] = "Wika",
-			["Language set to"] = "Ang wika ay naitakda sa",
-			["Theme"] = "Tema",
-			["Theme & Visuals"] = "Tema at Visuals",
-			["Notification"] = "Abiso",
-			["Config Manager"] = "Config Manager",
-			["Config Name"] = "Pangalan ng Config",
-			["Save Config"] = "I-save ang Config",
-			["Load Config"] = "I-load ang Config",
-			["Delete Config"] = "Burahin ang Config",
-			["Select Saved Config"] = "Piliin ang Naka-save na Config",
-			["Config Saved"] = "Na-save ang Config",
-			["Config System"] = "Config System",
-			["Config Error"] = "Config Error",
-			["Yes"] = "Oo",
-			["No"] = "Hindi",
-			["Section"] = "Seksyon",
-			["Dropdown"] = "Dropdown",
-			["Slider"] = "Slider",
-			["Input Text"] = "Input na Text",
-			["Button"] = "Button",
-			["Tab"] = "Tab",
-			-- Common navigation/tab words -- included so typical Tab Titles
-			-- translate out of the box without the developer having to
-			-- supply Translations for every single one manually.
-			["Home"] = "Bahay",
-			["Themes"] = "Mga Tema",
-			["Configs"] = "Mga Config",
-			["Components"] = "Mga Bahagi",
-			["Interactive"] = "Interactive",
-			["Localization"] = "Lokalisasyon",
-			["Settings"] = "Mga Setting",
-			["Information"] = "Impormasyon",
-			["No Elements"] = "Walang Laman",
-			["Profile"] = "Profile",
-			["Inventory"] = "Imbentaryo",
-			["Shop"] = "Tindahan",
-			["Store"] = "Tindahan",
-			["Stats"] = "Estadistika",
-			["Players"] = "Mga Manlalaro",
-			["General"] = "Pangkalahatan",
-			["Advanced"] = "Advanced",
-			["About"] = "Tungkol",
-			["Help"] = "Tulong",
-			["Kaze UI"] = "Kaze UI",
-		},
-		Spanish = {
-			["Nothing here yet"] = "Todavía no hay nada aquí",
-			["This section doesn't contain any elements yet.\nAdd one to get started."] = "Esta sección aún no tiene elementos.\nAgrega uno para empezar.",
-			["Do you want to exit KazeUI?"] = "¿Deseas salir de KazeUI?",
-			["Confirm"] = "Confirmar",
-			["Cancel"] = "Cancelar",
-			["OK"] = "Aceptar",
-			["Apply"] = "Aplicar",
-			["Apply Language"] = "Aplicar Idioma",
-			["Save"] = "Guardar",
-			["Load"] = "Cargar",
-			["Close"] = "Cerrar",
-			["Delete"] = "Eliminar",
-			["Refresh"] = "Actualizar",
-			["Refresh Configs"] = "Actualizar Configuraciones",
-			["None"] = "Ninguno",
-			["Selected"] = "Seleccionado(s)",
-			["Search options..."] = "Buscar opciones...",
-			["Type here..."] = "Escribe aquí...",
-			["Language"] = "Idioma",
-			["Language set to"] = "Idioma establecido a",
-			["Theme"] = "Tema",
-			["Theme & Visuals"] = "Tema y Visuales",
-			["Notification"] = "Notificación",
-			["Config Manager"] = "Administrador de Configuración",
-			["Config Name"] = "Nombre de Configuración",
-			["Save Config"] = "Guardar Configuración",
-			["Load Config"] = "Cargar Configuración",
-			["Delete Config"] = "Eliminar Configuración",
-			["Select Saved Config"] = "Seleccionar Configuración Guardada",
-			["Config Saved"] = "Configuración Guardada",
-			["Config System"] = "Sistema de Configuración",
-			["Config Error"] = "Error de Configuración",
-			["Yes"] = "Sí",
-			["No"] = "No",
-			["Section"] = "Sección",
-			["Dropdown"] = "Menú desplegable",
-			["Slider"] = "Deslizador",
-			["Input Text"] = "Texto de entrada",
-			["Button"] = "Botón",
-			["Tab"] = "Pestaña",
-			["Home"] = "Inicio",
-			["Themes"] = "Temas",
-			["Configs"] = "Configuraciones",
-			["Components"] = "Componentes",
-			["Interactive"] = "Interactivo",
-			["Localization"] = "Localización",
-			["Settings"] = "Ajustes",
-			["Information"] = "Información",
-			["No Elements"] = "Sin Elementos",
-			["Profile"] = "Perfil",
-			["Inventory"] = "Inventario",
-			["Shop"] = "Tienda",
-			["Store"] = "Tienda",
-			["Stats"] = "Estadísticas",
-			["Players"] = "Jugadores",
-			["General"] = "General",
-			["Advanced"] = "Avanzado",
-			["About"] = "Acerca de",
-			["Help"] = "Ayuda",
-			["Kaze UI"] = "Kaze UI",
-		},
-		Japanese = {
-			["Nothing here yet"] = "まだ何もありません",
-			["This section doesn't contain any elements yet.\nAdd one to get started."] = "このセクションにはまだ項目がありません。\n追加して始めましょう。",
-			["Do you want to exit KazeUI?"] = "KazeUIを終了しますか？",
-			["Confirm"] = "確認",
-			["Cancel"] = "キャンセル",
-			["OK"] = "OK",
-			["Apply"] = "適用",
-			["Apply Language"] = "言語を適用",
-			["Save"] = "保存",
-			["Load"] = "読み込み",
-			["Close"] = "閉じる",
-			["Delete"] = "削除",
-			["Refresh"] = "更新",
-			["Refresh Configs"] = "設定を更新",
-			["None"] = "なし",
-			["Selected"] = "選択中",
-			["Search options..."] = "オプションを検索...",
-			["Type here..."] = "ここに入力...",
-			["Language"] = "言語",
-			["Language set to"] = "言語を次に設定しました：",
-			["Theme"] = "テーマ",
-			["Theme & Visuals"] = "テーマと表示",
-			["Notification"] = "通知",
-			["Config Manager"] = "設定マネージャー",
-			["Config Name"] = "設定名",
-			["Save Config"] = "設定を保存",
-			["Load Config"] = "設定を読み込み",
-			["Delete Config"] = "設定を削除",
-			["Select Saved Config"] = "保存済みの設定を選択",
-			["Config Saved"] = "設定を保存しました",
-			["Config System"] = "設定システム",
-			["Config Error"] = "設定エラー",
-			["Yes"] = "はい",
-			["No"] = "いいえ",
-			["Section"] = "セクション",
-			["Dropdown"] = "ドロップダウン",
-			["Slider"] = "スライダー",
-			["Input Text"] = "入力テキスト",
-			["Button"] = "ボタン",
-			["Tab"] = "タブ",
-			["Home"] = "ホーム",
-			["Themes"] = "テーマ一覧",
-			["Configs"] = "設定一覧",
-			["Components"] = "コンポーネント",
-			["Interactive"] = "インタラクティブ",
-			["Localization"] = "ローカライゼーション",
-			["Settings"] = "設定",
-			["Information"] = "情報",
-			["No Elements"] = "要素なし",
-			["Profile"] = "プロフィール",
-			["Inventory"] = "インベントリ",
-			["Shop"] = "ショップ",
-			["Store"] = "ストア",
-			["Stats"] = "ステータス",
-			["Players"] = "プレイヤー",
-			["General"] = "一般",
-			["Advanced"] = "詳細設定",
-			["About"] = "概要",
-			["Help"] = "ヘルプ",
-			["Kaze UI"] = "Kaze UI",
-		},
-		["French"] = {
-			["Nothing here yet"] = "Rien ici pour l'instant",
-			["This section doesn't contain any elements yet.\nAdd one to get started."] = "Cette section ne contient encore aucun élément.\nAjoutez-en un pour commencer.",
-			["Do you want to exit KazeUI?"] = "Voulez-vous quitter KazeUI ?",
-			["Confirm"] = "Confirmer",
-			["Cancel"] = "Annuler",
-			["OK"] = "OK",
-			["Apply"] = "Appliquer",
-			["Apply Language"] = "Appliquer la langue",
-			["Save"] = "Enregistrer",
-			["Load"] = "Charger",
-			["Close"] = "Fermer",
-			["Refresh"] = "Actualiser",
-			["Refresh Configs"] = "Actualiser les configurations",
-			["None"] = "Aucun",
-			["Selected"] = "Sélectionné(s)",
-			["Search options..."] = "Rechercher des options...",
-			["Type here..."] = "Tapez ici...",
-			["Language"] = "Langue",
-			["Language set to"] = "Langue définie sur",
-			["Theme"] = "Thème",
-			["Theme & Visuals"] = "Thème et visuels",
-			["Notification"] = "Notification",
-			["Config Saved"] = "Configuration enregistrée",
-			["Config System"] = "Système de configuration",
-			["Config Error"] = "Erreur de configuration",
-			["Yes"] = "Oui",
-			["No"] = "Non",
-			["Section"] = "Section",
-			["Dropdown"] = "Menu déroulant",
-			["Slider"] = "Curseur",
-			["Input Text"] = "Texte de saisie",
-			["Button"] = "Bouton",
-			["Tab"] = "Onglet",
-			["Home"] = "Accueil",
-			["Components"] = "Composants",
-			["Interactive"] = "Interactif",
-			["Localization"] = "Localisation",
-			["Settings"] = "Paramètres",
-			["No Elements"] = "Aucun élément",
-			["Themes"] = "Thèmes",
-			["Configs"] = "Configurations",
-			["Kaze UI"] = "Kaze UI",
-		},
-		["German"] = {
-			["Nothing here yet"] = "Hier ist noch nichts",
-			["This section doesn't contain any elements yet.\nAdd one to get started."] = "Dieser Abschnitt enthält noch keine Elemente.\nFüge eines hinzu, um zu beginnen.",
-			["Do you want to exit KazeUI?"] = "Möchtest du KazeUI verlassen?",
-			["Confirm"] = "Bestätigen",
-			["Cancel"] = "Abbrechen",
-			["OK"] = "OK",
-			["Apply"] = "Anwenden",
-			["Apply Language"] = "Sprache anwenden",
-			["Save"] = "Speichern",
-			["Load"] = "Laden",
-			["Close"] = "Schließen",
-			["Refresh"] = "Aktualisieren",
-			["Refresh Configs"] = "Konfigurationen aktualisieren",
-			["None"] = "Keine",
-			["Selected"] = "Ausgewählt",
-			["Search options..."] = "Optionen suchen...",
-			["Type here..."] = "Hier eingeben...",
-			["Language"] = "Sprache",
-			["Language set to"] = "Sprache eingestellt auf",
-			["Theme"] = "Thema",
-			["Theme & Visuals"] = "Thema & Visuals",
-			["Notification"] = "Benachrichtigung",
-			["Config Saved"] = "Konfiguration gespeichert",
-			["Config System"] = "Konfigurationssystem",
-			["Config Error"] = "Konfigurationsfehler",
-			["Yes"] = "Ja",
-			["No"] = "Nein",
-			["Section"] = "Abschnitt",
-			["Dropdown"] = "Dropdown",
-			["Slider"] = "Schieberegler",
-			["Input Text"] = "Eingabetext",
-			["Button"] = "Schaltfläche",
-			["Tab"] = "Tab",
-			["Home"] = "Start",
-			["Components"] = "Komponenten",
-			["Interactive"] = "Interaktiv",
-			["Localization"] = "Lokalisierung",
-			["Settings"] = "Einstellungen",
-			["No Elements"] = "Keine Elemente",
-			["Themes"] = "Themen",
-			["Configs"] = "Konfigurationen",
-			["Kaze UI"] = "Kaze UI",
-		},
-		["Portuguese"] = {
-			["Nothing here yet"] = "Nada aqui ainda",
-			["This section doesn't contain any elements yet.\nAdd one to get started."] = "Esta seção ainda não tem elementos.\nAdicione um para começar.",
-			["Do you want to exit KazeUI?"] = "Deseja sair do KazeUI?",
-			["Confirm"] = "Confirmar",
-			["Cancel"] = "Cancelar",
-			["OK"] = "OK",
-			["Apply"] = "Aplicar",
-			["Apply Language"] = "Aplicar Idioma",
-			["Save"] = "Salvar",
-			["Load"] = "Carregar",
-			["Close"] = "Fechar",
-			["Refresh"] = "Atualizar",
-			["Refresh Configs"] = "Atualizar Configurações",
-			["None"] = "Nenhum",
-			["Selected"] = "Selecionado(s)",
-			["Search options..."] = "Pesquisar opções...",
-			["Type here..."] = "Digite aqui...",
-			["Language"] = "Idioma",
-			["Language set to"] = "Idioma definido para",
-			["Theme"] = "Tema",
-			["Theme & Visuals"] = "Tema e Visuais",
-			["Notification"] = "Notificação",
-			["Config Saved"] = "Configuração Salva",
-			["Config System"] = "Sistema de Configuração",
-			["Config Error"] = "Erro de Configuração",
-			["Yes"] = "Sim",
-			["No"] = "Não",
-			["Section"] = "Seção",
-			["Dropdown"] = "Lista suspensa",
-			["Slider"] = "Controle deslizante",
-			["Input Text"] = "Texto de entrada",
-			["Button"] = "Botão",
-			["Tab"] = "Aba",
-			["Home"] = "Início",
-			["Components"] = "Componentes",
-			["Interactive"] = "Interativo",
-			["Localization"] = "Localização",
-			["Settings"] = "Configurações",
-			["No Elements"] = "Sem Elementos",
-			["Themes"] = "Temas",
-			["Configs"] = "Configurações",
-			["Kaze UI"] = "Kaze UI",
-		},
-		["Italian"] = {
-			["Nothing here yet"] = "Ancora niente qui",
-			["This section doesn't contain any elements yet.\nAdd one to get started."] = "Questa sezione non contiene ancora elementi.\nAggiungine uno per iniziare.",
-			["Do you want to exit KazeUI?"] = "Vuoi uscire da KazeUI?",
-			["Confirm"] = "Conferma",
-			["Cancel"] = "Annulla",
-			["OK"] = "OK",
-			["Apply"] = "Applica",
-			["Apply Language"] = "Applica Lingua",
-			["Save"] = "Salva",
-			["Load"] = "Carica",
-			["Close"] = "Chiudi",
-			["Refresh"] = "Aggiorna",
-			["Refresh Configs"] = "Aggiorna Configurazioni",
-			["None"] = "Nessuno",
-			["Selected"] = "Selezionato/i",
-			["Search options..."] = "Cerca opzioni...",
-			["Type here..."] = "Digita qui...",
-			["Language"] = "Lingua",
-			["Language set to"] = "Lingua impostata su",
-			["Theme"] = "Tema",
-			["Theme & Visuals"] = "Tema e Visuals",
-			["Notification"] = "Notifica",
-			["Config Saved"] = "Configurazione Salvata",
-			["Config System"] = "Sistema di Configurazione",
-			["Config Error"] = "Errore di Configurazione",
-			["Yes"] = "Sì",
-			["No"] = "No",
-			["Section"] = "Sezione",
-			["Dropdown"] = "Menu a tendina",
-			["Slider"] = "Cursore",
-			["Input Text"] = "Testo di input",
-			["Button"] = "Pulsante",
-			["Tab"] = "Scheda",
-			["Home"] = "Home",
-			["Components"] = "Componenti",
-			["Interactive"] = "Interattivo",
-			["Localization"] = "Localizzazione",
-			["Settings"] = "Impostazioni",
-			["No Elements"] = "Nessun Elemento",
-			["Themes"] = "Temi",
-			["Configs"] = "Configurazioni",
-			["Kaze UI"] = "Kaze UI",
-		},
-		["Russian"] = {
-			["Nothing here yet"] = "Здесь пока пусто",
-			["This section doesn't contain any elements yet.\nAdd one to get started."] = "В этом разделе пока нет элементов.\nДобавьте один, чтобы начать.",
-			["Do you want to exit KazeUI?"] = "Вы хотите выйти из KazeUI?",
-			["Confirm"] = "Подтвердить",
-			["Cancel"] = "Отмена",
-			["OK"] = "ОК",
-			["Apply"] = "Применить",
-			["Apply Language"] = "Применить язык",
-			["Save"] = "Сохранить",
-			["Load"] = "Загрузить",
-			["Close"] = "Закрыть",
-			["Refresh"] = "Обновить",
-			["Refresh Configs"] = "Обновить конфигурации",
-			["None"] = "Нет",
-			["Selected"] = "Выбрано",
-			["Search options..."] = "Поиск опций...",
-			["Type here..."] = "Введите здесь...",
-			["Language"] = "Язык",
-			["Language set to"] = "Язык установлен на",
-			["Theme"] = "Тема",
-			["Theme & Visuals"] = "Тема и визуал",
-			["Notification"] = "Уведомление",
-			["Config Saved"] = "Конфигурация сохранена",
-			["Config System"] = "Система конфигурации",
-			["Config Error"] = "Ошибка конфигурации",
-			["Yes"] = "Да",
-			["No"] = "Нет",
-			["Section"] = "Раздел",
-			["Dropdown"] = "Выпадающий список",
-			["Slider"] = "Ползунок",
-			["Input Text"] = "Текстовое поле",
-			["Button"] = "Кнопка",
-			["Tab"] = "Вкладка",
-			["Home"] = "Главная",
-			["Components"] = "Компоненты",
-			["Interactive"] = "Интерактив",
-			["Localization"] = "Локализация",
-			["Settings"] = "Настройки",
-			["No Elements"] = "Нет элементов",
-			["Themes"] = "Темы",
-			["Configs"] = "Конфигурации",
-			["Kaze UI"] = "Kaze UI",
-		},
-		["Korean"] = {
-			["Nothing here yet"] = "아직 아무것도 없습니다",
-			["This section doesn't contain any elements yet.\nAdd one to get started."] = "이 섹션에는 아직 요소가 없습니다.\n시작하려면 하나를 추가하세요.",
-			["Do you want to exit KazeUI?"] = "KazeUI를 종료하시겠습니까?",
-			["Confirm"] = "확인",
-			["Cancel"] = "취소",
-			["OK"] = "확인",
-			["Apply"] = "적용",
-			["Apply Language"] = "언어 적용",
-			["Save"] = "저장",
-			["Load"] = "불러오기",
-			["Close"] = "닫기",
-			["Refresh"] = "새로고침",
-			["Refresh Configs"] = "설정 새로고침",
-			["None"] = "없음",
-			["Selected"] = "선택됨",
-			["Search options..."] = "옵션 검색...",
-			["Type here..."] = "여기에 입력...",
-			["Language"] = "언어",
-			["Language set to"] = "언어가 다음으로 설정됨",
-			["Theme"] = "테마",
-			["Theme & Visuals"] = "테마 및 비주얼",
-			["Notification"] = "알림",
-			["Config Saved"] = "설정 저장됨",
-			["Config System"] = "설정 시스템",
-			["Config Error"] = "설정 오류",
-			["Yes"] = "예",
-			["No"] = "아니요",
-			["Section"] = "섹션",
-			["Dropdown"] = "드롭다운",
-			["Slider"] = "슬라이더",
-			["Input Text"] = "입력 텍스트",
-			["Button"] = "버튼",
-			["Tab"] = "탭",
-			["Home"] = "홈",
-			["Components"] = "구성 요소",
-			["Interactive"] = "인터랙티브",
-			["Localization"] = "현지화",
-			["Settings"] = "설정",
-			["No Elements"] = "요소 없음",
-			["Themes"] = "테마",
-			["Configs"] = "설정",
-			["Kaze UI"] = "Kaze UI",
-		},
-		["Chinese (Simplified)"] = {
-			["Nothing here yet"] = "这里还什么都没有",
-			["This section doesn't contain any elements yet.\nAdd one to get started."] = "此部分还没有任何元素。\n添加一个开始吧。",
-			["Do you want to exit KazeUI?"] = "您想退出 KazeUI 吗？",
-			["Confirm"] = "确认",
-			["Cancel"] = "取消",
-			["OK"] = "确定",
-			["Apply"] = "应用",
-			["Apply Language"] = "应用语言",
-			["Save"] = "保存",
-			["Load"] = "加载",
-			["Close"] = "关闭",
-			["Refresh"] = "刷新",
-			["Refresh Configs"] = "刷新配置",
-			["None"] = "无",
-			["Selected"] = "已选择",
-			["Search options..."] = "搜索选项...",
-			["Type here..."] = "在此输入...",
-			["Language"] = "语言",
-			["Language set to"] = "语言已设置为",
-			["Theme"] = "主题",
-			["Theme & Visuals"] = "主题与视觉效果",
-			["Notification"] = "通知",
-			["Config Saved"] = "配置已保存",
-			["Config System"] = "配置系统",
-			["Config Error"] = "配置错误",
-			["Yes"] = "是",
-			["No"] = "否",
-			["Section"] = "部分",
-			["Dropdown"] = "下拉菜单",
-			["Slider"] = "滑块",
-			["Input Text"] = "输入文本",
-			["Button"] = "按钮",
-			["Tab"] = "标签页",
-			["Home"] = "主页",
-			["Components"] = "组件",
-			["Interactive"] = "互动",
-			["Localization"] = "本地化",
-			["Settings"] = "设置",
-			["No Elements"] = "无元素",
-			["Themes"] = "主题",
-			["Configs"] = "配置",
-			["Kaze UI"] = "Kaze UI",
-		},
-		["Chinese (Traditional)"] = {
-			["Nothing here yet"] = "這裡還什麼都沒有",
-			["This section doesn't contain any elements yet.\nAdd one to get started."] = "此部分還沒有任何元素。\n新增一個開始吧。",
-			["Do you want to exit KazeUI?"] = "您想退出 KazeUI 嗎？",
-			["Confirm"] = "確認",
-			["Cancel"] = "取消",
-			["OK"] = "確定",
-			["Apply"] = "套用",
-			["Apply Language"] = "套用語言",
-			["Save"] = "儲存",
-			["Load"] = "載入",
-			["Close"] = "關閉",
-			["Refresh"] = "重新整理",
-			["Refresh Configs"] = "重新整理設定",
-			["None"] = "無",
-			["Selected"] = "已選取",
-			["Search options..."] = "搜尋選項...",
-			["Type here..."] = "在此輸入...",
-			["Language"] = "語言",
-			["Language set to"] = "語言已設定為",
-			["Theme"] = "主題",
-			["Theme & Visuals"] = "主題與視覺效果",
-			["Notification"] = "通知",
-			["Config Saved"] = "設定已儲存",
-			["Config System"] = "設定系統",
-			["Config Error"] = "設定錯誤",
-			["Yes"] = "是",
-			["No"] = "否",
-			["Section"] = "區段",
-			["Dropdown"] = "下拉選單",
-			["Slider"] = "滑桿",
-			["Input Text"] = "輸入文字",
-			["Button"] = "按鈕",
-			["Tab"] = "分頁",
-			["Home"] = "首頁",
-			["Components"] = "元件",
-			["Interactive"] = "互動",
-			["Localization"] = "在地化",
-			["Settings"] = "設定",
-			["No Elements"] = "無元素",
-			["Themes"] = "主題",
-			["Configs"] = "設定",
-			["Kaze UI"] = "Kaze UI",
-		},
-		["Vietnamese"] = {
-			["Nothing here yet"] = "Chưa có gì ở đây",
-			["This section doesn't contain any elements yet.\nAdd one to get started."] = "Phần này chưa có phần tử nào.\nThêm một cái để bắt đầu.",
-			["Do you want to exit KazeUI?"] = "Bạn có muốn thoát KazeUI không?",
-			["Confirm"] = "Xác nhận",
-			["Cancel"] = "Hủy",
-			["OK"] = "OK",
-			["Apply"] = "Áp dụng",
-			["Apply Language"] = "Áp dụng Ngôn ngữ",
-			["Save"] = "Lưu",
-			["Load"] = "Tải",
-			["Close"] = "Đóng",
-			["Refresh"] = "Làm mới",
-			["Refresh Configs"] = "Làm mới Cấu hình",
-			["None"] = "Không có",
-			["Selected"] = "Đã chọn",
-			["Search options..."] = "Tìm kiếm tùy chọn...",
-			["Type here..."] = "Nhập vào đây...",
-			["Language"] = "Ngôn ngữ",
-			["Language set to"] = "Ngôn ngữ được đặt thành",
-			["Theme"] = "Chủ đề",
-			["Theme & Visuals"] = "Chủ đề & Hình ảnh",
-			["Notification"] = "Thông báo",
-			["Config Saved"] = "Đã lưu Cấu hình",
-			["Config System"] = "Hệ thống Cấu hình",
-			["Config Error"] = "Lỗi Cấu hình",
-			["Yes"] = "Có",
-			["No"] = "Không",
-			["Section"] = "Phần",
-			["Dropdown"] = "Danh sách thả xuống",
-			["Slider"] = "Thanh trượt",
-			["Input Text"] = "Văn bản nhập",
-			["Button"] = "Nút",
-			["Tab"] = "Tab",
-			["Home"] = "Trang chủ",
-			["Components"] = "Thành phần",
-			["Interactive"] = "Tương tác",
-			["Localization"] = "Bản địa hóa",
-			["Settings"] = "Cài đặt",
-			["No Elements"] = "Không có Phần tử",
-			["Themes"] = "Chủ đề",
-			["Configs"] = "Cấu hình",
-			["Kaze UI"] = "Kaze UI",
-		},
-		["Thai"] = {
-			["Nothing here yet"] = "ยังไม่มีอะไรที่นี่",
-			["This section doesn't contain any elements yet.\nAdd one to get started."] = "ส่วนนี้ยังไม่มีองค์ประกอบใดๆ\nเพิ่มหนึ่งรายการเพื่อเริ่มต้น",
-			["Do you want to exit KazeUI?"] = "คุณต้องการออกจาก KazeUI หรือไม่?",
-			["Confirm"] = "ยืนยัน",
-			["Cancel"] = "ยกเลิก",
-			["OK"] = "ตกลง",
-			["Apply"] = "นำไปใช้",
-			["Apply Language"] = "นำภาษาไปใช้",
-			["Save"] = "บันทึก",
-			["Load"] = "โหลด",
-			["Close"] = "ปิด",
-			["Refresh"] = "รีเฟรช",
-			["Refresh Configs"] = "รีเฟรชการตั้งค่า",
-			["None"] = "ไม่มี",
-			["Selected"] = "เลือกแล้ว",
-			["Search options..."] = "ค้นหาตัวเลือก...",
-			["Type here..."] = "พิมพ์ที่นี่...",
-			["Language"] = "ภาษา",
-			["Language set to"] = "ตั้งค่าภาษาเป็น",
-			["Theme"] = "ธีม",
-			["Theme & Visuals"] = "ธีมและภาพ",
-			["Notification"] = "การแจ้งเตือน",
-			["Config Saved"] = "บันทึกการตั้งค่าแล้ว",
-			["Config System"] = "ระบบการตั้งค่า",
-			["Config Error"] = "ข้อผิดพลาดการตั้งค่า",
-			["Yes"] = "ใช่",
-			["No"] = "ไม่ใช่",
-			["Section"] = "ส่วน",
-			["Dropdown"] = "เมนูแบบเลื่อนลง",
-			["Slider"] = "แถบเลื่อน",
-			["Input Text"] = "ข้อความอินพุต",
-			["Button"] = "ปุ่ม",
-			["Tab"] = "แท็บ",
-			["Home"] = "หน้าแรก",
-			["Components"] = "คอมโพเนนต์",
-			["Interactive"] = "อินเทอร์แอคทีฟ",
-			["Localization"] = "การแปลภาษา",
-			["Settings"] = "การตั้งค่า",
-			["No Elements"] = "ไม่มีองค์ประกอบ",
-			["Themes"] = "ธีม",
-			["Configs"] = "การตั้งค่า",
-			["Kaze UI"] = "Kaze UI",
-		},
-		["Indonesian"] = {
-			["Nothing here yet"] = "Belum ada apa-apa di sini",
-			["This section doesn't contain any elements yet.\nAdd one to get started."] = "Bagian ini belum berisi elemen apa pun.\nTambahkan satu untuk memulai.",
-			["Do you want to exit KazeUI?"] = "Apakah Anda ingin keluar dari KazeUI?",
-			["Confirm"] = "Konfirmasi",
-			["Cancel"] = "Batal",
-			["OK"] = "OK",
-			["Apply"] = "Terapkan",
-			["Apply Language"] = "Terapkan Bahasa",
-			["Save"] = "Simpan",
-			["Load"] = "Muat",
-			["Close"] = "Tutup",
-			["Refresh"] = "Segarkan",
-			["Refresh Configs"] = "Segarkan Konfigurasi",
-			["None"] = "Tidak ada",
-			["Selected"] = "Dipilih",
-			["Search options..."] = "Cari opsi...",
-			["Type here..."] = "Ketik di sini...",
-			["Language"] = "Bahasa",
-			["Language set to"] = "Bahasa diatur ke",
-			["Theme"] = "Tema",
-			["Theme & Visuals"] = "Tema & Visual",
-			["Notification"] = "Notifikasi",
-			["Config Saved"] = "Konfigurasi Disimpan",
-			["Config System"] = "Sistem Konfigurasi",
-			["Config Error"] = "Kesalahan Konfigurasi",
-			["Yes"] = "Ya",
-			["No"] = "Tidak",
-			["Section"] = "Bagian",
-			["Dropdown"] = "Dropdown",
-			["Slider"] = "Penggeser",
-			["Input Text"] = "Teks Input",
-			["Button"] = "Tombol",
-			["Tab"] = "Tab",
-			["Home"] = "Beranda",
-			["Components"] = "Komponen",
-			["Interactive"] = "Interaktif",
-			["Localization"] = "Lokalisasi",
-			["Settings"] = "Pengaturan",
-			["No Elements"] = "Tanpa Elemen",
-			["Themes"] = "Tema",
-			["Configs"] = "Konfigurasi",
-			["Kaze UI"] = "Kaze UI",
-		},
-		["Arabic"] = {
-			["Nothing here yet"] = "لا يوجد شيء هنا بعد",
-			["This section doesn't contain any elements yet.\nAdd one to get started."] = "هذا القسم لا يحتوي على أي عناصر بعد.\nأضف عنصرًا للبدء.",
-			["Do you want to exit KazeUI?"] = "هل تريد الخروج من KazeUI؟",
-			["Confirm"] = "تأكيد",
-			["Cancel"] = "إلغاء",
-			["OK"] = "موافق",
-			["Apply"] = "تطبيق",
-			["Apply Language"] = "تطبيق اللغة",
-			["Save"] = "حفظ",
-			["Load"] = "تحميل",
-			["Close"] = "إغلاق",
-			["Refresh"] = "تحديث",
-			["Refresh Configs"] = "تحديث الإعدادات",
-			["None"] = "لا شيء",
-			["Selected"] = "محدد",
-			["Search options..."] = "بحث عن الخيارات...",
-			["Type here..."] = "اكتب هنا...",
-			["Language"] = "اللغة",
-			["Language set to"] = "تم تعيين اللغة إلى",
-			["Theme"] = "السمة",
-			["Theme & Visuals"] = "السمة والمرئيات",
-			["Notification"] = "إشعار",
-			["Config Saved"] = "تم حفظ الإعدادات",
-			["Config System"] = "نظام الإعدادات",
-			["Config Error"] = "خطأ في الإعدادات",
-			["Yes"] = "نعم",
-			["No"] = "لا",
-			["Section"] = "القسم",
-			["Dropdown"] = "القائمة المنسدلة",
-			["Slider"] = "شريط التمرير",
-			["Input Text"] = "نص الإدخال",
-			["Button"] = "زر",
-			["Tab"] = "علامة تبويب",
-			["Home"] = "الرئيسية",
-			["Components"] = "المكونات",
-			["Interactive"] = "تفاعلي",
-			["Localization"] = "الترجمة المحلية",
-			["Settings"] = "الإعدادات",
-			["No Elements"] = "لا توجد عناصر",
-			["Themes"] = "السمات",
-			["Configs"] = "الإعدادات",
-			["Kaze UI"] = "Kaze UI",
-		},
-		["Hindi"] = {
-			["Nothing here yet"] = "यहाँ अभी कुछ नहीं है",
-			["This section doesn't contain any elements yet.\nAdd one to get started."] = "इस सेक्शन में अभी कोई तत्व नहीं है।\nशुरू करने के लिए एक जोड़ें।",
-			["Do you want to exit KazeUI?"] = "क्या आप KazeUI से बाहर निकलना चाहते हैं?",
-			["Confirm"] = "पुष्टि करें",
-			["Cancel"] = "रद्द करें",
-			["OK"] = "ठीक है",
-			["Apply"] = "लागू करें",
-			["Apply Language"] = "भाषा लागू करें",
-			["Save"] = "सहेजें",
-			["Load"] = "लोड करें",
-			["Close"] = "बंद करें",
-			["Refresh"] = "रीफ्रेश करें",
-			["Refresh Configs"] = "कॉन्फ़िग रीफ्रेश करें",
-			["None"] = "कोई नहीं",
-			["Selected"] = "चयनित",
-			["Search options..."] = "विकल्प खोजें...",
-			["Type here..."] = "यहाँ टाइप करें...",
-			["Language"] = "भाषा",
-			["Language set to"] = "भाषा सेट की गई",
-			["Theme"] = "थीम",
-			["Theme & Visuals"] = "थीम और विज़ुअल",
-			["Notification"] = "सूचना",
-			["Config Saved"] = "कॉन्फ़िग सहेजा गया",
-			["Config System"] = "कॉन्फ़िग सिस्टम",
-			["Config Error"] = "कॉन्फ़िग त्रुटि",
-			["Yes"] = "हाँ",
-			["No"] = "नहीं",
-			["Section"] = "सेक्शन",
-			["Dropdown"] = "ड्रॉपडाउन",
-			["Slider"] = "स्लाइडर",
-			["Input Text"] = "इनपुट टेक्स्ट",
-			["Button"] = "बटन",
-			["Tab"] = "टैब",
-			["Home"] = "होम",
-			["Components"] = "घटक",
-			["Interactive"] = "इंटरैक्टिव",
-			["Localization"] = "स्थानीयकरण",
-			["Settings"] = "सेटिंग्स",
-			["No Elements"] = "कोई तत्व नहीं",
-			["Themes"] = "थीम",
-			["Configs"] = "कॉन्फ़िग",
-			["Kaze UI"] = "Kaze UI",
-		},
-		["Turkish"] = {
-			["Nothing here yet"] = "Burada henüz bir şey yok",
-			["This section doesn't contain any elements yet.\nAdd one to get started."] = "Bu bölümde henüz öğe yok.\nBaşlamak için bir tane ekleyin.",
-			["Do you want to exit KazeUI?"] = "KazeUI'den çıkmak istiyor musunuz?",
-			["Confirm"] = "Onayla",
-			["Cancel"] = "İptal",
-			["OK"] = "Tamam",
-			["Apply"] = "Uygula",
-			["Apply Language"] = "Dili Uygula",
-			["Save"] = "Kaydet",
-			["Load"] = "Yükle",
-			["Close"] = "Kapat",
-			["Refresh"] = "Yenile",
-			["Refresh Configs"] = "Yapılandırmaları Yenile",
-			["None"] = "Yok",
-			["Selected"] = "Seçildi",
-			["Search options..."] = "Seçenekleri ara...",
-			["Type here..."] = "Buraya yazın...",
-			["Language"] = "Dil",
-			["Language set to"] = "Dil şu şekilde ayarlandı",
-			["Theme"] = "Tema",
-			["Theme & Visuals"] = "Tema ve Görseller",
-			["Notification"] = "Bildirim",
-			["Config Saved"] = "Yapılandırma Kaydedildi",
-			["Config System"] = "Yapılandırma Sistemi",
-			["Config Error"] = "Yapılandırma Hatası",
-			["Yes"] = "Evet",
-			["No"] = "Hayır",
-			["Section"] = "Bölüm",
-			["Dropdown"] = "Açılır Menü",
-			["Slider"] = "Kaydırıcı",
-			["Input Text"] = "Giriş Metni",
-			["Button"] = "Düğme",
-			["Tab"] = "Sekme",
-			["Home"] = "Ana Sayfa",
-			["Components"] = "Bileşenler",
-			["Interactive"] = "Etkileşimli",
-			["Localization"] = "Yerelleştirme",
-			["Settings"] = "Ayarlar",
-			["No Elements"] = "Öğe Yok",
-			["Themes"] = "Temalar",
-			["Configs"] = "Yapılandırmalar",
-			["Kaze UI"] = "Kaze UI",
-		},
-		["Polish"] = {
-			["Nothing here yet"] = "Tutaj jeszcze nic nie ma",
-			["This section doesn't contain any elements yet.\nAdd one to get started."] = "Ta sekcja nie zawiera jeszcze żadnych elementów.\nDodaj jeden, aby zacząć.",
-			["Do you want to exit KazeUI?"] = "Czy chcesz wyjść z KazeUI?",
-			["Confirm"] = "Potwierdź",
-			["Cancel"] = "Anuluj",
-			["OK"] = "OK",
-			["Apply"] = "Zastosuj",
-			["Apply Language"] = "Zastosuj Język",
-			["Save"] = "Zapisz",
-			["Load"] = "Wczytaj",
-			["Close"] = "Zamknij",
-			["Refresh"] = "Odśwież",
-			["Refresh Configs"] = "Odśwież Konfiguracje",
-			["None"] = "Brak",
-			["Selected"] = "Wybrano",
-			["Search options..."] = "Szukaj opcji...",
-			["Type here..."] = "Wpisz tutaj...",
-			["Language"] = "Język",
-			["Language set to"] = "Ustawiono język na",
-			["Theme"] = "Motyw",
-			["Theme & Visuals"] = "Motyw i Wizualizacje",
-			["Notification"] = "Powiadomienie",
-			["Config Saved"] = "Zapisano Konfigurację",
-			["Config System"] = "System Konfiguracji",
-			["Config Error"] = "Błąd Konfiguracji",
-			["Yes"] = "Tak",
-			["No"] = "Nie",
-			["Section"] = "Sekcja",
-			["Dropdown"] = "Lista rozwijana",
-			["Slider"] = "Suwak",
-			["Input Text"] = "Tekst wejściowy",
-			["Button"] = "Przycisk",
-			["Tab"] = "Karta",
-			["Home"] = "Strona główna",
-			["Components"] = "Komponenty",
-			["Interactive"] = "Interaktywne",
-			["Localization"] = "Lokalizacja",
-			["Settings"] = "Ustawienia",
-			["No Elements"] = "Brak Elementów",
-			["Themes"] = "Motywy",
-			["Configs"] = "Konfiguracje",
-			["Kaze UI"] = "Kaze UI",
-		},
-		["Dutch"] = {
-			["Nothing here yet"] = "Hier is nog niets",
-			["This section doesn't contain any elements yet.\nAdd one to get started."] = "Deze sectie bevat nog geen elementen.\nVoeg er een toe om te beginnen.",
-			["Do you want to exit KazeUI?"] = "Wil je KazeUI afsluiten?",
-			["Confirm"] = "Bevestigen",
-			["Cancel"] = "Annuleren",
-			["OK"] = "OK",
-			["Apply"] = "Toepassen",
-			["Apply Language"] = "Taal Toepassen",
-			["Save"] = "Opslaan",
-			["Load"] = "Laden",
-			["Close"] = "Sluiten",
-			["Refresh"] = "Vernieuwen",
-			["Refresh Configs"] = "Configuraties Vernieuwen",
-			["None"] = "Geen",
-			["Selected"] = "Geselecteerd",
-			["Search options..."] = "Opties zoeken...",
-			["Type here..."] = "Typ hier...",
-			["Language"] = "Taal",
-			["Language set to"] = "Taal ingesteld op",
-			["Theme"] = "Thema",
-			["Theme & Visuals"] = "Thema & Visuals",
-			["Notification"] = "Melding",
-			["Config Saved"] = "Configuratie Opgeslagen",
-			["Config System"] = "Configuratiesysteem",
-			["Config Error"] = "Configuratiefout",
-			["Yes"] = "Ja",
-			["No"] = "Nee",
-			["Section"] = "Sectie",
-			["Dropdown"] = "Dropdown",
-			["Slider"] = "Schuifregelaar",
-			["Input Text"] = "Invoertekst",
-			["Button"] = "Knop",
-			["Tab"] = "Tabblad",
-			["Home"] = "Home",
-			["Components"] = "Componenten",
-			["Interactive"] = "Interactief",
-			["Localization"] = "Lokalisatie",
-			["Settings"] = "Instellingen",
-			["No Elements"] = "Geen Elementen",
-			["Themes"] = "Thema's",
-			["Configs"] = "Configuraties",
-			["Kaze UI"] = "Kaze UI",
-		},
-	}
-	for lang, pack in pairs(packs) do
-		D[lang] = D[lang] or {}
-		for k, v in pairs(pack) do
-			D[lang][k] = v
-		end
-	end
-end
-RegisterBuiltInDictionary()
-
 -- Centralized Modal / Dialogue State Tracker
 local activeDialogsCount = 0
 
@@ -1219,13 +219,6 @@ local TWEEN_FAST = TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirectio
 local TWEEN_SPRING = TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
 local TWEEN_SMOOTH = TweenInfo.new(0.35, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
 local TWEEN_COLLAPSE = TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out) -- shared by Section/GroupBox open-close
-
--- Component title/description sizing -- tuned tighter than the old fixed
--- "+3" gap and default text LineHeight, which left title->description
--- noticeably loose on Paragraph/Button/Toggle cards.
-local DESC_GAP = 0 -- vertical gap between a title label and its description label (touching)
-local DESC_LINE_HEIGHT = 0.8 -- multiplier applied to wrapped description text so multi-line bodies don't look airy
-local CARD_PAD_V = 6 -- top/bottom inner padding inside Paragraph/Button/Toggle cards (was 8)
 
 local function RegisterFlag(flag, getFunc, setFunc)
 	if flag then
@@ -1287,21 +280,6 @@ NotifScreenGui.ResetOnSpawn = false
 NotifScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 NotifScreenGui.DisplayOrder = 300
 NotifScreenGui.Parent = parent
-
--- 5. Tooltips (DisplayOrder = 400) -- above everything, including notifications.
--- Created here (with the other top-level ScreenGuis) so it's available to
--- UpdateScale() below; the tooltip bubble itself and its show/hide logic are
--- built further down once the theme/registry helpers (AddPanel, RegisterText,
--- RegisterBorder) exist.
-local TooltipGui = Instance.new("ScreenGui")
-TooltipGui.Name = "KazeUI_Tooltips"
-TooltipGui.ResetOnSpawn = false
-TooltipGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-TooltipGui.DisplayOrder = 400
-TooltipGui.Parent = parent
-
-local TooltipScale = Instance.new("UIScale")
-TooltipScale.Parent = TooltipGui
 
 -- Centralized Camera Locker System
 local CameraLocker = Instance.new("TextButton")
@@ -1374,13 +352,11 @@ local function UpdateScale()
 	OpenButtonScale.Scale = targetScale
 	DialogScale.Scale = targetScale
 	NotifScale.Scale = targetScale
-	TooltipScale.Scale = targetScale
 
 	ScreenGui.IgnoreGuiInset = true
 	OpenButtonGui.IgnoreGuiInset = true
 	DialogGui.IgnoreGuiInset = true
 	NotifScreenGui.IgnoreGuiInset = true
-	TooltipGui.IgnoreGuiInset = true
 end
 
 UpdateScale()
@@ -1484,13 +460,7 @@ function KazeUI:OnGlowChanged(inst, callback)
 	end
 end
 
--- RegisterText(inst, isMuted, sourceText) -- sourceText is optional. When
--- provided, the instance's .Text is ALSO registered with the localization
--- engine (see RegisterLocalization below), so it automatically re-translates
--- on every KazeUI:SetLanguage(...) call for free, in addition to getting its
--- theme-aware color. Passing sourceText is purely additive -- omitting it
--- keeps 100% the old behaviour (color registration only).
-function KazeUI:RegisterText(inst, isMuted, sourceText)
+function KazeUI:RegisterText(inst, isMuted)
 	if not inst then return end
 	if isMuted then
 		table.insert(KazeUI.MutedTextElements, inst)
@@ -1508,9 +478,6 @@ function KazeUI:RegisterText(inst, isMuted, sourceText)
 			if tbl[i] == inst then table.remove(tbl, i) end
 		end
 	end)
-	if sourceText ~= nil and sourceText ~= "" then
-		KazeUI:RegisterLocalization(inst, "Text", sourceText)
-	end
 end
 
 function KazeUI:RegisterBorder(inst)
@@ -1533,217 +500,6 @@ function KazeUI:OnThemeChanged(inst, cb)
 			if KazeUI.ThemeCallbacks[i].Inst == inst then table.remove(KazeUI.ThemeCallbacks, i) end
 		end
 	end)
-end
-
--- ==========================================
--- Global Localization Engine (core)
--- ==========================================
-
--- Looks up the translation of `text` (always the ORIGINAL/source string --
--- never re-translate an already-translated string) for `lang` (defaults to
--- the current KazeUI.Language). Priority: 1) developer CustomTranslations
--- (from AddTranslation / Title={Text=,Translations=}), 2) the built-in
--- Dictionaries, 3) safe fallback to the original text unchanged. English
--- always returns the source text as-is.
-function KazeUI:Translate(text, lang)
-	lang = lang or KazeUI.Language
-	if text == nil or text == "" then return text end
-	if not lang or lang == "English" then return text end
-
-	local custom = KazeUI.Localization.CustomTranslations[text]
-	if custom and custom[lang] and custom[lang] ~= "" then
-		return custom[lang]
-	end
-
-	local dict = KazeUI.Localization.Dictionaries[lang]
-	if dict and dict[text] and dict[text] ~= "" then
-		return dict[text]
-	end
-
-	return text -- safe fallback: never produce a blank/broken label
-end
-
--- Registers a per-string custom translation table, e.g.
--- KazeUI:AddTranslation("Auto Collect", {Filipino = "Awtomatikong Mangolekta"}).
--- Always keyed by the ORIGINAL English/source text, matching the
--- "never translate an already-translated string" requirement. Immediately
--- refreshes any currently-displayed instances of this text so it applies
--- right away if the matching language is already selected.
-function KazeUI:AddTranslation(sourceText, translations)
-	if not sourceText or sourceText == "" or type(translations) ~= "table" then return end
-	local bucket = KazeUI.Localization.CustomTranslations[sourceText]
-	if not bucket then
-		bucket = {}
-		KazeUI.Localization.CustomTranslations[sourceText] = bucket
-	end
-	for lang, translated in pairs(translations) do
-		bucket[lang] = translated
-	end
-	KazeUI:RefreshLocalization()
-end
-
--- Accepts either a plain value (string/number/etc, returned as-is -- the
--- normal, backward-compatible path) or a table of the form
--- { Text = "Auto Collect", Translations = { Filipino = "...", Spanish = "..." } }
--- for developers who want to supply their own translations inline. Either
--- way, this returns the plain source text string that the rest of KazeUI's
--- component builders already expect, so no other code has to know the
--- difference. Any inline Translations are registered as a side effect.
-function KazeUI:ResolveLocalizable(raw)
-	if type(raw) == "table" and (raw.Text ~= nil or raw.Translations ~= nil) then
-		local text = raw.Text
-		if raw.Translations then
-			KazeUI:AddTranslation(text, raw.Translations)
-		end
-		return text
-	end
-	return raw
-end
-
--- Registers inst[prop] (defaults to "Text") to automatically re-translate
--- from `sourceText` every time the language changes. Applies the current
--- translation immediately (so elements created after SetLanguage() has
--- already run show up correctly translated right away, with no extra call
--- needed), and automatically unregisters itself when the instance is
--- destroyed so the registry never leaks memory. This is the low-level
--- primitive -- most component code should just pass a sourceText into
--- KazeUI:RegisterText(inst, isMuted, sourceText) instead, unless the target
--- property isn't "Text" (e.g. PlaceholderText) or the instance isn't already
--- going through RegisterText for theme coloring.
---
--- `getter`, when provided, is an optional function() -> string used INSTEAD
--- of a plain Translate(sourceText) lookup on refresh. This is for text whose
--- content depends on live component state as well as language -- e.g. a
--- multi-select dropdown's header showing "3 Selected" (the count is state,
--- "Selected" is the translatable word) -- so it can be kept correctly
--- translated even if the language changes while that state is displayed.
--- `sourceText` is still required/used as the initial value and as the
--- dictionary/registry key.
-function KazeUI:RegisterLocalization(inst, prop, sourceText, getter)
-	if not inst or typeof(inst) ~= "Instance" then return end
-	prop = prop or "Text"
-	if sourceText == nil or sourceText == "" then return end
-
-	local entry = {Inst = inst, Prop = prop, Source = sourceText, Getter = getter}
-	table.insert(KazeUI.Localization.RegisteredTexts, entry)
-
-	local ok, err = pcall(function()
-		if getter then
-			inst[prop] = getter()
-		else
-			inst[prop] = KazeUI:Translate(sourceText, KazeUI.Language)
-		end
-	end)
-	if not ok then warn("[KazeUI] RegisterLocalization failed to set " .. tostring(prop) .. ": " .. tostring(err)) end
-
-	inst.Destroying:Connect(function()
-		for i = #KazeUI.Localization.RegisteredTexts, 1, -1 do
-			if KazeUI.Localization.RegisteredTexts[i] == entry then
-				table.remove(KazeUI.Localization.RegisteredTexts, i)
-				break
-			end
-		end
-	end)
-
-	return entry
-end
-
--- Walks every currently-registered localized instance and re-applies the
--- translation for the current KazeUI.Language. Called automatically by
--- KazeUI:SetLanguage(...) and KazeUI:AddTranslation(...) -- this is NOT run
--- on a loop/heartbeat, only on those two discrete events, so it never scans
--- the GUI continuously.
-function KazeUI:RefreshLocalization()
-	local list = KazeUI.Localization.RegisteredTexts
-	for i = #list, 1, -1 do
-		local entry = list[i]
-		if entry.Inst and entry.Inst.Parent then
-			local ok = pcall(function()
-				if entry.Getter then
-					entry.Inst[entry.Prop] = entry.Getter()
-				else
-					entry.Inst[entry.Prop] = KazeUI:Translate(entry.Source, KazeUI.Language)
-				end
-			end)
-			if not ok then table.remove(list, i) end
-		else
-			-- Instance already gone but Destroying hadn't fired/been processed yet -- prune it.
-			table.remove(list, i)
-		end
-	end
-end
-
--- Best-effort, offline, zero-network detection of the player's Roblox/client
--- locale via LocalizationService, mapped to one of KazeUI.Languages via
--- KazeUI.LocaleMap. Never throws and never returns an unsupported language --
--- always falls back to "English" if detection fails or the locale isn't in
--- the map. This does NOT call SetLanguage on its own; it's a pure query so
--- it can't break the manual language dropdown. Pass the result to
--- KazeUI:SetLanguage(...) yourself, or set config.AutoDetectLanguage = true
--- on CreateWindow to have it applied automatically at startup.
-function KazeUI:DetectSystemLanguage()
-	local ok, localeId = pcall(function()
-		return LocalizationService.SystemLocaleId or LocalizationService.RobloxLocaleId
-	end)
-	if not ok or not localeId or localeId == "" then return "English" end
-
-	local lower = string.lower(localeId)
-	if KazeUI.LocaleMap[lower] then return KazeUI.LocaleMap[lower] end
-
-	-- Fall back to just the language part before the region ("en-us" -> "en")
-	local shortCode = string.match(lower, "^([a-z]+)")
-	if shortCode and KazeUI.LocaleMap[shortCode] then return KazeUI.LocaleMap[shortCode] end
-
-	return "English"
-end
-
-function KazeUI:RegisterBorder(inst)
-	if not inst then return end
-	table.insert(KazeUI.BorderElements, inst)
-	inst.Color = KazeUI.CurrentTheme.Border
-	inst.Destroying:Connect(function()
-		for i = #KazeUI.BorderElements, 1, -1 do
-			if KazeUI.BorderElements[i] == inst then table.remove(KazeUI.BorderElements, i) end
-		end
-	end)
-end
-
-function KazeUI:OnThemeChanged(inst, cb)
-	if not inst then return end
-	table.insert(KazeUI.ThemeCallbacks, {Inst = inst, Callback = cb})
-	task.spawn(cb, KazeUI.CurrentTheme)
-	inst.Destroying:Connect(function()
-		for i = #KazeUI.ThemeCallbacks, 1, -1 do
-			if KazeUI.ThemeCallbacks[i].Inst == inst then table.remove(KazeUI.ThemeCallbacks, i) end
-		end
-	end)
-end
-
--- Registers a callback that fires immediately with the current language and
--- again every time KazeUI:SetLanguage(...) is called. Normal Title/Description
--- text you pass into KazeUI's own components (Button, Toggle, Tab, etc.) is
--- now translated automatically -- you no longer need this hook just for that.
--- It's still useful for translating text YOU render entirely outside of
--- KazeUI's component builders (e.g. your own custom Instances).
-function KazeUI:OnLanguageChanged(cb)
-	if typeof(cb) ~= "function" then return end
-	table.insert(KazeUI.LanguageCallbacks, cb)
-	task.spawn(cb, KazeUI.Language)
-end
-
--- Changing the language immediately re-translates EVERY piece of text KazeUI
--- has registered (see RegisterLocalization/RefreshLocalization above) -- tabs,
--- sections, buttons, toggles, sliders, dropdowns, textboxes, dialogs,
--- notifications, tooltips, paragraphs, labels, the window title, everything --
--- with no manual per-component work required, then fires any legacy
--- OnLanguageChanged callbacks for advanced/custom use.
-function KazeUI:SetLanguage(lang)
-	if not lang or lang == "" then return end
-	KazeUI.Language = lang
-	KazeUI:RefreshLocalization()
-	for _, cb in ipairs(KazeUI.LanguageCallbacks) do
-		task.spawn(cb, lang)
-	end
 end
 
 -- Premium Dragging engine
@@ -1913,159 +669,6 @@ function KazeUI:AddPanel(inst, elevation, ignoreColorUpdate, ignoreTransparencyU
 		end)
 	end
 end
-
--- ==========================================
--- Tooltips Folder / Engine
--- ==========================================
--- KazeUI.Tooltips is a registry (a "folder"), same pattern as TextElements /
--- BorderElements / PanelElements above: GuiObject -> tooltip text. Any
--- component wired up with KazeUI:AttachTooltip will automatically display a
--- floating bubble with its explanatory description whenever it's hovered,
--- and hide it again the moment the cursor leaves. Buttons/Toggles pass their
--- own Description text through automatically if no separate Tooltip string
--- is supplied (see CreateClickableParagraph / CreateToggleSwitch below), so
--- descriptions get surfaced as tooltips with zero extra config.
-KazeUI.Tooltips = {}
-
-local tooltipBubble = Instance.new("Frame")
-tooltipBubble.Name = "TooltipBubble"
-tooltipBubble.AutomaticSize = Enum.AutomaticSize.XY
-tooltipBubble.Size = UDim2.fromOffset(0, 0)
-tooltipBubble.BackgroundTransparency = 1
-tooltipBubble.BorderSizePixel = 0
-tooltipBubble.Visible = false
-tooltipBubble.ZIndex = 5000
-tooltipBubble.Parent = TooltipGui
-
-Instance.new("UICorner", tooltipBubble).CornerRadius = UDim.new(0, 8)
-KazeUI:AddPanel(tooltipBubble, 0.08)
-
-local tooltipStroke = Instance.new("UIStroke", tooltipBubble)
-tooltipStroke.Thickness = 1
-tooltipStroke.Transparency = 1
-tooltipStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-KazeUI:RegisterBorder(tooltipStroke)
-
-local tooltipPadding = Instance.new("UIPadding", tooltipBubble)
-tooltipPadding.PaddingTop = UDim.new(0, 6)
-tooltipPadding.PaddingBottom = UDim.new(0, 6)
-tooltipPadding.PaddingLeft = UDim.new(0, 10)
-tooltipPadding.PaddingRight = UDim.new(0, 10)
-
-local tooltipLabel = Instance.new("TextLabel", tooltipBubble)
-tooltipLabel.BackgroundTransparency = 1
-tooltipLabel.TextTransparency = 1
-tooltipLabel.Font = Enum.Font.GothamMedium
-tooltipLabel.TextSize = 12
-tooltipLabel.TextWrapped = true
-tooltipLabel.Size = UDim2.new(0, 220, 0, 0)
-tooltipLabel.AutomaticSize = Enum.AutomaticSize.Y
-tooltipLabel.TextXAlignment = Enum.TextXAlignment.Left
-tooltipLabel.TextYAlignment = Enum.TextYAlignment.Top
-KazeUI:RegisterText(tooltipLabel, false)
-
-local tooltipRequestId = 0 -- invalidates a pending delayed show if the hover target changes/ends first
-local tooltipMouseMoveConn
-local tooltipShowTween, tooltipHideTween
-
-local function PositionTooltipBubble()
-	local camera = workspace.CurrentCamera
-	if not camera then return end
-	local vp = camera.ViewportSize
-	local mousePos = UIS:GetMouseLocation()
-	local size = tooltipBubble.AbsoluteSize
-
-	local x = mousePos.X + 16
-	local y = mousePos.Y + 20
-
-	if x + size.X > vp.X - 8 then x = mousePos.X - size.X - 16 end
-	if y + size.Y > vp.Y - 8 then y = mousePos.Y - size.Y - 12 end
-
-	tooltipBubble.Position = UDim2.fromOffset(math.max(8, x), math.max(8, y))
-end
-
-local function HideTooltipBubble()
-	tooltipRequestId = tooltipRequestId + 1
-	if tooltipMouseMoveConn then
-		tooltipMouseMoveConn:Disconnect()
-		tooltipMouseMoveConn = nil
-	end
-	if not tooltipBubble.Visible then return end
-
-	if tooltipShowTween then tooltipShowTween:Cancel() end
-	tooltipHideTween = TweenService:Create(tooltipBubble, TWEEN_FAST, {BackgroundTransparency = 1})
-	TweenService:Create(tooltipLabel, TWEEN_FAST, {TextTransparency = 1}):Play()
-	TweenService:Create(tooltipStroke, TWEEN_FAST, {Transparency = 1}):Play()
-	tooltipHideTween:Play()
-
-	local myRequest = tooltipRequestId
-	task.delay(0.2, function()
-		if tooltipRequestId == myRequest then tooltipBubble.Visible = false end
-	end)
-end
-
-local function ShowTooltipBubble(text)
-	if not text or text == "" then return end
-	tooltipRequestId = tooltipRequestId + 1
-	local myRequest = tooltipRequestId
-	tooltipLabel.Text = text
-
-	task.delay(0.35, function()
-		if tooltipRequestId ~= myRequest then return end -- cursor moved on before the delay elapsed
-
-		tooltipBubble.Visible = true
-		PositionTooltipBubble()
-
-		local baseTrans = KazeUI.BackgroundTransparency or 0.70
-		if tooltipShowTween then tooltipShowTween:Cancel() end
-		tooltipShowTween = TweenService:Create(tooltipBubble, TWEEN_FAST, {BackgroundTransparency = math.clamp(baseTrans - 0.08 * 2.2, 0.05, 1)})
-		TweenService:Create(tooltipLabel, TWEEN_FAST, {TextTransparency = 0}):Play()
-		TweenService:Create(tooltipStroke, TWEEN_FAST, {Transparency = 0.4}):Play()
-		tooltipShowTween:Play()
-
-		if tooltipMouseMoveConn then tooltipMouseMoveConn:Disconnect() end
-		tooltipMouseMoveConn = UIS.InputChanged:Connect(function(input)
-			if input.UserInputType == Enum.UserInputType.MouseMovement then
-				PositionTooltipBubble()
-			end
-		end)
-	end)
-end
-
--- Attaches automatic hover tooltip behaviour to any GuiObject/GuiButton.
--- text: the explanatory description to show. getIsLocked: optional function
--- returning true if the owning component is currently locked (tooltip is
--- suppressed for locked components, matching how hover/press are handled
--- elsewhere in the library).
-function KazeUI:AttachTooltip(target, text, getIsLocked)
-	if not target or typeof(target) ~= "Instance" then return end
-	KazeUI.Tooltips[target] = (text and text ~= "") and text or nil
-
-	local enterConn = target.MouseEnter:Connect(function()
-		if activeDialogsCount > 0 then return end
-		if typeof(getIsLocked) == "function" and getIsLocked() then return end
-		local current = KazeUI.Tooltips[target]
-		-- Tooltips are shown transiently (only while hovered), so rather than
-		-- keeping a persistent registration for them, translate the stored
-		-- ORIGINAL text live, at the moment it's actually displayed -- this
-		-- always reflects whatever KazeUI.Language currently is.
-		if current then ShowTooltipBubble(KazeUI:Translate(current)) end
-	end)
-	local leaveConn = target.MouseLeave:Connect(HideTooltipBubble)
-
-	target.Destroying:Connect(function()
-		if enterConn then enterConn:Disconnect() end
-		if leaveConn then leaveConn:Disconnect() end
-		KazeUI.Tooltips[target] = nil
-	end)
-
-	return {
-		SetText = function(_, newText)
-			KazeUI.Tooltips[target] = (newText and newText ~= "") and newText or nil
-		end
-	}
-end
-
 
 function KazeUI:SetBackgroundColor(color)
 	for _, data in ipairs(KazeUI.PanelElements) do
@@ -2380,12 +983,8 @@ end
 -- Premium Bubble-style Notification Card
 function KazeUI:Notify(config)
 	config = config or {}
-	-- Notifications are transient (built fresh per call and auto-dismissed),
-	-- so rather than persistently registering them, translate the source
-	-- text immediately using the CURRENTLY selected language -- still
-	-- supports the optional {Text=, Translations=} inline override form.
-	local title = tostring(KazeUI:Translate(KazeUI:ResolveLocalizable(config.Title) or "Notification"))
-	local content = tostring(KazeUI:Translate(KazeUI:ResolveLocalizable(config.Content) or ""))
+	local title = tostring(config.Title or "Notification")
+	local content = tostring(config.Content or "")
 	local duration = tonumber(config.Duration) or 3
 	local titleColor = config.TitleColor or config.Color
 	local isRGBTitle = config.RGBTitle or (titleColor == "RGB")
@@ -2709,7 +1308,7 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 	titleLabel.TextSize = 14
 	titleLabel.TextXAlignment = Enum.TextXAlignment.Left
 	titleLabel.TextTruncate = Enum.TextTruncate.AtEnd 
-	KazeUI:RegisterText(titleLabel, false, title)
+	KazeUI:RegisterText(titleLabel, false)
 
 	local arrowIcon = Instance.new("ImageLabel", header)
 	arrowIcon.AnchorPoint = Vector2.new(1, 0.5)
@@ -2730,9 +1329,9 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 				if firstVal == "" then firstVal = k end
 			end
 		end
-		if count == 0 then initialText = KazeUI:Translate("None")
+		if count == 0 then initialText = "None"
 		elseif count == 1 then initialText = firstVal
-		else initialText = count .. " " .. KazeUI:Translate("Selected") end
+		else initialText = count .. " Selected" end
 	else
 		initialText = tostring(selectedSingle)
 	end
@@ -2753,10 +1352,7 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 	clickBtn.BackgroundTransparency = 1
 	clickBtn.Text = ""
 
-	-- Recomputes the header's selection summary in the CURRENT language --
-	-- registered below as a localization Getter so "None"/"Selected" stay
-	-- translated even if the language changes while this text is showing.
-	local function ComputeSelectedText()
+	local function UpdateHeaderVisual()
 		if isMulti then
 			local count = 0
 			local firstVal = ""
@@ -2766,17 +1362,12 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 					if firstVal == "" then firstVal = k end
 				end
 			end
-			if count == 0 then return KazeUI:Translate("None")
-			elseif count == 1 then return firstVal
-			else return count .. " " .. KazeUI:Translate("Selected") end
+			if count == 0 then selectedLabel.Text = "None"
+			elseif count == 1 then selectedLabel.Text = firstVal
+			else selectedLabel.Text = count .. " Selected" end
 		else
-			return tostring(selectedSingle)
+			selectedLabel.Text = tostring(selectedSingle)
 		end
-	end
-	KazeUI:RegisterLocalization(selectedLabel, "Text", "None", ComputeSelectedText)
-
-	local function UpdateHeaderVisual()
-		selectedLabel.Text = ComputeSelectedText()
 	end
 
 	local searchWrapper = Instance.new("Frame")
@@ -2807,7 +1398,6 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 	searchBox.TextWrapped = false
 	searchBox.Parent = searchWrapper
 	KazeUI:RegisterText(searchBox, false)
-	KazeUI:RegisterLocalization(searchBox, "PlaceholderText", "Search options...")
 	KazeUI:OnThemeChanged(searchBox, function(t) searchBox.PlaceholderColor3 = t.MutedText end)
 
 	searchBox.Focused:Connect(function() 
@@ -3067,25 +1657,15 @@ local function CreateParagraph(parentFrame, title, body)
 	local measuredWidth = 598 * 0.92
 	if parentFrame and parentFrame.AbsoluteSize and parentFrame.AbsoluteSize.X > 0 then measuredWidth = parentFrame.AbsoluteSize.X * 0.95 end
 	
-	-- NOTE: this must equal the actual rendered width of ptitleLabel/bodyLabel
-	-- below (paraFrame width minus inner's -20 padding, full width, no icon).
-	-- Measuring at a narrower width than the real label overestimates the
-	-- wrapped line count, which oversizes the card and leaves dead space
-	-- under the description.
-	local textContainerWidth = measuredWidth - 20
-	
 	local titleHeight = 0
 	if title ~= " " then
-		local ts = TextService:GetTextSize(title, 14, Enum.Font.GothamBold, Vector2.new(textContainerWidth, 1000))
-		titleHeight = math.max(15, math.ceil(ts.Y))
+		local ts = TextService:GetTextSize(title, 14, Enum.Font.GothamBold, Vector2.new(measuredWidth - 28, 1000))
+		titleHeight = math.max(18, math.ceil(ts.Y))
 	end
 	
-	local bodySize = TextService:GetTextSize(body, 12, Enum.Font.Gotham, Vector2.new(textContainerWidth, 2000))
-	-- bodySize.Y is measured at the font's default line height; DESC_LINE_HEIGHT
-	-- shrinks the label's actual rendered line spacing below that, so the box
-	-- has to be scaled down to match or it leaves dead space under the text.
-	local bodyHeight = (body ~= "") and math.max(14, math.ceil(bodySize.Y * DESC_LINE_HEIGHT)) or 0
-	local totalHeight = CARD_PAD_V + titleHeight + DESC_GAP + bodyHeight + CARD_PAD_V
+	local bodySize = TextService:GetTextSize(body, 12, Enum.Font.Gotham, Vector2.new(measuredWidth - 28, 2000))
+	local bodyHeight = math.ceil(bodySize.Y)
+	local totalHeight = 8 + titleHeight + 3 + bodyHeight + 8
 	
 	local wrapper = Instance.new("Frame")
 	wrapper.Size = UDim2.new(1, 0, 0, 0)
@@ -3109,8 +1689,8 @@ local function CreateParagraph(parentFrame, title, body)
 	KazeUI:RegisterBorder(paraStroke)
 	
 	local inner = Instance.new("Frame", paraFrame)
-	inner.Size = UDim2.new(1, -20, 1, -(CARD_PAD_V * 2))
-	inner.Position = UDim2.fromOffset(10, CARD_PAD_V)
+	inner.Size = UDim2.new(1, -20, 1, -16)
+	inner.Position = UDim2.fromOffset(10, 8)
 	inner.BackgroundTransparency = 1
 	
 	local ptitleLabel
@@ -3123,57 +1703,20 @@ local function CreateParagraph(parentFrame, title, body)
 		ptitleLabel.TextSize = 14
 		ptitleLabel.TextXAlignment = Enum.TextXAlignment.Left
 		ptitleLabel.TextWrapped = true
-		KazeUI:RegisterText(ptitleLabel, false, title)
+		KazeUI:RegisterText(ptitleLabel, false)
 	end
 	
 	local bodyLabel = Instance.new("TextLabel", inner)
 	bodyLabel.Size = UDim2.new(1, 0, 0, bodyHeight)
-	bodyLabel.Position = UDim2.fromOffset(0, titleHeight + DESC_GAP)
+	bodyLabel.Position = UDim2.fromOffset(0, titleHeight + 3)
 	bodyLabel.BackgroundTransparency = 1
 	bodyLabel.Text = body
 	bodyLabel.Font = Enum.Font.Gotham
 	bodyLabel.TextSize = 12
-	bodyLabel.LineHeight = DESC_LINE_HEIGHT
 	bodyLabel.TextWrapped = true
 	bodyLabel.TextXAlignment = Enum.TextXAlignment.Left
 	bodyLabel.TextYAlignment = Enum.TextYAlignment.Top
-	KazeUI:RegisterText(bodyLabel, true, body)
-	
-	-- Re-measures and re-applies title/body heights whenever the parent
-	-- (the window) actually changes size. Without this, shrinking the
-	-- window via the resize handle narrows the available wrap width, the
-	-- text re-wraps into more lines, but the label's height stays frozen
-	-- at whatever it was measured at on creation -- so the extra line(s)
-	-- overflow past the bottom of the card and end up hidden/overlapped
-	-- by whatever sits below it.
-	local function reflow()
-		local mw = 598 * 0.92
-		if parentFrame and parentFrame.AbsoluteSize and parentFrame.AbsoluteSize.X > 0 then mw = parentFrame.AbsoluteSize.X * 0.95 end
-		local tcw = mw - 20
-		
-		if ptitleLabel then
-			local ts = TextService:GetTextSize(ptitleLabel.Text, 14, Enum.Font.GothamBold, Vector2.new(tcw, 1000))
-			titleHeight = math.max(15, math.ceil(ts.Y))
-			ptitleLabel.Size = UDim2.new(1, 0, 0, titleHeight)
-		end
-		
-		local hasBody = bodyLabel.Text ~= ""
-		bodyHeight = 0
-		if hasBody then
-			local bs = TextService:GetTextSize(bodyLabel.Text, 12, Enum.Font.Gotham, Vector2.new(tcw, 2000))
-			bodyHeight = math.max(14, math.ceil(bs.Y * DESC_LINE_HEIGHT))
-		end
-		bodyLabel.Size = UDim2.new(1, 0, 0, bodyHeight)
-		bodyLabel.Position = UDim2.fromOffset(0, titleHeight + DESC_GAP)
-		
-		totalHeight = CARD_PAD_V + titleHeight + (hasBody and DESC_GAP or 0) + bodyHeight + CARD_PAD_V
-		paraFrame.Size = UDim2.new(0.95, 0, 0, totalHeight)
-	end
-	
-	if parentFrame and parentFrame:IsA("GuiObject") then
-		local resizeConn = parentFrame:GetPropertyChangedSignal("AbsoluteSize"):Connect(reflow)
-		wrapper.Destroying:Connect(function() resizeConn:Disconnect() end)
-	end
+	KazeUI:RegisterText(bodyLabel, true)
 	
 	return { 
 		Wrapper = wrapper, 
@@ -3181,7 +1724,6 @@ local function CreateParagraph(parentFrame, title, body)
 		SetText = function(self, newTitle, newBody)
 			if ptitleLabel and newTitle then ptitleLabel.Text = newTitle end
 			if bodyLabel and newBody then bodyLabel.Text = newBody end
-			reflow()
 		end
 	}
 end
@@ -3250,40 +1792,28 @@ local function BindPressAnimation(clickDetector, canPress, applyPressed, applyRe
 	end
 end
 
-local function CreateClickableParagraph(parentFrame, title, body, callback, locked, tooltip)
+local function CreateClickableParagraph(parentFrame, title, body, callback, locked)
 	title = tostring(title or "Button")
 	body = tostring(body or "")
 	local isLockedState = locked or false
-	-- Auto-generate: if no explicit Tooltip was supplied, fall back to the
-	-- button's own Description text so hovering always surfaces something
-	-- explanatory with zero extra config.
-	local tooltipText = tooltip
-	if not tooltipText or tooltipText == "" then tooltipText = body end
 	
 	local measuredWidth = 598 * 0.92
 	if parentFrame and parentFrame.AbsoluteSize and parentFrame.AbsoluteSize.X > 0 then measuredWidth = parentFrame.AbsoluteSize.X * 0.95 end
-	-- Must equal the real rendered width: paraFrame -16 (inner) -34 (bodyLabel's
-	-- reserved space for the right-side icon). The old "-28-42" measured a
-	-- narrower box than the label actually gets, so GetTextSize predicted more
-	-- wrapped lines than really render, oversizing the card under the text.
-	local textContainerWidth = measuredWidth - 16 - 34
+	local textContainerWidth = measuredWidth - 28 - 42
 	
 	local titleHeight = 0
 	if title ~= " " and title ~= "" then
 		local ts = TextService:GetTextSize(title, 14, Enum.Font.GothamBold, Vector2.new(textContainerWidth, 1000))
-		titleHeight = math.max(15, math.ceil(ts.Y))
+		titleHeight = math.max(18, math.ceil(ts.Y))
 	end
 	
 	local bodyHeight = 0
 	if body ~= "" then
 		local bodySize = TextService:GetTextSize(body, 12, Enum.Font.Gotham, Vector2.new(textContainerWidth, 2000))
-		-- Scaled down to match the label's actual DESC_LINE_HEIGHT rendering
-		-- (see CreateParagraph above) so the card isn't left with dead space
-		-- under the description text.
-		bodyHeight = math.max(14, math.ceil(bodySize.Y * DESC_LINE_HEIGHT))
+		bodyHeight = math.ceil(bodySize.Y)
 	end
 	
-	local totalHeight = CARD_PAD_V + titleHeight + (body ~= "" and DESC_GAP or 0) + bodyHeight + CARD_PAD_V
+	local totalHeight = 8 + titleHeight + (body ~= "" and 3 or 0) + bodyHeight + 8
 	
 	local wrapper = Instance.new("Frame")
 	wrapper.Size = UDim2.new(1, 0, 0, 0)
@@ -3307,8 +1837,8 @@ local function CreateClickableParagraph(parentFrame, title, body, callback, lock
 	KazeUI:RegisterBorder(paraStroke)
 	
 	local inner = Instance.new("Frame", paraFrame)
-	inner.Size = UDim2.new(1, -16, 1, -(CARD_PAD_V * 2))
-	inner.Position = UDim2.fromOffset(8, CARD_PAD_V)
+	inner.Size = UDim2.new(1, -16, 1, -16)
+	inner.Position = UDim2.fromOffset(8, 8)
 	inner.BackgroundTransparency = 1
 	
 	local rightIcon = Instance.new("ImageLabel")
@@ -3336,23 +1866,22 @@ local function CreateClickableParagraph(parentFrame, title, body, callback, lock
 		ptitleLabel.TextWrapped = true
 		ptitleLabel.TextXAlignment = Enum.TextXAlignment.Left
 		if body == "" then ptitleLabel.AnchorPoint = Vector2.new(0, 0.5); ptitleLabel.Position = UDim2.new(0, 0, 0.5, 0) end
-		KazeUI:RegisterText(ptitleLabel, false, title)
+		KazeUI:RegisterText(ptitleLabel, false)
 	end
 	
 	local bodyLabel
 	if body ~= "" then
 		bodyLabel = Instance.new("TextLabel", inner)
 		bodyLabel.Size = UDim2.new(1, -34, 0, bodyHeight)
-		bodyLabel.Position = UDim2.fromOffset(0, titleHeight + DESC_GAP)
+		bodyLabel.Position = UDim2.fromOffset(0, titleHeight + 3)
 		bodyLabel.BackgroundTransparency = 1
 		bodyLabel.Text = body
 		bodyLabel.Font = Enum.Font.Gotham
 		bodyLabel.TextSize = 12
-		bodyLabel.LineHeight = DESC_LINE_HEIGHT
 		bodyLabel.TextWrapped = true
 		bodyLabel.TextXAlignment = Enum.TextXAlignment.Left
 		bodyLabel.TextYAlignment = Enum.TextYAlignment.Top
-		KazeUI:RegisterText(bodyLabel, true, body)
+		KazeUI:RegisterText(bodyLabel, true)
 	end
 
 	local clickDetector = Instance.new("TextButton")
@@ -3361,8 +1890,6 @@ local function CreateClickableParagraph(parentFrame, title, body, callback, lock
 	clickDetector.Text = ""
 	clickDetector.ZIndex = 10
 	clickDetector.Parent = paraFrame
-
-	local tooltipCtrl = KazeUI:AttachTooltip(clickDetector, tooltipText, function() return isLockedState end)
 
 	clickDetector.MouseEnter:Connect(function()
 		if isLockedState or activeDialogsCount > 0 then return end
@@ -3404,93 +1931,43 @@ local function CreateClickableParagraph(parentFrame, title, body, callback, lock
 	
 	local lockCtrl = ApplyLock(paraFrame, locked, wrapper, UDim2.new(0.95, 0, 1, -3), UDim2.new(0.5, 0, 0, 3), Vector2.new(0.5, 0))
 
-	-- Re-measures and re-applies title/body heights whenever the parent
-	-- (the window) actually changes size. Without this, shrinking the
-	-- window via the resize handle narrows the available wrap width, the
-	-- text re-wraps into more lines, but the label's height stays frozen
-	-- at whatever it was measured at on creation -- so the extra line(s)
-	-- overflow past the bottom of the card and end up hidden/overlapped
-	-- by whatever sits below it.
-	local function reflow()
-		local mw = 598 * 0.92
-		if parentFrame and parentFrame.AbsoluteSize and parentFrame.AbsoluteSize.X > 0 then mw = parentFrame.AbsoluteSize.X * 0.95 end
-		local tcw = mw - 16 - 34
-		
-		if ptitleLabel then
-			local ts = TextService:GetTextSize(ptitleLabel.Text, 14, Enum.Font.GothamBold, Vector2.new(tcw, 1000))
-			titleHeight = math.max(15, math.ceil(ts.Y))
-			ptitleLabel.Size = UDim2.new(1, -34, 0, titleHeight)
-		end
-		
-		bodyHeight = 0
-		if bodyLabel and bodyLabel.Text ~= "" then
-			local bs = TextService:GetTextSize(bodyLabel.Text, 12, Enum.Font.Gotham, Vector2.new(tcw, 2000))
-			bodyHeight = math.max(14, math.ceil(bs.Y * DESC_LINE_HEIGHT))
-			bodyLabel.Size = UDim2.new(1, -34, 0, bodyHeight)
-			bodyLabel.Position = UDim2.fromOffset(0, titleHeight + DESC_GAP)
-		end
-		
-		totalHeight = CARD_PAD_V + titleHeight + ((bodyLabel and bodyLabel.Text ~= "") and DESC_GAP or 0) + bodyHeight + CARD_PAD_V
-		paraFrame.Size = UDim2.new(0.95, 0, 0, totalHeight)
-	end
-	
-	if parentFrame and parentFrame:IsA("GuiObject") then
-		local resizeConn = parentFrame:GetPropertyChangedSignal("AbsoluteSize"):Connect(reflow)
-		wrapper.Destroying:Connect(function() resizeConn:Disconnect() end)
-	end
-
 	return { 
 		Wrapper = wrapper, 
 		Frame = paraFrame,
 		SetText = function(self, newTitle, newBody)
 			if ptitleLabel and newTitle then ptitleLabel.Text = newTitle end
 			if bodyLabel and newBody then bodyLabel.Text = newBody end
-			reflow()
 		end,
 		SetLocked = function(self, state)
 			isLockedState = state
 			lockCtrl:SetLocked(state)
-		end,
-		SetTooltip = function(self, newText)
-			if tooltipCtrl then tooltipCtrl:SetText(newText) end
 		end
 	}
 end
 
-local function CreateToggleSwitch(parentFrame, title, body, defaultState, callback, flag, locked, tooltip)
+local function CreateToggleSwitch(parentFrame, title, body, defaultState, callback, flag, locked)
 	title = tostring(title or "Toggle Switch")
 	body = tostring(body or "")
 	local state = defaultState or false
 	local isLockedState = locked or false
-	-- Auto-generate: fall back to the toggle's Description text when no
-	-- explicit Tooltip is given.
-	local tooltipText = tooltip
-	if not tooltipText or tooltipText == "" then tooltipText = body end
 	
 	local measuredWidth = 598 * 0.92
 	if parentFrame and parentFrame.AbsoluteSize and parentFrame.AbsoluteSize.X > 0 then measuredWidth = parentFrame.AbsoluteSize.X * 0.95 end
-	-- Must equal the real rendered width: paraFrame -16 (inner) -48 (bodyLabel's
-	-- reserved space for the toggle switch). The old "-28-55" measured a
-	-- narrower box than the label actually gets, so GetTextSize predicted more
-	-- wrapped lines than really render, oversizing the card under the text.
-	local textContainerWidth = measuredWidth - 16 - 48
+	local textContainerWidth = measuredWidth - 28 - 55
 	
 	local titleHeight = 0
 	if title ~= " " then
 		local ts = TextService:GetTextSize(title, 14, Enum.Font.GothamBold, Vector2.new(textContainerWidth, 1000))
-		titleHeight = math.max(15, math.ceil(ts.Y))
+		titleHeight = math.max(18, math.ceil(ts.Y))
 	end
 	
 	local bodyHeight = 0
 	if body ~= "" then
 		local bodySize = TextService:GetTextSize(body, 12, Enum.Font.Gotham, Vector2.new(textContainerWidth, 2000))
-		-- Scaled down to match the label's actual DESC_LINE_HEIGHT rendering
-		-- (see CreateParagraph above) so the card isn't left with dead space
-		-- under the description text.
-		bodyHeight = math.max(14, math.ceil(bodySize.Y * DESC_LINE_HEIGHT))
+		bodyHeight = math.ceil(bodySize.Y)
 	end
 	
-	local totalHeight = CARD_PAD_V + titleHeight + (body ~= "" and DESC_GAP or 0) + bodyHeight + CARD_PAD_V
+	local totalHeight = 8 + titleHeight + (body ~= "" and 3 or 0) + bodyHeight + 8
 	
 	local wrapper = Instance.new("Frame")
 	wrapper.Size = UDim2.new(1, 0, 0, 0)
@@ -3514,8 +1991,8 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 	KazeUI:RegisterBorder(paraStroke)
 	
 	local inner = Instance.new("Frame", paraFrame)
-	inner.Size = UDim2.new(1, -16, 1, -(CARD_PAD_V * 2))
-	inner.Position = UDim2.fromOffset(8, CARD_PAD_V)
+	inner.Size = UDim2.new(1, -16, 1, -16)
+	inner.Position = UDim2.fromOffset(8, 8)
 	inner.BackgroundTransparency = 1
 	
 	local switchContainer = Instance.new("Frame")
@@ -3546,23 +2023,22 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 		ptitleLabel.TextWrapped = true
 		ptitleLabel.TextXAlignment = Enum.TextXAlignment.Left
 		if body == "" then ptitleLabel.AnchorPoint = Vector2.new(0, 0.5); ptitleLabel.Position = UDim2.new(0, 0, 0.5, 0) end
-		KazeUI:RegisterText(ptitleLabel, false, title)
+		KazeUI:RegisterText(ptitleLabel, false)
 	end
 	
 	local bodyLabel
 	if body ~= "" then
 		bodyLabel = Instance.new("TextLabel", inner)
 		bodyLabel.Size = UDim2.new(1, -48, 0, bodyHeight)
-		bodyLabel.Position = UDim2.fromOffset(0, titleHeight + DESC_GAP)
+		bodyLabel.Position = UDim2.fromOffset(0, titleHeight + 3)
 		bodyLabel.BackgroundTransparency = 1
 		bodyLabel.Text = body
 		bodyLabel.Font = Enum.Font.Gotham
 		bodyLabel.TextSize = 12
-		bodyLabel.LineHeight = DESC_LINE_HEIGHT
 		bodyLabel.TextWrapped = true
 		bodyLabel.TextXAlignment = Enum.TextXAlignment.Left
 		bodyLabel.TextYAlignment = Enum.TextYAlignment.Top
-		KazeUI:RegisterText(bodyLabel, true, body)
+		KazeUI:RegisterText(bodyLabel, true)
 	end
 
 	local clickDetector = Instance.new("TextButton")
@@ -3603,8 +2079,6 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 
 	local isHovering = false
 
-	local tooltipCtrl = KazeUI:AttachTooltip(clickDetector, tooltipText, function() return isLockedState end)
-
 	clickDetector.MouseEnter:Connect(function()
 		if isLockedState or activeDialogsCount > 0 then return end
 		isHovering = true
@@ -3642,55 +2116,16 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 	
 	local lockCtrl = ApplyLock(paraFrame, locked, wrapper, UDim2.new(0.95, 0, 1, -3), UDim2.new(0.5, 0, 0, 3), Vector2.new(0.5, 0))
 
-	-- Re-measures and re-applies title/body heights whenever the parent
-	-- (the window) actually changes size. Without this, shrinking the
-	-- window via the resize handle narrows the available wrap width, the
-	-- text re-wraps into more lines, but the label's height stays frozen
-	-- at whatever it was measured at on creation -- so the extra line(s)
-	-- overflow past the bottom of the card and end up hidden/overlapped
-	-- by whatever sits below it.
-	local function reflow()
-		local mw = 598 * 0.92
-		if parentFrame and parentFrame.AbsoluteSize and parentFrame.AbsoluteSize.X > 0 then mw = parentFrame.AbsoluteSize.X * 0.95 end
-		local tcw = mw - 16 - 48
-		
-		if ptitleLabel then
-			local ts = TextService:GetTextSize(ptitleLabel.Text, 14, Enum.Font.GothamBold, Vector2.new(tcw, 1000))
-			titleHeight = math.max(15, math.ceil(ts.Y))
-			ptitleLabel.Size = UDim2.new(1, -48, 0, titleHeight)
-		end
-		
-		bodyHeight = 0
-		if bodyLabel and bodyLabel.Text ~= "" then
-			local bs = TextService:GetTextSize(bodyLabel.Text, 12, Enum.Font.Gotham, Vector2.new(tcw, 2000))
-			bodyHeight = math.max(14, math.ceil(bs.Y * DESC_LINE_HEIGHT))
-			bodyLabel.Size = UDim2.new(1, -48, 0, bodyHeight)
-			bodyLabel.Position = UDim2.fromOffset(0, titleHeight + DESC_GAP)
-		end
-		
-		totalHeight = CARD_PAD_V + titleHeight + ((bodyLabel and bodyLabel.Text ~= "") and DESC_GAP or 0) + bodyHeight + CARD_PAD_V
-		paraFrame.Size = UDim2.new(0.95, 0, 0, totalHeight)
-	end
-	
-	if parentFrame and parentFrame:IsA("GuiObject") then
-		local resizeConn = parentFrame:GetPropertyChangedSignal("AbsoluteSize"):Connect(reflow)
-		wrapper.Destroying:Connect(function() resizeConn:Disconnect() end)
-	end
-
 	return { 
 		Wrapper = wrapper, 
 		SetState = function(self, newState, instant) setToggleState(newState, instant) end,
 		SetText = function(self, newTitle, newBody)
 			if ptitleLabel and newTitle then ptitleLabel.Text = newTitle end
 			if bodyLabel and newBody then bodyLabel.Text = newBody end
-			reflow()
 		end,
 		SetLocked = function(self, state)
 			isLockedState = state
 			lockCtrl:SetLocked(state)
-		end,
-		SetTooltip = function(self, newText)
-			if tooltipCtrl then tooltipCtrl:SetText(newText) end
 		end
 	}
 end
@@ -3702,10 +2137,7 @@ local function CreateTextBoxInput(parentFrame, title, placeholder, defaultVal, c
 	
 	local measuredWidth = 598 * 0.92
 	if parentFrame and parentFrame.AbsoluteSize and parentFrame.AbsoluteSize.X > 0 then measuredWidth = parentFrame.AbsoluteSize.X * 0.95 end
-	-- Must equal the real rendered width: paraFrame -16 (inner), full width,
-	-- no reserved icon space. The old "-28" measured narrower than the label
-	-- actually gets, overestimating the title's wrapped line count.
-	local textContainerWidth = measuredWidth - 16
+	local textContainerWidth = measuredWidth - 28
 	
 	local titleHeight = 0
 	if title ~= " " and title ~= "" then
@@ -3751,7 +2183,7 @@ local function CreateTextBoxInput(parentFrame, title, placeholder, defaultVal, c
 		ptitleLabel.TextSize = 14 
 		ptitleLabel.TextWrapped = true
 		ptitleLabel.TextXAlignment = Enum.TextXAlignment.Left 
-		KazeUI:RegisterText(ptitleLabel, false, title)
+		KazeUI:RegisterText(ptitleLabel, false)
 	end
 	
 	local textBoxContainer = Instance.new("Frame")
@@ -3780,13 +2212,7 @@ local function CreateTextBoxInput(parentFrame, title, placeholder, defaultVal, c
 	textBox.ClipsDescendants = true 
 	textBox.TextWrapped = false 
 	textBox.Parent = textBoxContainer
-	-- NOTE: textBox.Text itself is user-typed/data content (or a developer
-	-- Default value used as literal starting text) -- NOT auto-translated,
-	-- matching the "don't translate arbitrary TextBox content" requirement.
-	-- Only the PlaceholderText hint is developer-facing UI copy, so only
-	-- that gets registered for localization.
 	KazeUI:RegisterText(textBox, false)
-	KazeUI:RegisterLocalization(textBox, "PlaceholderText", placeholder)
 	KazeUI:OnThemeChanged(textBox, function(t) textBox.PlaceholderColor3 = t.MutedText end)
 
 	local isFocused = false
@@ -3826,36 +2252,12 @@ local function CreateTextBoxInput(parentFrame, title, placeholder, defaultVal, c
 
 	local lockCtrl = ApplyLock(paraFrame, locked, wrapper, UDim2.new(0.95, 0, 1, -3), UDim2.new(0.5, 0, 0, 3), Vector2.new(0.5, 0))
 
-	-- Re-measures the title whenever the parent (the window) actually
-	-- changes size, same fix as the other cards above.
-	local function reflow()
-		local mw = 598 * 0.92
-		if parentFrame and parentFrame.AbsoluteSize and parentFrame.AbsoluteSize.X > 0 then mw = parentFrame.AbsoluteSize.X * 0.95 end
-		local tcw = mw - 16
-		
-		if ptitleLabel then
-			local ts = TextService:GetTextSize(ptitleLabel.Text, 14, Enum.Font.GothamBold, Vector2.new(tcw, 1000))
-			titleHeight = math.max(16, math.ceil(ts.Y))
-			ptitleLabel.Size = UDim2.new(1, 0, 0, titleHeight)
-		end
-		
-		textBoxContainer.Position = UDim2.new(0, 0, 0, titleHeight + 3)
-		totalHeight = 8 + titleHeight + 3 + 28 + 8
-		paraFrame.Size = UDim2.new(0.95, 0, 0, totalHeight)
-	end
-	
-	if parentFrame and parentFrame:IsA("GuiObject") then
-		local resizeConn = parentFrame:GetPropertyChangedSignal("AbsoluteSize"):Connect(reflow)
-		wrapper.Destroying:Connect(function() resizeConn:Disconnect() end)
-	end
-
 	return { 
 		Wrapper = wrapper, 
 		SetText = function(self, value) textBox.Text = tostring(value or "") end,
 		SetPlaceholder = function(self, val) textBox.PlaceholderText = val end,
 		SetTitle = function(self, newTitle)
 			if ptitleLabel and newTitle then ptitleLabel.Text = newTitle end
-			reflow()
 		end,
 		SetLocked = function(self, state)
 			isLockedState = state
@@ -3874,16 +2276,11 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 	
 	local measuredWidth = 598 * 0.92
 	if parentFrame and parentFrame.AbsoluteSize and parentFrame.AbsoluteSize.X > 0 then measuredWidth = parentFrame.AbsoluteSize.X * 0.95 end
-	-- Must equal the real rendered width: paraFrame -16 (inner) -80 (title's
-	-- reserved space for the value label). The old "-28" measured a narrower
-	-- box than the label actually gets, so GetTextSize predicted the title
-	-- wrapping onto an extra line it never actually needed -- oversizing the
-	-- title row and leaving a visible gap above the slider track.
-	local textContainerWidth = measuredWidth - 16 - 80
+	local textContainerWidth = measuredWidth - 28
 	
 	local titleHeight = 0
 	if title ~= " " and title ~= "" then
-		local ts = TextService:GetTextSize(title, 14, Enum.Font.GothamBold, Vector2.new(textContainerWidth, 1000))
+		local ts = TextService:GetTextSize(title, 14, Enum.Font.GothamBold, Vector2.new(textContainerWidth - 80, 1000))
 		titleHeight = math.max(18, math.ceil(ts.Y))
 	end
 	
@@ -3925,7 +2322,7 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 		ptitleLabel.TextSize = 14 
 		ptitleLabel.TextWrapped = true
 		ptitleLabel.TextXAlignment = Enum.TextXAlignment.Left
-		KazeUI:RegisterText(ptitleLabel, false, title)
+		KazeUI:RegisterText(ptitleLabel, false)
 	end
 	
 	local valueLabel = Instance.new("TextLabel", inner)
@@ -4040,33 +2437,6 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 
 	local lockCtrl = ApplyLock(paraFrame, locked, wrapper, UDim2.new(0.95, 0, 1, -3), UDim2.new(0.5, 0, 0, 3), Vector2.new(0.5, 0))
 
-	-- Re-measures the title whenever the parent (the window) actually
-	-- changes size, same fix as the Paragraph/Button/Toggle cards: without
-	-- this, shrinking the window narrows the wrap width but the title row's
-	-- height stays frozen, so the track either sits in the wrong place or
-	-- the card is left oversized/undersized under the title.
-	local function reflow()
-		local mw = 598 * 0.92
-		if parentFrame and parentFrame.AbsoluteSize and parentFrame.AbsoluteSize.X > 0 then mw = parentFrame.AbsoluteSize.X * 0.95 end
-		local tcw = mw - 16 - 80
-		
-		if ptitleLabel then
-			local ts = TextService:GetTextSize(ptitleLabel.Text, 14, Enum.Font.GothamBold, Vector2.new(tcw, 1000))
-			titleHeight = math.max(18, math.ceil(ts.Y))
-			ptitleLabel.Size = UDim2.new(1, -80, 0, titleHeight)
-		end
-		
-		valueLabel.Size = UDim2.new(0, 70, 0, titleHeight > 0 and titleHeight or 18)
-		track.Position = UDim2.new(0, 0, 0, titleHeight + 8)
-		totalHeight = 8 + titleHeight + 8 + 6 + 8
-		paraFrame.Size = UDim2.new(0.95, 0, 0, totalHeight)
-	end
-	
-	if parentFrame and parentFrame:IsA("GuiObject") then
-		local resizeConn = parentFrame:GetPropertyChangedSignal("AbsoluteSize"):Connect(reflow)
-		wrapper.Destroying:Connect(function() resizeConn:Disconnect() end)
-	end
-
 	local api = {
 		Wrapper = wrapper,
 		SetValue = function(self, newVal)
@@ -4080,7 +2450,6 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 		end,
 		SetText = function(self, newTitle)
 			if ptitleLabel and newTitle then ptitleLabel.Text = newTitle end
-			reflow()
 		end,
 		SetLocked = function(self, state)
 			isLockedState = state
@@ -4143,7 +2512,7 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 	titleLabel.Font = Enum.Font.GothamBold
 	titleLabel.TextSize = 14
 	titleLabel.TextXAlignment = Enum.TextXAlignment.Left
-	KazeUI:RegisterText(titleLabel, false, title)
+	KazeUI:RegisterText(titleLabel, false)
 
 	local previewColor = Instance.new("Frame", header)
 	previewColor.AnchorPoint = Vector2.new(1, 0.5)
@@ -4360,11 +2729,7 @@ local function CreateKeybindInput(parentFrame, title, defaultKey, callback, flag
 	
 	local measuredWidth = 598 * 0.92
 	if parentFrame and parentFrame.AbsoluteSize and parentFrame.AbsoluteSize.X > 0 then measuredWidth = parentFrame.AbsoluteSize.X * 0.95 end
-	-- Must equal the real rendered width: paraFrame -16 (inner) -90 (title's
-	-- reserved space for the bind pill). The old "-28-90" measured a
-	-- narrower box than the label actually gets, overestimating the title's
-	-- wrapped line count.
-	local textContainerWidth = measuredWidth - 16 - 90
+	local textContainerWidth = measuredWidth - 28 - 90
 	
 	local titleHeight = 0
 	if title ~= " " and title ~= "" then
@@ -4410,7 +2775,7 @@ local function CreateKeybindInput(parentFrame, title, defaultKey, callback, flag
 		ptitleLabel.TextSize = 14
 		ptitleLabel.TextWrapped = true
 		ptitleLabel.TextXAlignment = Enum.TextXAlignment.Left
-		KazeUI:RegisterText(ptitleLabel, false, title)
+		KazeUI:RegisterText(ptitleLabel, false)
 	end
 	
 	local bindContainer = Instance.new("TextButton", inner)
@@ -4430,17 +2795,10 @@ local function CreateKeybindInput(parentFrame, title, defaultKey, callback, flag
 	local bindLabel = Instance.new("TextLabel", bindContainer)
 	bindLabel.Size = UDim2.new(1, 0, 1, 0)
 	bindLabel.BackgroundTransparency = 1
-	bindLabel.Text = currentKey == Enum.KeyCode.Unknown and KazeUI:Translate("None") or currentKey.Name
+	bindLabel.Text = currentKey == Enum.KeyCode.Unknown and "None" or currentKey.Name
 	bindLabel.Font = Enum.Font.GothamBold
 	bindLabel.TextSize = 10
 	KazeUI:RegisterText(bindLabel, false)
-	-- Key names (e.g. "F", "LeftShift") are Roblox KeyCode identifiers, not
-	-- translatable UI copy -- only the "None"/unbound placeholder word is.
-	-- Register a Getter so it stays correctly translated even if the
-	-- language changes while the bind is unset.
-	KazeUI:RegisterLocalization(bindLabel, "Text", "None", function()
-		return currentKey == Enum.KeyCode.Unknown and KazeUI:Translate("None") or currentKey.Name
-	end)
 
 	local isHovering = false
 	
@@ -4489,7 +2847,7 @@ local function CreateKeybindInput(parentFrame, title, defaultKey, callback, flag
 					end
 				end
 				
-				bindLabel.Text = currentKey == Enum.KeyCode.Unknown and KazeUI:Translate("None") or currentKey.Name
+				bindLabel.Text = currentKey == Enum.KeyCode.Unknown and "None" or currentKey.Name
 				if not isHovering then
 					StopNeonLoop(bindStroke)
 					TweenService:Create(bindStroke, TWEEN_FAST, {Color = KazeUI.CurrentTheme.Border}):Play()
@@ -4520,42 +2878,20 @@ local function CreateKeybindInput(parentFrame, title, defaultKey, callback, flag
 	RegisterFlag(flag, function() return currentKey.Name end, function(val)
 		pcall(function()
 			currentKey = Enum.KeyCode[val] or Enum.KeyCode.Unknown
-			bindLabel.Text = currentKey == Enum.KeyCode.Unknown and KazeUI:Translate("None") or currentKey.Name
+			bindLabel.Text = currentKey == Enum.KeyCode.Unknown and "None" or currentKey.Name
 		end)
 	end)
 
 	local lockCtrl = ApplyLock(paraFrame, locked, wrapper, UDim2.new(0.95, 0, 1, -3), UDim2.new(0.5, 0, 0, 3), Vector2.new(0.5, 0))
 
-	-- Re-measures the title whenever the parent (the window) actually
-	-- changes size, same fix as the other cards above.
-	local function reflow()
-		local mw = 598 * 0.92
-		if parentFrame and parentFrame.AbsoluteSize and parentFrame.AbsoluteSize.X > 0 then mw = parentFrame.AbsoluteSize.X * 0.95 end
-		local tcw = mw - 16 - 90
-		
-		if ptitleLabel then
-			local ts = TextService:GetTextSize(ptitleLabel.Text, 14, Enum.Font.GothamBold, Vector2.new(tcw, 1000))
-			titleHeight = math.max(16, math.ceil(ts.Y))
-		end
-		
-		totalHeight = 8 + math.max(titleHeight, 24) + 8
-		paraFrame.Size = UDim2.new(0.95, 0, 0, totalHeight)
-	end
-	
-	if parentFrame and parentFrame:IsA("GuiObject") then
-		local resizeConn = parentFrame:GetPropertyChangedSignal("AbsoluteSize"):Connect(reflow)
-		wrapper.Destroying:Connect(function() resizeConn:Disconnect() end)
-	end
-
 	return {
 		Wrapper = wrapper,
 		SetText = function(self, newTitle)
 			if ptitleLabel and newTitle then ptitleLabel.Text = newTitle end
-			reflow()
 		end,
 		SetKey = function(self, newKey)
 			currentKey = newKey
-			bindLabel.Text = currentKey == Enum.KeyCode.Unknown and KazeUI:Translate("None") or currentKey.Name
+			bindLabel.Text = currentKey == Enum.KeyCode.Unknown and "None" or currentKey.Name
 		end,
 		SetLocked = function(self, state)
 			isLockedState = state
@@ -4565,7 +2901,7 @@ local function CreateKeybindInput(parentFrame, title, defaultKey, callback, flag
 end
 
 local function CreateVisualSectionDivider(parentFrame, titleArg)
-	local title = tostring(KazeUI:ResolveLocalizable(type(titleArg) == "table" and titleArg.Title or titleArg) or "Section")
+	local title = tostring(titleArg or "Section")
 
 	local wrapper = Instance.new("Frame")
 	wrapper.Size = UDim2.new(0.95, 0, 0, 36)
@@ -4581,7 +2917,7 @@ local function CreateVisualSectionDivider(parentFrame, titleArg)
 	label.TextSize = 16
 	label.TextXAlignment = Enum.TextXAlignment.Left
 	label.Parent = wrapper
-	KazeUI:RegisterText(label, false, title)
+	KazeUI:RegisterText(label, false)
 	
 	local leftLine = Instance.new("Frame")
 	leftLine.Size = UDim2.new(0, 4, 0, 16)
@@ -4612,7 +2948,7 @@ AttachElementsToAPI = function(apiTable, parentFrame, depth)
 	depth = depth or 1
 
 	function apiTable:AddLabel(arg1)
-		local t = KazeUI:ResolveLocalizable(type(arg1) == "table" and (arg1.Text or arg1.Title) or arg1)
+		local t = type(arg1) == "table" and (arg1.Text or arg1.Title) or arg1
 		local label = Instance.new("TextLabel")
 		label.Size = UDim2.new(1, -12, 0, 22)
 		label.BackgroundTransparency = 1
@@ -4622,40 +2958,32 @@ AttachElementsToAPI = function(apiTable, parentFrame, depth)
 		label.TextXAlignment = Enum.TextXAlignment.Left
 		label.TextWrapped = true
 		label.Parent = parentFrame
-		KazeUI:RegisterText(label, false, tostring(t or " "))
+		KazeUI:RegisterText(label, false)
 		return label
 	end
 
 	function apiTable:Paragraph(arg1, arg2)
-		local title = KazeUI:ResolveLocalizable(type(arg1) == "table" and arg1.Title or arg1)
-		local content = KazeUI:ResolveLocalizable(type(arg1) == "table" and (arg1.Content or arg1.Description) or arg2)
+		local title = type(arg1) == "table" and arg1.Title or arg1
+		local content = type(arg1) == "table" and (arg1.Content or arg1.Description) or arg2
 		return CreateParagraph(parentFrame, title, content)
 	end
 
 	function apiTable:Button(arg1, arg2, arg3)
-		local title = KazeUI:ResolveLocalizable(type(arg1) == "table" and arg1.Title or arg1)
-		local desc = KazeUI:ResolveLocalizable(type(arg1) == "table" and (arg1.Description or arg1.Content or "") or arg2)
+		local title = type(arg1) == "table" and arg1.Title or arg1
+		local desc = type(arg1) == "table" and (arg1.Description or arg1.Content or "") or arg2
 		local callback = type(arg1) == "table" and arg1.Callback or arg3
 		local locked = type(arg1) == "table" and arg1.Locked or false
-		-- Tooltip is optional -- when omitted, CreateClickableParagraph auto-
-		-- generates one from the Description/Content text.
-		local tooltip = KazeUI:ResolveLocalizable(type(arg1) == "table" and arg1.Tooltip or nil)
-		return CreateClickableParagraph(parentFrame, title, desc, callback, locked, tooltip)
+		return CreateClickableParagraph(parentFrame, title, desc, callback, locked)
 	end
 
 	function apiTable:Toggle(arg1, arg2, arg3, arg4, arg5)
-		local title, desc, def, callback, flag, locked, tooltip = "", "", false, nil, nil, false, nil
+		local title, desc, def, callback, flag, locked = "", "", false, nil, nil, false
 		if type(arg1) == "table" then
-			title, desc, def, callback, flag, locked, tooltip = arg1.Title, (arg1.Description or arg1.Content or ""), arg1.Default, arg1.Callback, arg1.Flag, arg1.Locked, arg1.Tooltip
+			title, desc, def, callback, flag, locked = arg1.Title, (arg1.Description or arg1.Content or ""), arg1.Default, arg1.Callback, arg1.Flag, arg1.Locked
 		else
 			title, desc, def, callback, flag = arg1, arg2, arg3, arg4, arg5
 		end
-		title = KazeUI:ResolveLocalizable(title)
-		desc = KazeUI:ResolveLocalizable(desc)
-		tooltip = KazeUI:ResolveLocalizable(tooltip)
-		-- Tooltip is optional -- when omitted, CreateToggleSwitch auto-
-		-- generates one from the Description/Content text.
-		return CreateToggleSwitch(parentFrame, title, desc, def, callback, flag, locked, tooltip)
+		return CreateToggleSwitch(parentFrame, title, desc, def, callback, flag, locked)
 	end
 
 	function apiTable:TextBox(arg1, arg2, arg3, arg4, arg5)
@@ -4665,8 +2993,6 @@ AttachElementsToAPI = function(apiTable, parentFrame, depth)
 		else
 			title, place, def, callback, flag = arg1, arg2, arg3, arg4, arg5
 		end
-		title = KazeUI:ResolveLocalizable(title)
-		place = KazeUI:ResolveLocalizable(place)
 		return CreateTextBoxInput(parentFrame, title, place, def, callback, flag, locked)
 	end
 
@@ -4677,7 +3003,6 @@ AttachElementsToAPI = function(apiTable, parentFrame, depth)
 		else
 			title, min, max, def, callback, flag = arg1, arg2, arg3, arg4, arg5, arg6
 		end
-		title = KazeUI:ResolveLocalizable(title)
 		return CreateSliderInput(parentFrame, title, min, max, def, callback, flag, locked)
 	end
 
@@ -4688,7 +3013,6 @@ AttachElementsToAPI = function(apiTable, parentFrame, depth)
 		else
 			title, vals, def, callback, multi, flag = arg1, arg2, arg3, arg4, (arg5 or false), arg6
 		end
-		title = KazeUI:ResolveLocalizable(title)
 		return CreateDropdown(parentFrame, title, vals, def, callback, multi, flag, locked)
 	end
 
@@ -4699,7 +3023,6 @@ AttachElementsToAPI = function(apiTable, parentFrame, depth)
 		else
 			title, def, cb, flag = arg1, arg2, arg3, arg4
 		end
-		title = KazeUI:ResolveLocalizable(title)
 		return CreateColorPicker(parentFrame, title, def, cb, flag, locked)
 	end
 	
@@ -4710,7 +3033,6 @@ AttachElementsToAPI = function(apiTable, parentFrame, depth)
 		else
 			title, def, cb, flag = arg1, arg2, arg3, arg4
 		end
-		title = KazeUI:ResolveLocalizable(title)
 		return CreateKeybindInput(parentFrame, title, def, cb, flag, locked)
 	end
 
@@ -4719,7 +3041,7 @@ AttachElementsToAPI = function(apiTable, parentFrame, depth)
 	end
 	
 	function apiTable:Section(arg1)
-		local title = KazeUI:ResolveLocalizable(type(arg1) == "table" and arg1.Title or arg1)
+		local title = type(arg1) == "table" and arg1.Title or arg1
 		return CreateVisualSectionDivider(parentFrame, title)
 	end
 
@@ -4731,9 +3053,103 @@ AttachElementsToAPI = function(apiTable, parentFrame, depth)
 	apiTable.Group = apiTable.GroupBox
 end
 
+-- ==========================================================
+-- Height-clipped collapsible content helper (used by Section & GroupBox)
+-- ==========================================================
+-- FIX (both the earlier "leftover blank space" bug AND the "cuts off /
+-- hides other buttons" bug): manually computing "real height" from
+-- UIListLayout.AbsoluteContentSize and writing it into Size by hand (the
+-- previous version of this helper) had an edge case where a Tween's
+-- target could be computed a frame before late content settled, leaving
+-- the clipper permanently a bit short with no further signal to correct
+-- it -- exactly the "some buttons get hidden" bug.
+--
+-- This version sidesteps manual height math entirely. `content` uses
+-- native AutomaticSize.Y (single level, always live, and safe because
+-- it's never Visible = false). `clipper` ALSO uses native AutomaticSize.Y
+-- to track `content` (another single, native level -- reliable). The
+-- collapse animation is done with a UISizeConstraint on `clipper`, whose
+-- MaxSize.Y is driven by a tweened NumberValue: constraints apply AFTER
+-- AutomaticSize resolves, clamping the rendered size without ever writing
+-- to .Size directly, so there's nothing for AutomaticSize to fight. Once
+-- open, the cap is set far above any realistic content height, so the
+-- clipper's visible size is just whatever AutomaticSize naturally
+-- computes -- meaning late-added components (while open) are picked up
+-- automatically with zero extra Lua bookkeeping.
+local function CreateClippedContent(parentBox, layoutOrder)
+	local clipper = Instance.new("Frame")
+	clipper.Name = "Clipper"
+	clipper.Size = UDim2.new(1, 0, 0, 0)
+	clipper.BackgroundTransparency = 1
+	clipper.BorderSizePixel = 0
+	clipper.ClipsDescendants = true
+	clipper.LayoutOrder = layoutOrder
+	clipper.AutomaticSize = Enum.AutomaticSize.Y
+	clipper.Parent = parentBox
+
+	local sizeConstraint = Instance.new("UISizeConstraint")
+	sizeConstraint.MinSize = Vector2.new(0, 0)
+	sizeConstraint.MaxSize = Vector2.new(math.huge, 0)
+	sizeConstraint.Parent = clipper
+
+	-- Proxy NumberValue so we can Tween the cap smoothly. (TweenService
+	-- can't safely Tween UISizeConstraint.MaxSize directly here since one
+	-- component needs to stay math.huge, and interpolating math.huge ->
+	-- math.huge produces NaN internally; tweening a plain number and
+	-- re-applying it avoids that entirely.)
+	local capValue = Instance.new("NumberValue")
+	capValue.Value = 0
+	capValue:GetPropertyChangedSignal("Value"):Connect(function()
+		sizeConstraint.MaxSize = Vector2.new(math.huge, capValue.Value)
+	end)
+
+	local content = Instance.new("Frame")
+	content.Name = "Content"
+	content.Size = UDim2.new(1, 0, 0, 0)
+	content.BackgroundTransparency = 1
+	content.BorderSizePixel = 0
+	content.AutomaticSize = Enum.AutomaticSize.Y
+	content.Parent = clipper
+
+	local contentLayout = Instance.new("UIListLayout", content)
+	contentLayout.SortOrder = Enum.SortOrder.LayoutOrder
+	contentLayout.Padding = UDim.new(0, 5)
+	contentLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+
+	local contentPadding = Instance.new("UIPadding", content)
+	contentPadding.PaddingTop = UDim.new(0, 6)
+	contentPadding.PaddingBottom = UDim.new(0, 8)
+	contentPadding.PaddingLeft = UDim.new(0, 5)
+	contentPadding.PaddingRight = UDim.new(0, 5)
+
+	local isOpen = false
+	local capTween
+	local OPEN_CAP = 1000000 -- comfortably above any realistic content height
+
+	local function setOpen(open, animated)
+		isOpen = open
+		if capTween then capTween:Cancel() end
+		local targetCap = open and OPEN_CAP or 0
+		if animated == false then
+			capValue.Value = targetCap
+		else
+			capTween = TweenService:Create(capValue, TWEEN_COLLAPSE, {Value = targetCap})
+			capTween:Play()
+		end
+	end
+
+	return {
+		Clipper = clipper,
+		Content = content,
+		Layout = contentLayout,
+		Padding = contentPadding,
+		SetOpen = setOpen,
+	}
+end
+
 CreateCollapsibleSection = function(parentFrame, titleArg, currentDepth)
 	currentDepth = currentDepth or 1
-	local title = tostring(KazeUI:ResolveLocalizable(type(titleArg) == "table" and titleArg.Title or titleArg) or "Section")
+	local title = type(titleArg) == "table" and titleArg.Title or tostring(titleArg or "Section")
 	local openDefault = type(titleArg) == "table" and titleArg.Open or false
 	local isOpen = false
 
@@ -4806,7 +3222,7 @@ CreateCollapsibleSection = function(parentFrame, titleArg, currentDepth)
 	titleLabel.TextXAlignment = Enum.TextXAlignment.Left
 	titleLabel.TextTruncate = Enum.TextTruncate.AtEnd
 	titleLabel.Parent = headerFrame
-	KazeUI:RegisterText(titleLabel, false, title)
+	KazeUI:RegisterText(titleLabel, false)
 
 	local arrowIcon = Instance.new("ImageLabel")
 	arrowIcon.AnchorPoint = Vector2.new(1, 0.5)
@@ -4829,53 +3245,9 @@ CreateCollapsibleSection = function(parentFrame, titleArg, currentDepth)
 	divider.Parent = sectionBox
 	KazeUI:OnThemeChanged(divider, function(t) divider.BackgroundColor3 = t.Border end)
 
-	-- FIX (root cause of the outline/UIStroke-invisible + "need to scroll to fix
-	-- it" + "can't handle many components" bugs): Roblox's engine has a long-
-	-- standing, still-unfixed bug where AutomaticSize (and, downstream,
-	-- ScrollingFrame.AutomaticCanvasSize) simply does NOT recompute for an
-	-- instance -- or any of its AutomaticSize descendants -- while that
-	-- instance's Visible is false. The old code set sectionContent.Visible =
-	-- false when collapsed, so every button/toggle/slider added while closed
-	-- (or the very act of opening it) never triggered a real layout pass; the
-	-- stroke, the section's own height, and the outer ScrollingFrame's canvas
-	-- all stayed stale until something UNRELATED forced a fresh layout pass
-	-- (like the user scrolling). More components = more places for this to go
-	-- stale, hence "can't handle many components".
-	--
-	-- The fix: sectionContent is now ALWAYS Visible = true (so AutomaticSize
-	-- keeps computing normally, all the time, exactly like Roblox intends) and
-	-- collapsing is done purely via a wrapping "clipper" frame with
-	-- ClipsDescendants = true, whose own Size.Y is what actually animates
-	-- between 0 and the content's real height. ClipsDescendants only affects
-	-- rendering/clipping, not layout math, so this sidesteps the engine bug
-	-- entirely instead of racing against it.
-	local contentClipper = Instance.new("Frame")
-	contentClipper.Name = "ContentClipper"
-	contentClipper.Size = UDim2.new(1, 0, 0, 0)
-	contentClipper.BackgroundTransparency = 1
-	contentClipper.BorderSizePixel = 0
-	contentClipper.ClipsDescendants = true
-	contentClipper.LayoutOrder = 3
-	contentClipper.Parent = sectionBox
-
-	local sectionContent = Instance.new("Frame")
-	sectionContent.Name = "Content"
-	sectionContent.Size = UDim2.new(1, 0, 0, 0)
-	sectionContent.BackgroundTransparency = 1
-	sectionContent.BorderSizePixel = 0
-	sectionContent.AutomaticSize = Enum.AutomaticSize.Y
-	sectionContent.Parent = contentClipper
-
-	local contentLayout = Instance.new("UIListLayout", sectionContent)
-	contentLayout.SortOrder = Enum.SortOrder.LayoutOrder
-	contentLayout.Padding = UDim.new(0, 5)
-	contentLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-
-	local contentPadding = Instance.new("UIPadding", sectionContent)
-	contentPadding.PaddingTop = UDim.new(0, 6)
-	contentPadding.PaddingBottom = UDim.new(0, 8)
-	contentPadding.PaddingLeft = UDim.new(0, 5)
-	contentPadding.PaddingRight = UDim.new(0, 5)
+	-- Robust height-clipped content -- see CreateClippedContent above.
+	local clipped = CreateClippedContent(sectionBox, 3)
+	local sectionContent = clipped.Content
 
 	local toggleDetector = Instance.new("TextButton")
 	toggleDetector.Size = UDim2.fromScale(1, 1)
@@ -4884,42 +3256,10 @@ CreateCollapsibleSection = function(parentFrame, titleArg, currentDepth)
 	toggleDetector.ZIndex = 10
 	toggleDetector.Parent = headerFrame
 
-	-- Drives contentClipper's height. sectionContent is always Visible = true
-	-- now, so its AutomaticSize (and AbsoluteSize) is always live and correct
-	-- -- no more racing the engine's invisible-AutomaticSize bug.
-	local openTween
-	local function setClipperOpen(open)
-		if openTween then openTween:Cancel() end
-		if open then
-			-- Freeze at whatever height it's currently at, tween up to the
-			-- content's real (always up-to-date) height, then hand control
-			-- back to AutomaticSize so components added/removed later while
-			-- open keep the box's height correct with zero extra code.
-			contentClipper.AutomaticSize = Enum.AutomaticSize.None
-			local targetHeight = sectionContent.AbsoluteSize.Y
-			openTween = TweenService:Create(contentClipper, TWEEN_COLLAPSE, {Size = UDim2.new(1, 0, 0, targetHeight)})
-			local thisTween = openTween
-			thisTween.Completed:Connect(function()
-				if isOpen and contentClipper.Parent then
-					contentClipper.AutomaticSize = Enum.AutomaticSize.Y
-				end
-			end)
-			thisTween:Play()
-		else
-			-- Freeze at the real current height (in case AutomaticSize was
-			-- driving it) before collapsing, so the tween starts from the
-			-- true height instead of a stale one.
-			contentClipper.Size = UDim2.new(1, 0, 0, contentClipper.AbsoluteSize.Y)
-			contentClipper.AutomaticSize = Enum.AutomaticSize.None
-			openTween = TweenService:Create(contentClipper, TWEEN_COLLAPSE, {Size = UDim2.new(1, 0, 0, 0)})
-			openTween:Play()
-		end
-	end
-
 	local function toggleSection()
 		isOpen = not isOpen
 		divider.Visible = isOpen
-		setClipperOpen(isOpen)
+		clipped.SetOpen(isOpen)
 
 		if isOpen then
 			TweenService:Create(arrowIcon, TWEEN_COLLAPSE, {
@@ -4988,7 +3328,7 @@ CreateGroupBox = function(parentFrame, titleArg, currentDepth, depthOverride)
 	currentDepth = depthOverride or currentDepth or 1
 	if currentDepth > 3 then currentDepth = 3 end 
 
-	local title = tostring(KazeUI:ResolveLocalizable(type(titleArg) == "table" and titleArg.Title or titleArg) or "Group")
+	local title = type(titleArg) == "table" and titleArg.Title or tostring(titleArg or "Group")
 	local openDefault = type(titleArg) == "table" and titleArg.Open or false
 	local isOpen = false
 
@@ -5060,7 +3400,7 @@ CreateGroupBox = function(parentFrame, titleArg, currentDepth, depthOverride)
 	label.TextXAlignment = Enum.TextXAlignment.Left
 	label.TextTruncate = Enum.TextTruncate.AtEnd
 	label.Parent = header
-	KazeUI:RegisterText(label, false, title)
+	KazeUI:RegisterText(label, false)
 
 	local arrowIcon = Instance.new("ImageLabel")
 	arrowIcon.AnchorPoint = Vector2.new(1, 0.5)
@@ -5083,35 +3423,9 @@ CreateGroupBox = function(parentFrame, titleArg, currentDepth, depthOverride)
 	divider.Parent = groupFrame
 	KazeUI:OnThemeChanged(divider, function(t) divider.BackgroundColor3 = t.Border end)
 
-	-- FIX: same root-cause fix as CreateCollapsibleSection above -- container
-	-- is now ALWAYS Visible = true (so its AutomaticSize keeps computing
-	-- normally instead of hitting Roblox's invisible-AutomaticSize engine bug),
-	-- and the wrapping containerClipper's height is what actually animates.
-	local containerClipper = Instance.new("Frame")
-	containerClipper.Name = "ContainerClipper"
-	containerClipper.Size = UDim2.new(1, 0, 0, 0)
-	containerClipper.BackgroundTransparency = 1
-	containerClipper.ClipsDescendants = true
-	containerClipper.LayoutOrder = 3
-	containerClipper.Parent = groupFrame
-
-	local container = Instance.new("Frame")
-	container.Name = "Container"
-	container.Size = UDim2.new(1, 0, 0, 0)
-	container.BackgroundTransparency = 1
-	container.AutomaticSize = Enum.AutomaticSize.Y
-	container.Parent = containerClipper
-
-	local contentLayout = Instance.new("UIListLayout", container)
-	contentLayout.SortOrder = Enum.SortOrder.LayoutOrder
-	contentLayout.Padding = UDim.new(0, 5)
-	contentLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-
-	local contentPadding = Instance.new("UIPadding", container)
-	contentPadding.PaddingTop = UDim.new(0, 6)
-	contentPadding.PaddingBottom = UDim.new(0, 8)
-	contentPadding.PaddingLeft = UDim.new(0, 5)
-	contentPadding.PaddingRight = UDim.new(0, 5)
+	-- Robust height-clipped content -- see CreateClippedContent above.
+	local clipped = CreateClippedContent(groupFrame, 3)
+	local container = clipped.Content
 
 	local toggleDetector = Instance.new("TextButton")
 	toggleDetector.Size = UDim2.fromScale(1, 1)
@@ -5120,32 +3434,10 @@ CreateGroupBox = function(parentFrame, titleArg, currentDepth, depthOverride)
 	toggleDetector.ZIndex = 10
 	toggleDetector.Parent = header
 
-	local openTween
-	local function setClipperOpen(open)
-		if openTween then openTween:Cancel() end
-		if open then
-			containerClipper.AutomaticSize = Enum.AutomaticSize.None
-			local targetHeight = container.AbsoluteSize.Y
-			openTween = TweenService:Create(containerClipper, TWEEN_COLLAPSE, {Size = UDim2.new(1, 0, 0, targetHeight)})
-			local thisTween = openTween
-			thisTween.Completed:Connect(function()
-				if isOpen and containerClipper.Parent then
-					containerClipper.AutomaticSize = Enum.AutomaticSize.Y
-				end
-			end)
-			thisTween:Play()
-		else
-			containerClipper.Size = UDim2.new(1, 0, 0, containerClipper.AbsoluteSize.Y)
-			containerClipper.AutomaticSize = Enum.AutomaticSize.None
-			openTween = TweenService:Create(containerClipper, TWEEN_COLLAPSE, {Size = UDim2.new(1, 0, 0, 0)})
-			openTween:Play()
-		end
-	end
-
 	local function toggleGroup()
 		isOpen = not isOpen
 		divider.Visible = isOpen
-		setClipperOpen(isOpen)
+		clipped.SetOpen(isOpen)
 
 		if isOpen then
 			TweenService:Create(arrowIcon, TWEEN_COLLAPSE, {
@@ -5224,26 +3516,11 @@ end
 -- ==========================================
 local function BuildWindow(config)
 	config = config or {}
-	local Title = tostring(KazeUI:ResolveLocalizable(config.Title) or "Kaze UI")
+	local Title = config.Title or "Kaze UI"
 	local Author = config.Author or "Unknown"
 	local Version = config.Version or "1.0"
 	local MainIcon = FormatImage(config.Icon or "house")
 	local OpenIcon = FormatImage((config.OpenButton and config.OpenButton.Icon) or config.Icon or "house")
-
-	-- Optional, best-effort, offline locale detection (see
-	-- KazeUI:DetectSystemLanguage). Only runs if the developer opts in via
-	-- config.AutoDetectLanguage = true, applied BEFORE any UI is built so
-	-- every component is created already in the detected language. Always
-	-- safely falls back to "English" and never breaks/overrides an explicit
-	-- config.Language the developer also set.
-	if config.AutoDetectLanguage and not config.Language then
-		local ok, detected = pcall(KazeUI.DetectSystemLanguage, KazeUI)
-		if ok and detected and table.find(KazeUI.Languages, detected) then
-			KazeUI:SetLanguage(detected)
-		end
-	elseif config.Language and table.find(KazeUI.Languages, config.Language) then
-		KazeUI:SetLanguage(config.Language)
-	end
 	
 	KazeUI.AuthorName = Author
 	
@@ -5538,7 +3815,7 @@ local function BuildWindow(config)
 	TitleLabel.TextXAlignment = Enum.TextXAlignment.Center
 	TitleLabel.TextYAlignment = Enum.TextYAlignment.Center
 	TitleLabel.Parent = TopBar
-	KazeUI:RegisterText(TitleLabel, false, Title)
+	KazeUI:RegisterText(TitleLabel, false)
 
 	-- Left-aligned Author and Version next to avatar (TextSize = 13, no dot separator)
 	local SubLabel = Instance.new("TextLabel")
@@ -5803,7 +4080,7 @@ local function BuildWindow(config)
 		ConfirmText.TextSize = 14
 		ConfirmText.TextWrapped = true
 		ConfirmText.ZIndex = 102
-		KazeUI:RegisterText(ConfirmText, false, "Do you want to exit KazeUI?")
+		KazeUI:RegisterText(ConfirmText, false)
 
 		local ButtonsFrame = Instance.new("Frame", ConfirmWindow)
 		ButtonsFrame.Size = UDim2.new(1, 0, 0, 40)
@@ -5825,7 +4102,6 @@ local function BuildWindow(config)
 		ConfirmBtn.TextSize = 11
 		ConfirmBtn.ZIndex = 103
 		Instance.new("UICorner", ConfirmBtn).CornerRadius = UDim.new(0, 10)
-		KazeUI:RegisterLocalization(ConfirmBtn, "Text", "Confirm")
 
 		local CancelBtn = Instance.new("TextButton", ButtonsFrame)
 		CancelBtn.Size = UDim2.new(0, 100, 0, 30)
@@ -5835,7 +4111,7 @@ local function BuildWindow(config)
 		CancelBtn.ZIndex = 103
 		Instance.new("UICorner", CancelBtn).CornerRadius = UDim.new(0, 10)
 		KazeUI:AddPanel(CancelBtn, 0.04)
-		KazeUI:RegisterText(CancelBtn, true, "Cancel")
+		KazeUI:RegisterText(CancelBtn, true)
 
 		-- BUGFIX: this used to only Destroy() the main ScreenGui. The Open
 		-- Button, Dialog, and Notification ScreenGuis (separate top-level
@@ -5848,7 +4124,6 @@ local function BuildWindow(config)
 			OpenButtonGui:Destroy()
 			DialogGui:Destroy()
 			NotifScreenGui:Destroy()
-			TooltipGui:Destroy()
 		end)
 		CancelBtn.MouseButton1Click:Connect(function() 
 			TweenService:Create(InteractionBlocker, TWEEN_FAST, {BackgroundTransparency = 1}):Play()
@@ -6004,7 +4279,7 @@ local function BuildWindow(config)
 
 	local tabsLayout = Instance.new("UIListLayout", TabsList)
 	tabsLayout.SortOrder = Enum.SortOrder.LayoutOrder
-	tabsLayout.Padding = UDim.new(0, 4)
+	tabsLayout.Padding = UDim.new(0, 5)
 
 	-- ==========================================
 	-- Modal Resize Engine (System Rewrite)
@@ -6131,8 +4406,8 @@ local function BuildWindow(config)
 	-- ==========================================================
 	function Win:Dialog(dialogConfig)
 		dialogConfig = dialogConfig or {}
-		local title = tostring(KazeUI:ResolveLocalizable(dialogConfig.Title) or "Dialog")
-		local content = tostring(KazeUI:ResolveLocalizable(dialogConfig.Content) or "")
+		local title = tostring(dialogConfig.Title or "Dialog")
+		local content = tostring(dialogConfig.Content or "")
 		local iconId = dialogConfig.Icon and FormatImage(dialogConfig.Icon) or ""
 		local hasIcon = (iconId ~= "")
 		local actions = dialogConfig.Actions or {}
@@ -6190,7 +4465,7 @@ local function BuildWindow(config)
 		titleLabel.TextWrapped = true
 		titleLabel.TextXAlignment = Enum.TextXAlignment.Center
 		titleLabel.ZIndex = 102
-		KazeUI:RegisterText(titleLabel, false, title)
+		KazeUI:RegisterText(titleLabel, false)
 
 		local contentLabel = Instance.new("TextLabel", DialogFrame)
 		contentLabel.Size = UDim2.new(1, -40, 0, contentHeight)
@@ -6203,7 +4478,7 @@ local function BuildWindow(config)
 		contentLabel.TextXAlignment = Enum.TextXAlignment.Center
 		contentLabel.TextYAlignment = Enum.TextYAlignment.Top
 		contentLabel.ZIndex = 102
-		KazeUI:RegisterText(contentLabel, false, content) -- High readability: high-contrast text
+		KazeUI:RegisterText(contentLabel, false) -- High readability: high-contrast text
 
 		local ActionsFrame = Instance.new("Frame", DialogFrame)
 		ActionsFrame.Position = UDim2.new(0, 15, 1, -15)
@@ -6248,7 +4523,7 @@ local function BuildWindow(config)
 		local buttonWidth = shouldStack and 350 or (totalActions > 0 and (350 - ((totalActions - 1) * 8)) / totalActions or 100)
 
 		for i, act in ipairs(actions) do
-			local btnName = tostring(KazeUI:ResolveLocalizable(act.Name) or "Button")
+			local btnName = act.Name or "Button"
 			local callback = act.Callback
 			
 			local actionBtn = Instance.new("TextButton", ActionsFrame)
@@ -6286,10 +4561,9 @@ local function BuildWindow(config)
 			if btnColor then
 				actionBtn.BackgroundColor3 = btnColor
 				btnText.TextColor3 = Color3.fromRGB(255, 255, 255)
-				KazeUI:RegisterLocalization(btnText, "Text", btnName)
 			else
 				KazeUI:AddPanel(actionBtn, 0.04)
-				KazeUI:RegisterText(btnText, false, btnName)
+				KazeUI:RegisterText(btnText, false)
 			end
 
 			local isHovered = false
@@ -6386,38 +4660,6 @@ local function BuildWindow(config)
 				KazeUI:Notify({Title = "Error", Content = "Your executor lacks 'delfile' support.", Duration = 3})
 			end
 		end})
-	end
-
-	-- Adds a "Language" section (Dropdown + Apply button) to whatever tab you
-	-- call this on, e.g. Win:CreateLanguageManager(SettingsTab). Selecting a
-	-- language and pressing Apply calls KazeUI:SetLanguage(...), which fires
-	-- every callback registered with KazeUI:OnLanguageChanged(fn) -- use that
-	-- in your own script to actually translate your own tab/element text.
-	function Win:CreateLanguageManager(tab)
-		local sec = tab:SectionUI("Language")
-		local selectedLanguage = KazeUI.Language
-
-		sec:Dropdown({
-			Title = "App Language",
-			Description = "Choose the language for this UI, then press Apply.",
-			Options = KazeUI.Languages,
-			Default = selectedLanguage,
-			Callback = function(v) selectedLanguage = v end
-		})
-
-		sec:Button({
-			Title = "Apply Language",
-			Description = "Applies the selected language.",
-			Callback = function()
-				KazeUI:SetLanguage(selectedLanguage)
-				-- Pre-translate the "Language set to" prefix ourselves (it's
-				-- built by string concatenation with a dynamic language name,
-				-- so the composite string can't be a dictionary lookup key --
-				-- Notify() will still safely no-op on the already-translated
-				-- result since no dictionary entry matches the full string).
-				KazeUI:Notify({Title = "Language", Content = KazeUI:Translate("Language set to") .. " " .. selectedLanguage, Duration = 3})
-			end
-		})
 	end
 
 	function Win:CreateThemeManager(tab)
@@ -6517,12 +4759,12 @@ local function BuildWindow(config)
 	end
 
 	function Win:CreateTab(arg1, arg2)
-		local name = tostring(KazeUI:ResolveLocalizable(type(arg1) == "table" and (arg1.Title or arg1.Name) or arg1) or "Tab")
+		local name = tostring(type(arg1) == "table" and (arg1.Title or arg1.Name) or arg1 or "Tab")
 		local iconId = type(arg1) == "table" and arg1.Icon or arg2
 		local formattedIcon = FormatImage(iconId or "")
 		
 		local btn = Instance.new("TextButton")
-		btn.Size = UDim2.new(1, -10, 0, 30)
+		btn.Size = UDim2.new(1, -10, 0, 36)
 		btn.BorderSizePixel = 0
 		btn.Text = ""
 		btn.AutoButtonColor = false
@@ -6545,16 +4787,16 @@ local function BuildWindow(config)
 		KazeUI:OnGlowChanged(leftIndicator, function(c) leftIndicator.BackgroundColor3 = c end)
 
 		local iconLabel = Instance.new("ImageLabel", btn)
-		iconLabel.Size = UDim2.fromOffset(16, 16)
-		iconLabel.Position = UDim2.new(0, 11, 0.5, -8)
+		iconLabel.Size = UDim2.fromOffset(18, 18)
+		iconLabel.Position = UDim2.new(0, 12, 0.5, -9)
 		iconLabel.BackgroundTransparency = 1
 		iconLabel.Image = formattedIcon
 		iconLabel.ScaleType = Enum.ScaleType.Fit
 		iconLabel.Parent = btn
 		
 		local txt = Instance.new("TextLabel", btn)
-		txt.Size = UDim2.new(1, -40, 1, 0)
-		txt.Position = UDim2.fromOffset(34, 0)
+		txt.Size = UDim2.new(1, -42, 1, 0)
+		txt.Position = UDim2.fromOffset(36, 0)
 		txt.BackgroundTransparency = 1
 		txt.Text = name
 		txt.Font = Enum.Font.Gotham
@@ -6567,7 +4809,6 @@ local function BuildWindow(config)
 		
 		txt.TextXAlignment = Enum.TextXAlignment.Left
 		txt.Parent = btn
-		KazeUI:RegisterText(txt, false, name)
 
 		local page = Instance.new("Frame")
 		page.Size = UDim2.new(1, 0, 1, 0)
@@ -6636,7 +4877,7 @@ local function BuildWindow(config)
 		stateTitle.Font = Enum.Font.GothamBold
 		stateTitle.TextSize = 14
 		stateTitle.TextXAlignment = Enum.TextXAlignment.Center
-		KazeUI:RegisterText(stateTitle, false, "Nothing here yet")
+		KazeUI:RegisterText(stateTitle, false)
 
 		local stateDesc = Instance.new("TextLabel", CenterContent)
 		stateDesc.Size = UDim2.new(0.9, 0, 0, 36)
@@ -6646,7 +4887,7 @@ local function BuildWindow(config)
 		stateDesc.TextSize = 12
 		stateDesc.TextWrapped = true
 		stateDesc.TextXAlignment = Enum.TextXAlignment.Center
-		KazeUI:RegisterText(stateDesc, true, "This section doesn't contain any elements yet.\nAdd one to get started.")
+		KazeUI:RegisterText(stateDesc, true)
 
 		local transTween, scaleTween
 		local isStateVisible = false
