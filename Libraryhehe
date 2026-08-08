@@ -2465,7 +2465,10 @@ local function CreateTextBoxInput(parentFrame, title, placeholder, defaultVal, c
 	
 	local measuredWidth = 598 * 0.92
 	if parentFrame and parentFrame.AbsoluteSize and parentFrame.AbsoluteSize.X > 0 then measuredWidth = parentFrame.AbsoluteSize.X * 0.95 end
-	local textContainerWidth = measuredWidth - 28
+	-- Must equal the real rendered width: paraFrame -16 (inner), full width,
+	-- no reserved icon space. The old "-28" measured narrower than the label
+	-- actually gets, overestimating the title's wrapped line count.
+	local textContainerWidth = measuredWidth - 16
 	
 	local titleHeight = 0
 	if title ~= " " and title ~= "" then
@@ -2580,12 +2583,36 @@ local function CreateTextBoxInput(parentFrame, title, placeholder, defaultVal, c
 
 	local lockCtrl = ApplyLock(paraFrame, locked, wrapper, UDim2.new(0.95, 0, 1, -3), UDim2.new(0.5, 0, 0, 3), Vector2.new(0.5, 0))
 
+	-- Re-measures the title whenever the parent (the window) actually
+	-- changes size, same fix as the other cards above.
+	local function reflow()
+		local mw = 598 * 0.92
+		if parentFrame and parentFrame.AbsoluteSize and parentFrame.AbsoluteSize.X > 0 then mw = parentFrame.AbsoluteSize.X * 0.95 end
+		local tcw = mw - 16
+		
+		if ptitleLabel then
+			local ts = TextService:GetTextSize(ptitleLabel.Text, 14, Enum.Font.GothamBold, Vector2.new(tcw, 1000))
+			titleHeight = math.max(16, math.ceil(ts.Y))
+			ptitleLabel.Size = UDim2.new(1, 0, 0, titleHeight)
+		end
+		
+		textBoxContainer.Position = UDim2.new(0, 0, 0, titleHeight + 3)
+		totalHeight = 8 + titleHeight + 3 + 28 + 8
+		paraFrame.Size = UDim2.new(0.95, 0, 0, totalHeight)
+	end
+	
+	if parentFrame and parentFrame:IsA("GuiObject") then
+		local resizeConn = parentFrame:GetPropertyChangedSignal("AbsoluteSize"):Connect(reflow)
+		wrapper.Destroying:Connect(function() resizeConn:Disconnect() end)
+	end
+
 	return { 
 		Wrapper = wrapper, 
 		SetText = function(self, value) textBox.Text = tostring(value or "") end,
 		SetPlaceholder = function(self, val) textBox.PlaceholderText = val end,
 		SetTitle = function(self, newTitle)
 			if ptitleLabel and newTitle then ptitleLabel.Text = newTitle end
+			reflow()
 		end,
 		SetLocked = function(self, state)
 			isLockedState = state
@@ -2604,11 +2631,16 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 	
 	local measuredWidth = 598 * 0.92
 	if parentFrame and parentFrame.AbsoluteSize and parentFrame.AbsoluteSize.X > 0 then measuredWidth = parentFrame.AbsoluteSize.X * 0.95 end
-	local textContainerWidth = measuredWidth - 28
+	-- Must equal the real rendered width: paraFrame -16 (inner) -80 (title's
+	-- reserved space for the value label). The old "-28" measured a narrower
+	-- box than the label actually gets, so GetTextSize predicted the title
+	-- wrapping onto an extra line it never actually needed -- oversizing the
+	-- title row and leaving a visible gap above the slider track.
+	local textContainerWidth = measuredWidth - 16 - 80
 	
 	local titleHeight = 0
 	if title ~= " " and title ~= "" then
-		local ts = TextService:GetTextSize(title, 14, Enum.Font.GothamBold, Vector2.new(textContainerWidth - 80, 1000))
+		local ts = TextService:GetTextSize(title, 14, Enum.Font.GothamBold, Vector2.new(textContainerWidth, 1000))
 		titleHeight = math.max(18, math.ceil(ts.Y))
 	end
 	
@@ -2765,6 +2797,33 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 
 	local lockCtrl = ApplyLock(paraFrame, locked, wrapper, UDim2.new(0.95, 0, 1, -3), UDim2.new(0.5, 0, 0, 3), Vector2.new(0.5, 0))
 
+	-- Re-measures the title whenever the parent (the window) actually
+	-- changes size, same fix as the Paragraph/Button/Toggle cards: without
+	-- this, shrinking the window narrows the wrap width but the title row's
+	-- height stays frozen, so the track either sits in the wrong place or
+	-- the card is left oversized/undersized under the title.
+	local function reflow()
+		local mw = 598 * 0.92
+		if parentFrame and parentFrame.AbsoluteSize and parentFrame.AbsoluteSize.X > 0 then mw = parentFrame.AbsoluteSize.X * 0.95 end
+		local tcw = mw - 16 - 80
+		
+		if ptitleLabel then
+			local ts = TextService:GetTextSize(ptitleLabel.Text, 14, Enum.Font.GothamBold, Vector2.new(tcw, 1000))
+			titleHeight = math.max(18, math.ceil(ts.Y))
+			ptitleLabel.Size = UDim2.new(1, -80, 0, titleHeight)
+		end
+		
+		valueLabel.Size = UDim2.new(0, 70, 0, titleHeight > 0 and titleHeight or 18)
+		track.Position = UDim2.new(0, 0, 0, titleHeight + 8)
+		totalHeight = 8 + titleHeight + 8 + 6 + 8
+		paraFrame.Size = UDim2.new(0.95, 0, 0, totalHeight)
+	end
+	
+	if parentFrame and parentFrame:IsA("GuiObject") then
+		local resizeConn = parentFrame:GetPropertyChangedSignal("AbsoluteSize"):Connect(reflow)
+		wrapper.Destroying:Connect(function() resizeConn:Disconnect() end)
+	end
+
 	local api = {
 		Wrapper = wrapper,
 		SetValue = function(self, newVal)
@@ -2778,6 +2837,7 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 		end,
 		SetText = function(self, newTitle)
 			if ptitleLabel and newTitle then ptitleLabel.Text = newTitle end
+			reflow()
 		end,
 		SetLocked = function(self, state)
 			isLockedState = state
@@ -3057,7 +3117,11 @@ local function CreateKeybindInput(parentFrame, title, defaultKey, callback, flag
 	
 	local measuredWidth = 598 * 0.92
 	if parentFrame and parentFrame.AbsoluteSize and parentFrame.AbsoluteSize.X > 0 then measuredWidth = parentFrame.AbsoluteSize.X * 0.95 end
-	local textContainerWidth = measuredWidth - 28 - 90
+	-- Must equal the real rendered width: paraFrame -16 (inner) -90 (title's
+	-- reserved space for the bind pill). The old "-28-90" measured a
+	-- narrower box than the label actually gets, overestimating the title's
+	-- wrapped line count.
+	local textContainerWidth = measuredWidth - 16 - 90
 	
 	local titleHeight = 0
 	if title ~= " " and title ~= "" then
@@ -3212,10 +3276,32 @@ local function CreateKeybindInput(parentFrame, title, defaultKey, callback, flag
 
 	local lockCtrl = ApplyLock(paraFrame, locked, wrapper, UDim2.new(0.95, 0, 1, -3), UDim2.new(0.5, 0, 0, 3), Vector2.new(0.5, 0))
 
+	-- Re-measures the title whenever the parent (the window) actually
+	-- changes size, same fix as the other cards above.
+	local function reflow()
+		local mw = 598 * 0.92
+		if parentFrame and parentFrame.AbsoluteSize and parentFrame.AbsoluteSize.X > 0 then mw = parentFrame.AbsoluteSize.X * 0.95 end
+		local tcw = mw - 16 - 90
+		
+		if ptitleLabel then
+			local ts = TextService:GetTextSize(ptitleLabel.Text, 14, Enum.Font.GothamBold, Vector2.new(tcw, 1000))
+			titleHeight = math.max(16, math.ceil(ts.Y))
+		end
+		
+		totalHeight = 8 + math.max(titleHeight, 24) + 8
+		paraFrame.Size = UDim2.new(0.95, 0, 0, totalHeight)
+	end
+	
+	if parentFrame and parentFrame:IsA("GuiObject") then
+		local resizeConn = parentFrame:GetPropertyChangedSignal("AbsoluteSize"):Connect(reflow)
+		wrapper.Destroying:Connect(function() resizeConn:Disconnect() end)
+	end
+
 	return {
 		Wrapper = wrapper,
 		SetText = function(self, newTitle)
 			if ptitleLabel and newTitle then ptitleLabel.Text = newTitle end
+			reflow()
 		end,
 		SetKey = function(self, newKey)
 			currentKey = newKey
