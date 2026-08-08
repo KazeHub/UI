@@ -519,154 +519,6 @@ function KazeUI:OnThemeChanged(inst, cb)
 	end)
 end
 
--- ==========================================
--- Tooltips Folder / Engine
--- ==========================================
--- KazeUI.Tooltips is a registry (a "folder"), same pattern as TextElements /
--- BorderElements / PanelElements above: GuiObject -> tooltip text. Any
--- component wired up with KazeUI:AttachTooltip will automatically display a
--- floating bubble with its explanatory description whenever it's hovered,
--- and hide it again the moment the cursor leaves. Buttons/Toggles pass their
--- own Description text through automatically if no separate Tooltip string
--- is supplied (see CreateClickableParagraph / CreateToggleSwitch below), so
--- descriptions get surfaced as tooltips with zero extra config.
-KazeUI.Tooltips = {}
-
-local tooltipBubble = Instance.new("Frame")
-tooltipBubble.Name = "TooltipBubble"
-tooltipBubble.AutomaticSize = Enum.AutomaticSize.XY
-tooltipBubble.Size = UDim2.fromOffset(0, 0)
-tooltipBubble.BackgroundTransparency = 1
-tooltipBubble.BorderSizePixel = 0
-tooltipBubble.Visible = false
-tooltipBubble.ZIndex = 5000
-tooltipBubble.Parent = TooltipGui
-
-Instance.new("UICorner", tooltipBubble).CornerRadius = UDim.new(0, 8)
-KazeUI:AddPanel(tooltipBubble, 0.08)
-
-local tooltipStroke = Instance.new("UIStroke", tooltipBubble)
-tooltipStroke.Thickness = 1
-tooltipStroke.Transparency = 1
-tooltipStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-KazeUI:RegisterBorder(tooltipStroke)
-
-local tooltipPadding = Instance.new("UIPadding", tooltipBubble)
-tooltipPadding.PaddingTop = UDim.new(0, 6)
-tooltipPadding.PaddingBottom = UDim.new(0, 6)
-tooltipPadding.PaddingLeft = UDim.new(0, 10)
-tooltipPadding.PaddingRight = UDim.new(0, 10)
-
-local tooltipLabel = Instance.new("TextLabel", tooltipBubble)
-tooltipLabel.BackgroundTransparency = 1
-tooltipLabel.TextTransparency = 1
-tooltipLabel.Font = Enum.Font.GothamMedium
-tooltipLabel.TextSize = 12
-tooltipLabel.TextWrapped = true
-tooltipLabel.Size = UDim2.new(0, 220, 0, 0)
-tooltipLabel.AutomaticSize = Enum.AutomaticSize.Y
-tooltipLabel.TextXAlignment = Enum.TextXAlignment.Left
-tooltipLabel.TextYAlignment = Enum.TextYAlignment.Top
-KazeUI:RegisterText(tooltipLabel, false)
-
-local tooltipRequestId = 0 -- invalidates a pending delayed show if the hover target changes/ends first
-local tooltipMouseMoveConn
-local tooltipShowTween, tooltipHideTween
-
-local function PositionTooltipBubble()
-	local camera = workspace.CurrentCamera
-	if not camera then return end
-	local vp = camera.ViewportSize
-	local mousePos = UIS:GetMouseLocation()
-	local size = tooltipBubble.AbsoluteSize
-
-	local x = mousePos.X + 16
-	local y = mousePos.Y + 20
-
-	if x + size.X > vp.X - 8 then x = mousePos.X - size.X - 16 end
-	if y + size.Y > vp.Y - 8 then y = mousePos.Y - size.Y - 12 end
-
-	tooltipBubble.Position = UDim2.fromOffset(math.max(8, x), math.max(8, y))
-end
-
-local function HideTooltipBubble()
-	tooltipRequestId = tooltipRequestId + 1
-	if tooltipMouseMoveConn then
-		tooltipMouseMoveConn:Disconnect()
-		tooltipMouseMoveConn = nil
-	end
-	if not tooltipBubble.Visible then return end
-
-	if tooltipShowTween then tooltipShowTween:Cancel() end
-	tooltipHideTween = TweenService:Create(tooltipBubble, TWEEN_FAST, {BackgroundTransparency = 1})
-	TweenService:Create(tooltipLabel, TWEEN_FAST, {TextTransparency = 1}):Play()
-	TweenService:Create(tooltipStroke, TWEEN_FAST, {Transparency = 1}):Play()
-	tooltipHideTween:Play()
-
-	local myRequest = tooltipRequestId
-	task.delay(0.2, function()
-		if tooltipRequestId == myRequest then tooltipBubble.Visible = false end
-	end)
-end
-
-local function ShowTooltipBubble(text)
-	if not text or text == "" then return end
-	tooltipRequestId = tooltipRequestId + 1
-	local myRequest = tooltipRequestId
-	tooltipLabel.Text = text
-
-	task.delay(0.35, function()
-		if tooltipRequestId ~= myRequest then return end -- cursor moved on before the delay elapsed
-
-		tooltipBubble.Visible = true
-		PositionTooltipBubble()
-
-		local baseTrans = KazeUI.BackgroundTransparency or 0.70
-		if tooltipShowTween then tooltipShowTween:Cancel() end
-		tooltipShowTween = TweenService:Create(tooltipBubble, TWEEN_FAST, {BackgroundTransparency = math.clamp(baseTrans - 0.08 * 2.2, 0.05, 1)})
-		TweenService:Create(tooltipLabel, TWEEN_FAST, {TextTransparency = 0}):Play()
-		TweenService:Create(tooltipStroke, TWEEN_FAST, {Transparency = 0.4}):Play()
-		tooltipShowTween:Play()
-
-		if tooltipMouseMoveConn then tooltipMouseMoveConn:Disconnect() end
-		tooltipMouseMoveConn = UIS.InputChanged:Connect(function(input)
-			if input.UserInputType == Enum.UserInputType.MouseMovement then
-				PositionTooltipBubble()
-			end
-		end)
-	end)
-end
-
--- Attaches automatic hover tooltip behaviour to any GuiObject/GuiButton.
--- text: the explanatory description to show. getIsLocked: optional function
--- returning true if the owning component is currently locked (tooltip is
--- suppressed for locked components, matching how hover/press are handled
--- elsewhere in the library).
-function KazeUI:AttachTooltip(target, text, getIsLocked)
-	if not target or typeof(target) ~= "Instance" then return end
-	KazeUI.Tooltips[target] = (text and text ~= "") and text or nil
-
-	local enterConn = target.MouseEnter:Connect(function()
-		if activeDialogsCount > 0 then return end
-		if typeof(getIsLocked) == "function" and getIsLocked() then return end
-		local current = KazeUI.Tooltips[target]
-		if current then ShowTooltipBubble(current) end
-	end)
-	local leaveConn = target.MouseLeave:Connect(HideTooltipBubble)
-
-	target.Destroying:Connect(function()
-		if enterConn then enterConn:Disconnect() end
-		if leaveConn then leaveConn:Disconnect() end
-		KazeUI.Tooltips[target] = nil
-	end)
-
-	return {
-		SetText = function(_, newText)
-			KazeUI.Tooltips[target] = (newText and newText ~= "") and newText or nil
-		end
-	}
-end
-
 -- Premium Dragging engine
 -- BUGFIX: lastNormalPosition/lastNormalAnchor used to be single module-level
 -- variables shared by every window MakeDraggable was ever called for. With
@@ -834,6 +686,155 @@ function KazeUI:AddPanel(inst, elevation, ignoreColorUpdate, ignoreTransparencyU
 		end)
 	end
 end
+
+-- ==========================================
+-- Tooltips Folder / Engine
+-- ==========================================
+-- KazeUI.Tooltips is a registry (a "folder"), same pattern as TextElements /
+-- BorderElements / PanelElements above: GuiObject -> tooltip text. Any
+-- component wired up with KazeUI:AttachTooltip will automatically display a
+-- floating bubble with its explanatory description whenever it's hovered,
+-- and hide it again the moment the cursor leaves. Buttons/Toggles pass their
+-- own Description text through automatically if no separate Tooltip string
+-- is supplied (see CreateClickableParagraph / CreateToggleSwitch below), so
+-- descriptions get surfaced as tooltips with zero extra config.
+KazeUI.Tooltips = {}
+
+local tooltipBubble = Instance.new("Frame")
+tooltipBubble.Name = "TooltipBubble"
+tooltipBubble.AutomaticSize = Enum.AutomaticSize.XY
+tooltipBubble.Size = UDim2.fromOffset(0, 0)
+tooltipBubble.BackgroundTransparency = 1
+tooltipBubble.BorderSizePixel = 0
+tooltipBubble.Visible = false
+tooltipBubble.ZIndex = 5000
+tooltipBubble.Parent = TooltipGui
+
+Instance.new("UICorner", tooltipBubble).CornerRadius = UDim.new(0, 8)
+KazeUI:AddPanel(tooltipBubble, 0.08)
+
+local tooltipStroke = Instance.new("UIStroke", tooltipBubble)
+tooltipStroke.Thickness = 1
+tooltipStroke.Transparency = 1
+tooltipStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+KazeUI:RegisterBorder(tooltipStroke)
+
+local tooltipPadding = Instance.new("UIPadding", tooltipBubble)
+tooltipPadding.PaddingTop = UDim.new(0, 6)
+tooltipPadding.PaddingBottom = UDim.new(0, 6)
+tooltipPadding.PaddingLeft = UDim.new(0, 10)
+tooltipPadding.PaddingRight = UDim.new(0, 10)
+
+local tooltipLabel = Instance.new("TextLabel", tooltipBubble)
+tooltipLabel.BackgroundTransparency = 1
+tooltipLabel.TextTransparency = 1
+tooltipLabel.Font = Enum.Font.GothamMedium
+tooltipLabel.TextSize = 12
+tooltipLabel.TextWrapped = true
+tooltipLabel.Size = UDim2.new(0, 220, 0, 0)
+tooltipLabel.AutomaticSize = Enum.AutomaticSize.Y
+tooltipLabel.TextXAlignment = Enum.TextXAlignment.Left
+tooltipLabel.TextYAlignment = Enum.TextYAlignment.Top
+KazeUI:RegisterText(tooltipLabel, false)
+
+local tooltipRequestId = 0 -- invalidates a pending delayed show if the hover target changes/ends first
+local tooltipMouseMoveConn
+local tooltipShowTween, tooltipHideTween
+
+local function PositionTooltipBubble()
+	local camera = workspace.CurrentCamera
+	if not camera then return end
+	local vp = camera.ViewportSize
+	local mousePos = UIS:GetMouseLocation()
+	local size = tooltipBubble.AbsoluteSize
+
+	local x = mousePos.X + 16
+	local y = mousePos.Y + 20
+
+	if x + size.X > vp.X - 8 then x = mousePos.X - size.X - 16 end
+	if y + size.Y > vp.Y - 8 then y = mousePos.Y - size.Y - 12 end
+
+	tooltipBubble.Position = UDim2.fromOffset(math.max(8, x), math.max(8, y))
+end
+
+local function HideTooltipBubble()
+	tooltipRequestId = tooltipRequestId + 1
+	if tooltipMouseMoveConn then
+		tooltipMouseMoveConn:Disconnect()
+		tooltipMouseMoveConn = nil
+	end
+	if not tooltipBubble.Visible then return end
+
+	if tooltipShowTween then tooltipShowTween:Cancel() end
+	tooltipHideTween = TweenService:Create(tooltipBubble, TWEEN_FAST, {BackgroundTransparency = 1})
+	TweenService:Create(tooltipLabel, TWEEN_FAST, {TextTransparency = 1}):Play()
+	TweenService:Create(tooltipStroke, TWEEN_FAST, {Transparency = 1}):Play()
+	tooltipHideTween:Play()
+
+	local myRequest = tooltipRequestId
+	task.delay(0.2, function()
+		if tooltipRequestId == myRequest then tooltipBubble.Visible = false end
+	end)
+end
+
+local function ShowTooltipBubble(text)
+	if not text or text == "" then return end
+	tooltipRequestId = tooltipRequestId + 1
+	local myRequest = tooltipRequestId
+	tooltipLabel.Text = text
+
+	task.delay(0.35, function()
+		if tooltipRequestId ~= myRequest then return end -- cursor moved on before the delay elapsed
+
+		tooltipBubble.Visible = true
+		PositionTooltipBubble()
+
+		local baseTrans = KazeUI.BackgroundTransparency or 0.70
+		if tooltipShowTween then tooltipShowTween:Cancel() end
+		tooltipShowTween = TweenService:Create(tooltipBubble, TWEEN_FAST, {BackgroundTransparency = math.clamp(baseTrans - 0.08 * 2.2, 0.05, 1)})
+		TweenService:Create(tooltipLabel, TWEEN_FAST, {TextTransparency = 0}):Play()
+		TweenService:Create(tooltipStroke, TWEEN_FAST, {Transparency = 0.4}):Play()
+		tooltipShowTween:Play()
+
+		if tooltipMouseMoveConn then tooltipMouseMoveConn:Disconnect() end
+		tooltipMouseMoveConn = UIS.InputChanged:Connect(function(input)
+			if input.UserInputType == Enum.UserInputType.MouseMovement then
+				PositionTooltipBubble()
+			end
+		end)
+	end)
+end
+
+-- Attaches automatic hover tooltip behaviour to any GuiObject/GuiButton.
+-- text: the explanatory description to show. getIsLocked: optional function
+-- returning true if the owning component is currently locked (tooltip is
+-- suppressed for locked components, matching how hover/press are handled
+-- elsewhere in the library).
+function KazeUI:AttachTooltip(target, text, getIsLocked)
+	if not target or typeof(target) ~= "Instance" then return end
+	KazeUI.Tooltips[target] = (text and text ~= "") and text or nil
+
+	local enterConn = target.MouseEnter:Connect(function()
+		if activeDialogsCount > 0 then return end
+		if typeof(getIsLocked) == "function" and getIsLocked() then return end
+		local current = KazeUI.Tooltips[target]
+		if current then ShowTooltipBubble(current) end
+	end)
+	local leaveConn = target.MouseLeave:Connect(HideTooltipBubble)
+
+	target.Destroying:Connect(function()
+		if enterConn then enterConn:Disconnect() end
+		if leaveConn then leaveConn:Disconnect() end
+		KazeUI.Tooltips[target] = nil
+	end)
+
+	return {
+		SetText = function(_, newText)
+			KazeUI.Tooltips[target] = (newText and newText ~= "") and newText or nil
+		end
+	}
+end
+
 
 function KazeUI:SetBackgroundColor(color)
 	for _, data in ipairs(KazeUI.PanelElements) do
