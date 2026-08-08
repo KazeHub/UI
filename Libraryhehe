@@ -219,13 +219,13 @@ local TWEEN_FAST = TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirectio
 local TWEEN_SPRING = TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
 local TWEEN_SMOOTH = TweenInfo.new(0.35, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
 local TWEEN_COLLAPSE = TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out) -- shared by Section/GroupBox open-close
-local TWEEN_HOVER = TweenInfo.new(0.18, Enum.EasingStyle.Quint, Enum.EasingDirection.Out) -- snappy card lift-on-hover
 
 -- Component title/description sizing -- tuned tighter than the old fixed
 -- "+3" gap and default text LineHeight, which left title->description
 -- noticeably loose on Paragraph/Button/Toggle cards.
-local DESC_GAP = 1 -- vertical gap between a title label and its description label
-local DESC_LINE_HEIGHT = 0.88 -- multiplier applied to wrapped description text so multi-line bodies don't look airy
+local DESC_GAP = 0 -- vertical gap between a title label and its description label (touching)
+local DESC_LINE_HEIGHT = 0.8 -- multiplier applied to wrapped description text so multi-line bodies don't look airy
+local CARD_PAD_V = 6 -- top/bottom inner padding inside Paragraph/Button/Toggle cards (was 8)
 
 local function RegisterFlag(flag, getFunc, setFunc)
 	if flag then
@@ -1833,12 +1833,12 @@ local function CreateParagraph(parentFrame, title, body)
 	local titleHeight = 0
 	if title ~= " " then
 		local ts = TextService:GetTextSize(title, 14, Enum.Font.GothamBold, Vector2.new(measuredWidth - 28, 1000))
-		titleHeight = math.max(18, math.ceil(ts.Y))
+		titleHeight = math.max(15, math.ceil(ts.Y))
 	end
 	
 	local bodySize = TextService:GetTextSize(body, 12, Enum.Font.Gotham, Vector2.new(measuredWidth - 28, 2000))
 	local bodyHeight = math.ceil(bodySize.Y)
-	local totalHeight = 8 + titleHeight + DESC_GAP + bodyHeight + 8
+	local totalHeight = CARD_PAD_V + titleHeight + DESC_GAP + bodyHeight + CARD_PAD_V
 	
 	local wrapper = Instance.new("Frame")
 	wrapper.Size = UDim2.new(1, 0, 0, 0)
@@ -1862,8 +1862,8 @@ local function CreateParagraph(parentFrame, title, body)
 	KazeUI:RegisterBorder(paraStroke)
 	
 	local inner = Instance.new("Frame", paraFrame)
-	inner.Size = UDim2.new(1, -20, 1, -16)
-	inner.Position = UDim2.fromOffset(10, 8)
+	inner.Size = UDim2.new(1, -20, 1, -(CARD_PAD_V * 2))
+	inner.Position = UDim2.fromOffset(10, CARD_PAD_V)
 	inner.BackgroundTransparency = 1
 	
 	local ptitleLabel
@@ -1983,7 +1983,7 @@ local function CreateClickableParagraph(parentFrame, title, body, callback, lock
 	local titleHeight = 0
 	if title ~= " " and title ~= "" then
 		local ts = TextService:GetTextSize(title, 14, Enum.Font.GothamBold, Vector2.new(textContainerWidth, 1000))
-		titleHeight = math.max(18, math.ceil(ts.Y))
+		titleHeight = math.max(15, math.ceil(ts.Y))
 	end
 	
 	local bodyHeight = 0
@@ -1992,7 +1992,7 @@ local function CreateClickableParagraph(parentFrame, title, body, callback, lock
 		bodyHeight = math.ceil(bodySize.Y)
 	end
 	
-	local totalHeight = 8 + titleHeight + (body ~= "" and DESC_GAP or 0) + bodyHeight + 8
+	local totalHeight = CARD_PAD_V + titleHeight + (body ~= "" and DESC_GAP or 0) + bodyHeight + CARD_PAD_V
 	
 	local wrapper = Instance.new("Frame")
 	wrapper.Size = UDim2.new(1, 0, 0, 0)
@@ -2016,8 +2016,8 @@ local function CreateClickableParagraph(parentFrame, title, body, callback, lock
 	KazeUI:RegisterBorder(paraStroke)
 	
 	local inner = Instance.new("Frame", paraFrame)
-	inner.Size = UDim2.new(1, -16, 1, -16)
-	inner.Position = UDim2.fromOffset(8, 8)
+	inner.Size = UDim2.new(1, -16, 1, -(CARD_PAD_V * 2))
+	inner.Position = UDim2.fromOffset(8, CARD_PAD_V)
 	inner.BackgroundTransparency = 1
 	
 	local rightIcon = Instance.new("ImageLabel")
@@ -2073,27 +2073,16 @@ local function CreateClickableParagraph(parentFrame, title, body, callback, lock
 
 	local tooltipCtrl = KazeUI:AttachTooltip(clickDetector, tooltipText, function() return isLockedState end)
 
-	-- Hover "lift": card nudges up and widens very slightly, border thickens,
-	-- and the icon slides in -- all on a snappy quint-out tween instead of the
-	-- old flat linear-feeling color swap, so hovering reads as a deliberate
-	-- lift rather than a sudden color flip. Falls back to the resting size on
-	-- MouseLeave, and the applyReleased callback below re-targets whichever
-	-- state (hovered vs not) is actually current when a click finishes.
-	local restingSize, restingPos = UDim2.new(0.95, 0, 0, totalHeight), UDim2.new(0.5, 0, 0, 3)
-	local hoverSize, hoverPos = UDim2.new(0.958, 0, 0, totalHeight), UDim2.new(0.5, 0, 0, 1)
-
 	clickDetector.MouseEnter:Connect(function()
 		if isLockedState or activeDialogsCount > 0 then return end
 		isHovering = true
-		TweenService:Create(paraFrame, TWEEN_HOVER, {BackgroundColor3 = KazeUI.GetColor(0.04), Size = hoverSize, Position = hoverPos}):Play()
-		TweenService:Create(paraStroke, TWEEN_HOVER, {Thickness = 1.6}):Play()
+		TweenService:Create(paraFrame, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.04)}):Play()
 		StartNeonLoop(paraStroke)
-		TweenService:Create(rightIcon, TWEEN_HOVER, {ImageColor3 = Color3.fromRGB(255, 255, 255), Position = UDim2.new(1, -8, 0.5, 0)}):Play()
+		TweenService:Create(rightIcon, TWEEN_FAST, {ImageColor3 = Color3.fromRGB(255, 255, 255), Position = UDim2.new(1, -8, 0.5, 0)}):Play()
 	end)
 	clickDetector.MouseLeave:Connect(function()
 		isHovering = false
-		TweenService:Create(paraFrame, TWEEN_SMOOTH, {BackgroundColor3 = KazeUI.GetColor(0.02), Size = restingSize, Position = restingPos}):Play()
-		TweenService:Create(paraStroke, TWEEN_SMOOTH, {Thickness = 1.2}):Play()
+		TweenService:Create(paraFrame, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.02)}):Play()
 		StopNeonLoop(paraStroke)
 		TweenService:Create(paraStroke, TWEEN_FAST, {Color = KazeUI.CurrentTheme.Border}):Play()
 		TweenService:Create(rightIcon, TWEEN_FAST, {ImageColor3 = KazeUI.CurrentTheme.MutedText, Position = UDim2.new(1, -10, 0.5, 0)}):Play()
@@ -2109,8 +2098,8 @@ local function CreateClickableParagraph(parentFrame, title, body, callback, lock
 		end,
 		function()
 			TweenService:Create(paraFrame, TWEEN_SPRING, { 
-				Size = isHovering and hoverSize or restingSize, 
-				Position = isHovering and hoverPos or restingPos
+				Size = UDim2.new(0.95, 0, 0, totalHeight), 
+				Position = UDim2.new(0.5, 0, 0, 3) 
 			}):Play()
 		end,
 		function()
@@ -2158,7 +2147,7 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 	local titleHeight = 0
 	if title ~= " " then
 		local ts = TextService:GetTextSize(title, 14, Enum.Font.GothamBold, Vector2.new(textContainerWidth, 1000))
-		titleHeight = math.max(18, math.ceil(ts.Y))
+		titleHeight = math.max(15, math.ceil(ts.Y))
 	end
 	
 	local bodyHeight = 0
@@ -2167,7 +2156,7 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 		bodyHeight = math.ceil(bodySize.Y)
 	end
 	
-	local totalHeight = 8 + titleHeight + (body ~= "" and DESC_GAP or 0) + bodyHeight + 8
+	local totalHeight = CARD_PAD_V + titleHeight + (body ~= "" and DESC_GAP or 0) + bodyHeight + CARD_PAD_V
 	
 	local wrapper = Instance.new("Frame")
 	wrapper.Size = UDim2.new(1, 0, 0, 0)
@@ -2191,8 +2180,8 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 	KazeUI:RegisterBorder(paraStroke)
 	
 	local inner = Instance.new("Frame", paraFrame)
-	inner.Size = UDim2.new(1, -16, 1, -16)
-	inner.Position = UDim2.fromOffset(8, 8)
+	inner.Size = UDim2.new(1, -16, 1, -(CARD_PAD_V * 2))
+	inner.Position = UDim2.fromOffset(8, CARD_PAD_V)
 	inner.BackgroundTransparency = 1
 	
 	local switchContainer = Instance.new("Frame")
@@ -2282,25 +2271,15 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 
 	local tooltipCtrl = KazeUI:AttachTooltip(clickDetector, tooltipText, function() return isLockedState end)
 
-	-- Same hover-lift treatment as the Button card: quick quint-out nudge up
-	-- + slight widen + thicker stroke, easing back out on a smoother curve
-	-- when the cursor leaves. Press below re-targets whichever resting state
-	-- (hovered vs not) is current so releasing a click doesn't visually snap
-	-- past the hover state.
-	local restingSize, restingPos = UDim2.new(0.95, 0, 0, totalHeight), UDim2.new(0.5, 0, 0, 3)
-	local hoverSize, hoverPos = UDim2.new(0.958, 0, 0, totalHeight), UDim2.new(0.5, 0, 0, 1)
-
 	clickDetector.MouseEnter:Connect(function()
 		if isLockedState or activeDialogsCount > 0 then return end
 		isHovering = true
-		TweenService:Create(paraFrame, TWEEN_HOVER, {BackgroundColor3 = KazeUI.GetColor(0.04), Size = hoverSize, Position = hoverPos}):Play()
-		TweenService:Create(paraStroke, TWEEN_HOVER, {Thickness = 1.6}):Play()
+		TweenService:Create(paraFrame, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.04)}):Play()
 		StartNeonLoop(paraStroke)
 	end)
 	clickDetector.MouseLeave:Connect(function()
 		isHovering = false
-		TweenService:Create(paraFrame, TWEEN_SMOOTH, {BackgroundColor3 = KazeUI.GetColor(0.02), Size = restingSize, Position = restingPos}):Play()
-		TweenService:Create(paraStroke, TWEEN_SMOOTH, {Thickness = 1.2}):Play()
+		TweenService:Create(paraFrame, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.02)}):Play()
 		StopNeonLoop(paraStroke)
 		TweenService:Create(paraStroke, TWEEN_FAST, {Color = KazeUI.CurrentTheme.Border}):Play()
 	end)
@@ -2310,10 +2289,7 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 			TweenService:Create(paraFrame, TWEEN_FAST, {Size = UDim2.new(0.93, 0, 0, totalHeight - 2), Position = UDim2.new(0.5, 0, 0, 4)}):Play()
 		end,
 		function()
-			TweenService:Create(paraFrame, TWEEN_SPRING, {
-				Size = isHovering and hoverSize or restingSize,
-				Position = isHovering and hoverPos or restingPos
-			}):Play()
+			TweenService:Create(paraFrame, TWEEN_SPRING, {Size = UDim2.new(0.95, 0, 0, totalHeight), Position = UDim2.new(0.5, 0, 0, 3)}):Play()
 		end,
 		function()
 			setToggleState(not state, false)
