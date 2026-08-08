@@ -281,6 +281,21 @@ NotifScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 NotifScreenGui.DisplayOrder = 300
 NotifScreenGui.Parent = parent
 
+-- 5. Tooltips (DisplayOrder = 400) -- above everything, including notifications.
+-- Created here (with the other top-level ScreenGuis) so it's available to
+-- UpdateScale() below; the tooltip bubble itself and its show/hide logic are
+-- built further down once the theme/registry helpers (AddPanel, RegisterText,
+-- RegisterBorder) exist.
+local TooltipGui = Instance.new("ScreenGui")
+TooltipGui.Name = "KazeUI_Tooltips"
+TooltipGui.ResetOnSpawn = false
+TooltipGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+TooltipGui.DisplayOrder = 400
+TooltipGui.Parent = parent
+
+local TooltipScale = Instance.new("UIScale")
+TooltipScale.Parent = TooltipGui
+
 -- Centralized Camera Locker System
 local CameraLocker = Instance.new("TextButton")
 CameraLocker.Name = "CameraLocker"
@@ -352,11 +367,13 @@ local function UpdateScale()
 	OpenButtonScale.Scale = targetScale
 	DialogScale.Scale = targetScale
 	NotifScale.Scale = targetScale
+	TooltipScale.Scale = targetScale
 
 	ScreenGui.IgnoreGuiInset = true
 	OpenButtonGui.IgnoreGuiInset = true
 	DialogGui.IgnoreGuiInset = true
 	NotifScreenGui.IgnoreGuiInset = true
+	TooltipGui.IgnoreGuiInset = true
 end
 
 UpdateScale()
@@ -500,6 +517,154 @@ function KazeUI:OnThemeChanged(inst, cb)
 			if KazeUI.ThemeCallbacks[i].Inst == inst then table.remove(KazeUI.ThemeCallbacks, i) end
 		end
 	end)
+end
+
+-- ==========================================
+-- Tooltips Folder / Engine
+-- ==========================================
+-- KazeUI.Tooltips is a registry (a "folder"), same pattern as TextElements /
+-- BorderElements / PanelElements above: GuiObject -> tooltip text. Any
+-- component wired up with KazeUI:AttachTooltip will automatically display a
+-- floating bubble with its explanatory description whenever it's hovered,
+-- and hide it again the moment the cursor leaves. Buttons/Toggles pass their
+-- own Description text through automatically if no separate Tooltip string
+-- is supplied (see CreateClickableParagraph / CreateToggleSwitch below), so
+-- descriptions get surfaced as tooltips with zero extra config.
+KazeUI.Tooltips = {}
+
+local tooltipBubble = Instance.new("Frame")
+tooltipBubble.Name = "TooltipBubble"
+tooltipBubble.AutomaticSize = Enum.AutomaticSize.XY
+tooltipBubble.Size = UDim2.fromOffset(0, 0)
+tooltipBubble.BackgroundTransparency = 1
+tooltipBubble.BorderSizePixel = 0
+tooltipBubble.Visible = false
+tooltipBubble.ZIndex = 5000
+tooltipBubble.Parent = TooltipGui
+
+Instance.new("UICorner", tooltipBubble).CornerRadius = UDim.new(0, 8)
+KazeUI:AddPanel(tooltipBubble, 0.08)
+
+local tooltipStroke = Instance.new("UIStroke", tooltipBubble)
+tooltipStroke.Thickness = 1
+tooltipStroke.Transparency = 1
+tooltipStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+KazeUI:RegisterBorder(tooltipStroke)
+
+local tooltipPadding = Instance.new("UIPadding", tooltipBubble)
+tooltipPadding.PaddingTop = UDim.new(0, 6)
+tooltipPadding.PaddingBottom = UDim.new(0, 6)
+tooltipPadding.PaddingLeft = UDim.new(0, 10)
+tooltipPadding.PaddingRight = UDim.new(0, 10)
+
+local tooltipLabel = Instance.new("TextLabel", tooltipBubble)
+tooltipLabel.BackgroundTransparency = 1
+tooltipLabel.TextTransparency = 1
+tooltipLabel.Font = Enum.Font.GothamMedium
+tooltipLabel.TextSize = 12
+tooltipLabel.TextWrapped = true
+tooltipLabel.Size = UDim2.new(0, 220, 0, 0)
+tooltipLabel.AutomaticSize = Enum.AutomaticSize.Y
+tooltipLabel.TextXAlignment = Enum.TextXAlignment.Left
+tooltipLabel.TextYAlignment = Enum.TextYAlignment.Top
+KazeUI:RegisterText(tooltipLabel, false)
+
+local tooltipRequestId = 0 -- invalidates a pending delayed show if the hover target changes/ends first
+local tooltipMouseMoveConn
+local tooltipShowTween, tooltipHideTween
+
+local function PositionTooltipBubble()
+	local camera = workspace.CurrentCamera
+	if not camera then return end
+	local vp = camera.ViewportSize
+	local mousePos = UIS:GetMouseLocation()
+	local size = tooltipBubble.AbsoluteSize
+
+	local x = mousePos.X + 16
+	local y = mousePos.Y + 20
+
+	if x + size.X > vp.X - 8 then x = mousePos.X - size.X - 16 end
+	if y + size.Y > vp.Y - 8 then y = mousePos.Y - size.Y - 12 end
+
+	tooltipBubble.Position = UDim2.fromOffset(math.max(8, x), math.max(8, y))
+end
+
+local function HideTooltipBubble()
+	tooltipRequestId = tooltipRequestId + 1
+	if tooltipMouseMoveConn then
+		tooltipMouseMoveConn:Disconnect()
+		tooltipMouseMoveConn = nil
+	end
+	if not tooltipBubble.Visible then return end
+
+	if tooltipShowTween then tooltipShowTween:Cancel() end
+	tooltipHideTween = TweenService:Create(tooltipBubble, TWEEN_FAST, {BackgroundTransparency = 1})
+	TweenService:Create(tooltipLabel, TWEEN_FAST, {TextTransparency = 1}):Play()
+	TweenService:Create(tooltipStroke, TWEEN_FAST, {Transparency = 1}):Play()
+	tooltipHideTween:Play()
+
+	local myRequest = tooltipRequestId
+	task.delay(0.2, function()
+		if tooltipRequestId == myRequest then tooltipBubble.Visible = false end
+	end)
+end
+
+local function ShowTooltipBubble(text)
+	if not text or text == "" then return end
+	tooltipRequestId = tooltipRequestId + 1
+	local myRequest = tooltipRequestId
+	tooltipLabel.Text = text
+
+	task.delay(0.35, function()
+		if tooltipRequestId ~= myRequest then return end -- cursor moved on before the delay elapsed
+
+		tooltipBubble.Visible = true
+		PositionTooltipBubble()
+
+		local baseTrans = KazeUI.BackgroundTransparency or 0.70
+		if tooltipShowTween then tooltipShowTween:Cancel() end
+		tooltipShowTween = TweenService:Create(tooltipBubble, TWEEN_FAST, {BackgroundTransparency = math.clamp(baseTrans - 0.08 * 2.2, 0.05, 1)})
+		TweenService:Create(tooltipLabel, TWEEN_FAST, {TextTransparency = 0}):Play()
+		TweenService:Create(tooltipStroke, TWEEN_FAST, {Transparency = 0.4}):Play()
+		tooltipShowTween:Play()
+
+		if tooltipMouseMoveConn then tooltipMouseMoveConn:Disconnect() end
+		tooltipMouseMoveConn = UIS.InputChanged:Connect(function(input)
+			if input.UserInputType == Enum.UserInputType.MouseMovement then
+				PositionTooltipBubble()
+			end
+		end)
+	end)
+end
+
+-- Attaches automatic hover tooltip behaviour to any GuiObject/GuiButton.
+-- text: the explanatory description to show. getIsLocked: optional function
+-- returning true if the owning component is currently locked (tooltip is
+-- suppressed for locked components, matching how hover/press are handled
+-- elsewhere in the library).
+function KazeUI:AttachTooltip(target, text, getIsLocked)
+	if not target or typeof(target) ~= "Instance" then return end
+	KazeUI.Tooltips[target] = (text and text ~= "") and text or nil
+
+	local enterConn = target.MouseEnter:Connect(function()
+		if activeDialogsCount > 0 then return end
+		if typeof(getIsLocked) == "function" and getIsLocked() then return end
+		local current = KazeUI.Tooltips[target]
+		if current then ShowTooltipBubble(current) end
+	end)
+	local leaveConn = target.MouseLeave:Connect(HideTooltipBubble)
+
+	target.Destroying:Connect(function()
+		if enterConn then enterConn:Disconnect() end
+		if leaveConn then leaveConn:Disconnect() end
+		KazeUI.Tooltips[target] = nil
+	end)
+
+	return {
+		SetText = function(_, newText)
+			KazeUI.Tooltips[target] = (newText and newText ~= "") and newText or nil
+		end
+	}
 end
 
 -- Premium Dragging engine
@@ -1792,10 +1957,15 @@ local function BindPressAnimation(clickDetector, canPress, applyPressed, applyRe
 	end
 end
 
-local function CreateClickableParagraph(parentFrame, title, body, callback, locked)
+local function CreateClickableParagraph(parentFrame, title, body, callback, locked, tooltip)
 	title = tostring(title or "Button")
 	body = tostring(body or "")
 	local isLockedState = locked or false
+	-- Auto-generate: if no explicit Tooltip was supplied, fall back to the
+	-- button's own Description text so hovering always surfaces something
+	-- explanatory with zero extra config.
+	local tooltipText = tooltip
+	if not tooltipText or tooltipText == "" then tooltipText = body end
 	
 	local measuredWidth = 598 * 0.92
 	if parentFrame and parentFrame.AbsoluteSize and parentFrame.AbsoluteSize.X > 0 then measuredWidth = parentFrame.AbsoluteSize.X * 0.95 end
@@ -1891,6 +2061,8 @@ local function CreateClickableParagraph(parentFrame, title, body, callback, lock
 	clickDetector.ZIndex = 10
 	clickDetector.Parent = paraFrame
 
+	local tooltipCtrl = KazeUI:AttachTooltip(clickDetector, tooltipText, function() return isLockedState end)
+
 	clickDetector.MouseEnter:Connect(function()
 		if isLockedState or activeDialogsCount > 0 then return end
 		isHovering = true
@@ -1941,15 +2113,22 @@ local function CreateClickableParagraph(parentFrame, title, body, callback, lock
 		SetLocked = function(self, state)
 			isLockedState = state
 			lockCtrl:SetLocked(state)
+		end,
+		SetTooltip = function(self, newText)
+			if tooltipCtrl then tooltipCtrl:SetText(newText) end
 		end
 	}
 end
 
-local function CreateToggleSwitch(parentFrame, title, body, defaultState, callback, flag, locked)
+local function CreateToggleSwitch(parentFrame, title, body, defaultState, callback, flag, locked, tooltip)
 	title = tostring(title or "Toggle Switch")
 	body = tostring(body or "")
 	local state = defaultState or false
 	local isLockedState = locked or false
+	-- Auto-generate: fall back to the toggle's Description text when no
+	-- explicit Tooltip is given.
+	local tooltipText = tooltip
+	if not tooltipText or tooltipText == "" then tooltipText = body end
 	
 	local measuredWidth = 598 * 0.92
 	if parentFrame and parentFrame.AbsoluteSize and parentFrame.AbsoluteSize.X > 0 then measuredWidth = parentFrame.AbsoluteSize.X * 0.95 end
@@ -2079,6 +2258,8 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 
 	local isHovering = false
 
+	local tooltipCtrl = KazeUI:AttachTooltip(clickDetector, tooltipText, function() return isLockedState end)
+
 	clickDetector.MouseEnter:Connect(function()
 		if isLockedState or activeDialogsCount > 0 then return end
 		isHovering = true
@@ -2126,6 +2307,9 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 		SetLocked = function(self, state)
 			isLockedState = state
 			lockCtrl:SetLocked(state)
+		end,
+		SetTooltip = function(self, newText)
+			if tooltipCtrl then tooltipCtrl:SetText(newText) end
 		end
 	}
 end
@@ -2973,17 +3157,22 @@ AttachElementsToAPI = function(apiTable, parentFrame, depth)
 		local desc = type(arg1) == "table" and (arg1.Description or arg1.Content or "") or arg2
 		local callback = type(arg1) == "table" and arg1.Callback or arg3
 		local locked = type(arg1) == "table" and arg1.Locked or false
-		return CreateClickableParagraph(parentFrame, title, desc, callback, locked)
+		-- Tooltip is optional -- when omitted, CreateClickableParagraph auto-
+		-- generates one from the Description/Content text.
+		local tooltip = type(arg1) == "table" and arg1.Tooltip or nil
+		return CreateClickableParagraph(parentFrame, title, desc, callback, locked, tooltip)
 	end
 
 	function apiTable:Toggle(arg1, arg2, arg3, arg4, arg5)
-		local title, desc, def, callback, flag, locked = "", "", false, nil, nil, false
+		local title, desc, def, callback, flag, locked, tooltip = "", "", false, nil, nil, false, nil
 		if type(arg1) == "table" then
-			title, desc, def, callback, flag, locked = arg1.Title, (arg1.Description or arg1.Content or ""), arg1.Default, arg1.Callback, arg1.Flag, arg1.Locked
+			title, desc, def, callback, flag, locked, tooltip = arg1.Title, (arg1.Description or arg1.Content or ""), arg1.Default, arg1.Callback, arg1.Flag, arg1.Locked, arg1.Tooltip
 		else
 			title, desc, def, callback, flag = arg1, arg2, arg3, arg4, arg5
 		end
-		return CreateToggleSwitch(parentFrame, title, desc, def, callback, flag, locked)
+		-- Tooltip is optional -- when omitted, CreateToggleSwitch auto-
+		-- generates one from the Description/Content text.
+		return CreateToggleSwitch(parentFrame, title, desc, def, callback, flag, locked, tooltip)
 	end
 
 	function apiTable:TextBox(arg1, arg2, arg3, arg4, arg5)
@@ -4154,6 +4343,7 @@ local function BuildWindow(config)
 			OpenButtonGui:Destroy()
 			DialogGui:Destroy()
 			NotifScreenGui:Destroy()
+			TooltipGui:Destroy()
 		end)
 		CancelBtn.MouseButton1Click:Connect(function() 
 			TweenService:Create(InteractionBlocker, TWEEN_FAST, {BackgroundTransparency = 1}):Play()
