@@ -198,6 +198,19 @@ KazeUI.ActiveWindows = {}
 KazeUI.IsResizing = false
 KazeUI.AuthorName = "Unknown"
 
+-- Language / Localization state. KazeUI itself has no translation engine (it
+-- can't know what your custom tab/label text means), so this is the plumbing:
+-- a language list + a change event. Hook KazeUI:OnLanguageChanged(fn) in your
+-- own script and swap your own labels' .Text there when it fires.
+KazeUI.Language = "English"
+KazeUI.Languages = {
+	"English", "Filipino", "Spanish", "French", "German", "Portuguese",
+	"Italian", "Russian", "Japanese", "Korean", "Chinese (Simplified)",
+	"Chinese (Traditional)", "Vietnamese", "Thai", "Indonesian", "Arabic",
+	"Hindi", "Turkish", "Polish", "Dutch"
+}
+KazeUI.LanguageCallbacks = {}
+
 -- Centralized Modal / Dialogue State Tracker
 local activeDialogsCount = 0
 
@@ -524,6 +537,25 @@ function KazeUI:OnThemeChanged(inst, cb)
 			if KazeUI.ThemeCallbacks[i].Inst == inst then table.remove(KazeUI.ThemeCallbacks, i) end
 		end
 	end)
+end
+
+-- Registers a callback that fires immediately with the current language and
+-- again every time KazeUI:SetLanguage(...) is called. KazeUI has no built-in
+-- translation dictionary for text you supply yourself (tab names, labels,
+-- descriptions), so use this hook to swap your own instances' .Text to
+-- whatever your own translation table returns for the new language.
+function KazeUI:OnLanguageChanged(cb)
+	if typeof(cb) ~= "function" then return end
+	table.insert(KazeUI.LanguageCallbacks, cb)
+	task.spawn(cb, KazeUI.Language)
+end
+
+function KazeUI:SetLanguage(lang)
+	if not lang or lang == "" then return end
+	KazeUI.Language = lang
+	for _, cb in ipairs(KazeUI.LanguageCallbacks) do
+		task.spawn(cb, lang)
+	end
 end
 
 -- Premium Dragging engine
@@ -4729,7 +4761,7 @@ local function BuildWindow(config)
 
 	local tabsLayout = Instance.new("UIListLayout", TabsList)
 	tabsLayout.SortOrder = Enum.SortOrder.LayoutOrder
-	tabsLayout.Padding = UDim.new(0, 5)
+	tabsLayout.Padding = UDim.new(0, 4)
 
 	-- ==========================================
 	-- Modal Resize Engine (System Rewrite)
@@ -5112,6 +5144,33 @@ local function BuildWindow(config)
 		end})
 	end
 
+	-- Adds a "Language" section (Dropdown + Apply button) to whatever tab you
+	-- call this on, e.g. Win:CreateLanguageManager(SettingsTab). Selecting a
+	-- language and pressing Apply calls KazeUI:SetLanguage(...), which fires
+	-- every callback registered with KazeUI:OnLanguageChanged(fn) -- use that
+	-- in your own script to actually translate your own tab/element text.
+	function Win:CreateLanguageManager(tab)
+		local sec = tab:SectionUI("Language")
+		local selectedLanguage = KazeUI.Language
+
+		sec:Dropdown({
+			Title = "App Language",
+			Description = "Choose the language for this UI, then press Apply.",
+			Options = KazeUI.Languages,
+			Default = selectedLanguage,
+			Callback = function(v) selectedLanguage = v end
+		})
+
+		sec:Button({
+			Title = "Apply Language",
+			Description = "Applies the selected language.",
+			Callback = function()
+				KazeUI:SetLanguage(selectedLanguage)
+				KazeUI:Notify({Title = "Language", Content = "Language set to " .. selectedLanguage, Duration = 3})
+			end
+		})
+	end
+
 	function Win:CreateThemeManager(tab)
 		local sec = tab:SectionUI("Theme & Visuals")
 		
@@ -5214,7 +5273,7 @@ local function BuildWindow(config)
 		local formattedIcon = FormatImage(iconId or "")
 		
 		local btn = Instance.new("TextButton")
-		btn.Size = UDim2.new(1, -10, 0, 36)
+		btn.Size = UDim2.new(1, -10, 0, 30)
 		btn.BorderSizePixel = 0
 		btn.Text = ""
 		btn.AutoButtonColor = false
@@ -5237,16 +5296,16 @@ local function BuildWindow(config)
 		KazeUI:OnGlowChanged(leftIndicator, function(c) leftIndicator.BackgroundColor3 = c end)
 
 		local iconLabel = Instance.new("ImageLabel", btn)
-		iconLabel.Size = UDim2.fromOffset(18, 18)
-		iconLabel.Position = UDim2.new(0, 12, 0.5, -9)
+		iconLabel.Size = UDim2.fromOffset(16, 16)
+		iconLabel.Position = UDim2.new(0, 11, 0.5, -8)
 		iconLabel.BackgroundTransparency = 1
 		iconLabel.Image = formattedIcon
 		iconLabel.ScaleType = Enum.ScaleType.Fit
 		iconLabel.Parent = btn
 		
 		local txt = Instance.new("TextLabel", btn)
-		txt.Size = UDim2.new(1, -42, 1, 0)
-		txt.Position = UDim2.fromOffset(36, 0)
+		txt.Size = UDim2.new(1, -40, 1, 0)
+		txt.Position = UDim2.fromOffset(34, 0)
 		txt.BackgroundTransparency = 1
 		txt.Text = name
 		txt.Font = Enum.Font.Gotham
