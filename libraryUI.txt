@@ -749,6 +749,7 @@ local GLOW_BREATHE_PERIOD = 4.0
 local GLOW_SEQUENCE_PERIOD = 6.0
 local GLOW_SEQUENCE_STOPS = {0, 45, -40, 85}
 local GLOW_SEQUENCE_RAINBOW_STOPS = {0, 90, 180, 270}
+local GLOW_SEQUENCE_ROTATE_SECONDS = 3.5
 
 local GLOW_PULSE_ATTACK = 0.16
 local GLOW_PULSE_DECAY = 0.85
@@ -762,9 +763,34 @@ local GLOW_RAINBOW_BREATHE_SPEED = 40
 local glowClock = 0
 local glowHeartbeatConn = nil
 
+local GLOW_RING_COLORSEQUENCE = ColorSequence.new({
+	ColorSequenceKeypoint.new(0.00, Color3.fromRGB(255, 255, 255)),
+	ColorSequenceKeypoint.new(0.16, Color3.fromRGB(255, 140, 245)),
+	ColorSequenceKeypoint.new(0.34, Color3.fromRGB(140, 160, 255)),
+	ColorSequenceKeypoint.new(0.50, Color3.fromRGB(150, 255, 190)),
+	ColorSequenceKeypoint.new(0.68, Color3.fromRGB(255, 240, 140)),
+	ColorSequenceKeypoint.new(0.84, Color3.fromRGB(255, 160, 200)),
+	ColorSequenceKeypoint.new(1.00, Color3.fromRGB(255, 255, 255)),
+})
+
 local function LerpHueShortest(hueA, hueB, alpha)
 	local diff = (hueB - hueA + 1.5) % 1 - 0.5
 	return (hueA + diff * alpha) % 1
+end
+
+local function EnsureGlowGradient(inst)
+	local existing = inst:FindFirstChild("KazeGlowGradient")
+	if existing then return existing end
+	local ok, grad = pcall(function()
+		local g = Instance.new("UIGradient")
+		g.Name = "KazeGlowGradient"
+		g.Color = GLOW_RING_COLORSEQUENCE
+		g.Enabled = false
+		g.Parent = inst
+		return g
+	end)
+	if ok then return grad end
+	return nil
 end
 
 local function ComputeGlowColor()
@@ -816,16 +842,29 @@ local function ComputeGlowColor()
 	end
 end
 
-local function ApplyGlowToElement(data, color, intensity)
+local function ApplyGlowToElement(data, color, intensity, useRingGradient)
 	if data.HaloRings then
 		for _, ring in ipairs(data.HaloRings) do
 			ring.Instance.Color = color
 			local t = ring.BaseTransparency - intensity * ring.IntensityBoost
 			ring.Instance.Transparency = math.clamp(t, 0.05, 0.95)
 		end
-	else
-		data.Target[data.Prop] = color
+		return
 	end
+
+	local target = data.Target
+	if useRingGradient then
+		local grad = EnsureGlowGradient(target)
+		if grad then
+			grad.Enabled = true
+			grad.Rotation = (glowClock / GLOW_SEQUENCE_ROTATE_SECONDS * 360) % 360
+			return
+		end
+	end
+
+	local grad = target:FindFirstChild("KazeGlowGradient")
+	if grad then grad.Enabled = false end
+	data.Target[data.Prop] = color
 end
 
 local function StepGlow(dt)
@@ -855,7 +894,7 @@ local function StepGlow(dt)
 					hue = (glowClock * (GLOW_RAINBOW_BREATHE_SPEED / 360) - (i - 1) * 0.015) % 1
 				end
 				local color = Color3.fromHSV(hue, baseS, troughV + envelope * (peakV - troughV))
-				ApplyGlowToElement(data, color, envelope)
+				ApplyGlowToElement(data, color, envelope, false)
 			else
 				table.remove(KazeUI.GlowElements, i)
 			end
@@ -864,11 +903,12 @@ local function StepGlow(dt)
 	end
 
 	local color, intensity = ComputeGlowColor()
+	local useRingGradient = (KazeUI.GlowMode == "Sequence")
 	for i = #KazeUI.GlowElements, 1, -1 do
 		local data = KazeUI.GlowElements[i]
 		local target = data.Target
 		if target and target.Parent then
-			ApplyGlowToElement(data, color, intensity)
+			ApplyGlowToElement(data, color, intensity, useRingGradient)
 		else
 			table.remove(KazeUI.GlowElements, i)
 		end
@@ -890,6 +930,7 @@ local function StartNeonLoop(target)
 	table.insert(KazeUI.GlowElements, {Target = target, Prop = propName})
 	EnsureGlowHeartbeat()
 end
+
 
 function KazeUI:AddGlowHalo(hostFrame, cornerRadius)
 	if not hostFrame then return end
