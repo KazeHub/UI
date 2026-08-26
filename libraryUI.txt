@@ -171,7 +171,7 @@ KazeUI.Themes = {
 
 KazeUI.CurrentTheme = KazeUI.Themes.CustomWallpaper
 KazeUI.GlowColor = Color3.fromRGB(255, 55, 90)
-KazeUI.GlowMode = "Breathing"
+KazeUI.GlowMode = "Sequence"
 KazeUI.GlowRainbow = true
 KazeUI._userSetGlow = false
 KazeUI.BackgroundColor = KazeUI.CurrentTheme.Background
@@ -1820,6 +1820,21 @@ local function BindPressAnimation(clickDetector, canPress, applyPressed, applyRe
 	end
 end
 
+-- Touch input doesn't always fire MouseLeave the way a real mouse does, which can leave
+-- hover-triggered glow/outlines stuck "on" after a tap on mobile. This forces the leave
+-- logic to run once the touch that started on the control ends, if it's still marked hovering.
+local function BindTouchLeaveFix(control, isHoveringGetter, onLeave)
+	control.InputEnded:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.Touch then
+			task.defer(function()
+				if isHoveringGetter() then
+					onLeave()
+				end
+			end)
+		end
+	end)
+end
+
 local function CreateClickableParagraph(parentFrame, title, body, callback, locked)
 	title = tostring(title or "Button")
 	body = tostring(body or "")
@@ -1926,13 +1941,15 @@ local function CreateClickableParagraph(parentFrame, title, body, callback, lock
 		StartNeonLoop(paraStroke)
 		TweenService:Create(rightIcon, TWEEN_FAST, {ImageColor3 = Color3.fromRGB(255, 255, 255), Position = UDim2.new(1, -8, 0.5, 0)}):Play()
 	end)
-	clickDetector.MouseLeave:Connect(function()
+	local function onParaLeave()
 		isHovering = false
 		TweenService:Create(paraFrame, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.02)}):Play()
 		StopNeonLoop(paraStroke)
 		TweenService:Create(paraStroke, TWEEN_FAST, {Color = KazeUI.CurrentTheme.Border}):Play()
 		TweenService:Create(rightIcon, TWEEN_FAST, {ImageColor3 = KazeUI.CurrentTheme.MutedText, Position = UDim2.new(1, -10, 0.5, 0)}):Play()
-	end)
+	end
+	clickDetector.MouseLeave:Connect(onParaLeave)
+	BindTouchLeaveFix(clickDetector, function() return isHovering end, onParaLeave)
 
 	BindPressAnimation(clickDetector,
 		function() return not (isLockedState or activeDialogsCount > 0) end,
@@ -2113,12 +2130,14 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 		TweenService:Create(paraFrame, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.04)}):Play()
 		StartNeonLoop(paraStroke)
 	end)
-	clickDetector.MouseLeave:Connect(function()
+	local function onToggleLeave()
 		isHovering = false
 		TweenService:Create(paraFrame, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.02)}):Play()
 		StopNeonLoop(paraStroke)
 		TweenService:Create(paraStroke, TWEEN_FAST, {Color = KazeUI.CurrentTheme.Border}):Play()
-	end)
+	end
+	clickDetector.MouseLeave:Connect(onToggleLeave)
+	BindTouchLeaveFix(clickDetector, function() return isHovering end, onToggleLeave)
 	BindPressAnimation(clickDetector,
 		function() return not (isLockedState or activeDialogsCount > 0) end,
 		function()
@@ -2835,13 +2854,15 @@ local function CreateKeybindInput(parentFrame, title, defaultKey, callback, flag
 		isHovering = true
 		if not isBinding then StartNeonLoop(bindStroke) end
 	end)
-	bindContainer.MouseLeave:Connect(function()
+	local function onBindLeave()
 		isHovering = false
 		if not isBinding then
 			StopNeonLoop(bindStroke)
 			TweenService:Create(bindStroke, TWEEN_FAST, {Color = KazeUI.CurrentTheme.Border}):Play()
 		end
-	end)
+	end
+	bindContainer.MouseLeave:Connect(onBindLeave)
+	BindTouchLeaveFix(bindContainer, function() return isHovering end, onBindLeave)
 
 	local captureConn
 	bindContainer.MouseButton1Click:Connect(function()
