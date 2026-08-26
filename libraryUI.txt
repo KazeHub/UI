@@ -18,7 +18,7 @@ KazeUI.Themes = {
 		MutedText = Color3.fromRGB(200, 200, 215),
 		Border = Color3.fromRGB(78, 78, 100),
 		LightnessFactor = 1.4,
-		BackgroundImage = "",
+		BackgroundImage = "rbxassetid://13963496525",
 		BackgroundImageTransparency = 0.85,
 		OverlayTransparency = 0.20,
 		PanelTransparency = 0.70
@@ -30,7 +30,7 @@ KazeUI.Themes = {
 		MutedText = Color3.fromRGB(215, 210, 225),
 		Border = Color3.fromRGB(95, 95, 100),
 		LightnessFactor = 1,
-		BackgroundImage = "",
+		BackgroundImage = "https://pbs.twimg.com/media/Gu-hWtyX0AA5-5s.jpg",
 		BackgroundImageTransparency = 0.1,
 		OverlayTransparency = 0.65,
 		PanelTransparency = 0.70
@@ -763,15 +763,38 @@ local GLOW_RAINBOW_BREATHE_SPEED = 40
 local glowClock = 0
 local glowHeartbeatConn = nil
 
-local GLOW_RING_COLORSEQUENCE = ColorSequence.new({
-	ColorSequenceKeypoint.new(0.00, Color3.fromRGB(255, 0, 0)),
-	ColorSequenceKeypoint.new(0.166, Color3.fromRGB(255, 255, 0)),
-	ColorSequenceKeypoint.new(0.333, Color3.fromRGB(0, 255, 0)),
-	ColorSequenceKeypoint.new(0.500, Color3.fromRGB(0, 255, 255)),
-	ColorSequenceKeypoint.new(0.667, Color3.fromRGB(0, 0, 255)),
-	ColorSequenceKeypoint.new(0.833, Color3.fromRGB(255, 0, 255)),
-	ColorSequenceKeypoint.new(1.00, Color3.fromRGB(255, 0, 0)),
-})
+local function BuildGlowGradientSequence()
+	local baseH, baseS, baseV = Color3.toHSV(KazeUI.GlowColor)
+	baseS = math.clamp(baseS * 1.15, 0.9, 1)
+	baseV = math.clamp(baseV * 1.1, 0.9, 1)
+
+	local keypoints = {}
+	if KazeUI.GlowRainbow then
+		-- Full-spectrum sweep, phase-anchored to the accent color's hue
+		local stopCount = 7
+		for i = 0, stopCount - 1 do
+			local alpha = i / (stopCount - 1)
+			local hue = (baseH + alpha) % 1
+			table.insert(keypoints, ColorSequenceKeypoint.new(alpha, Color3.fromHSV(hue, baseS, baseV)))
+		end
+	else
+		-- Narrower sweep centered on the accent color, still fully saturated
+		local spreadDeg = 70
+		local offsets = {-1, -0.5, 0, 0.5, 1}
+		for i, mult in ipairs(offsets) do
+			local alpha = (i - 1) / (#offsets - 1)
+			local hue = (baseH + (mult * spreadDeg) / 360) % 1
+			table.insert(keypoints, ColorSequenceKeypoint.new(alpha, Color3.fromHSV(hue, baseS, baseV)))
+		end
+	end
+	return ColorSequence.new(keypoints)
+end
+
+local GLOW_RING_COLORSEQUENCE = BuildGlowGradientSequence()
+
+local function RefreshGlowGradientSequence()
+	GLOW_RING_COLORSEQUENCE = BuildGlowGradientSequence()
+end
 
 local function LerpHueShortest(hueA, hueB, alpha)
 	local diff = (hueB - hueA + 1.5) % 1 - 0.5
@@ -859,6 +882,7 @@ local function ApplyGlowToElement(data, color, intensity, useRingGradient)
 		local grad = EnsureGlowGradient(target)
 		if grad then
 			grad.Enabled = true
+			grad.Color = GLOW_RING_COLORSEQUENCE
 			grad.Rotation = (glowClock / GLOW_SEQUENCE_ROTATE_SECONDS * 360) % 360
 			return
 		end
@@ -1010,6 +1034,7 @@ end
 function KazeUI:SetGlow(color)
 	KazeUI.GlowColor = color
 	KazeUI._userSetGlow = true
+	RefreshGlowGradientSequence()
 
 	for i = #KazeUI.GlowCallbacks, 1, -1 do
 		local data = KazeUI.GlowCallbacks[i]
@@ -1030,6 +1055,7 @@ end
 
 function KazeUI:SetGlowRainbow(enabled)
 	KazeUI.GlowRainbow = enabled and true or false
+	RefreshGlowGradientSequence()
 end
 
 function KazeUI:Notify(config)
