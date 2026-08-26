@@ -1,21 +1,6 @@
---[[
-	Kaze UI Library v3.6.9 (Premium Bubble Redesign & Engine Rewrite)
-	Inspired by: Modern Mobile Chat Bubbles, iMessage, and Discord Mobile.
-	Retained: 100% Backwards Compatibility with Version 1, 2, 2.2, 2.3, and 3.0 APIs
-	
-	UPDATES IN V3.6.9 & CUSTOM TUNING:
-	- INTERACTION LOCKOUT DIALOGS: Standard Frame-level Modal Blockers inside the Main Window entirely bypass the Roblox CanvasGroup mobile input routing bug.
-	- COMPONENT LOCKS (Locked = true/false): Support added for locking interactive components (Buttons, Toggles, Sliders, Dropdowns, etc.) preventing clicks and displaying a premium Padlock Icon (Asset: 78672912777756).
-	- AUTO-STACKING ACTIONS ENGINE: Action buttons stack vertically when 4 or more options are defined, and align horizontally for 1-3 buttons.
-	- SMART BUTTON TEXT RESIZING: Implemented TextScaled + UITextSizeConstraint + TextWrapped inside Action Buttons to avoid overflow.
-	- VISUAL ALIGNMENT FIXES: Centered window title (sized up to 16). Enlarged avatar circle (40x40) and placed the Author & Version text (size 13, no bullet point) on the left next to it.
-	- TEXTURE BLUR ELIMINATION: Changed Window CanvasGroup to a clipping-masked Frame to keep textures high-fidelity during drag/resize events.
---]]
-
 local KazeUI = {}
 KazeUI.__index = KazeUI
 
--- Roblox Services
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local UIS = game:GetService("UserInputService")
@@ -25,7 +10,6 @@ local RunService = game:GetService("RunService")
 local LP = Players.LocalPlayer
 local Mouse = LP:GetMouse()
 
--- Premium Bubble Themes Configuration (High-Contrast, Vivid Settings)
 KazeUI.Themes = {
 	Obsidian = {
 		Name = "Obsidian",
@@ -185,12 +169,11 @@ KazeUI.Themes = {
 	}
 }
 
--- Global State (Beautifully Tuned Soft Translucent Defaults)
 KazeUI.CurrentTheme = KazeUI.Themes.CustomWallpaper
 KazeUI.GlowColor = Color3.fromRGB(239, 68, 68)
-KazeUI.GlowMode = "Breathing" -- "Breathing", "Sequence" (was "Cycle"), "Pulse", or "Chase"
-KazeUI.GlowRainbow = false -- true = glow sweeps the full color spectrum in either mode
-KazeUI._userSetGlow = false -- tracks whether a glow color has been explicitly set yet (see SetTheme Obsidian fix)
+KazeUI.GlowMode = "Breathing"
+KazeUI.GlowRainbow = false
+KazeUI._userSetGlow = false
 KazeUI.BackgroundColor = KazeUI.CurrentTheme.Background
 KazeUI.BackgroundTransparency = 0.70
 KazeUI.Flags = {}
@@ -198,27 +181,23 @@ KazeUI.ActiveWindows = {}
 KazeUI.IsResizing = false
 KazeUI.AuthorName = "Unknown"
 
--- Centralized Modal / Dialogue State Tracker
 local activeDialogsCount = 0
 
--- UI element registries for theme switching
 KazeUI.TextElements = {}
 KazeUI.MutedTextElements = {}
 KazeUI.BorderElements = {}
 KazeUI.ThemeCallbacks = {}
 KazeUI.WallpaperElements = {}
 
--- Interactive Neon controllers
 KazeUI.GlowElements = {}
 KazeUI.NeonTweens = {}
 KazeUI.PanelElements = {}
 KazeUI.GlowCallbacks = {}
 
--- Spring & Smooth Animation Configurations
 local TWEEN_FAST = TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 local TWEEN_SPRING = TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
 local TWEEN_SMOOTH = TweenInfo.new(0.35, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
-local TWEEN_COLLAPSE = TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out) -- shared by Section/GroupBox open-close
+local TWEEN_COLLAPSE = TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 
 local function RegisterFlag(flag, getFunc, setFunc)
 	if flag then
@@ -226,14 +205,6 @@ local function RegisterFlag(flag, getFunc, setFunc)
 	end
 end
 
--- Wrap any block of your own script in this to stop a single mistake (typo,
--- nil callback, bad option, etc.) from silently killing everything AFTER it --
--- Lua normally aborts the whole script on the first uncaught error. On failure
--- this prints a clear warning (with the label you gave it) to the output
--- instead, and the rest of your script keeps running.
---   KazeUI:SafeCall(function()
---       Group1:Slider({ ... })
---   end, "Group1 Slider")
 function KazeUI:SafeCall(fn, label)
 	local ok, err = pcall(fn)
 	if not ok then
@@ -242,14 +213,11 @@ function KazeUI:SafeCall(fn, label)
 	return ok
 end
 
--- ScreenGui Setup (Supports CoreGui & PlayerGui fallback)
 local success, parent = pcall(function() return game:GetService("CoreGui") end)
 if not success or not parent then
 	parent = LP:WaitForChild("PlayerGui", 15)
 end
 
--- Centralized ScreenGui Setup with Precise Display Orders
--- 1. Main Library (DisplayOrder = 10)
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "KazeUI"
 ScreenGui.ResetOnSpawn = false
@@ -257,7 +225,6 @@ ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 ScreenGui.DisplayOrder = 10
 ScreenGui.Parent = parent
 
--- 2. Floating Open Button (DisplayOrder = 20)
 local OpenButtonGui = Instance.new("ScreenGui")
 OpenButtonGui.Name = "KazeUI_OpenButton"
 OpenButtonGui.ResetOnSpawn = false
@@ -265,7 +232,6 @@ OpenButtonGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 OpenButtonGui.DisplayOrder = 20
 OpenButtonGui.Parent = parent
 
--- 3. Dialogs / Modals (DisplayOrder = 100)
 local DialogGui = Instance.new("ScreenGui")
 DialogGui.Name = "KazeUI_Dialogs"
 DialogGui.ResetOnSpawn = false
@@ -273,7 +239,6 @@ DialogGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 DialogGui.DisplayOrder = 100
 DialogGui.Parent = parent
 
--- 4. Separate Notification Screen (DisplayOrder = 300)
 local NotifScreenGui = Instance.new("ScreenGui")
 NotifScreenGui.Name = "KazeUINotifications"
 NotifScreenGui.ResetOnSpawn = false
@@ -281,7 +246,6 @@ NotifScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 NotifScreenGui.DisplayOrder = 300
 NotifScreenGui.Parent = parent
 
--- Centralized Camera Locker System
 local CameraLocker = Instance.new("TextButton")
 CameraLocker.Name = "CameraLocker"
 CameraLocker.Size = UDim2.fromOffset(0, 0)
@@ -300,7 +264,6 @@ local function UnlockCamera()
 	CameraLocker.Modal = false
 end
 
--- Separate notification screen container
 local NotifContainer = Instance.new("Frame")
 local notifLayout = Instance.new("UIListLayout", NotifContainer)
 notifLayout.SortOrder = Enum.SortOrder.LayoutOrder
@@ -317,7 +280,6 @@ NotifContainer.Position = UDim2.new(1, -340, 0, 0)
 NotifContainer.BackgroundTransparency = 1
 NotifContainer.Parent = NotifScreenGui
 
--- Adaptive Scaling Engine
 local UIScale = Instance.new("UIScale")
 UIScale.Parent = ScreenGui
 
@@ -362,7 +324,6 @@ end
 UpdateScale()
 workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(UpdateScale)
 
--- Lucide Icons Setup
 local IconsMap = {}
 pcall(function()
 	if game and game.HttpGet then
@@ -382,32 +343,24 @@ pcall(function()
 	end
 end)
 
--- Exploit Direct Web Image Compiler & Caching Pipeline
 local function GetCustomAssetFromURL(url)
 	local getasset = (getcustomasset or getsynasset or (drawing and drawing.new and drawing.custom_asset))
 	if not getasset or not writefile or not game or not game.HttpGet then
-		return url -- Fallback if exploit is not supported
+		return url
 	end
-	
-	-- BUGFIX: this used to strip with "%A" (anything that ISN'T a letter),
-	-- which also strips every digit out of the URL. Two different image URLs
-	-- that only differ by numbers (e.g. two different rbxassetid/image IDs in
-	-- an otherwise identical path) collapsed to the exact same cache filename,
-	-- so the second image loaded would silently show the first image's cached
-	-- bytes. "%W" (anything that isn't alphanumeric) keeps digits so distinct
-	-- URLs keep distinct cache keys.
+
 	local hashName = string.gsub(url, "%W", "")
 	local filename = "KazeUI/Cache/" .. string.sub(hashName, 1, 30) .. ".png"
-	
+
 	if isfile and isfile(filename) then
 		local s, asset = pcall(getasset, filename)
 		if s and asset then return asset end
 	end
-	
+
 	local success, bytes = pcall(function()
 		return game:HttpGet(url)
 	end)
-	
+
 	if success and bytes and string.len(bytes) > 0 then
 		if makefolder then
 			pcall(makefolder, "KazeUI")
@@ -417,7 +370,7 @@ local function GetCustomAssetFromURL(url)
 		local s, asset = pcall(getasset, filename)
 		if s and asset then return asset end
 	end
-	
+
 	return url
 end
 
@@ -433,21 +386,18 @@ local function FormatImage(id)
 		end
 		return mapped
 	end
-	
+
 	if string.find(id, "rbxassetid://") then return id end
-	
+
 	if string.find(id, "^http://") or string.find(id, "^https://") then
 		return GetCustomAssetFromURL(id)
 	end
-	
+
 	local clean = string.gsub(id, "%D", "")
 	if clean == "" then return id end
 	return "rbxassetid://" .. clean
 end
 
--- ==========================================
--- Dynamic Color Sync & Registries
--- ==========================================
 function KazeUI:OnGlowChanged(inst, callback)
 	table.insert(KazeUI.GlowCallbacks, {Inst = inst, Callback = callback})
 	task.spawn(callback, KazeUI.GlowColor)
@@ -502,53 +452,44 @@ function KazeUI:OnThemeChanged(inst, cb)
 	end)
 end
 
--- Premium Dragging engine
--- BUGFIX: lastNormalPosition/lastNormalAnchor used to be single module-level
--- variables shared by every window MakeDraggable was ever called for. With
--- more than one KazeUI window open, dragging Window A would overwrite the
--- state that Window B's minimize/maximize/restore logic reads from, so
--- restoring/unminimizing a window could snap it to a *different* window's
--- last dragged position. MakeDraggable now writes into a per-call `dragState`
--- table supplied by the caller (each CreateWindow instance owns its own),
--- instead of a shared upvalue.
 local function MakeDraggable(dragPart, targetPart, dragState)
 	dragState = dragState or { Position = targetPart.Position, Anchor = targetPart.AnchorPoint }
 	local dragging = false
 	local dragInput, dragStart, startPos
 	local dragActive = false
-	
+
 	dragPart.Active = true
-	
+
 	local function update(input)
 		if not dragStart or not startPos then return end
 		local delta = input.Position - dragStart
 		local scale = UIScale.Scale
-		
+
 		if dragActive or delta.Magnitude > 8 then
 			dragActive = true
 			targetPart.Position = UDim2.new(
 				startPos.X.Scale, startPos.X.Offset + (delta.X / scale),
 				startPos.Y.Scale, startPos.Y.Offset + (delta.Y / scale)
 			)
-			
+
 			if targetPart.Name == "Frame" or targetPart:IsA("Frame") then
 				dragState.Position = targetPart.Position
 				dragState.Anchor = targetPart.AnchorPoint
 			end
 		end
 	end
-	
+
 	dragPart.InputBegan:Connect(function(input)
 		if KazeUI.IsResizing or activeDialogsCount > 0 then return end
-		
+
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 			dragging = true
 			dragActive = false
 			dragStart = input.Position
 			startPos = targetPart.Position
-			
+
 			LockCamera()
-			
+
 			local changeCon
 			changeCon = input.Changed:Connect(function()
 				if input.UserInputState == Enum.UserInputState.End then
@@ -560,17 +501,17 @@ local function MakeDraggable(dragPart, targetPart, dragState)
 			end)
 		end
 	end)
-	
+
 	dragPart.InputChanged:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
 			dragInput = input
 		end
 	end)
-	
+
 	local uisConn = UIS.InputChanged:Connect(function(input)
 		if input == dragInput and dragging then update(input) end
 	end)
-	
+
 	if dragPart and typeof(dragPart) == "Instance" then
 		dragPart.Destroying:Connect(function()
 			if uisConn then uisConn:Disconnect() end
@@ -578,9 +519,6 @@ local function MakeDraggable(dragPart, targetPart, dragState)
 	end
 end
 
--- ==========================================================
--- Universal Centered Lock Overlay Implementation
--- ==========================================================
 local function ApplyLock(componentFrame, isLocked, parentOverride, customSize, customPos, customAnchor)
 	local lockOverlay = Instance.new("TextButton")
 	lockOverlay.Name = "LockOverlay"
@@ -588,8 +526,8 @@ local function ApplyLock(componentFrame, isLocked, parentOverride, customSize, c
 	lockOverlay.Position = customPos or UDim2.fromScale(0, 0)
 	lockOverlay.AnchorPoint = customAnchor or Vector2.new(0, 0)
 	lockOverlay.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
-	lockOverlay.BackgroundTransparency = 0.55 -- Semi-translucent glass effect
-	lockOverlay.ZIndex = 9999 -- Draws directly above components
+	lockOverlay.BackgroundTransparency = 0.55
+	lockOverlay.ZIndex = 9999
 	lockOverlay.Text = ""
 	lockOverlay.AutoButtonColor = false
 	lockOverlay.Visible = isLocked or false
@@ -606,13 +544,13 @@ local function ApplyLock(componentFrame, isLocked, parentOverride, customSize, c
 	local lockIcon = Instance.new("ImageLabel")
 	lockIcon.Name = "LockIcon"
 	lockIcon.Size = UDim2.fromOffset(24, 24)
-	lockIcon.AnchorPoint = Vector2.new(0.5, 0.5) -- Centered perfectly
-	lockIcon.Position = UDim2.fromScale(0.5, 0.5) -- Centered perfectly
+	lockIcon.AnchorPoint = Vector2.new(0.5, 0.5)
+	lockIcon.Position = UDim2.fromScale(0.5, 0.5)
 	lockIcon.BackgroundTransparency = 1
 	lockIcon.Image = "rbxassetid://78672912777756"
 	lockIcon.ZIndex = 10000
 	lockIcon.Parent = lockOverlay
-	
+
 	KazeUI:OnThemeChanged(lockIcon, function(t)
 		lockIcon.ImageColor3 = t.MutedText
 	end)
@@ -627,9 +565,6 @@ local function ApplyLock(componentFrame, isLocked, parentOverride, customSize, c
 	}
 end
 
--- ==========================================
--- Theme & Transparency Engine (Translucent Bubbles)
--- ==========================================
 function KazeUI.GetColor(elevation)
 	local theme = KazeUI.CurrentTheme
 	local h, s, v = Color3.toHSV(theme.Background)
@@ -642,8 +577,8 @@ end
 
 function KazeUI:AddPanel(inst, elevation, ignoreColorUpdate, ignoreTransparencyUpdate)
 	table.insert(KazeUI.PanelElements, {
-		Inst = inst, 
-		Elevation = elevation or 0, 
+		Inst = inst,
+		Elevation = elevation or 0,
 		IgnoreColor = ignoreColorUpdate,
 		IgnoreTransparency = ignoreTransparencyUpdate
 	})
@@ -651,7 +586,7 @@ function KazeUI:AddPanel(inst, elevation, ignoreColorUpdate, ignoreTransparencyU
 		if not ignoreColorUpdate then
 			inst.BackgroundColor3 = KazeUI.GetColor(elevation or 0)
 		end
-		
+
 		if not ignoreTransparencyUpdate then
 			local baseTrans = KazeUI.BackgroundTransparency or 0.70
 			if elevation and elevation > 0 then
@@ -697,12 +632,12 @@ end
 
 function KazeUI:SetTheme(themeName)
 	local targetTheme = KazeUI.Themes[themeName]
-	
+
 	if not targetTheme and type(themeName) == "string" and (string.find(themeName, "^http://") or string.find(themeName, "^https://")) then
 		local success, rawTheme = pcall(function()
 			return game:HttpGet(themeName)
 		end)
-		
+
 		local parsedSuccessfully = false
 		if success and rawTheme then
 			local themeTable = nil
@@ -720,7 +655,7 @@ function KazeUI:SetTheme(themeName)
 					end
 				end
 			end
-			
+
 			if themeTable then
 				local function parseColor(val)
 					if typeof(val) == "Color3" then
@@ -741,7 +676,7 @@ function KazeUI:SetTheme(themeName)
 					end
 					return nil
 				end
-				
+
 				KazeUI.Themes.CustomWallpaper.Background = parseColor(themeTable.Background) or Color3.fromRGB(12, 12, 14)
 				KazeUI.Themes.CustomWallpaper.Text = parseColor(themeTable.Text) or Color3.fromRGB(255, 255, 255)
 				KazeUI.Themes.CustomWallpaper.MutedText = parseColor(themeTable.MutedText) or Color3.fromRGB(215, 210, 225)
@@ -753,7 +688,7 @@ function KazeUI:SetTheme(themeName)
 				parsedSuccessfully = true
 			end
 		end
-		
+
 		if not parsedSuccessfully then
 			KazeUI.Themes.CustomWallpaper.BackgroundImage = themeName
 			KazeUI.Themes.CustomWallpaper.BackgroundImageTransparency = 0.1
@@ -765,18 +700,14 @@ function KazeUI:SetTheme(themeName)
 	targetTheme = targetTheme or KazeUI.Themes[themeName] or KazeUI.Themes.CustomWallpaper
 	KazeUI.CurrentTheme = targetTheme
 	KazeUI.BackgroundColor = targetTheme.Background
-	
+
 	KazeUI:SetBackgroundColor(targetTheme.Background)
 	KazeUI:SetTransparency(targetTheme.PanelTransparency or KazeUI.BackgroundTransparency or 0.70)
-	
-	-- BUGFIX: this used to force the glow to white every single time Obsidian was
-	-- selected, even if the user had already picked a custom Accent Glow Color --
-	-- silently discarding their choice. Now it only applies the white default the
-	-- first time a glow color is established (fresh load, nothing set yet).
+
 	if themeName == "Obsidian" and not KazeUI._userSetGlow then
 		KazeUI:SetGlow(Color3.fromRGB(255, 255, 255))
 	end
-	
+
 	for _, inst in ipairs(KazeUI.TextElements) do
 		if inst and inst.Parent then inst.TextColor3 = targetTheme.Text end
 	end
@@ -807,58 +738,35 @@ function KazeUI:SetTheme(themeName)
 			end
 		end
 	end
-	
+
 	for _, data in ipairs(KazeUI.ThemeCallbacks) do
 		if data.Inst and data.Inst.Parent then pcall(data.Callback, targetTheme) end
 	end
 end
 
--- ==========================================================
--- Neon Glow Engine — Breathing / Sequence / Pulse / Chase, all Rainbow-capable
--- ==========================================================
--- One shared Heartbeat drives every glowing element from a single
--- clock: colors are computed continuously frame-to-frame (sine
--- envelopes + wrapping hue math) instead of restarting Tweens, so
--- there is never a visible jump, and every glow on screen animates
--- perfectly in sync with every other one (except Chase, which is
--- *designed* to be out of sync element-to-element).
+local GLOW_BREATHE_PERIOD = 4.0
 
-local GLOW_BREATHE_PERIOD = 4.0       -- seconds for one full inhale + exhale
+local GLOW_SEQUENCE_PERIOD = 6.0
+local GLOW_SEQUENCE_STOPS = {0, 45, -40, 85}
+local GLOW_SEQUENCE_RAINBOW_STOPS = {0, 90, 180, 270}
 
--- "Sequence" -- steps through a small loop of hue offsets (a mini
--- ColorSequence) and eases between them, instead of spinning smoothly
--- through the wheel. Replaces the old "Cycle" mode (still accepted as
--- a legacy alias, see SetGlowMode below).
-local GLOW_SEQUENCE_PERIOD = 6.0            -- seconds for one full loop through all stops
-local GLOW_SEQUENCE_STOPS = {0, 45, -40, 85}         -- hue offsets (deg) from the accent hue
-local GLOW_SEQUENCE_RAINBOW_STOPS = {0, 90, 180, 270} -- used instead when Rainbow is on
+local GLOW_PULSE_ATTACK = 0.16
+local GLOW_PULSE_DECAY = 0.85
 
--- "Pulse" -- a snappy heartbeat-style throb: fast attack, slower decay.
-local GLOW_PULSE_ATTACK = 0.16        -- seconds to snap up to full brightness
-local GLOW_PULSE_DECAY = 0.85         -- seconds to ease back down
+local GLOW_CHASE_PERIOD = 2.2
+local GLOW_CHASE_STAGGER = 0.09
+local GLOW_CHASE_WIDTH = 2.6
 
--- "Chase" -- a bright band travels down the list of glowing elements
--- one after another, like a marquee light chase.
-local GLOW_CHASE_PERIOD = 2.2         -- seconds for one wave pass per element
-local GLOW_CHASE_STAGGER = 0.09       -- seconds delay between neighboring elements
-local GLOW_CHASE_WIDTH = 2.6          -- higher = narrower bright band
-
-local GLOW_RAINBOW_BREATHE_SPEED = 40 -- degrees/second hue drift (Breathing/Pulse, Rainbow on)
+local GLOW_RAINBOW_BREATHE_SPEED = 40
 
 local glowClock = 0
 local glowHeartbeatConn = nil
 
--- Shortest-path hue lerp: blends from hueA to hueB the "short way" around
--- the color wheel instead of always going forward, so a sequence stepping
--- from e.g. 350deg to 10deg doesn't spin all the way back around.
 local function LerpHueShortest(hueA, hueB, alpha)
 	local diff = (hueB - hueA + 1.5) % 1 - 0.5
 	return (hueA + diff * alpha) % 1
 end
 
--- Computes one shared color for every uniformly-animated mode (everything
--- except Chase, which needs a different color per element and is handled
--- directly inside StepGlow).
 local function ComputeGlowColor()
 	local baseH, baseS, baseV = Color3.toHSV(KazeUI.GlowColor)
 
@@ -870,11 +778,12 @@ local function ComputeGlowColor()
 		local idx = math.floor(raw) + 1
 		local nextIdx = (idx % n) + 1
 		local frac = raw - math.floor(raw)
-		local eased = frac * frac * (3 - 2 * frac) -- smoothstep: lingers on each stop, eases into the next
+		local eased = frac * frac * (3 - 2 * frac)
 		local hueA = (baseH * 360 + stops[idx]) / 360 % 1
 		local hueB = (baseH * 360 + stops[nextIdx]) / 360 % 1
 		local hue = LerpHueShortest(hueA, hueB, eased)
-		return Color3.fromHSV(hue, baseS, math.clamp(baseV * 1.05, 0, 1))
+		local intensity = 0.55 + math.sin(eased * math.pi) * 0.45
+		return Color3.fromHSV(hue, baseS, math.clamp(baseV * 1.05, 0, 1)), intensity
 
 	elseif KazeUI.GlowMode == "Pulse" then
 		local total = GLOW_PULSE_ATTACK + GLOW_PULSE_DECAY
@@ -882,10 +791,10 @@ local function ComputeGlowColor()
 		local envelope
 		if phase < GLOW_PULSE_ATTACK then
 			local t = phase / GLOW_PULSE_ATTACK
-			envelope = t * t -- ease-in quad: a punchy snap up
+			envelope = t * t
 		else
 			local t = (phase - GLOW_PULSE_ATTACK) / GLOW_PULSE_DECAY
-			envelope = 1 - (t * t) -- ease-out: lingers bright, then fades
+			envelope = 1 - (t * t)
 		end
 		local hue = baseH
 		if KazeUI.GlowRainbow then
@@ -893,17 +802,29 @@ local function ComputeGlowColor()
 		end
 		local troughV = baseV * 0.5
 		local peakV = math.clamp(baseV * 1.25, 0, 1)
-		return Color3.fromHSV(hue, baseS, troughV + envelope * (peakV - troughV))
+		return Color3.fromHSV(hue, baseS, troughV + envelope * (peakV - troughV)), envelope
 
-	else -- "Breathing"
+	else
 		local hue = baseH
 		if KazeUI.GlowRainbow then
 			hue = (glowClock * (GLOW_RAINBOW_BREATHE_SPEED / 360)) % 1
 		end
-		local envelope = (math.sin((glowClock / GLOW_BREATHE_PERIOD) * math.pi * 2) + 1) / 2 -- 0..1, smooth
+		local envelope = (math.sin((glowClock / GLOW_BREATHE_PERIOD) * math.pi * 2) + 1) / 2
 		local troughV = baseV * 0.65
 		local peakV = math.clamp(baseV * 1.15, 0, 1)
-		return Color3.fromHSV(hue, baseS, troughV + envelope * (peakV - troughV))
+		return Color3.fromHSV(hue, baseS, troughV + envelope * (peakV - troughV)), envelope
+	end
+end
+
+local function ApplyGlowToElement(data, color, intensity)
+	if data.HaloRings then
+		for _, ring in ipairs(data.HaloRings) do
+			ring.Instance.Color = color
+			local t = ring.BaseTransparency - intensity * ring.IntensityBoost
+			ring.Instance.Transparency = math.clamp(t, 0.05, 0.95)
+		end
+	else
+		data.Target[data.Prop] = color
 	end
 end
 
@@ -926,8 +847,6 @@ local function StepGlow(dt)
 			local data = KazeUI.GlowElements[i]
 			local target = data.Target
 			if target and target.Parent then
-				-- Each element lags behind the previous one, so the bright band
-				-- appears to travel down the list like a marquee chase light.
 				local phase = (glowClock - (i - 1) * GLOW_CHASE_STAGGER) % GLOW_CHASE_PERIOD
 				local t = phase / GLOW_CHASE_PERIOD
 				local envelope = math.clamp(1 - math.abs(t - 0.5) * 2 * GLOW_CHASE_WIDTH, 0, 1)
@@ -935,7 +854,8 @@ local function StepGlow(dt)
 				if KazeUI.GlowRainbow then
 					hue = (glowClock * (GLOW_RAINBOW_BREATHE_SPEED / 360) - (i - 1) * 0.015) % 1
 				end
-				target[data.Prop] = Color3.fromHSV(hue, baseS, troughV + envelope * (peakV - troughV))
+				local color = Color3.fromHSV(hue, baseS, troughV + envelope * (peakV - troughV))
+				ApplyGlowToElement(data, color, envelope)
 			else
 				table.remove(KazeUI.GlowElements, i)
 			end
@@ -943,12 +863,12 @@ local function StepGlow(dt)
 		return
 	end
 
-	local color = ComputeGlowColor()
+	local color, intensity = ComputeGlowColor()
 	for i = #KazeUI.GlowElements, 1, -1 do
 		local data = KazeUI.GlowElements[i]
 		local target = data.Target
 		if target and target.Parent then
-			target[data.Prop] = color
+			ApplyGlowToElement(data, color, intensity)
 		else
 			table.remove(KazeUI.GlowElements, i)
 		end
@@ -964,11 +884,45 @@ end
 local function StartNeonLoop(target)
 	if not target then return end
 	for _, data in ipairs(KazeUI.GlowElements) do
-		if data.Target == target then return end -- already glowing, avoid duplicates
+		if data.Target == target then return end
 	end
 	local propName = pcall(function() return target.Color end) and "Color" or "BackgroundColor3"
 	table.insert(KazeUI.GlowElements, {Target = target, Prop = propName})
 	EnsureGlowHeartbeat()
+end
+
+function KazeUI:AddGlowHalo(hostFrame, cornerRadius)
+	if not hostFrame then return end
+	local halo = Instance.new("Frame")
+	halo.Name = "GlowHalo"
+	halo.BackgroundTransparency = 1
+	halo.Size = UDim2.new(1, 0, 1, 0)
+	halo.Position = UDim2.fromScale(0.5, 0.5)
+	halo.AnchorPoint = Vector2.new(0.5, 0.5)
+	halo.ZIndex = math.max((hostFrame.ZIndex or 1) - 1, -50)
+	halo.Parent = hostFrame
+
+	local corner = Instance.new("UICorner", halo)
+	corner.CornerRadius = cornerRadius or UDim.new(0, 28)
+
+	local ringDefs = {
+		{Thickness = 2, BaseTransparency = 0.30, IntensityBoost = 0.12},
+		{Thickness = 6, BaseTransparency = 0.60, IntensityBoost = 0.22},
+		{Thickness = 12, BaseTransparency = 0.80, IntensityBoost = 0.28},
+	}
+	local rings = {}
+	for _, def in ipairs(ringDefs) do
+		local ring = Instance.new("UIStroke")
+		ring.Thickness = def.Thickness
+		ring.Transparency = def.BaseTransparency
+		ring.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+		ring.Parent = halo
+		table.insert(rings, {Instance = ring, BaseTransparency = def.BaseTransparency, IntensityBoost = def.IntensityBoost})
+	end
+
+	table.insert(KazeUI.GlowElements, {Target = halo, HaloRings = rings})
+	EnsureGlowHeartbeat()
+	return halo
 end
 
 local function StopNeonLoop(target)
@@ -978,30 +932,10 @@ local function StopNeonLoop(target)
 	end
 end
 
--- FIX (outline/UIStroke invisible on Sections & GroupBoxes further down a
--- ScrollingFrame): when a collapsible box sits below the ScrollingFrame's
--- current CanvasSize, Roblox sometimes finishes resizing the box's
--- AutomaticSize.Y frame WITHOUT ever repainting its UIStroke — the stroke
--- mesh was built for the old (usually zero) height and never gets told to
--- rebuild, since nothing about the Stroke itself changed, only its parent's
--- size. Boxes near the top rarely hit this because they're already inside
--- the rendered canvas region when they open, so their stroke repaints as a
--- side effect of normal on-screen layout passes. Toggling Enabled off/on
--- after the layout (and the ScrollingFrame's AutomaticCanvasSize) have had a
--- couple of Heartbeats to settle forces the stroke to rebuild against the
--- box's real, final size.
 local function KickStroke(strokeInst)
 	if not strokeInst then return end
 	task.defer(function()
-		-- BUGFIX: this used to just wait a fixed 2 Heartbeats before kicking
-		-- the stroke, on the assumption that's always enough time for the
-		-- AutomaticSize.Y chain above it to settle. That's true for small
-		-- boxes, but a Section/GroupBox with a lot of components (or nested
-		-- Groups) can take noticeably longer than 2 frames to fully resolve
-		-- its final height -- so the stroke got kicked too early and stayed
-		-- stale (invisible) until something else (like scrolling) forced a
-		-- fresh layout pass. Now it waits for the box's AbsoluteSize to
-		-- actually stop changing between frames (capped so it can't hang).
+
 		local ref = strokeInst.Parent
 		if ref then
 			local lastSize = ref.AbsoluteSize
@@ -1040,26 +974,17 @@ function KazeUI:SetGlow(color)
 	end
 end
 
--- Selectable animation style:
---   "Breathing" -- smooth brightness pulse on one hue
---   "Sequence"  -- steps through a small loop of hues, easing between each
---                  (replaces the old "Cycle" mode -- "Cycle" still works
---                  as a legacy alias for it)
---   "Pulse"     -- snappy heartbeat-style throb (fast attack, slow decay)
---   "Chase"     -- a bright band travels down the glowing elements in order
 function KazeUI:SetGlowMode(mode)
-	if mode == "Cycle" then mode = "Sequence" end -- legacy alias
+	if mode == "Cycle" then mode = "Sequence" end
 	local valid = {Breathing = true, Sequence = true, Pulse = true, Chase = true}
 	if not valid[mode] then mode = "Breathing" end
 	KazeUI.GlowMode = mode
 end
 
--- Layer full-spectrum rainbow color on top of whichever mode is active.
 function KazeUI:SetGlowRainbow(enabled)
 	KazeUI.GlowRainbow = enabled and true or false
 end
 
--- Premium Bubble-style Notification Card
 function KazeUI:Notify(config)
 	config = config or {}
 	local title = tostring(config.Title or "Notification")
@@ -1067,22 +992,21 @@ function KazeUI:Notify(config)
 	local duration = tonumber(config.Duration) or 3
 	local titleColor = config.TitleColor or config.Color
 	local isRGBTitle = config.RGBTitle or (titleColor == "RGB")
-	
+
 	local iconId = config.Icon and FormatImage(config.Icon) or ""
 	local hasIcon = (iconId ~= "")
 	local iconColor = config.IconColor or KazeUI.GlowColor
 
 	local textPadding = hasIcon and 54 or 16
-	local rightSafetyPadding = 36 
+	local rightSafetyPadding = 36
 	local maxTextWidth = 320 - 24 - textPadding - rightSafetyPadding
 
-	-- Upgraded Text Bounds Calculations for more readable layouts
 	local titleSize = TextService:GetTextSize(title, 14, Enum.Font.GothamBold, Vector2.new(maxTextWidth, 1000))
 	local contentSize = TextService:GetTextSize(content, 12, Enum.Font.GothamMedium, Vector2.new(maxTextWidth, 2000))
 
 	local titleHeight = math.max(16, math.ceil(titleSize.Y))
 	local contentHeight = math.max(14, math.ceil(contentSize.Y))
-	
+
 	local calculatedCardHeight = 12 + titleHeight + 4 + contentHeight + 14
 	local finalCardHeight = math.max(68, calculatedCardHeight)
 	local finalHolderHeight = finalCardHeight + 20
@@ -1101,11 +1025,11 @@ function KazeUI:Notify(config)
 	notifFrame.Position = UDim2.new(1.3, 0, 0, 10)
 	notifFrame.BorderSizePixel = 0
 	notifFrame.Parent = notifHolder
-	
+
 	Instance.new("UICorner", notifFrame).CornerRadius = UDim.new(0, 14)
-	
+
 	KazeUI:AddPanel(notifFrame, 0.04, false, true)
-	notifFrame.BackgroundTransparency = 0.08 
+	notifFrame.BackgroundTransparency = 0.08
 
 	local shadow = Instance.new("Frame", notifFrame)
 	shadow.Size = UDim2.new(1, 6, 1, 6)
@@ -1153,7 +1077,7 @@ function KazeUI:Notify(config)
 	titleLab.BackgroundTransparency = 1
 	titleLab.Text = title
 	titleLab.Font = Enum.Font.GothamBold
-	titleLab.TextSize = 14 -- Increased from 13 to 14 for readability
+	titleLab.TextSize = 14
 	titleLab.TextXAlignment = Enum.TextXAlignment.Left
 	titleLab.TextWrapped = true
 
@@ -1174,7 +1098,7 @@ function KazeUI:Notify(config)
 	elseif typeof(titleColor) == "Color3" then
 		titleLab.TextColor3 = titleColor
 	else
-		KazeUI:RegisterText(titleLab, false) -- Solid white/high-contrast text
+		KazeUI:RegisterText(titleLab, false)
 	end
 
 	local contentLab = Instance.new("TextLabel", notifFrame)
@@ -1183,11 +1107,11 @@ function KazeUI:Notify(config)
 	contentLab.BackgroundTransparency = 1
 	contentLab.Text = content
 	contentLab.Font = Enum.Font.GothamMedium
-	contentLab.TextSize = 12 -- Increased from 11 to 12 for readability
+	contentLab.TextSize = 12
 	contentLab.TextWrapped = true
 	contentLab.TextXAlignment = Enum.TextXAlignment.Left
 	contentLab.TextYAlignment = Enum.TextYAlignment.Top
-	KazeUI:RegisterText(contentLab, false) -- Swapped from muted text to solid white text for outstanding readability!
+	KazeUI:RegisterText(contentLab, false)
 
 	local progressTrack = Instance.new("Frame", notifFrame)
 	progressTrack.Size = UDim2.new(1, -32, 0, 2.5)
@@ -1202,7 +1126,7 @@ function KazeUI:Notify(config)
 	progressBar.BorderSizePixel = 0
 	Instance.new("UICorner", progressBar).CornerRadius = UDim.new(1, 0)
 	StartNeonLoop(progressBar)
-	
+
 	KazeUI:OnGlowChanged(progressBar, function(c) progressBar.BackgroundColor3 = c end)
 
 	TweenService:Create(notifHolder, TweenInfo.new(0.4, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {Size = UDim2.new(1, 0, 0, finalHolderHeight)}):Play()
@@ -1210,14 +1134,14 @@ function KazeUI:Notify(config)
 
 	local isDismissing = false
 	local dismissTweenCon
-	
+
 	local function dismiss()
 		if isDismissing then return end
 		isDismissing = true
-		
+
 		local outTween = TweenService:Create(notifFrame, TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.In), {Position = UDim2.new(1.3, 0, 0, 10)})
 		outTween:Play()
-		
+
 		dismissTweenCon = outTween.Completed:Connect(function()
 			dismissTweenCon:Disconnect()
 			local shrinkTween = TweenService:Create(notifHolder, TweenInfo.new(0.3, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {Size = UDim2.new(1, 0, 0, 0)})
@@ -1247,7 +1171,7 @@ function KazeUI:Notify(config)
 			dismiss()
 		end
 	end)
-	
+
 	notifHolder.Destroying:Connect(function()
 		task.cancel(autoThread)
 		if dismissTweenCon then dismissTweenCon:Disconnect() end
@@ -1259,10 +1183,10 @@ function KazeUI:SaveConfig(name)
 		KazeUI:Notify({Title = "Config System", Content = "Config name cannot be empty.", Duration = 3})
 		return
 	end
-	
+
 	local data = {}
 	for flag, obj in pairs(KazeUI.Flags) do data[flag] = obj.Get() end
-	
+
 	if writefile then
 		local success, encoded = pcall(function() return HttpService:JSONEncode(data) end)
 		if success then
@@ -1273,7 +1197,7 @@ function KazeUI:SaveConfig(name)
 					elseif not isfolder then makefolder(folder) end
 				end)
 			end
-			
+
 			writefile(folder .. "/" .. name .. ".json", encoded)
 			KazeUI:Notify({Title = "Config Saved", Content = "Successfully saved " .. name, Duration = 3})
 		else
@@ -1284,12 +1208,11 @@ function KazeUI:SaveConfig(name)
 	end
 end
 
--- Load Config Function
 function KazeUI:LoadConfig(name)
 	if not name or name == "" then return end
 	local folder = KazeUI.AuthorName
 	local filename = folder .. "/" .. name .. ".json"
-	
+
 	if isfile and isfile(filename) then
 		local success, content = pcall(readfile, filename)
 		if success and content then
@@ -1315,10 +1238,6 @@ local function ToggleScrollingAncestors(element, state)
 		current = current.Parent
 	end
 end
-
--- =========================================================
--- Elegant Bubble-First Components (Figma / iMessage design)
--- =========================================================
 
 local function CreateDropdown(parentFrame, title, options, defaultOption, callback, isMulti, flag, locked)
 	title = tostring(title or "Dropdown")
@@ -1353,7 +1272,7 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 	dropFrame.Size = UDim2.new(0.95, 0, 0, 0)
 	dropFrame.BorderSizePixel = 0
 	dropFrame.AutomaticSize = Enum.AutomaticSize.Y
-	
+
 	Instance.new("UICorner", dropFrame).CornerRadius = UDim.new(0, 12)
 	dropFrame.Parent = wrapper
 	KazeUI:AddPanel(dropFrame, 0.02)
@@ -1386,7 +1305,7 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 	titleLabel.Font = Enum.Font.GothamBold
 	titleLabel.TextSize = 13
 	titleLabel.TextXAlignment = Enum.TextXAlignment.Left
-	titleLabel.TextTruncate = Enum.TextTruncate.AtEnd 
+	titleLabel.TextTruncate = Enum.TextTruncate.AtEnd
 	KazeUI:RegisterText(titleLabel, false)
 
 	local arrowIcon = Instance.new("ImageLabel", header)
@@ -1403,8 +1322,8 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 		local count = 0
 		local firstVal = ""
 		for k, v in pairs(selectedMulti) do
-			if v then 
-				count = count + 1 
+			if v then
+				count = count + 1
 				if firstVal == "" then firstVal = k end
 			end
 		end
@@ -1422,8 +1341,8 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 	selectedLabel.Font = Enum.Font.Gotham
 	selectedLabel.TextSize = 11
 	selectedLabel.TextXAlignment = Enum.TextXAlignment.Right
-	selectedLabel.TextTruncate = Enum.TextTruncate.AtEnd 
-	selectedLabel.Text = initialText 
+	selectedLabel.TextTruncate = Enum.TextTruncate.AtEnd
+	selectedLabel.Text = initialText
 	KazeUI:RegisterText(selectedLabel, true)
 
 	local clickBtn = Instance.new("TextButton", header)
@@ -1436,8 +1355,8 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 			local count = 0
 			local firstVal = ""
 			for k, v in pairs(selectedMulti) do
-				if v then 
-					count = count + 1 
+				if v then
+					count = count + 1
 					if firstVal == "" then firstVal = k end
 				end
 			end
@@ -1463,13 +1382,13 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 	KazeUI:RegisterBorder(searchStroke)
 
 	local searchBox = Instance.new("TextBox")
-	searchBox.Size = UDim2.new(1, -20, 1, 0) 
+	searchBox.Size = UDim2.new(1, -20, 1, 0)
 	searchBox.Position = UDim2.new(0, 10, 0, 0)
 	searchBox.BackgroundTransparency = 1
 	searchBox.BorderSizePixel = 0
 	searchBox.PlaceholderText = "Search options..."
 	searchBox.Text = ""
-	searchBox.Font = Enum.Font.Gotham 
+	searchBox.Font = Enum.Font.Gotham
 	searchBox.TextSize = 11
 	searchBox.TextXAlignment = Enum.TextXAlignment.Left
 	searchBox.ClearTextOnFocus = false
@@ -1479,19 +1398,18 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 	KazeUI:RegisterText(searchBox, false)
 	KazeUI:OnThemeChanged(searchBox, function(t) searchBox.PlaceholderColor3 = t.MutedText end)
 
-	searchBox.Focused:Connect(function() 
+	searchBox.Focused:Connect(function()
 		if isLockedState or activeDialogsCount > 0 then
 			searchBox:ReleaseFocus()
 			return
 		end
 		StartNeonLoop(searchStroke)
 	end)
-	searchBox.FocusLost:Connect(function() 
+	searchBox.FocusLost:Connect(function()
 		StopNeonLoop(searchStroke)
 		TweenService:Create(searchStroke, TWEEN_FAST, {Color = KazeUI.CurrentTheme.Border}):Play()
 	end)
-	
-	-- Restored dropdown list separator line
+
 	local divider = Instance.new("Frame")
 	divider.Size = UDim2.new(1, -20, 0, 1)
 	divider.BorderSizePixel = 0
@@ -1510,12 +1428,12 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 	listContainer.ScrollBarImageColor3 = Color3.fromRGB(40, 40, 45)
 	listContainer.Parent = dropFrame
 
-	listContainer.MouseEnter:Connect(function() 
+	listContainer.MouseEnter:Connect(function()
 		if isLockedState or activeDialogsCount > 0 then return end
-		ToggleScrollingAncestors(dropFrame, false) 
+		ToggleScrollingAncestors(dropFrame, false)
 	end)
-	listContainer.MouseLeave:Connect(function() 
-		ToggleScrollingAncestors(dropFrame, true) 
+	listContainer.MouseLeave:Connect(function()
+		ToggleScrollingAncestors(dropFrame, true)
 	end)
 
 	local listLayout = Instance.new("UIListLayout", listContainer)
@@ -1534,7 +1452,7 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 
 	local function CloseDropdown()
 		isOpen = false
-		searchBox.Text = "" 
+		searchBox.Text = ""
 		searchWrapper.Visible = false
 		divider.Visible = false
 		listContainer.Visible = false
@@ -1559,7 +1477,7 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 			btn.TextXAlignment = Enum.TextXAlignment.Left
 			btn.Parent = listContainer
 			Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 10)
-			
+
 			KazeUI:AddPanel(btn, 0.03, true)
 
 			local indicator
@@ -1573,17 +1491,17 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 				Instance.new("UICorner", indicator).CornerRadius = UDim.new(0, 4)
 				KazeUI:AddPanel(indicator, 0.04)
 			end
-            
+
 			local isHovering = false
 			local currentBgTween, currentTxtTween
 
 			local function UpdateVisuals(instant)
 				local active = isMulti and selectedMulti[optStr] or (not isMulti and selectedSingle == optStr)
-				
+
 				local targetBg = active and KazeUI.GetColor(0.06) or KazeUI.GetColor(0.03)
 				local targetTxt = active and KazeUI.CurrentTheme.Text or KazeUI.CurrentTheme.MutedText
 				local indTargetBg = active and KazeUI.GlowColor or KazeUI.GetColor(0.03)
-				
+
 				if isHovering then
 					targetBg = KazeUI.GetColor(0.08)
 					targetTxt = KazeUI.CurrentTheme.Text
@@ -1601,7 +1519,7 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 					currentTxtTween = TweenService:Create(btn, TWEEN_FAST, {TextColor3 = targetTxt})
 					currentBgTween:Play()
 					currentTxtTween:Play()
-					
+
 					if isMulti and indicator then
 						TweenService:Create(indicator, TWEEN_FAST, {BackgroundColor3 = indTargetBg}):Play()
 					end
@@ -1613,14 +1531,14 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 				UpdateVisuals(true)
 			end)
 
-			btn.MouseEnter:Connect(function() 
+			btn.MouseEnter:Connect(function()
 				if isLockedState or activeDialogsCount > 0 then return end
 				isHovering = true
 				UpdateVisuals(false)
 			end)
 			btn.MouseLeave:Connect(function()
 				isHovering = false
-				UpdateVisuals(false) 
+				UpdateVisuals(false)
 			end)
 
 			btn.MouseButton1Click:Connect(function()
@@ -1646,7 +1564,7 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 			end)
 
 			table.insert(optionItems, { Btn = btn, Text = optStr, Update = function(instant) UpdateVisuals(instant) end })
-			
+
 			KazeUI:OnGlowChanged(btn, function() UpdateVisuals(true) end)
 		end
 		CalcHeight()
@@ -1684,14 +1602,14 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 			for k,v in pairs(selectedMulti) do if v then table.insert(ret, k) end end
 			return ret
 		end
-		return selectedSingle 
+		return selectedSingle
 	end, function(val)
-		if isMulti then 
+		if isMulti then
 			selectedMulti = {}
 			if type(val) == "table" then
 				for _, v in ipairs(val) do selectedMulti[tostring(v)] = true end
 			end
-		else 
+		else
 			selectedSingle = tostring(val)
 		end
 		UpdateHeaderVisual()
@@ -1713,13 +1631,13 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 		Wrapper = wrapper,
 		Frame = dropFrame,
 		Refresh = function(self, newOpts) Refresh(newOpts) end,
-		GetValue = function() 
+		GetValue = function()
 			if isMulti then
 				local ret = {}
 				for k,v in pairs(selectedMulti) do if v then table.insert(ret, k) end end
 				return ret
 			end
-			return selectedSingle 
+			return selectedSingle
 		end,
 		SetText = function(self, newTitle) titleLabel.Text = newTitle end,
 		SetLocked = function(self, state)
@@ -1732,46 +1650,46 @@ end
 local function CreateParagraph(parentFrame, title, body)
 	title = tostring(title or "")
 	body = tostring(body or "")
-	
+
 	local measuredWidth = 598 * 0.92
 	if parentFrame and parentFrame.AbsoluteSize and parentFrame.AbsoluteSize.X > 0 then measuredWidth = parentFrame.AbsoluteSize.X * 0.95 end
-	
+
 	local titleHeight = 0
 	if title ~= " " then
 		local ts = TextService:GetTextSize(title, 13, Enum.Font.GothamBold, Vector2.new(measuredWidth - 28, 1000))
 		titleHeight = math.max(18, math.ceil(ts.Y))
 	end
-	
+
 	local bodySize = TextService:GetTextSize(body, 12, Enum.Font.Gotham, Vector2.new(measuredWidth - 28, 2000))
 	local bodyHeight = math.ceil(bodySize.Y)
 	local totalHeight = 8 + titleHeight + 3 + bodyHeight + 8
-	
+
 	local wrapper = Instance.new("Frame")
 	wrapper.Size = UDim2.new(1, 0, 0, 0)
 	wrapper.BackgroundTransparency = 1
 	wrapper.Parent = parentFrame
 	wrapper.AutomaticSize = Enum.AutomaticSize.Y
-	
+
 	local paraFrame = Instance.new("Frame")
 	paraFrame.AnchorPoint = Vector2.new(0.5, 0)
 	paraFrame.Position = UDim2.new(0.5, 0, 0, 3)
 	paraFrame.Size = UDim2.new(0.95, 0, 0, totalHeight)
 	paraFrame.BorderSizePixel = 0
-	
+
 	Instance.new("UICorner", paraFrame).CornerRadius = UDim.new(0, 12)
 	paraFrame.Parent = wrapper
 	KazeUI:AddPanel(paraFrame, 0.01)
-	
+
 	local paraStroke = Instance.new("UIStroke", paraFrame)
 	paraStroke.Thickness = 1.2
 	paraStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 	KazeUI:RegisterBorder(paraStroke)
-	
+
 	local inner = Instance.new("Frame", paraFrame)
 	inner.Size = UDim2.new(1, -20, 1, -16)
 	inner.Position = UDim2.fromOffset(10, 8)
 	inner.BackgroundTransparency = 1
-	
+
 	local ptitleLabel
 	if title ~= " " then
 		ptitleLabel = Instance.new("TextLabel", inner)
@@ -1784,7 +1702,7 @@ local function CreateParagraph(parentFrame, title, body)
 		ptitleLabel.TextWrapped = true
 		KazeUI:RegisterText(ptitleLabel, false)
 	end
-	
+
 	local bodyLabel = Instance.new("TextLabel", inner)
 	bodyLabel.Size = UDim2.new(1, 0, 0, bodyHeight)
 	bodyLabel.Position = UDim2.fromOffset(0, titleHeight + 3)
@@ -1796,9 +1714,9 @@ local function CreateParagraph(parentFrame, title, body)
 	bodyLabel.TextXAlignment = Enum.TextXAlignment.Left
 	bodyLabel.TextYAlignment = Enum.TextYAlignment.Top
 	KazeUI:RegisterText(bodyLabel, true)
-	
-	return { 
-		Wrapper = wrapper, 
+
+	return {
+		Wrapper = wrapper,
 		Frame = paraFrame,
 		SetText = function(self, newTitle, newBody)
 			if ptitleLabel and newTitle then ptitleLabel.Text = newTitle end
@@ -1807,20 +1725,6 @@ local function CreateParagraph(parentFrame, title, body)
 	}
 end
 
--- ==========================================================
--- Robust Press-State Helper
--- ==========================================================
--- Fixes components getting visually "stuck" in their pressed/held
--- animation when a scroll gesture starts on top of them: pressing
--- down plays the press visual and arms a GLOBAL release watcher
--- (not just a local MouseButton1Up), so the visual always resets
--- the moment input ends, no matter where the cursor/finger drifted
--- to. If the input moves far enough to look like a scroll/drag
--- instead of a tap, the press visual releases immediately rather
--- than staying "held" for the rest of the scroll. The actual
--- callback still only fires on a genuine MouseButton1Click (press
--- + release on the same element), so scrolling past a component
--- never accidentally activates it.
 local PRESS_DRAG_CANCEL_DISTANCE = 10
 
 local function BindPressAnimation(clickDetector, canPress, applyPressed, applyReleased, onActivate)
@@ -1875,65 +1779,65 @@ local function CreateClickableParagraph(parentFrame, title, body, callback, lock
 	title = tostring(title or "Button")
 	body = tostring(body or "")
 	local isLockedState = locked or false
-	
+
 	local measuredWidth = 598 * 0.92
 	if parentFrame and parentFrame.AbsoluteSize and parentFrame.AbsoluteSize.X > 0 then measuredWidth = parentFrame.AbsoluteSize.X * 0.95 end
 	local textContainerWidth = measuredWidth - 28 - 42
-	
+
 	local titleHeight = 0
 	if title ~= " " and title ~= "" then
 		local ts = TextService:GetTextSize(title, 13, Enum.Font.GothamBold, Vector2.new(textContainerWidth, 1000))
 		titleHeight = math.max(18, math.ceil(ts.Y))
 	end
-	
+
 	local bodyHeight = 0
 	if body ~= "" then
 		local bodySize = TextService:GetTextSize(body, 12, Enum.Font.Gotham, Vector2.new(textContainerWidth, 2000))
 		bodyHeight = math.ceil(bodySize.Y)
 	end
-	
+
 	local totalHeight = 8 + titleHeight + (body ~= "" and 3 or 0) + bodyHeight + 8
-	
+
 	local wrapper = Instance.new("Frame")
 	wrapper.Size = UDim2.new(1, 0, 0, 0)
 	wrapper.BackgroundTransparency = 1
 	wrapper.Parent = parentFrame
 	wrapper.AutomaticSize = Enum.AutomaticSize.Y
-	
+
 	local paraFrame = Instance.new("Frame")
 	paraFrame.AnchorPoint = Vector2.new(0.5, 0)
 	paraFrame.Position = UDim2.new(0.5, 0, 0, 3)
 	paraFrame.Size = UDim2.new(0.95, 0, 0, totalHeight)
 	paraFrame.BorderSizePixel = 0
-	
+
 	Instance.new("UICorner", paraFrame).CornerRadius = UDim.new(0, 12)
 	paraFrame.Parent = wrapper
 	KazeUI:AddPanel(paraFrame, 0.02)
-	
+
 	local paraStroke = Instance.new("UIStroke", paraFrame)
 	paraStroke.Thickness = 1.2
 	paraStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 	KazeUI:RegisterBorder(paraStroke)
-	
+
 	local inner = Instance.new("Frame", paraFrame)
 	inner.Size = UDim2.new(1, -16, 1, -16)
 	inner.Position = UDim2.fromOffset(8, 8)
 	inner.BackgroundTransparency = 1
-	
+
 	local rightIcon = Instance.new("ImageLabel")
 	rightIcon.AnchorPoint = Vector2.new(1, 0.5)
-	rightIcon.Position = UDim2.new(1, -10, 0.5, 0) 
+	rightIcon.Position = UDim2.new(1, -10, 0.5, 0)
 	rightIcon.Size = UDim2.fromOffset(18, 18)
 	rightIcon.BackgroundTransparency = 1
-	rightIcon.Image = "rbxassetid://107150227368485" 
+	rightIcon.Image = "rbxassetid://107150227368485"
 	rightIcon.ScaleType = Enum.ScaleType.Fit
 	rightIcon.Parent = inner
-	
+
 	local isHovering = false
 	KazeUI:OnThemeChanged(rightIcon, function(t)
 		if not isHovering then rightIcon.ImageColor3 = t.MutedText end
 	end)
-	
+
 	local ptitleLabel
 	if title ~= " " and title ~= "" then
 		ptitleLabel = Instance.new("TextLabel", inner)
@@ -1941,13 +1845,13 @@ local function CreateClickableParagraph(parentFrame, title, body, callback, lock
 		ptitleLabel.BackgroundTransparency = 1
 		ptitleLabel.Text = title
 		ptitleLabel.Font = Enum.Font.GothamBold
-		ptitleLabel.TextSize = 13 
+		ptitleLabel.TextSize = 13
 		ptitleLabel.TextWrapped = true
 		ptitleLabel.TextXAlignment = Enum.TextXAlignment.Left
 		if body == "" then ptitleLabel.AnchorPoint = Vector2.new(0, 0.5); ptitleLabel.Position = UDim2.new(0, 0, 0.5, 0) end
 		KazeUI:RegisterText(ptitleLabel, false)
 	end
-	
+
 	local bodyLabel
 	if body ~= "" then
 		bodyLabel = Instance.new("TextLabel", inner)
@@ -1984,34 +1888,34 @@ local function CreateClickableParagraph(parentFrame, title, body, callback, lock
 		TweenService:Create(paraStroke, TWEEN_FAST, {Color = KazeUI.CurrentTheme.Border}):Play()
 		TweenService:Create(rightIcon, TWEEN_FAST, {ImageColor3 = KazeUI.CurrentTheme.MutedText, Position = UDim2.new(1, -10, 0.5, 0)}):Play()
 	end)
-	
+
 	BindPressAnimation(clickDetector,
 		function() return not (isLockedState or activeDialogsCount > 0) end,
 		function()
-			TweenService:Create(paraFrame, TweenInfo.new(0.1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { 
-				Size = UDim2.new(0.93, 0, 0, totalHeight - 2), 
-				Position = UDim2.new(0.5, 0, 0, 4) 
+			TweenService:Create(paraFrame, TweenInfo.new(0.1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+				Size = UDim2.new(0.93, 0, 0, totalHeight - 2),
+				Position = UDim2.new(0.5, 0, 0, 4)
 			}):Play()
 		end,
 		function()
-			TweenService:Create(paraFrame, TWEEN_SPRING, { 
-				Size = UDim2.new(0.95, 0, 0, totalHeight), 
-				Position = UDim2.new(0.5, 0, 0, 3) 
+			TweenService:Create(paraFrame, TWEEN_SPRING, {
+				Size = UDim2.new(0.95, 0, 0, totalHeight),
+				Position = UDim2.new(0.5, 0, 0, 3)
 			}):Play()
 		end,
 		function()
 			if typeof(callback) == "function" then task.spawn(callback) end
 		end
 	)
-	
+
 	KazeUI:OnGlowChanged(paraStroke, function(c)
 		if isHovering then paraStroke.Color = c end
 	end)
-	
+
 	local lockCtrl = ApplyLock(paraFrame, locked, wrapper, UDim2.new(0.95, 0, 1, -3), UDim2.new(0.5, 0, 0, 3), Vector2.new(0.5, 0))
 
-	return { 
-		Wrapper = wrapper, 
+	return {
+		Wrapper = wrapper,
 		Frame = paraFrame,
 		SetText = function(self, newTitle, newBody)
 			if ptitleLabel and newTitle then ptitleLabel.Text = newTitle end
@@ -2029,51 +1933,51 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 	body = tostring(body or "")
 	local state = defaultState or false
 	local isLockedState = locked or false
-	
+
 	local measuredWidth = 598 * 0.92
 	if parentFrame and parentFrame.AbsoluteSize and parentFrame.AbsoluteSize.X > 0 then measuredWidth = parentFrame.AbsoluteSize.X * 0.95 end
 	local textContainerWidth = measuredWidth - 28 - 55
-	
+
 	local titleHeight = 0
 	if title ~= " " then
 		local ts = TextService:GetTextSize(title, 13, Enum.Font.GothamBold, Vector2.new(textContainerWidth, 1000))
 		titleHeight = math.max(18, math.ceil(ts.Y))
 	end
-	
+
 	local bodyHeight = 0
 	if body ~= "" then
 		local bodySize = TextService:GetTextSize(body, 12, Enum.Font.Gotham, Vector2.new(textContainerWidth, 2000))
 		bodyHeight = math.ceil(bodySize.Y)
 	end
-	
+
 	local totalHeight = 8 + titleHeight + (body ~= "" and 3 or 0) + bodyHeight + 8
-	
+
 	local wrapper = Instance.new("Frame")
 	wrapper.Size = UDim2.new(1, 0, 0, 0)
 	wrapper.BackgroundTransparency = 1
 	wrapper.Parent = parentFrame
 	wrapper.AutomaticSize = Enum.AutomaticSize.Y
-	
+
 	local paraFrame = Instance.new("Frame")
 	paraFrame.AnchorPoint = Vector2.new(0.5, 0)
 	paraFrame.Position = UDim2.new(0.5, 0, 0, 3)
 	paraFrame.Size = UDim2.new(0.95, 0, 0, totalHeight)
 	paraFrame.BorderSizePixel = 0
-	
+
 	Instance.new("UICorner", paraFrame).CornerRadius = UDim.new(0, 12)
 	paraFrame.Parent = wrapper
 	KazeUI:AddPanel(paraFrame, 0.02)
-	
+
 	local paraStroke = Instance.new("UIStroke", paraFrame)
 	paraStroke.Thickness = 1.2
 	paraStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 	KazeUI:RegisterBorder(paraStroke)
-	
+
 	local inner = Instance.new("Frame", paraFrame)
 	inner.Size = UDim2.new(1, -16, 1, -16)
 	inner.Position = UDim2.fromOffset(8, 8)
 	inner.BackgroundTransparency = 1
-	
+
 	local switchContainer = Instance.new("Frame")
 	switchContainer.AnchorPoint = Vector2.new(1, 0.5)
 	switchContainer.Position = UDim2.new(1, -4, 0.5, 0)
@@ -2081,7 +1985,7 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 	switchContainer.BorderSizePixel = 0
 	Instance.new("UICorner", switchContainer).CornerRadius = UDim.new(1, 0)
 	switchContainer.Parent = inner
-	
+
 	local switchIndicator = Instance.new("Frame")
 	switchIndicator.AnchorPoint = Vector2.new(0, 0.5)
 	switchIndicator.Position = state and UDim2.new(1, -18, 0.5, 0) or UDim2.new(0, 2, 0.5, 0)
@@ -2090,7 +1994,7 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 	switchIndicator.BorderSizePixel = 0
 	Instance.new("UICorner", switchIndicator).CornerRadius = UDim.new(1, 0)
 	switchIndicator.Parent = switchContainer
-	
+
 	local ptitleLabel
 	if title ~= " " then
 		ptitleLabel = Instance.new("TextLabel", inner)
@@ -2104,7 +2008,7 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 		if body == "" then ptitleLabel.AnchorPoint = Vector2.new(0, 0.5); ptitleLabel.Position = UDim2.new(0, 0, 0.5, 0) end
 		KazeUI:RegisterText(ptitleLabel, false)
 	end
-	
+
 	local bodyLabel
 	if body ~= "" then
 		bodyLabel = Instance.new("TextLabel", inner)
@@ -2130,7 +2034,7 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 	local function setToggleState(newState, instant)
 		state = newState
 		local targetPos = state and UDim2.new(1, -18, 0.5, 0) or UDim2.new(0, 2, 0.5, 0)
-		
+
 		if instant then
 			switchIndicator.Position = targetPos
 			if state then
@@ -2192,11 +2096,11 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 		setToggleState(val, false)
 		if typeof(callback) == "function" then task.spawn(callback, state) end
 	end)
-	
+
 	local lockCtrl = ApplyLock(paraFrame, locked, wrapper, UDim2.new(0.95, 0, 1, -3), UDim2.new(0.5, 0, 0, 3), Vector2.new(0.5, 0))
 
-	return { 
-		Wrapper = wrapper, 
+	return {
+		Wrapper = wrapper,
 		SetState = function(self, newState, instant) setToggleState(newState, instant) end,
 		SetText = function(self, newTitle, newBody)
 			if ptitleLabel and newTitle then ptitleLabel.Text = newTitle end
@@ -2213,45 +2117,45 @@ local function CreateTextBoxInput(parentFrame, title, placeholder, defaultVal, c
 	title = tostring(title or "Input Text")
 	placeholder = tostring(placeholder or "Type here...")
 	local isLockedState = locked or false
-	
+
 	local measuredWidth = 598 * 0.92
 	if parentFrame and parentFrame.AbsoluteSize and parentFrame.AbsoluteSize.X > 0 then measuredWidth = parentFrame.AbsoluteSize.X * 0.95 end
 	local textContainerWidth = measuredWidth - 28
-	
+
 	local titleHeight = 0
 	if title ~= " " and title ~= "" then
 		local ts = TextService:GetTextSize(title, 13, Enum.Font.GothamBold, Vector2.new(textContainerWidth, 1000))
 		titleHeight = math.max(16, math.ceil(ts.Y))
 	end
-	
-	local totalHeight = 8 + titleHeight + 3 + 28 + 8 -- BUGFIX: was 6+30 but actual layout uses a 3px gap + 28px box, leaving stray bottom padding
-	
+
+	local totalHeight = 8 + titleHeight + 3 + 28 + 8
+
 	local wrapper = Instance.new("Frame")
 	wrapper.Size = UDim2.new(1, 0, 0, 0)
 	wrapper.BackgroundTransparency = 1
 	wrapper.Parent = parentFrame
 	wrapper.AutomaticSize = Enum.AutomaticSize.Y
-	
+
 	local paraFrame = Instance.new("Frame")
 	paraFrame.AnchorPoint = Vector2.new(0.5, 0)
 	paraFrame.Position = UDim2.new(0.5, 0, 0, 3)
 	paraFrame.Size = UDim2.new(0.95, 0, 0, totalHeight)
 	paraFrame.BorderSizePixel = 0
-	
+
 	Instance.new("UICorner", paraFrame).CornerRadius = UDim.new(0, 12)
 	paraFrame.Parent = wrapper
 	KazeUI:AddPanel(paraFrame, 0.02)
-	
+
 	local paraStroke = Instance.new("UIStroke", paraFrame)
 	paraStroke.Thickness = 1.2
 	paraStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 	KazeUI:RegisterBorder(paraStroke)
-	
+
 	local inner = Instance.new("Frame", paraFrame)
 	inner.Size = UDim2.new(1, -16, 1, -16)
 	inner.Position = UDim2.fromOffset(8, 8)
 	inner.BackgroundTransparency = 1
-	
+
 	local ptitleLabel
 	if title ~= " " and title ~= "" then
 		ptitleLabel = Instance.new("TextLabel", inner)
@@ -2259,25 +2163,25 @@ local function CreateTextBoxInput(parentFrame, title, placeholder, defaultVal, c
 		ptitleLabel.BackgroundTransparency = 1
 		ptitleLabel.Text = title
 		ptitleLabel.Font = Enum.Font.GothamBold
-		ptitleLabel.TextSize = 13 
+		ptitleLabel.TextSize = 13
 		ptitleLabel.TextWrapped = true
-		ptitleLabel.TextXAlignment = Enum.TextXAlignment.Left 
+		ptitleLabel.TextXAlignment = Enum.TextXAlignment.Left
 		KazeUI:RegisterText(ptitleLabel, false)
 	end
-	
+
 	local textBoxContainer = Instance.new("Frame")
 	textBoxContainer.Size = UDim2.new(1, 0, 0, 28)
 	textBoxContainer.Position = UDim2.new(0, 0, 0, titleHeight + 3)
 	textBoxContainer.BorderSizePixel = 0
-	textBoxContainer.ClipsDescendants = true 
+	textBoxContainer.ClipsDescendants = true
 	textBoxContainer.Parent = inner
 	Instance.new("UICorner", textBoxContainer).CornerRadius = UDim.new(0, 10)
 	KazeUI:AddPanel(textBoxContainer, -0.01)
-	
+
 	local innerStroke = Instance.new("UIStroke", textBoxContainer)
 	innerStroke.Thickness = 1
 	KazeUI:RegisterBorder(innerStroke)
-	
+
 	local textBox = Instance.new("TextBox")
 	textBox.Size = UDim2.new(1, -16, 1, 0)
 	textBox.Position = UDim2.fromOffset(8, 0)
@@ -2288,8 +2192,8 @@ local function CreateTextBoxInput(parentFrame, title, placeholder, defaultVal, c
 	textBox.TextSize = 11
 	textBox.TextXAlignment = Enum.TextXAlignment.Left
 	textBox.ClearTextOnFocus = false
-	textBox.ClipsDescendants = true 
-	textBox.TextWrapped = false 
+	textBox.ClipsDescendants = true
+	textBox.TextWrapped = false
 	textBox.Parent = textBoxContainer
 	KazeUI:RegisterText(textBox, false)
 	KazeUI:OnThemeChanged(textBox, function(t) textBox.PlaceholderColor3 = t.MutedText end)
@@ -2316,14 +2220,14 @@ local function CreateTextBoxInput(parentFrame, title, placeholder, defaultVal, c
 		TweenService:Create(paraStroke, TWEEN_FAST, {Color = KazeUI.CurrentTheme.Border}):Play()
 		if typeof(callback) == "function" then task.spawn(callback, textBox.Text, enterPressed) end
 	end)
-	
+
 	KazeUI:OnGlowChanged(innerStroke, function(c)
 		if isFocused then
 			innerStroke.Color = c
 			paraStroke.Color = c
 		end
 	end)
-	
+
 	RegisterFlag(flag, function() return textBox.Text end, function(val)
 		textBox.Text = val
 		if typeof(callback) == "function" then task.spawn(callback, val) end
@@ -2331,8 +2235,8 @@ local function CreateTextBoxInput(parentFrame, title, placeholder, defaultVal, c
 
 	local lockCtrl = ApplyLock(paraFrame, locked, wrapper, UDim2.new(0.95, 0, 1, -3), UDim2.new(0.5, 0, 0, 3), Vector2.new(0.5, 0))
 
-	return { 
-		Wrapper = wrapper, 
+	return {
+		Wrapper = wrapper,
 		SetText = function(self, value) textBox.Text = tostring(value or "") end,
 		SetPlaceholder = function(self, val) textBox.PlaceholderText = val end,
 		SetTitle = function(self, newTitle)
@@ -2352,45 +2256,45 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 	default = tonumber(default) or min
 	local value = math.clamp(default, min, max)
 	local isLockedState = locked or false
-	
+
 	local measuredWidth = 598 * 0.92
 	if parentFrame and parentFrame.AbsoluteSize and parentFrame.AbsoluteSize.X > 0 then measuredWidth = parentFrame.AbsoluteSize.X * 0.95 end
 	local textContainerWidth = measuredWidth - 28
-	
+
 	local titleHeight = 0
 	if title ~= " " and title ~= "" then
 		local ts = TextService:GetTextSize(title, 13, Enum.Font.GothamBold, Vector2.new(textContainerWidth - 80, 1000))
 		titleHeight = math.max(18, math.ceil(ts.Y))
 	end
-	
-	local totalHeight = 8 + titleHeight + 8 + 6 + 8 -- BUGFIX: was 6+16 but the track actually sits at +8 and is 6px tall, leaving the card noticeably bottom-heavy
-	
+
+	local totalHeight = 8 + titleHeight + 8 + 6 + 8
+
 	local wrapper = Instance.new("Frame")
 	wrapper.Size = UDim2.new(1, 0, 0, 0)
 	wrapper.BackgroundTransparency = 1
 	wrapper.Parent = parentFrame
 	wrapper.AutomaticSize = Enum.AutomaticSize.Y
-	
+
 	local paraFrame = Instance.new("Frame")
 	paraFrame.AnchorPoint = Vector2.new(0.5, 0)
 	paraFrame.Position = UDim2.new(0.5, 0, 0, 3)
 	paraFrame.Size = UDim2.new(0.95, 0, 0, totalHeight)
 	paraFrame.BorderSizePixel = 0
-	
+
 	Instance.new("UICorner", paraFrame).CornerRadius = UDim.new(0, 12)
 	paraFrame.Parent = wrapper
 	KazeUI:AddPanel(paraFrame, 0.02)
-	
+
 	local paraStroke = Instance.new("UIStroke", paraFrame)
 	paraStroke.Thickness = 1.2
 	paraStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 	KazeUI:RegisterBorder(paraStroke)
-	
+
 	local inner = Instance.new("Frame", paraFrame)
 	inner.Size = UDim2.new(1, -16, 1, -16)
 	inner.Position = UDim2.fromOffset(8, 8)
 	inner.BackgroundTransparency = 1
-	
+
 	local ptitleLabel
 	if title ~= " " and title ~= "" then
 		ptitleLabel = Instance.new("TextLabel", inner)
@@ -2398,12 +2302,12 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 		ptitleLabel.BackgroundTransparency = 1
 		ptitleLabel.Text = title
 		ptitleLabel.Font = Enum.Font.GothamBold
-		ptitleLabel.TextSize = 13 
+		ptitleLabel.TextSize = 13
 		ptitleLabel.TextWrapped = true
 		ptitleLabel.TextXAlignment = Enum.TextXAlignment.Left
 		KazeUI:RegisterText(ptitleLabel, false)
 	end
-	
+
 	local valueLabel = Instance.new("TextLabel", inner)
 	valueLabel.Size = UDim2.new(0, 70, 0, titleHeight > 0 and titleHeight or 18)
 	valueLabel.Position = UDim2.new(1, -70, 0, 0)
@@ -2413,7 +2317,7 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 	valueLabel.TextSize = 11
 	valueLabel.TextXAlignment = Enum.TextXAlignment.Right
 	KazeUI:RegisterText(valueLabel, false)
-	
+
 	local track = Instance.new("Frame")
 	track.Size = UDim2.new(1, 0, 0, 6)
 	track.Position = UDim2.new(0, 0, 0, titleHeight + 8)
@@ -2421,14 +2325,14 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 	track.Parent = inner
 	Instance.new("UICorner", track).CornerRadius = UDim.new(1, 0)
 	KazeUI:AddPanel(track, -0.01)
-	
+
 	local fill = Instance.new("Frame")
 	fill.Size = UDim2.new(0, 0, 1, 0)
 	fill.BackgroundColor3 = KazeUI.GlowColor
 	fill.BorderSizePixel = 0
 	fill.Parent = track
 	Instance.new("UICorner", fill).CornerRadius = UDim.new(1, 0)
-	
+
 	local knob = Instance.new("Frame")
 	knob.AnchorPoint = Vector2.new(0.5, 0.5)
 	knob.Size = UDim2.fromOffset(12, 12)
@@ -2437,7 +2341,7 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 	knob.BorderSizePixel = 0
 	knob.Parent = track
 	Instance.new("UICorner", knob).CornerRadius = UDim.new(1, 0)
-	
+
 	local knobStroke = Instance.new("UIStroke", knob)
 	knobStroke.Thickness = 1.2
 	knobStroke.Color = KazeUI.GlowColor
@@ -2451,9 +2355,9 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 	clickDetector.Text = ""
 	clickDetector.ZIndex = 10
 	clickDetector.Parent = track
-	
+
 	local isDragging = false
-	
+
 	local function UpdateValueFromInput(input)
 		local trackWidth = track.AbsoluteSize.X
 		if trackWidth <= 0 then return end
@@ -2463,20 +2367,20 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 		newVal = math.clamp(math.floor(newVal + 0.5), min, max)
 		value = newVal
 		valueLabel.Text = tostring(value)
-		
+
 		local visualPercentage = 0
 		if max > min then visualPercentage = (value - min) / (max - min) end
-		
+
 		TweenService:Create(fill, TWEEN_FAST, {Size = UDim2.new(visualPercentage, 0, 1, 0)}):Play()
 		TweenService:Create(knob, TWEEN_FAST, {Position = UDim2.new(visualPercentage, 0, 0.5, 0)}):Play()
 		if typeof(callback) == "function" then task.spawn(callback, value) end
 	end
-	
+
 	local startingPercentage = 0
 	if max > min then startingPercentage = (value - min) / (max - min) end
 	fill.Size = UDim2.new(startingPercentage, 0, 1, 0)
 	knob.Position = UDim2.new(startingPercentage, 0, 0.5, 0)
-	
+
 	clickDetector.InputBegan:Connect(function(input)
 		if isLockedState or activeDialogsCount > 0 then return end
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
@@ -2484,10 +2388,10 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 			ToggleScrollingAncestors(track, false)
 			LockCamera()
 			UpdateValueFromInput(input)
-			
+
 			TweenService:Create(knob, TWEEN_FAST, {Size = UDim2.fromOffset(16, 16)}):Play()
 			StartNeonLoop(paraStroke)
-			
+
 			local moveCon, endCon
 			moveCon = UIS.InputChanged:Connect(function(moveInput)
 				if isDragging and (moveInput.UserInputType == Enum.UserInputType.MouseMovement or moveInput.UserInputType == Enum.UserInputType.Touch) then
@@ -2499,7 +2403,7 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 					isDragging = false
 					ToggleScrollingAncestors(track, true)
 					UnlockCamera()
-					
+
 					TweenService:Create(knob, TWEEN_FAST, {Size = UDim2.fromOffset(12, 12)}):Play()
 					StopNeonLoop(paraStroke)
 					TweenService:Create(paraStroke, TWEEN_FAST, {Color = KazeUI.CurrentTheme.Border}):Play()
@@ -2558,7 +2462,7 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 	dropFrame.Size = UDim2.new(0.95, 0, 0, 0)
 	dropFrame.BorderSizePixel = 0
 	dropFrame.AutomaticSize = Enum.AutomaticSize.Y
-	
+
 	Instance.new("UICorner", dropFrame).CornerRadius = UDim.new(0, 12)
 	dropFrame.Parent = wrapper
 	KazeUI:AddPanel(dropFrame, 0.02)
@@ -2599,7 +2503,7 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 	previewColor.Size = UDim2.fromOffset(24, 24)
 	previewColor.BackgroundColor3 = color
 	Instance.new("UICorner", previewColor).CornerRadius = UDim.new(0, 6)
-	
+
 	local prevStroke = Instance.new("UIStroke", previewColor)
 	KazeUI:RegisterBorder(prevStroke)
 
@@ -2632,7 +2536,7 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 
 	local whiteOverlay = Instance.new("Frame", svMap)
 	whiteOverlay.Size = UDim2.fromScale(1, 1)
-	whiteOverlay.BackgroundTransparency = 0 
+	whiteOverlay.BackgroundTransparency = 0
 	whiteOverlay.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
 	local wg = Instance.new("UIGradient", whiteOverlay)
 	whiteOverlay.Parent = svMap
@@ -2641,7 +2545,7 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 
 	local blackOverlay = Instance.new("Frame", svMap)
 	blackOverlay.Size = UDim2.fromScale(1, 1)
-	blackOverlay.BackgroundTransparency = 0 
+	blackOverlay.BackgroundTransparency = 0
 	blackOverlay.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 	local bg = Instance.new("UIGradient", blackOverlay)
 	blackOverlay.Parent = svMap
@@ -2753,7 +2657,7 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 			ToggleScrollingAncestors(svMap, true)
 		end
 	end)
-	
+
 	wrapper.Destroying:Connect(function()
 		if uisConn1 then uisConn1:Disconnect() end
 		if uisConn2 then uisConn2:Disconnect() end
@@ -2805,45 +2709,45 @@ local function CreateKeybindInput(parentFrame, title, defaultKey, callback, flag
 	local currentKey = defaultKey or Enum.KeyCode.Unknown
 	local isBinding = false
 	local isLockedState = locked or false
-	
+
 	local measuredWidth = 598 * 0.92
 	if parentFrame and parentFrame.AbsoluteSize and parentFrame.AbsoluteSize.X > 0 then measuredWidth = parentFrame.AbsoluteSize.X * 0.95 end
 	local textContainerWidth = measuredWidth - 28 - 90
-	
+
 	local titleHeight = 0
 	if title ~= " " and title ~= "" then
 		local ts = TextService:GetTextSize(title, 13, Enum.Font.GothamBold, Vector2.new(textContainerWidth, 1000))
 		titleHeight = math.max(16, math.ceil(ts.Y))
 	end
-	
-	local totalHeight = 8 + math.max(titleHeight, 24) + 8 -- BUGFIX: baseline was 22 but the bind pill itself is 24px tall, letting it poke outside the card on short titles
-	
+
+	local totalHeight = 8 + math.max(titleHeight, 24) + 8
+
 	local wrapper = Instance.new("Frame")
 	wrapper.Size = UDim2.new(1, 0, 0, 0)
 	wrapper.BackgroundTransparency = 1
 	wrapper.Parent = parentFrame
 	wrapper.AutomaticSize = Enum.AutomaticSize.Y
-	
+
 	local paraFrame = Instance.new("Frame")
 	paraFrame.AnchorPoint = Vector2.new(0.5, 0)
 	paraFrame.Position = UDim2.new(0.5, 0, 0, 3)
 	paraFrame.Size = UDim2.new(0.95, 0, 0, totalHeight)
 	paraFrame.BorderSizePixel = 0
-	
+
 	Instance.new("UICorner", paraFrame).CornerRadius = UDim.new(0, 12)
 	paraFrame.Parent = wrapper
 	KazeUI:AddPanel(paraFrame, 0.02)
-	
+
 	local paraStroke = Instance.new("UIStroke", paraFrame)
 	paraStroke.Thickness = 1.2
 	paraStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 	KazeUI:RegisterBorder(paraStroke)
-	
+
 	local inner = Instance.new("Frame", paraFrame)
 	inner.Size = UDim2.new(1, -16, 1, -16)
 	inner.Position = UDim2.fromOffset(8, 8)
 	inner.BackgroundTransparency = 1
-	
+
 	local ptitleLabel
 	if title ~= " " and title ~= "" then
 		ptitleLabel = Instance.new("TextLabel", inner)
@@ -2856,7 +2760,7 @@ local function CreateKeybindInput(parentFrame, title, defaultKey, callback, flag
 		ptitleLabel.TextXAlignment = Enum.TextXAlignment.Left
 		KazeUI:RegisterText(ptitleLabel, false)
 	end
-	
+
 	local bindContainer = Instance.new("TextButton", inner)
 	bindContainer.Size = UDim2.new(0, 80, 0, 24)
 	bindContainer.AnchorPoint = Vector2.new(1, 0.5)
@@ -2870,7 +2774,7 @@ local function CreateKeybindInput(parentFrame, title, defaultKey, callback, flag
 	local bindStroke = Instance.new("UIStroke", bindContainer)
 	bindStroke.Thickness = 1
 	KazeUI:RegisterBorder(bindStroke)
-	
+
 	local bindLabel = Instance.new("TextLabel", bindContainer)
 	bindLabel.Size = UDim2.new(1, 0, 1, 0)
 	bindLabel.BackgroundTransparency = 1
@@ -2880,7 +2784,7 @@ local function CreateKeybindInput(parentFrame, title, defaultKey, callback, flag
 	KazeUI:RegisterText(bindLabel, false)
 
 	local isHovering = false
-	
+
 	bindContainer.MouseEnter:Connect(function()
 		if isLockedState or activeDialogsCount > 0 then return end
 		isHovering = true
@@ -2893,14 +2797,7 @@ local function CreateKeybindInput(parentFrame, title, defaultKey, callback, flag
 			TweenService:Create(bindStroke, TWEEN_FAST, {Color = KazeUI.CurrentTheme.Border}):Play()
 		end
 	end)
-	
-	-- BUGFIX: the capture listener below used to be a bare local `conn` that
-	-- only got disconnected once a key/mouse press arrived. If the keybind's
-	-- window/component was destroyed while still waiting for that first
-	-- input (e.g. player closes the UI mid-bind), `conn` was never torn down
-	-- and kept listening to UIS.InputBegan for the rest of the session. It's
-	-- now tracked in `captureConn` and disconnected from the same
-	-- wrapper.Destroying handler that already cleans up `uisConn` below.
+
 	local captureConn
 	bindContainer.MouseButton1Click:Connect(function()
 		if isLockedState or activeDialogsCount > 0 then return end
@@ -2908,13 +2805,13 @@ local function CreateKeybindInput(parentFrame, title, defaultKey, callback, flag
 		isBinding = true
 		bindLabel.Text = "..."
 		StartNeonLoop(bindStroke)
-		
+
 		if captureConn then captureConn:Disconnect() end
 		local conn
 		conn = UIS.InputBegan:Connect(function(input)
 			local isKey = input.UserInputType == Enum.UserInputType.Keyboard
 			local isMouse = input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.MouseButton2 or input.UserInputType == Enum.UserInputType.MouseButton3
-			
+
 			if isKey or isMouse then
 				if isKey then
 					local key = input.KeyCode
@@ -2925,7 +2822,7 @@ local function CreateKeybindInput(parentFrame, title, defaultKey, callback, flag
 						currentKey = key
 					end
 				end
-				
+
 				bindLabel.Text = currentKey == Enum.KeyCode.Unknown and "None" or currentKey.Name
 				if not isHovering then
 					StopNeonLoop(bindStroke)
@@ -2938,13 +2835,13 @@ local function CreateKeybindInput(parentFrame, title, defaultKey, callback, flag
 		end)
 		captureConn = conn
 	end)
-	
+
 	local uisConn = UIS.InputBegan:Connect(function(input, gp)
 		if not gp and not isBinding and currentKey ~= Enum.KeyCode.Unknown and input.KeyCode == currentKey then
 			if typeof(callback) == "function" then task.spawn(callback, currentKey) end
 		end
 	end)
-	
+
 	wrapper.Destroying:Connect(function()
 		if uisConn then uisConn:Disconnect() end
 		if captureConn then captureConn:Disconnect() end
@@ -2997,7 +2894,7 @@ local function CreateVisualSectionDivider(parentFrame, titleArg)
 	label.TextXAlignment = Enum.TextXAlignment.Left
 	label.Parent = wrapper
 	KazeUI:RegisterText(label, false)
-	
+
 	local leftLine = Instance.new("Frame")
 	leftLine.Size = UDim2.new(0, 4, 0, 16)
 	leftLine.Position = UDim2.new(0, 2, 0.5, -8)
@@ -3016,9 +2913,6 @@ local function CreateVisualSectionDivider(parentFrame, titleArg)
 	}
 end
 
--- ==========================================
--- GroupBox & SectionUI Builder
--- ==========================================
 local CreateCollapsibleSection
 local CreateGroupBox
 local AttachElementsToAPI
@@ -3104,7 +2998,7 @@ AttachElementsToAPI = function(apiTable, parentFrame, depth)
 		end
 		return CreateColorPicker(parentFrame, title, def, cb, flag, locked)
 	end
-	
+
 	function apiTable:Keybind(arg1, arg2, arg3, arg4)
 		local title, def, cb, flag, locked = "", Enum.KeyCode.Unknown, nil, nil, false
 		if type(arg1) == "table" then
@@ -3118,7 +3012,7 @@ AttachElementsToAPI = function(apiTable, parentFrame, depth)
 	function apiTable:SectionUI(arg1)
 		return CreateCollapsibleSection(parentFrame, arg1, depth)
 	end
-	
+
 	function apiTable:Section(arg1)
 		local title = type(arg1) == "table" and arg1.Title or arg1
 		return CreateVisualSectionDivider(parentFrame, title)
@@ -3128,7 +3022,6 @@ AttachElementsToAPI = function(apiTable, parentFrame, depth)
 		return CreateGroupBox(parentFrame, arg1, depth, depthOverride)
 	end
 
-	-- :Group is just an alias for :GroupBox -- behaves identically either way
 	apiTable.Group = apiTable.GroupBox
 end
 
@@ -3142,17 +3035,7 @@ CreateCollapsibleSection = function(parentFrame, titleArg, currentDepth)
 	sectionWrapper.Name = "SectionWrapper_" .. title
 	sectionWrapper.Size = UDim2.new(1, 0, 0, 0)
 	sectionWrapper.BackgroundTransparency = 1
-	-- FIX (overlap/clip bug): this used to be sized by a Lua-side mirror that
-	-- read sectionBox.AbsoluteSize on a PropertyChangedSignal + task.defer.
-	-- That mirror only fires AFTER sectionBox's own AutomaticSize has already
-	-- resolved (itself 1+ frames behind sectionContent becoming visible), so
-	-- the outer list's UIListLayout (which lays out siblings using THIS
-	-- frame's Size, not sectionBox's) was always 2-3 frames stale -> next
-	-- section didn't move down in time -> overlap, and pageContent's
-	-- AutomaticCanvasSize (downstream of the same stale size) clipped it.
-	-- Native AutomaticSize.Y here means the engine resolves this wrapper in
-	-- the SAME layout pass as sectionBox and the outer UIListLayout/
-	-- AutomaticCanvasSize, with no Lua round-trip in between.
+
 	sectionWrapper.AutomaticSize = Enum.AutomaticSize.Y
 	sectionWrapper.Parent = parentFrame
 
@@ -3192,7 +3075,7 @@ CreateCollapsibleSection = function(parentFrame, titleArg, currentDepth)
 	accentLine.BorderSizePixel = 0
 	accentLine.BackgroundColor3 = KazeUI.CurrentTheme.MutedText
 	Instance.new("UICorner", accentLine).CornerRadius = UDim.new(1, 0)
-	
+
 	KazeUI:OnThemeChanged(accentLine, function(t)
 		if not isOpen then accentLine.BackgroundColor3 = t.MutedText end
 	end)
@@ -3214,14 +3097,13 @@ CreateCollapsibleSection = function(parentFrame, titleArg, currentDepth)
 	arrowIcon.Position = UDim2.new(1, -16, 0.5, 0)
 	arrowIcon.Size = UDim2.fromOffset(16, 16)
 	arrowIcon.BackgroundTransparency = 1
-	arrowIcon.Image = "rbxassetid://6031091004" 
+	arrowIcon.Image = "rbxassetid://6031091004"
 	arrowIcon.Rotation = -90
 	arrowIcon.Parent = headerFrame
 	KazeUI:OnThemeChanged(arrowIcon, function(t)
 		arrowIcon.ImageColor3 = isOpen and t.Text or t.MutedText
 	end)
 
-	-- Restored internal CollapsibleSection border line
 	local divider = Instance.new("Frame")
 	divider.Size = UDim2.new(0.95, 0, 0, 1)
 	divider.BorderSizePixel = 0
@@ -3230,26 +3112,6 @@ CreateCollapsibleSection = function(parentFrame, titleArg, currentDepth)
 	divider.Parent = sectionBox
 	KazeUI:OnThemeChanged(divider, function(t) divider.BackgroundColor3 = t.Border end)
 
-	-- FIX (root cause of the outline/UIStroke-invisible + "need to scroll to fix
-	-- it" + "can't handle many components" bugs): Roblox's engine has a long-
-	-- standing, still-unfixed bug where AutomaticSize (and, downstream,
-	-- ScrollingFrame.AutomaticCanvasSize) simply does NOT recompute for an
-	-- instance -- or any of its AutomaticSize descendants -- while that
-	-- instance's Visible is false. The old code set sectionContent.Visible =
-	-- false when collapsed, so every button/toggle/slider added while closed
-	-- (or the very act of opening it) never triggered a real layout pass; the
-	-- stroke, the section's own height, and the outer ScrollingFrame's canvas
-	-- all stayed stale until something UNRELATED forced a fresh layout pass
-	-- (like the user scrolling). More components = more places for this to go
-	-- stale, hence "can't handle many components".
-	--
-	-- The fix: sectionContent is now ALWAYS Visible = true (so AutomaticSize
-	-- keeps computing normally, all the time, exactly like Roblox intends) and
-	-- collapsing is done purely via a wrapping "clipper" frame with
-	-- ClipsDescendants = true, whose own Size.Y is what actually animates
-	-- between 0 and the content's real height. ClipsDescendants only affects
-	-- rendering/clipping, not layout math, so this sidesteps the engine bug
-	-- entirely instead of racing against it.
 	local contentClipper = Instance.new("Frame")
 	contentClipper.Name = "ContentClipper"
 	contentClipper.Size = UDim2.new(1, 0, 0, 0)
@@ -3285,17 +3147,11 @@ CreateCollapsibleSection = function(parentFrame, titleArg, currentDepth)
 	toggleDetector.ZIndex = 10
 	toggleDetector.Parent = headerFrame
 
-	-- Drives contentClipper's height. sectionContent is always Visible = true
-	-- now, so its AutomaticSize (and AbsoluteSize) is always live and correct
-	-- -- no more racing the engine's invisible-AutomaticSize bug.
 	local openTween
 	local function setClipperOpen(open)
 		if openTween then openTween:Cancel() end
 		if open then
-			-- Freeze at whatever height it's currently at, tween up to the
-			-- content's real (always up-to-date) height, then hand control
-			-- back to AutomaticSize so components added/removed later while
-			-- open keep the box's height correct with zero extra code.
+
 			contentClipper.AutomaticSize = Enum.AutomaticSize.None
 			local targetHeight = sectionContent.AbsoluteSize.Y
 			openTween = TweenService:Create(contentClipper, TWEEN_COLLAPSE, {Size = UDim2.new(1, 0, 0, targetHeight)})
@@ -3307,9 +3163,7 @@ CreateCollapsibleSection = function(parentFrame, titleArg, currentDepth)
 			end)
 			thisTween:Play()
 		else
-			-- Freeze at the real current height (in case AutomaticSize was
-			-- driving it) before collapsing, so the tween starts from the
-			-- true height instead of a stale one.
+
 			contentClipper.Size = UDim2.new(1, 0, 0, contentClipper.AbsoluteSize.Y)
 			contentClipper.AutomaticSize = Enum.AutomaticSize.None
 			openTween = TweenService:Create(contentClipper, TWEEN_COLLAPSE, {Size = UDim2.new(1, 0, 0, 0)})
@@ -3352,12 +3206,6 @@ CreateCollapsibleSection = function(parentFrame, titleArg, currentDepth)
 		TweenService:Create(headerFrame, TweenInfo.new(0.15), {BackgroundTransparency = 1}):Play()
 	end)
 
-	-- NOTE: sectionBox uses AutomaticSize.Y, so the press-squish tween below
-	-- must never write a literal Y (e.g. "0, 0") into its Size — doing so fights
-	-- the engine's automatic height calculation every frame, and the fight gets
-	-- more visible the taller the section is (i.e. the more elements it holds),
-	-- which is what was bugging the outline out. Reading back the current Y and
-	-- feeding it straight back in leaves height alone and only animates width.
 	BindPressAnimation(toggleDetector,
 		function() return activeDialogsCount == 0 end,
 		function()
@@ -3373,7 +3221,6 @@ CreateCollapsibleSection = function(parentFrame, titleArg, currentDepth)
 		toggleSection
 	)
 
-	-- Open = true starts the section expanded; it can still be closed/reopened by clicking the header like normal
 	if openDefault then toggleSection() end
 
 	local sectionPublic = { Frame = sectionBox, ContentFrame = sectionContent, Header = headerFrame }
@@ -3382,12 +3229,9 @@ CreateCollapsibleSection = function(parentFrame, titleArg, currentDepth)
 	return sectionPublic
 end
 
--- ==========================================================
--- Volumetric Premium Collapsible GroupBox Component 
--- ==========================================================
 CreateGroupBox = function(parentFrame, titleArg, currentDepth, depthOverride)
 	currentDepth = depthOverride or currentDepth or 1
-	if currentDepth > 3 then currentDepth = 3 end 
+	if currentDepth > 3 then currentDepth = 3 end
 
 	local title = type(titleArg) == "table" and titleArg.Title or tostring(titleArg or "Group")
 	local openDefault = type(titleArg) == "table" and titleArg.Open or false
@@ -3397,12 +3241,7 @@ CreateGroupBox = function(parentFrame, titleArg, currentDepth, depthOverride)
 	wrapper.Name = "GroupBoxWrapper_" .. title
 	wrapper.Size = UDim2.new(1, 0, 0, 0)
 	wrapper.BackgroundTransparency = 1
-	-- FIX (overlap/clip bug): see the identical fix + full explanation in
-	-- CreateCollapsibleSection above. Same root cause: this wrapper was
-	-- resized by a Lua-side mirror off groupFrame.AbsoluteSize, which lagged
-	-- the outer UIListLayout/AutomaticCanvasSize by 2-3 frames whenever the
-	-- group was toggled open. Native AutomaticSize.Y resolves it in the same
-	-- engine layout pass as everything downstream, with no Lua round-trip.
+
 	wrapper.AutomaticSize = Enum.AutomaticSize.Y
 	wrapper.Parent = parentFrame
 
@@ -3410,7 +3249,7 @@ CreateGroupBox = function(parentFrame, titleArg, currentDepth, depthOverride)
 	groupFrame.Name = "GroupBoxFrame"
 	groupFrame.AnchorPoint = Vector2.new(0.5, 0)
 	groupFrame.Position = UDim2.new(0.5, 0, 0, 3)
-	
+
 	local scaledWidth = math.clamp(0.95 - (currentDepth - 1) * 0.02, 0.88, 0.95)
 	groupFrame.Size = UDim2.new(scaledWidth, 0, 0, 0)
 	groupFrame.BorderSizePixel = 0
@@ -3419,7 +3258,7 @@ CreateGroupBox = function(parentFrame, titleArg, currentDepth, depthOverride)
 
 	local cornerRadius = math.max(8, 14 - (currentDepth - 1) * 2)
 	Instance.new("UICorner", groupFrame).CornerRadius = UDim.new(0, cornerRadius)
-	
+
 	KazeUI:AddPanel(groupFrame, 0.015 + (currentDepth * 0.008))
 
 	local stroke = Instance.new("UIStroke", groupFrame)
@@ -3446,7 +3285,7 @@ CreateGroupBox = function(parentFrame, titleArg, currentDepth, depthOverride)
 	accentLine.BorderSizePixel = 0
 	accentLine.BackgroundColor3 = KazeUI.CurrentTheme.MutedText
 	Instance.new("UICorner", accentLine).CornerRadius = UDim.new(1, 0)
-	
+
 	KazeUI:OnThemeChanged(accentLine, function(t)
 		if not isOpen then accentLine.BackgroundColor3 = t.MutedText end
 	end)
@@ -3468,14 +3307,13 @@ CreateGroupBox = function(parentFrame, titleArg, currentDepth, depthOverride)
 	arrowIcon.Position = UDim2.new(1, -16, 0.5, 0)
 	arrowIcon.Size = UDim2.fromOffset(16, 16)
 	arrowIcon.BackgroundTransparency = 1
-	arrowIcon.Image = "rbxassetid://6031091004" 
+	arrowIcon.Image = "rbxassetid://6031091004"
 	arrowIcon.Rotation = -90
 	arrowIcon.Parent = header
 	KazeUI:OnThemeChanged(arrowIcon, function(t)
 		arrowIcon.ImageColor3 = isOpen and t.Text or t.MutedText
 	end)
 
-	-- Restored internal Collapsible GroupBox border line
 	local divider = Instance.new("Frame")
 	divider.Size = UDim2.new(0.95, 0, 0, 1)
 	divider.BorderSizePixel = 0
@@ -3484,10 +3322,6 @@ CreateGroupBox = function(parentFrame, titleArg, currentDepth, depthOverride)
 	divider.Parent = groupFrame
 	KazeUI:OnThemeChanged(divider, function(t) divider.BackgroundColor3 = t.Border end)
 
-	-- FIX: same root-cause fix as CreateCollapsibleSection above -- container
-	-- is now ALWAYS Visible = true (so its AutomaticSize keeps computing
-	-- normally instead of hitting Roblox's invisible-AutomaticSize engine bug),
-	-- and the wrapping containerClipper's height is what actually animates.
 	local containerClipper = Instance.new("Frame")
 	containerClipper.Name = "ContainerClipper"
 	containerClipper.Size = UDim2.new(1, 0, 0, 0)
@@ -3578,13 +3412,6 @@ CreateGroupBox = function(parentFrame, titleArg, currentDepth, depthOverride)
 		TweenService:Create(header, TweenInfo.new(0.15), {BackgroundTransparency = 1}):Play()
 	end)
 
-	-- NOTE: groupFrame uses AutomaticSize.Y, so this press-squish tween must
-	-- never write a literal Y (e.g. "0, 0") into its Size -- doing so fights
-	-- the engine's automatic height calculation every frame, and that fight
-	-- is what was bugging the outline/UIStroke out (worse the deeper the
-	-- nesting, since deeper GroupBoxes hold more elements). Reading back the
-	-- current Y and feeding it straight back in leaves height alone and only
-	-- animates width, same fix as CreateCollapsibleSection above.
 	toggleDetector.MouseButton1Down:Connect(function()
 		if activeDialogsCount > 0 then return end
 		local curY = groupFrame.Size.Y
@@ -3599,7 +3426,6 @@ CreateGroupBox = function(parentFrame, titleArg, currentDepth, depthOverride)
 		toggleGroup()
 	end)
 
-	-- Open = true starts the group expanded; it can still be closed/reopened by clicking the header like normal
 	if openDefault then toggleGroup() end
 
 	local groupPublic = {
@@ -3620,9 +3446,6 @@ CreateGroupBox = function(parentFrame, titleArg, currentDepth, depthOverride)
 	return groupPublic
 end
 
--- ==========================================
--- Premium Window Creation & Panel Controllers
--- ==========================================
 local function BuildWindow(config)
 	config = config or {}
 	local Title = config.Title or "Kaze UI"
@@ -3630,9 +3453,9 @@ local function BuildWindow(config)
 	local Version = config.Version or "1.0"
 	local MainIcon = FormatImage(config.Icon or "house")
 	local OpenIcon = FormatImage((config.OpenButton and config.OpenButton.Icon) or config.Icon or "house")
-	
+
 	KazeUI.AuthorName = Author
-	
+
 	local minWidth = config.MinWidth or 350
 	local minHeight = config.MinHeight or 250
 	local maxWidth = config.MaxWidth or 900
@@ -3642,7 +3465,7 @@ local function BuildWindow(config)
 	if config.Theme then
 		local themeStr = tostring(config.Theme)
 		local lowerTheme = string.lower(themeStr)
-		
+
 		local themeMatched = false
 		for k, v in pairs(KazeUI.Themes) do
 			if string.lower(k) == lowerTheme then
@@ -3651,15 +3474,15 @@ local function BuildWindow(config)
 				break
 			end
 		end
-		
+
 		if not themeMatched then
 			local isUrl = string.find(themeStr, "^http://") or string.find(themeStr, "^https://")
-			local isAssetId = tonumber(themeStr) ~= nil 
-				or string.find(themeStr, "rbxassetid://") 
+			local isAssetId = tonumber(themeStr) ~= nil
+				or string.find(themeStr, "rbxassetid://")
 				or IconsMap[lowerTheme] ~= nil
 
 			if isUrl then
-				selectedTheme = themeStr 
+				selectedTheme = themeStr
 			elseif isAssetId then
 				KazeUI.Themes.CustomWallpaper.BackgroundImage = themeStr
 				KazeUI.Themes.CustomWallpaper.BackgroundImageTransparency = 0.1
@@ -3689,7 +3512,7 @@ local function BuildWindow(config)
 				white = Color3.fromRGB(255, 255, 255),
 				black = Color3.fromRGB(15, 15, 17)
 			}
-			
+
 			if glowMap[lowerGlow] then
 				KazeUI:SetGlow(glowMap[lowerGlow])
 			else
@@ -3698,7 +3521,7 @@ local function BuildWindow(config)
 				if s and res then
 					KazeUI:SetGlow(res)
 				else
-					KazeUI:SetGlow(Color3.fromRGB(239, 68, 68)) 
+					KazeUI:SetGlow(Color3.fromRGB(239, 68, 68))
 				end
 			end
 		end
@@ -3715,7 +3538,7 @@ local function BuildWindow(config)
 				KazeUI:SetGlow(Color3.fromRGB(239, 68, 68))
 			end
 		elseif glowColorVal == true then
-			-- Boolean true = "always rainbow" shorthand
+
 			KazeUI:SetGlow(Color3.fromRGB(239, 68, 68))
 			KazeUI:SetGlowRainbow(true)
 		else
@@ -3725,29 +3548,23 @@ local function BuildWindow(config)
 		KazeUI:SetGlow(Color3.fromRGB(239, 68, 68))
 	end
 
-	-- Glow animation style: config.GlowStyle / config.GlowMode accepts "Breathing",
-	-- "Sequence", "Pulse", or "Chase" (strings). "Cycle" still works as a legacy alias for "Sequence".
 	local glowStyleVal = config.GlowStyle or config.GlowMode
 	if type(glowStyleVal) == "string" then
 		KazeUI:SetGlowMode(glowStyleVal)
 	end
 
-	-- config.GlowRainbow (boolean) layers full-spectrum rainbow on top of whichever GlowStyle is active
 	if type(config.GlowRainbow) == "boolean" then
 		KazeUI:SetGlowRainbow(config.GlowRainbow)
 	end
 
-	-- Window sizing configuration mapping
 	local initialSize = config.Size or UDim2.fromOffset(600, 400)
 	local MiniButtonSize = (config.OpenButton and config.OpenButton.Size) or UDim2.fromOffset(48, 48)
-	-- Hidable = true (default): mini button only appears once the window is minimized.
-	-- Hidable = false: mini button stays visible at all times and doubles as an open/close toggle.
+
 	local openButtonHidable = true
 	if config.OpenButton and config.OpenButton.Hidable ~= nil then
 		openButtonHidable = config.OpenButton.Hidable and true or false
 	end
 
-	-- Main Window Setup
 	local Window = Instance.new("Frame")
 	Window.Size = initialSize
 	Window.Position = UDim2.fromScale(0.5, 0.5)
@@ -3755,7 +3572,7 @@ local function BuildWindow(config)
 	Window.BorderSizePixel = 0
 	Window.Active = true
 	Window.Parent = ScreenGui
-	
+
 	Instance.new("UICorner", Window).CornerRadius = UDim.new(0, 28)
 	KazeUI:AddPanel(Window, 0)
 
@@ -3771,14 +3588,14 @@ local function BuildWindow(config)
 	shadowStroke.Color = Color3.fromRGB(0, 0, 0)
 	shadowStroke.Transparency = 0.8
 
+	KazeUI:AddGlowHalo(outerShadow, UDim.new(0, 32))
+
 	local WindowStroke = Instance.new("UIStroke")
 	WindowStroke.Thickness = 1.8
 	WindowStroke.Parent = Window
 	KazeUI:RegisterBorder(WindowStroke)
 	StartNeonLoop(WindowStroke)
 
-	-- Blurry Fix: ContentClipper has been rewritten from CanvasGroup to a standard masked clipping Frame.
-	-- This completely prevents Roblox's render engine from flattening internal textures and blurring texts/icons during dragging/resizing.
 	local ContentClipper = Instance.new("Frame")
 	ContentClipper.Size = UDim2.fromScale(1, 1)
 	ContentClipper.BackgroundTransparency = 1
@@ -3787,17 +3604,16 @@ local function BuildWindow(config)
 	ContentClipper.Parent = Window
 	Instance.new("UICorner", ContentClipper).CornerRadius = UDim.new(0, 28)
 
-	-- INTERACTION BLOCKER (Input Lockout Guard)
 	local InteractionBlocker = Instance.new("TextButton")
 	InteractionBlocker.Name = "InteractionBlocker"
 	InteractionBlocker.Size = UDim2.fromScale(1, 1)
 	InteractionBlocker.Position = UDim2.fromScale(0, 0)
 	InteractionBlocker.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-	InteractionBlocker.BackgroundTransparency = 1 
+	InteractionBlocker.BackgroundTransparency = 1
 	InteractionBlocker.BorderSizePixel = 0
 	InteractionBlocker.Text = ""
 	InteractionBlocker.AutoButtonColor = false
-	InteractionBlocker.ZIndex = 100 
+	InteractionBlocker.ZIndex = 100
 	InteractionBlocker.Visible = false
 	InteractionBlocker.Active = true
 	InteractionBlocker.Parent = Window
@@ -3812,7 +3628,7 @@ local function BuildWindow(config)
 	WallpaperImage.ScaleType = Enum.ScaleType.Crop
 	WallpaperImage.ZIndex = -2
 	WallpaperImage.Parent = ContentClipper
-	Instance.new("UICorner", WallpaperImage).CornerRadius = UDim.new(0, 28) -- Restore background wallpaper corner rounding
+	Instance.new("UICorner", WallpaperImage).CornerRadius = UDim.new(0, 28)
 
 	local DarkOverlay = Instance.new("Frame")
 	DarkOverlay.Name = "DarkOverlay"
@@ -3821,9 +3637,8 @@ local function BuildWindow(config)
 	DarkOverlay.ZIndex = -1
 	DarkOverlay.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 	DarkOverlay.Parent = ContentClipper
-	Instance.new("UICorner", DarkOverlay).CornerRadius = UDim.new(0, 28) -- Restore dark overlay corner rounding
+	Instance.new("UICorner", DarkOverlay).CornerRadius = UDim.new(0, 28)
 
-	-- CRITICAL FIX: Registering these elements and safely removing them on Window Destroy
 	table.insert(KazeUI.WallpaperElements, {
 		ImageLabel = WallpaperImage,
 		OverlayFrame = DarkOverlay
@@ -3837,7 +3652,6 @@ local function BuildWindow(config)
 		end
 	end)
 
-	-- CRITICAL FIX: Run theme initialization now that Wallpaper Elements have been fully registered and exist.
 	KazeUI:SetTheme(selectedTheme)
 
 	Window.Size = UDim2.fromOffset(math.max(100, initialSize.X.Offset - 50), math.max(100, initialSize.Y.Offset - 50))
@@ -3849,12 +3663,10 @@ local function BuildWindow(config)
 	TopBar.Active = true
 	TopBar.BackgroundTransparency = 1
 	TopBar.Parent = ContentClipper
-	-- BUGFIX: per-window drag state (see MakeDraggable comment above) instead
-	-- of the old shared module-level lastNormalPosition/lastNormalAnchor.
+
 	local dragState = { Position = Window.Position, Anchor = Window.AnchorPoint }
 	MakeDraggable(TopBar, Window, dragState)
 
-	-- TopBar Non-Overlapping Corner Emulation Setup (Uniform Translucent Background)
 	local R = 28
 	local TopBarElevation = -0.01
 
@@ -3906,7 +3718,6 @@ local function BuildWindow(config)
 	Instance.new("UICorner", TopBarRightRound).CornerRadius = UDim.new(0, R)
 	KazeUI:AddPanel(TopBarRightRound, TopBarElevation)
 
-	-- Enlarged Avatar Circle Setup (40x40 perfectly centered vertically in 52px height topbar)
 	local Avatar = Instance.new("ImageButton")
 	Avatar.Size = UDim2.fromOffset(40, 40)
 	Avatar.Position = UDim2.fromOffset(14, 6)
@@ -3915,38 +3726,35 @@ local function BuildWindow(config)
 	Avatar.AutoButtonColor = false
 	Avatar.Parent = TopBar
 	Instance.new("UICorner", Avatar).CornerRadius = UDim.new(1, 0)
-	
+
 	local avatarStroke = Instance.new("UIStroke", Avatar)
 	avatarStroke.Thickness = 1.2
 	KazeUI:RegisterBorder(avatarStroke)
 
-	-- Center-aligned Title Label Setup (Slightly larger size = 16)
 	local TitleLabel = Instance.new("TextLabel")
 	TitleLabel.Size = UDim2.new(1, 0, 1, 0)
 	TitleLabel.Position = UDim2.fromOffset(0, 0)
 	TitleLabel.BackgroundTransparency = 1
 	TitleLabel.Text = Title
 	TitleLabel.Font = Enum.Font.GothamBold
-	TitleLabel.TextSize = 16 
+	TitleLabel.TextSize = 16
 	TitleLabel.TextXAlignment = Enum.TextXAlignment.Center
 	TitleLabel.TextYAlignment = Enum.TextYAlignment.Center
 	TitleLabel.Parent = TopBar
 	KazeUI:RegisterText(TitleLabel, false)
 
-	-- Left-aligned Author and Version next to avatar (TextSize = 13, no dot separator)
 	local SubLabel = Instance.new("TextLabel")
 	SubLabel.Size = UDim2.new(0, 180, 1, 0)
-	SubLabel.Position = UDim2.fromOffset(64, 0) -- Beautifully aligned 10px away from the 40px avatar at offset 14
+	SubLabel.Position = UDim2.fromOffset(64, 0)
 	SubLabel.BackgroundTransparency = 1
 	SubLabel.Text = Author .. "  " .. Version
 	SubLabel.Font = Enum.Font.GothamMedium
-	SubLabel.TextSize = 13 
+	SubLabel.TextSize = 13
 	SubLabel.TextXAlignment = Enum.TextXAlignment.Left
 	SubLabel.TextYAlignment = Enum.TextYAlignment.Center
 	SubLabel.Parent = TopBar
 	KazeUI:RegisterText(SubLabel, false)
 
-	-- Restored top header horizontal dividing line
 	local TopDivider = Instance.new("Frame")
 	TopDivider.Size = UDim2.new(1, 0, 0, 1)
 	TopDivider.Position = UDim2.new(0, 0, 1, -1)
@@ -3967,7 +3775,7 @@ local function BuildWindow(config)
 		btn.Text = ""
 		btn.Parent = TopBar
 		Instance.new("UICorner", btn).CornerRadius = UDim.new(1, 0)
-		
+
 		local innerStroke = Instance.new("UIStroke", btn)
 		innerStroke.Thickness = 1
 		innerStroke.Color = Color3.fromRGB(20, 20, 22)
@@ -3977,22 +3785,22 @@ local function BuildWindow(config)
 	local BtnGreen = createCircleButton("BtnGreen", -80, Color3.fromRGB(34, 197, 94))
 	local BtnYellow = createCircleButton("BtnYellow", -56, Color3.fromRGB(234, 179, 8))
 	local BtnRed = createCircleButton("BtnRed", -32, Color3.fromRGB(239, 68, 68))
-	
+
 	BtnGreen.AutoButtonColor = false
 	BtnYellow.AutoButtonColor = false
 	BtnRed.AutoButtonColor = false
 
-	local MiniButton = Instance.new("TextButton") 
+	local MiniButton = Instance.new("TextButton")
 	MiniButton.Size = MiniButtonSize
 	MiniButton.Position = UDim2.new(0, 24, 0, 85)
-	MiniButton.BackgroundTransparency = 1 
+	MiniButton.BackgroundTransparency = 1
 	MiniButton.Text = ""
 	MiniButton.Visible = not openButtonHidable
 	MiniButton.Parent = OpenButtonGui
 	MiniButton.ZIndex = 999
 
 	local MiniIcon = Instance.new("ImageLabel")
-	MiniIcon.Size = UDim2.fromScale(1, 1) 
+	MiniIcon.Size = UDim2.fromScale(1, 1)
 	MiniIcon.Position = UDim2.fromScale(0.5, 0.5)
 	MiniIcon.AnchorPoint = Vector2.new(0.5, 0.5)
 	MiniIcon.BackgroundTransparency = 0
@@ -4000,7 +3808,7 @@ local function BuildWindow(config)
 	MiniIcon.ScaleType = Enum.ScaleType.Fit
 	MiniIcon.Parent = MiniButton
 	MiniIcon.ZIndex = 1000
-	
+
 	Instance.new("UICorner", MiniIcon).CornerRadius = UDim.new(0, 14)
 	KazeUI:AddPanel(MiniIcon, 0.02)
 	KazeUI:OnThemeChanged(MiniIcon, function(t) MiniIcon.ImageColor3 = t.Text end)
@@ -4008,35 +3816,28 @@ local function BuildWindow(config)
 	local MiniStroke = Instance.new("UIStroke")
 	MiniStroke.Thickness = 1.5
 	MiniStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-	MiniStroke.Parent = MiniIcon 
+	MiniStroke.Parent = MiniIcon
 	KazeUI:RegisterBorder(MiniStroke)
 
 	local isMinimized = false
-	-- Computes the Position/Size a frame needs to START at so that, once it
-	-- tweens up to (finalPos, finalSize), it visually expands outward from a
-	-- thin centered line -- top edge moving up, bottom edge moving down --
-	-- instead of scaling up from a corner. Works with whatever AnchorPoint.Y
-	-- the frame currently has (0 = top-anchored, 0.5 = center-anchored, etc).
+
 	local function computeCenterGrowStart(anchorPoint, finalPos, finalSize)
 		local shiftScale = (0.5 - anchorPoint.Y) * finalSize.Y.Scale
 		local shiftOffset = (0.5 - anchorPoint.Y) * finalSize.Y.Offset
 		local startPos = UDim2.new(finalPos.X.Scale, finalPos.X.Offset, finalPos.Y.Scale + shiftScale, finalPos.Y.Offset + shiftOffset)
-		local startSize = UDim2.new(finalSize.X.Scale, finalSize.X.Offset, 0, 2) -- full width immediately, ~0 height (the "line")
+		local startSize = UDim2.new(finalSize.X.Scale, finalSize.X.Offset, 0, 2)
 		return startPos, startSize
 	end
 
 	local function minimizeWindow()
 		if isMinimized then return end
 		isMinimized = true
-		
+
 		if not toggledMaximized then
 			dragState.Position = Window.Position
 			dragState.Anchor = Window.AnchorPoint
 		end
 
-		-- Mirror the open animation on the way out: collapse the window down to the
-		-- same thin centered line it expands from when reopened (taas/baba squeeze),
-		-- instead of just snapping invisible.
 		local collapsePos, collapseSize = computeCenterGrowStart(Window.AnchorPoint, Window.Position, Window.Size)
 		local closeTween = TweenService:Create(Window, TWEEN_SPRING, {Position = collapsePos, Size = collapseSize})
 		closeTween.Completed:Connect(function()
@@ -4056,21 +3857,12 @@ local function BuildWindow(config)
 	local function unminimizeWindow()
 		if not isMinimized then return end
 		isMinimized = false
-		
+
 		if openButtonHidable then
 			MiniButton.Visible = false
 		end
 		Window.Visible = true
 
-		-- BUGFIX: this used to snap every scroller back to the top before
-		-- popping the window open. That avoided the visual "scrolling" jump,
-		-- but also threw away exactly where the player had scrolled to.
-		-- Instead: remember each scroller's exact position, then pin it back
-		-- to that same spot every frame for as long as the open animation is
-		-- playing (the resize itself is what makes CanvasSize recalculate
-		-- and visually "jump" -- pinning cancels that out), and let go once
-		-- the animation finishes. End result: no jump during the animation,
-		-- and the scroll position is left exactly where it was.
 		local savedPositions = {}
 		for _, sf in ipairs(Window:GetDescendants()) do
 			if sf:IsA("ScrollingFrame") then
@@ -4123,14 +3915,14 @@ local function BuildWindow(config)
 
 	local miniDragStart
 	local miniDragMoved = false
-	
+
 	MiniButton.InputBegan:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 			miniDragStart = input.Position
 			miniDragMoved = false
 		end
 	end)
-	
+
 	local miniDragConn1 = UIS.InputChanged:Connect(function(input)
 		if miniDragStart and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
 			if (input.Position - miniDragStart).Magnitude > 8 then
@@ -4144,14 +3936,14 @@ local function BuildWindow(config)
 			end
 		end
 	end)
-	
+
 	local miniDragConn2 = UIS.InputEnded:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 			if miniDragStart and not miniDragMoved then
 				if isMinimized then
 					unminimizeWindow()
 				elseif not openButtonHidable and activeDialogsCount == 0 then
-					-- Hidable = false: the button stays on screen and doubles as a close toggle
+
 					minimizeWindow()
 				end
 			end
@@ -4159,7 +3951,7 @@ local function BuildWindow(config)
 			miniDragMoved = false
 		end
 	end)
-	
+
 	MiniButton.Destroying:Connect(function()
 		if miniDragConn1 then miniDragConn1:Disconnect() end
 		if miniDragConn2 then miniDragConn2:Disconnect() end
@@ -4188,19 +3980,19 @@ local function BuildWindow(config)
 		confirmActive = true
 		activeDialogsCount = activeDialogsCount + 1
 		BtnYellow.Active = false; BtnGreen.Active = false; BtnRed.Active = false
-		
+
 		InteractionBlocker.Visible = true
 		TweenService:Create(InteractionBlocker, TWEEN_FAST, {BackgroundTransparency = 0.65}):Play()
 
-		local ConfirmWindow = Instance.new("Frame", Window) 
+		local ConfirmWindow = Instance.new("Frame", Window)
 		ConfirmWindow.Name = "ExitConfirmDialog"
 		ConfirmWindow.Size = UDim2.fromOffset(340, 140)
 		ConfirmWindow.AnchorPoint = Vector2.new(0.5, 0.5)
 		ConfirmWindow.Position = UDim2.fromScale(0.5, 0.45)
-		ConfirmWindow.ZIndex = 101 
-		ConfirmWindow.Active = true 
-		ConfirmWindow.BackgroundTransparency = 0.08 -- Not transparent, matches notifications
-		
+		ConfirmWindow.ZIndex = 101
+		ConfirmWindow.Active = true
+		ConfirmWindow.BackgroundTransparency = 0.08
+
 		Instance.new("UICorner", ConfirmWindow).CornerRadius = UDim.new(0, 14)
 		KazeUI:AddPanel(ConfirmWindow, 0.02, false, true)
 
@@ -4252,19 +4044,13 @@ local function BuildWindow(config)
 		KazeUI:AddPanel(CancelBtn, 0.04)
 		KazeUI:RegisterText(CancelBtn, true)
 
-		-- BUGFIX: this used to only Destroy() the main ScreenGui. The Open
-		-- Button, Dialog, and Notification ScreenGuis (separate top-level
-		-- instances created at library load) were left behind, along with
-		-- their live connections (e.g. the notification container and any
-		-- in-flight dialogs), so confirming "exit" didn't actually tear down
-		-- the whole UI. Destroy every top-level ScreenGui the library owns.
 		ConfirmBtn.MouseButton1Click:Connect(function()
 			ScreenGui:Destroy()
 			OpenButtonGui:Destroy()
 			DialogGui:Destroy()
 			NotifScreenGui:Destroy()
 		end)
-		CancelBtn.MouseButton1Click:Connect(function() 
+		CancelBtn.MouseButton1Click:Connect(function()
 			TweenService:Create(InteractionBlocker, TWEEN_FAST, {BackgroundTransparency = 1}):Play()
 			local tw = TweenService:Create(ConfirmWindow, TWEEN_FAST, {Position = UDim2.fromScale(0.5, 0.45)})
 			tw:Play()
@@ -4273,7 +4059,7 @@ local function BuildWindow(config)
 			InteractionBlocker.Visible = false
 			confirmActive = false
 			activeDialogsCount = math.max(0, activeDialogsCount - 1)
-			BtnYellow.Active = true; BtnGreen.Active = true; BtnRed.Active = true 
+			BtnYellow.Active = true; BtnGreen.Active = true; BtnRed.Active = true
 		end)
 	end
 	BtnRed.MouseButton1Click:Connect(function()
@@ -4294,12 +4080,11 @@ local function BuildWindow(config)
 	SideBarMask.Parent = Content
 
 	local SideBar = Instance.new("Frame")
-	SideBar.Size = UDim2.new(0, 190, 1, 0) 
+	SideBar.Size = UDim2.new(0, 190, 1, 0)
 	SideBar.BorderSizePixel = 0
 	SideBar.BackgroundTransparency = 1
 	SideBar.Parent = SideBarMask
 
-	-- SideBar Non-Overlapping Corner Emulation Setup
 	local SideBarElevation = 0.01
 
 	local SideBarMainBody = Instance.new("Frame", SideBar)
@@ -4334,7 +4119,6 @@ local function BuildWindow(config)
 	Instance.new("UICorner", SideBarRound).CornerRadius = UDim.new(0, R)
 	KazeUI:AddPanel(SideBarRound, SideBarElevation)
 
-	-- Restored structural Tab / Sidebar vertical separating line
 	local VertDivider = Instance.new("Frame")
 	VertDivider.Size = UDim2.new(0, 1, 1, 0)
 	VertDivider.Position = UDim2.new(0, 190, 0, 0)
@@ -4349,7 +4133,6 @@ local function BuildWindow(config)
 	Pages.BackgroundTransparency = 1
 	Pages.Parent = Content
 
-	-- Pages Non-Overlapping Corner Emulation Setup
 	local PagesElevation = -0.01
 
 	local PagesMainBody = Instance.new("Frame", Pages)
@@ -4420,9 +4203,6 @@ local function BuildWindow(config)
 	tabsLayout.SortOrder = Enum.SortOrder.LayoutOrder
 	tabsLayout.Padding = UDim.new(0, 5)
 
-	-- ==========================================
-	-- Modal Resize Engine (System Rewrite)
-	-- ==========================================
 	local ResizeBlocker = Instance.new("TextButton")
 	ResizeBlocker.Name = "ResizeInputBlocker"
 	ResizeBlocker.Size = UDim2.fromScale(100, 100)
@@ -4432,7 +4212,7 @@ local function BuildWindow(config)
 	ResizeBlocker.ZIndex = 99998
 	ResizeBlocker.Visible = false
 	ResizeBlocker.Parent = Window
-	
+
 	local ResizeHandle = Instance.new("ImageLabel")
 	ResizeHandle.Name = "ResizeHandle"
 	ResizeHandle.Size = UDim2.fromOffset(24, 24)
@@ -4479,7 +4259,7 @@ local function BuildWindow(config)
 	ResizeHandle.InputBegan:Connect(function(input)
 		if activeDialogsCount > 0 then return end
 		if toggledMaximized then return end
-		if KazeUI.IsResizing then return end 
+		if KazeUI.IsResizing then return end
 
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 			KazeUI.IsResizing = true
@@ -4505,14 +4285,14 @@ local function BuildWindow(config)
 		if KazeUI.IsResizing and input == resizeTouchID then
 			KazeUI.IsResizing = false
 			resizeTouchID = nil
-			
+
 			ResizeBlocker.Visible = false
 			UnlockCamera()
 			Mouse.Icon = ""
 			TweenService:Create(ResizeHandle, TweenInfo.new(0.12), {ImageColor3 = KazeUI.CurrentTheme.MutedText}):Play()
 		end
 	end)
-	
+
 	ResizeHandle.Destroying:Connect(function()
 		if resizeConn1 then resizeConn1:Disconnect() end
 		if resizeConn2 then resizeConn2:Disconnect() end
@@ -4540,9 +4320,6 @@ local function BuildWindow(config)
 		return KazeUI:Notify(...)
 	end
 
-	-- ==========================================================
-	-- Premium Floating Dialog Component (Solid UI, High Readability & Sizing Auto-Calculations)
-	-- ==========================================================
 	function Win:Dialog(dialogConfig)
 		dialogConfig = dialogConfig or {}
 		local title = tostring(dialogConfig.Title or "Dialog")
@@ -4550,22 +4327,22 @@ local function BuildWindow(config)
 		local iconId = dialogConfig.Icon and FormatImage(dialogConfig.Icon) or ""
 		local hasIcon = (iconId ~= "")
 		local actions = dialogConfig.Actions or {}
-		if #actions == 0 then actions = {{ Name = "OK" }} end -- BUGFIX: a Dialog with no Actions had no way to close, permanently freezing the window (activeDialogsCount never dropped back to 0)
-		
+		if #actions == 0 then actions = {{ Name = "OK" }} end
+
 		activeDialogsCount = activeDialogsCount + 1
-		
+
 		InteractionBlocker.Visible = true
 		TweenService:Create(InteractionBlocker, TWEEN_FAST, {BackgroundTransparency = 0.65}):Play()
 
-		local DialogFrame = Instance.new("Frame", Window) 
+		local DialogFrame = Instance.new("Frame", Window)
 		DialogFrame.Name = "WindowDialog"
-		DialogFrame.Size = UDim2.fromOffset(380, 220) 
+		DialogFrame.Size = UDim2.fromOffset(380, 220)
 		DialogFrame.AnchorPoint = Vector2.new(0.5, 0.5)
-		DialogFrame.Position = UDim2.fromScale(0.5, 0.4) 
-		DialogFrame.ZIndex = 101 
-		DialogFrame.Active = true 
-		DialogFrame.BackgroundTransparency = 0.08 -- Not transparent, matches notifications
-		
+		DialogFrame.Position = UDim2.fromScale(0.5, 0.4)
+		DialogFrame.ZIndex = 101
+		DialogFrame.Active = true
+		DialogFrame.BackgroundTransparency = 0.08
+
 		Instance.new("UICorner", DialogFrame).CornerRadius = UDim.new(0, 14)
 		KazeUI:AddPanel(DialogFrame, 0.04, false, true)
 
@@ -4587,7 +4364,6 @@ local function BuildWindow(config)
 			topOffset = 62
 		end
 
-		-- Dynamic size calculations for Dialog Title & Content for supreme readability (ensuring no cutoff or overlap)
 		local titleSize = TextService:GetTextSize(title, 15, Enum.Font.GothamBold, Vector2.new(340, 1000))
 		local contentSize = TextService:GetTextSize(content, 12, Enum.Font.GothamMedium, Vector2.new(340, 2000))
 
@@ -4617,7 +4393,7 @@ local function BuildWindow(config)
 		contentLabel.TextXAlignment = Enum.TextXAlignment.Center
 		contentLabel.TextYAlignment = Enum.TextYAlignment.Top
 		contentLabel.ZIndex = 102
-		KazeUI:RegisterText(contentLabel, false) -- High readability: high-contrast text
+		KazeUI:RegisterText(contentLabel, false)
 
 		local ActionsFrame = Instance.new("Frame", DialogFrame)
 		ActionsFrame.Position = UDim2.new(0, 15, 1, -15)
@@ -4627,8 +4403,7 @@ local function BuildWindow(config)
 
 		local listLayout = Instance.new("UIListLayout", ActionsFrame)
 		listLayout.SortOrder = Enum.SortOrder.LayoutOrder
-		-- NEW: dialogConfig.ActionsAlign lets you control where the action
-		-- buttons sit in their row -- "Left", "Center" (default), or "Right".
+
 		local alignMap = {
 			Left = Enum.HorizontalAlignment.Left,
 			Center = Enum.HorizontalAlignment.Center,
@@ -4639,7 +4414,7 @@ local function BuildWindow(config)
 		listLayout.Padding = UDim.new(0, 8)
 
 		local totalActions = #actions
-		local shouldStack = (totalActions >= 4) 
+		local shouldStack = (totalActions >= 4)
 
 		if shouldStack then
 			listLayout.FillDirection = Enum.FillDirection.Vertical
@@ -4664,12 +4439,12 @@ local function BuildWindow(config)
 		for i, act in ipairs(actions) do
 			local btnName = act.Name or "Button"
 			local callback = act.Callback
-			
+
 			local actionBtn = Instance.new("TextButton", ActionsFrame)
 			actionBtn.Size = UDim2.new(0, buttonWidth, 0, 32)
 			actionBtn.ZIndex = 103
 			actionBtn.AutoButtonColor = false
-			actionBtn.Text = "" 
+			actionBtn.Text = ""
 			actionBtn.LayoutOrder = i
 			Instance.new("UICorner", actionBtn).CornerRadius = UDim.new(0, 10)
 
@@ -4681,7 +4456,7 @@ local function BuildWindow(config)
 			btnText.Font = Enum.Font.GothamBold
 			btnText.TextSize = 11
 			btnText.TextWrapped = true
-			btnText.TextScaled = true 
+			btnText.TextScaled = true
 			btnText.ZIndex = 104
 
 			local textConstraint = Instance.new("UITextSizeConstraint", btnText)
@@ -4694,7 +4469,7 @@ local function BuildWindow(config)
 				local s, res = pcall(function() return Color3.fromHex(cleanHex) end)
 				if s and res then btnColor = res else btnColor = KazeUI.GlowColor end
 			elseif typeof(btnColor) ~= "Color3" then
-				btnColor = nil 
+				btnColor = nil
 			end
 
 			if btnColor then
@@ -4750,14 +4525,14 @@ local function BuildWindow(config)
 		local function getConfigs()
 			local list = {}
 			local folder = KazeUI.AuthorName
-			
+
 			if makefolder then
 				pcall(function()
 					if isfolder and not isfolder(folder) then makefolder(folder)
 					elseif not isfolder then makefolder(folder) end
 				end)
 			end
-			
+
 			if listfiles then
 				local s, files = pcall(function() return listfiles(folder) end)
 				if s and type(files) == "table" then
@@ -4773,22 +4548,22 @@ local function BuildWindow(config)
 		end
 
 		sec:TextBox({Title = "Config Name", Default = "Default", Callback = function(v) cfgName = v end})
-		
+
 		local configDropdown
-		sec:Button({Title = "Save Config", Callback = function() 
-			KazeUI:SaveConfig(cfgName) 
+		sec:Button({Title = "Save Config", Callback = function()
+			KazeUI:SaveConfig(cfgName)
 			if configDropdown then configDropdown:Refresh(getConfigs()) end
 		end})
 
 		configDropdown = sec:Dropdown({
-			Title = "Select Saved Config", 
-			Options = getConfigs(), 
+			Title = "Select Saved Config",
+			Options = getConfigs(),
 			Callback = function(v) cfgName = v end
 		})
 
 		sec:Button({Title = "Refresh Configs", Callback = function() if configDropdown then configDropdown:Refresh(getConfigs()) end end})
 		sec:Button({Title = "Load Config", Callback = function() KazeUI:LoadConfig(cfgName) end})
-		
+
 		sec:Button({Title = "Delete Config", Callback = function()
 			if delfile then
 				local folder = KazeUI.AuthorName
@@ -4803,22 +4578,16 @@ local function BuildWindow(config)
 
 	function Win:CreateThemeManager(tab)
 		local sec = tab:SectionUI("Theme & Visuals")
-		
+
 		local themeNames = {}
 		for name, _ in pairs(KazeUI.Themes) do table.insert(themeNames, name) end
 		table.sort(themeNames)
 
-		-- BUGFIX: this used to default to KazeUI.CurrentTheme.Name (a cosmetic
-		-- label like "Custom"), which never matched any entry in `themeNames`
-		-- (the actual table keys, e.g. "CustomWallpaper") -- so the dropdown's
-		-- default selection never lined up with any real option. Look up the
-		-- key that actually points at the current theme instead.
 		local currentThemeKey = themeNames[1]
 		for name, themeData in pairs(KazeUI.Themes) do
 			if themeData == KazeUI.CurrentTheme then currentThemeKey = name break end
 		end
 
-		-- Removed structural config flags so Visual parameters do not write into configurations
 		sec:Dropdown({
 			Title = "Interface Theme Preset",
 			Options = themeNames,
@@ -4901,7 +4670,7 @@ local function BuildWindow(config)
 		local name = tostring(type(arg1) == "table" and (arg1.Title or arg1.Name) or arg1 or "Tab")
 		local iconId = type(arg1) == "table" and arg1.Icon or arg2
 		local formattedIcon = FormatImage(iconId or "")
-		
+
 		local btn = Instance.new("TextButton")
 		btn.Size = UDim2.new(1, -10, 0, 36)
 		btn.BorderSizePixel = 0
@@ -4910,7 +4679,7 @@ local function BuildWindow(config)
 		btn.Parent = TabsList
 		btn.ClipsDescendants = true
 		btn.LayoutOrder = #TabsList:GetChildren() + 1
-		
+
 		Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 10)
 		KazeUI:AddPanel(btn, 0.02, true)
 
@@ -4919,7 +4688,7 @@ local function BuildWindow(config)
 		leftIndicator.BackgroundColor3 = KazeUI.GlowColor
 		leftIndicator.BorderSizePixel = 0
 		leftIndicator.Visible = false
-		
+
 		local indicatorCorner = Instance.new("UICorner", leftIndicator)
 		indicatorCorner.CornerRadius = UDim.new(0, 6)
 
@@ -4932,20 +4701,20 @@ local function BuildWindow(config)
 		iconLabel.Image = formattedIcon
 		iconLabel.ScaleType = Enum.ScaleType.Fit
 		iconLabel.Parent = btn
-		
+
 		local txt = Instance.new("TextLabel", btn)
 		txt.Size = UDim2.new(1, -42, 1, 0)
 		txt.Position = UDim2.fromOffset(36, 0)
 		txt.BackgroundTransparency = 1
 		txt.Text = name
 		txt.Font = Enum.Font.Gotham
-		txt.TextScaled = true 
-		txt.TextWrapped = true 
-		
+		txt.TextScaled = true
+		txt.TextWrapped = true
+
 		local textConstraint = Instance.new("UITextSizeConstraint", txt)
 		textConstraint.MaxTextSize = 12
 		textConstraint.MinTextSize = 8
-		
+
 		txt.TextXAlignment = Enum.TextXAlignment.Left
 		txt.Parent = btn
 
@@ -5034,14 +4803,14 @@ local function BuildWindow(config)
 		local function showEmpty()
 			if isStateVisible then return end
 			isStateVisible = true
-			
+
 			if transTween then transTween:Cancel() end
 			if scaleTween then scaleTween:Cancel() end
-			
+
 			EmptyState.Visible = true
 			transTween = TweenService:Create(EmptyState, TweenInfo.new(0.25, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {GroupTransparency = 0})
 			scaleTween = TweenService:Create(stateScale, TweenInfo.new(0.25, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {Scale = 1.0})
-			
+
 			transTween:Play()
 			scaleTween:Play()
 		end
@@ -5049,16 +4818,16 @@ local function BuildWindow(config)
 		local function hideEmpty()
 			if not isStateVisible then return end
 			isStateVisible = false
-			
+
 			if transTween then transTween:Cancel() end
 			if scaleTween then scaleTween:Cancel() end
-			
+
 			transTween = TweenService:Create(EmptyState, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {GroupTransparency = 1})
 			scaleTween = TweenService:Create(stateScale, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Scale = 0.95})
-			
+
 			transTween:Play()
 			scaleTween:Play()
-			
+
 			task.spawn(function()
 				transTween.Completed:Wait()
 				if not isStateVisible then EmptyState.Visible = false end
@@ -5073,11 +4842,6 @@ local function BuildWindow(config)
 			if count == 0 then showEmpty() else hideEmpty() end
 		end
 
-		-- BUGFIX: each added child got its own GetPropertyChangedSignal("Visible")
-		-- connection that was never disconnected when the child was later
-		-- removed -- a small connection leak for any tab page that has
-		-- elements added/removed a lot at runtime. Track them per-child and
-		-- disconnect on removal.
 		local visibilityConns = {}
 		pageContent.ChildAdded:Connect(function(child)
 			if child:IsA("GuiObject") then
@@ -5093,7 +4857,7 @@ local function BuildWindow(config)
 			end
 			updateState()
 		end)
-		
+
 		updateState()
 
 		table.insert(self._Tabs, {Button = btn, Indicator = leftIndicator, Label = txt, Page = page, Icon = iconLabel})
@@ -5111,13 +4875,13 @@ local function BuildWindow(config)
 				t.Label.Font = Enum.Font.Gotham
 				StopNeonLoop(t.Indicator)
 			end
-			
+
 			TweenService:Create(btn, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.04)}):Play()
 			leftIndicator.Visible = true
 			page.Visible = true
 			txt.TextColor3 = KazeUI.CurrentTheme.Text
 			txt.Font = Enum.Font.GothamBold
-			
+
 			TweenService:Create(iconLabel, TWEEN_FAST, {ImageColor3 = KazeUI.CurrentTheme.Text}):Play()
 			StartNeonLoop(leftIndicator)
 		end
@@ -5164,12 +4928,6 @@ local function BuildWindow(config)
 	return Win
 end
 
--- BUGFIX/FEATURE: window construction used to run un-guarded -- any error
--- anywhere while building the UI (a bad Icon, a malformed OpenButton table,
--- an internal issue, etc.) aborted the ENTIRE script silently, so nothing
--- ever showed up with no clue why. Now it's pcall-guarded: on failure you get
--- a clear warn() with the actual error, plus a native Roblox notification
--- (via StarterGui, so it still shows even if KazeUI itself never renders).
 function KazeUI:CreateWindow(config)
 	local ok, resultOrErr = pcall(BuildWindow, config)
 	if not ok then
@@ -5187,3 +4945,4 @@ function KazeUI:CreateWindow(config)
 end
 
 return KazeUI
+
