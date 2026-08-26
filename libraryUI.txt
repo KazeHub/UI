@@ -188,7 +188,7 @@ KazeUI.Themes = {
 -- Global State (Beautifully Tuned Soft Translucent Defaults)
 KazeUI.CurrentTheme = KazeUI.Themes.CustomWallpaper
 KazeUI.GlowColor = Color3.fromRGB(239, 68, 68)
-KazeUI.GlowMode = "Breathing" -- "Breathing" (pulse) or "Cycle" (hue rotation)
+KazeUI.GlowMode = "Breathing" -- "Breathing", "Sequence" (was "Cycle"), "Pulse", or "Chase"
 KazeUI.GlowRainbow = false -- true = glow sweeps the full color spectrum in either mode
 KazeUI._userSetGlow = false -- tracks whether a glow color has been explicitly set yet (see SetTheme Obsidian fix)
 KazeUI.BackgroundColor = KazeUI.CurrentTheme.Background
@@ -814,42 +814,87 @@ function KazeUI:SetTheme(themeName)
 end
 
 -- ==========================================================
--- Neon Glow Engine â€” Breathing / Cycle, both Rainbow-capable
+-- Neon Glow Engine — Breathing / Sequence / Pulse / Chase, all Rainbow-capable
 -- ==========================================================
 -- One shared Heartbeat drives every glowing element from a single
 -- clock: colors are computed continuously frame-to-frame (sine
 -- envelopes + wrapping hue math) instead of restarting Tweens, so
--- there is never a visible jump, and every glow on screen breathes
--- or cycles perfectly in sync with every other one.
+-- there is never a visible jump, and every glow on screen animates
+-- perfectly in sync with every other one (except Chase, which is
+-- *designed* to be out of sync element-to-element).
 
 local GLOW_BREATHE_PERIOD = 4.0       -- seconds for one full inhale + exhale
-local GLOW_CYCLE_PERIOD = 8.0         -- seconds for one full rainbow hue rotation
-local GLOW_SHIMMER_PERIOD = 5.0       -- seconds for one shimmer swing (Cycle, Rainbow off)
-local GLOW_SHIMMER_ARC = 26           -- degrees swept either side of the accent hue
-local GLOW_RAINBOW_BREATHE_SPEED = 40 -- degrees/second hue drift (Breathing, Rainbow on)
+
+-- "Sequence" -- steps through a small loop of hue offsets (a mini
+-- ColorSequence) and eases between them, instead of spinning smoothly
+-- through the wheel. Replaces the old "Cycle" mode (still accepted as
+-- a legacy alias, see SetGlowMode below).
+local GLOW_SEQUENCE_PERIOD = 6.0            -- seconds for one full loop through all stops
+local GLOW_SEQUENCE_STOPS = {0, 45, -40, 85}         -- hue offsets (deg) from the accent hue
+local GLOW_SEQUENCE_RAINBOW_STOPS = {0, 90, 180, 270} -- used instead when Rainbow is on
+
+-- "Pulse" -- a snappy heartbeat-style throb: fast attack, slower decay.
+local GLOW_PULSE_ATTACK = 0.16        -- seconds to snap up to full brightness
+local GLOW_PULSE_DECAY = 0.85         -- seconds to ease back down
+
+-- "Chase" -- a bright band travels down the list of glowing elements
+-- one after another, like a marquee light chase.
+local GLOW_CHASE_PERIOD = 2.2         -- seconds for one wave pass per element
+local GLOW_CHASE_STAGGER = 0.09       -- seconds delay between neighboring elements
+local GLOW_CHASE_WIDTH = 2.6          -- higher = narrower bright band
+
+local GLOW_RAINBOW_BREATHE_SPEED = 40 -- degrees/second hue drift (Breathing/Pulse, Rainbow on)
 
 local glowClock = 0
 local glowHeartbeatConn = nil
 
-local function ComputeGlowColor(dt)
-	glowClock = glowClock + dt
+-- Shortest-path hue lerp: blends from hueA to hueB the "short way" around
+-- the color wheel instead of always going forward, so a sequence stepping
+-- from e.g. 350deg to 10deg doesn't spin all the way back around.
+local function LerpHueShortest(hueA, hueB, alpha)
+	local diff = (hueB - hueA + 1.5) % 1 - 0.5
+	return (hueA + diff * alpha) % 1
+end
+
+-- Computes one shared color for every uniformly-animated mode (everything
+-- except Chase, which needs a different color per element and is handled
+-- directly inside StepGlow).
+local function ComputeGlowColor()
 	local baseH, baseS, baseV = Color3.toHSV(KazeUI.GlowColor)
 
-	if KazeUI.GlowMode == "Cycle" then
-		local hue
-		if KazeUI.GlowRainbow then
-			-- Full spectrum, constant speed
-			hue = (glowClock / GLOW_CYCLE_PERIOD) % 1
-		else
-			-- Chases forward through a band around the accent hue and resets
-			-- to the start once per period (sawtooth) â€” one full sweep before
-			-- it repeats, moving only in one direction the whole time. A sine
-			-- swing here would reverse direction every half-period, which is
-			-- exactly what Breathing does, not a "cycle".
-			local progress = (glowClock % GLOW_SHIMMER_PERIOD) / GLOW_SHIMMER_PERIOD
-			hue = ((baseH * 360) - GLOW_SHIMMER_ARC + progress * (GLOW_SHIMMER_ARC * 2)) / 360 % 1
-		end
+	if KazeUI.GlowMode == "Sequence" then
+		local stops = KazeUI.GlowRainbow and GLOW_SEQUENCE_RAINBOW_STOPS or GLOW_SEQUENCE_STOPS
+		local n = #stops
+		local segDur = GLOW_SEQUENCE_PERIOD / n
+		local raw = (glowClock % GLOW_SEQUENCE_PERIOD) / segDur
+		local idx = math.floor(raw) + 1
+		local nextIdx = (idx % n) + 1
+		local frac = raw - math.floor(raw)
+		local eased = frac * frac * (3 - 2 * frac) -- smoothstep: lingers on each stop, eases into the next
+		local hueA = (baseH * 360 + stops[idx]) / 360 % 1
+		local hueB = (baseH * 360 + stops[nextIdx]) / 360 % 1
+		local hue = LerpHueShortest(hueA, hueB, eased)
 		return Color3.fromHSV(hue, baseS, math.clamp(baseV * 1.05, 0, 1))
+
+	elseif KazeUI.GlowMode == "Pulse" then
+		local total = GLOW_PULSE_ATTACK + GLOW_PULSE_DECAY
+		local phase = glowClock % total
+		local envelope
+		if phase < GLOW_PULSE_ATTACK then
+			local t = phase / GLOW_PULSE_ATTACK
+			envelope = t * t -- ease-in quad: a punchy snap up
+		else
+			local t = (phase - GLOW_PULSE_ATTACK) / GLOW_PULSE_DECAY
+			envelope = 1 - (t * t) -- ease-out: lingers bright, then fades
+		end
+		local hue = baseH
+		if KazeUI.GlowRainbow then
+			hue = (glowClock * (GLOW_RAINBOW_BREATHE_SPEED / 360)) % 1
+		end
+		local troughV = baseV * 0.5
+		local peakV = math.clamp(baseV * 1.25, 0, 1)
+		return Color3.fromHSV(hue, baseS, troughV + envelope * (peakV - troughV))
+
 	else -- "Breathing"
 		local hue = baseH
 		if KazeUI.GlowRainbow then
@@ -871,7 +916,34 @@ local function StepGlow(dt)
 		return
 	end
 
-	local color = ComputeGlowColor(dt)
+	glowClock = glowClock + dt
+
+	if KazeUI.GlowMode == "Chase" then
+		local baseH, baseS, baseV = Color3.toHSV(KazeUI.GlowColor)
+		local troughV = baseV * 0.55
+		local peakV = math.clamp(baseV * 1.2, 0, 1)
+		for i = #KazeUI.GlowElements, 1, -1 do
+			local data = KazeUI.GlowElements[i]
+			local target = data.Target
+			if target and target.Parent then
+				-- Each element lags behind the previous one, so the bright band
+				-- appears to travel down the list like a marquee chase light.
+				local phase = (glowClock - (i - 1) * GLOW_CHASE_STAGGER) % GLOW_CHASE_PERIOD
+				local t = phase / GLOW_CHASE_PERIOD
+				local envelope = math.clamp(1 - math.abs(t - 0.5) * 2 * GLOW_CHASE_WIDTH, 0, 1)
+				local hue = baseH
+				if KazeUI.GlowRainbow then
+					hue = (glowClock * (GLOW_RAINBOW_BREATHE_SPEED / 360) - (i - 1) * 0.015) % 1
+				end
+				target[data.Prop] = Color3.fromHSV(hue, baseS, troughV + envelope * (peakV - troughV))
+			else
+				table.remove(KazeUI.GlowElements, i)
+			end
+		end
+		return
+	end
+
+	local color = ComputeGlowColor()
 	for i = #KazeUI.GlowElements, 1, -1 do
 		local data = KazeUI.GlowElements[i]
 		local target = data.Target
@@ -909,7 +981,7 @@ end
 -- FIX (outline/UIStroke invisible on Sections & GroupBoxes further down a
 -- ScrollingFrame): when a collapsible box sits below the ScrollingFrame's
 -- current CanvasSize, Roblox sometimes finishes resizing the box's
--- AutomaticSize.Y frame WITHOUT ever repainting its UIStroke â€” the stroke
+-- AutomaticSize.Y frame WITHOUT ever repainting its UIStroke — the stroke
 -- mesh was built for the old (usually zero) height and never gets told to
 -- rebuild, since nothing about the Stroke itself changed, only its parent's
 -- size. Boxes near the top rarely hit this because they're already inside
@@ -968,10 +1040,17 @@ function KazeUI:SetGlow(color)
 	end
 end
 
--- Selectable animation style: "Breathing" (smooth brightness pulse
--- on one hue) or "Cycle" (smooth, continuously rotating hue).
+-- Selectable animation style:
+--   "Breathing" -- smooth brightness pulse on one hue
+--   "Sequence"  -- steps through a small loop of hues, easing between each
+--                  (replaces the old "Cycle" mode -- "Cycle" still works
+--                  as a legacy alias for it)
+--   "Pulse"     -- snappy heartbeat-style throb (fast attack, slow decay)
+--   "Chase"     -- a bright band travels down the glowing elements in order
 function KazeUI:SetGlowMode(mode)
-	if mode ~= "Breathing" and mode ~= "Cycle" then mode = "Breathing" end
+	if mode == "Cycle" then mode = "Sequence" end -- legacy alias
+	local valid = {Breathing = true, Sequence = true, Pulse = true, Chase = true}
+	if not valid[mode] then mode = "Breathing" end
 	KazeUI.GlowMode = mode
 end
 
@@ -3274,7 +3353,7 @@ CreateCollapsibleSection = function(parentFrame, titleArg, currentDepth)
 	end)
 
 	-- NOTE: sectionBox uses AutomaticSize.Y, so the press-squish tween below
-	-- must never write a literal Y (e.g. "0, 0") into its Size â€” doing so fights
+	-- must never write a literal Y (e.g. "0, 0") into its Size — doing so fights
 	-- the engine's automatic height calculation every frame, and the fight gets
 	-- more visible the taller the section is (i.e. the more elements it holds),
 	-- which is what was bugging the outline out. Reading back the current Y and
@@ -3646,7 +3725,8 @@ local function BuildWindow(config)
 		KazeUI:SetGlow(Color3.fromRGB(239, 68, 68))
 	end
 
-	-- Glow animation style: config.GlowStyle / config.GlowMode accepts "Breathing" or "Cycle" (strings)
+	-- Glow animation style: config.GlowStyle / config.GlowMode accepts "Breathing",
+	-- "Sequence", "Pulse", or "Chase" (strings). "Cycle" still works as a legacy alias for "Sequence".
 	local glowStyleVal = config.GlowStyle or config.GlowMode
 	if type(glowStyleVal) == "string" then
 		KazeUI:SetGlowMode(glowStyleVal)
