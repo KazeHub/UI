@@ -3822,6 +3822,173 @@ local function BuildWindow(config)
 	avatarStroke.Thickness = 1.2
 	KazeUI:RegisterBorder(avatarStroke)
 
+	-- Avatar dropdown popup: configurable Title / Content, glowing border, optional Discord support link
+	KazeUI.PopupTitle = (config.PopupTitle and tostring(config.PopupTitle)) or KazeUI.PopupTitle or "Welcome"
+	KazeUI.PopupContent = (config.PopupContent and tostring(config.PopupContent)) or KazeUI.PopupContent or "This is a KazeUI window."
+	if config.DiscordLink and config.DiscordLink ~= "" then
+		KazeUI.DiscordLink = tostring(config.DiscordLink)
+	end
+
+	local AvatarPopup = Instance.new("Frame")
+	AvatarPopup.Name = "AvatarPopup"
+	AvatarPopup.BackgroundTransparency = 1
+	AvatarPopup.BorderSizePixel = 0
+	AvatarPopup.ClipsDescendants = true
+	AvatarPopup.Position = UDim2.new(0, 0, 0, 52)
+	AvatarPopup.Size = UDim2.new(1, 0, 0, 0)
+	AvatarPopup.ZIndex = 50
+	AvatarPopup.Parent = Window
+
+	local AvatarPopupCard = Instance.new("Frame")
+	AvatarPopupCard.BorderSizePixel = 0
+	AvatarPopupCard.Position = UDim2.new(0, 10, 0, 0)
+	AvatarPopupCard.Size = UDim2.new(1, -20, 0, 76)
+	AvatarPopupCard.ZIndex = 51
+	AvatarPopupCard.Parent = AvatarPopup
+	KazeUI:AddPanel(AvatarPopupCard, -0.02, true, true)
+	AvatarPopupCard.BackgroundColor3 = Color3.fromRGB(14, 14, 17)
+	AvatarPopupCard.BackgroundTransparency = 0.05
+	Instance.new("UICorner", AvatarPopupCard).CornerRadius = UDim.new(0, 16)
+
+	local AvatarPopupStroke = Instance.new("UIStroke")
+	AvatarPopupStroke.Thickness = 1.5
+	AvatarPopupStroke.Parent = AvatarPopupCard
+	KazeUI:RegisterBorder(AvatarPopupStroke)
+	StartNeonLoop(AvatarPopupStroke)
+
+	local AvatarPopupPadding = Instance.new("UIPadding", AvatarPopupCard)
+	AvatarPopupPadding.PaddingLeft = UDim.new(0, 16)
+	AvatarPopupPadding.PaddingRight = UDim.new(0, 16)
+	AvatarPopupPadding.PaddingTop = UDim.new(0, 12)
+	AvatarPopupPadding.PaddingBottom = UDim.new(0, 12)
+
+	local AvatarPopupTitle = Instance.new("TextLabel")
+	AvatarPopupTitle.BackgroundTransparency = 1
+	AvatarPopupTitle.Size = UDim2.new(1, 0, 0, 20)
+	AvatarPopupTitle.Font = Enum.Font.GothamBold
+	AvatarPopupTitle.TextSize = 16
+	AvatarPopupTitle.TextXAlignment = Enum.TextXAlignment.Left
+	AvatarPopupTitle.Text = KazeUI.PopupTitle
+	AvatarPopupTitle.ZIndex = 52
+	AvatarPopupTitle.Parent = AvatarPopupCard
+	KazeUI:RegisterText(AvatarPopupTitle, false)
+
+	local AvatarPopupContent = Instance.new("TextLabel")
+	AvatarPopupContent.BackgroundTransparency = 1
+	AvatarPopupContent.Position = UDim2.new(0, 0, 0, 26)
+	AvatarPopupContent.Size = UDim2.new(1, 0, 0, 38)
+	AvatarPopupContent.Font = Enum.Font.GothamMedium
+	AvatarPopupContent.TextSize = 13
+	AvatarPopupContent.TextWrapped = true
+	AvatarPopupContent.TextXAlignment = Enum.TextXAlignment.Left
+	AvatarPopupContent.TextYAlignment = Enum.TextYAlignment.Top
+	AvatarPopupContent.Text = KazeUI.PopupContent
+	AvatarPopupContent.ZIndex = 52
+	AvatarPopupContent.Parent = AvatarPopupCard
+	KazeUI:RegisterText(AvatarPopupContent, true)
+
+	local DiscordButton = Instance.new("TextButton")
+	DiscordButton.Position = UDim2.new(0, 0, 1, -32)
+	DiscordButton.Size = UDim2.new(1, 0, 0, 32)
+	DiscordButton.Text = "Join Discord"
+	DiscordButton.Font = Enum.Font.GothamBold
+	DiscordButton.TextSize = 13
+	DiscordButton.AutoButtonColor = false
+	DiscordButton.ZIndex = 52
+	DiscordButton.Visible = false
+	DiscordButton.Parent = AvatarPopupCard
+	KazeUI:AddPanel(DiscordButton, -0.03)
+	Instance.new("UICorner", DiscordButton).CornerRadius = UDim.new(0, 10)
+	KazeUI:RegisterText(DiscordButton, false)
+
+	DiscordButton.MouseButton1Click:Connect(function()
+		if not KazeUI.DiscordLink or KazeUI.DiscordLink == "" then return end
+		local copied = pcall(function() setclipboard(KazeUI.DiscordLink) end)
+		KazeUI:Notify({
+			Title = "Discord",
+			Content = copied and "Invite link copied to clipboard." or KazeUI.DiscordLink,
+			Duration = 3,
+		})
+	end)
+
+	local LockOverlay = Instance.new("TextButton")
+	LockOverlay.Name = "AvatarLockOverlay"
+	LockOverlay.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+	LockOverlay.BackgroundTransparency = 1
+	LockOverlay.BorderSizePixel = 0
+	LockOverlay.Text = ""
+	LockOverlay.AutoButtonColor = false
+	LockOverlay.Active = true
+	LockOverlay.Position = UDim2.new(0, 0, 0, 52)
+	LockOverlay.Size = UDim2.new(1, 0, 1, -52)
+	LockOverlay.ZIndex = 40
+	LockOverlay.Visible = false
+	LockOverlay.Parent = Window
+
+	local topBarNormalColor = TopBarMainBody.BackgroundColor3
+	local topBarDarkColor = Color3.fromRGB(10, 10, 12)
+	local topBarPanels = {TopBarMainBody, TopBarMiddleTop, TopBarLeftRound, TopBarRightRound}
+
+	local lockOverlayOpen = false
+	local function setLockOverlay(open)
+		if lockOverlayOpen == open then return end
+		lockOverlayOpen = open
+		local tInfo = TweenInfo.new(0.3, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
+
+		if open then
+			LockOverlay.Visible = true
+			TweenService:Create(LockOverlay, tInfo, {BackgroundTransparency = 0.55}):Play()
+		else
+			local tween = TweenService:Create(LockOverlay, tInfo, {BackgroundTransparency = 1})
+			tween.Completed:Connect(function()
+				if not lockOverlayOpen then LockOverlay.Visible = false end
+			end)
+			tween:Play()
+		end
+
+		local targetColor = open and topBarDarkColor or topBarNormalColor
+		for _, panel in ipairs(topBarPanels) do
+			TweenService:Create(panel, tInfo, {BackgroundColor3 = targetColor}):Play()
+		end
+	end
+
+	local avatarPopupOpen = false
+	local function setAvatarPopupOpen(open)
+		if avatarPopupOpen == open then return end
+		avatarPopupOpen = open
+		local hasDiscord = KazeUI.DiscordLink ~= nil and KazeUI.DiscordLink ~= ""
+		DiscordButton.Visible = hasDiscord
+		local cardHeight = 64 + AvatarPopupContent.Size.Y.Offset + (hasDiscord and 40 or 0)
+		AvatarPopupCard.Size = UDim2.new(1, -20, 0, cardHeight)
+		local targetHeight = open and (cardHeight + 10) or 0
+		TweenService:Create(AvatarPopup, TweenInfo.new(0.3, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {Size = UDim2.new(1, 0, 0, targetHeight)}):Play()
+		setLockOverlay(open)
+	end
+
+	LockOverlay.MouseButton1Click:Connect(function()
+		setAvatarPopupOpen(false)
+	end)
+
+	Avatar.MouseButton1Click:Connect(function()
+		setAvatarPopupOpen(not avatarPopupOpen)
+	end)
+
+	function KazeUI:SetPopupTitle(text)
+		KazeUI.PopupTitle = tostring(text or "")
+		AvatarPopupTitle.Text = KazeUI.PopupTitle
+	end
+
+	function KazeUI:SetPopupContent(text)
+		KazeUI.PopupContent = tostring(text or "")
+		AvatarPopupContent.Text = KazeUI.PopupContent
+		if avatarPopupOpen then setAvatarPopupOpen(true) end
+	end
+
+	function KazeUI:SetDiscordLink(url)
+		KazeUI.DiscordLink = (url and url ~= "") and tostring(url) or nil
+		if avatarPopupOpen then setAvatarPopupOpen(true) end
+	end
+
 	local TitleLabel = Instance.new("TextLabel")
 	TitleLabel.Size = UDim2.new(1, 0, 1, 0)
 	TitleLabel.Position = UDim2.fromOffset(0, 0)
@@ -4006,25 +4173,26 @@ local function BuildWindow(config)
 	end)
 
 	local miniDragStart
+	local miniStartPos
 	local miniDragMoved = false
 
 	MiniButton.InputBegan:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 			miniDragStart = input.Position
+			miniStartPos = MiniButton.Position
 			miniDragMoved = false
 		end
 	end)
 
 	local miniDragConn1 = UIS.InputChanged:Connect(function(input)
 		if miniDragStart and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-			if (input.Position - miniDragStart).Magnitude > 8 then
+			local delta = input.Position - miniDragStart
+			if miniDragMoved or delta.Magnitude > 8 then
 				miniDragMoved = true
-				local delta = input.Position - miniDragStart
 				MiniButton.Position = UDim2.new(
-					0, MiniButton.Position.X.Offset + delta.X,
-					0, MiniButton.Position.Y.Offset + delta.Y
+					0, miniStartPos.X.Offset + delta.X,
+					0, miniStartPos.Y.Offset + delta.Y
 				)
-				miniDragStart = input.Position
 			end
 		end
 	end)
@@ -4040,6 +4208,7 @@ local function BuildWindow(config)
 				end
 			end
 			miniDragStart = nil
+			miniStartPos = nil
 			miniDragMoved = false
 		end
 	end)
@@ -4259,22 +4428,6 @@ local function BuildWindow(config)
 	Instance.new("UICorner", PagesRound).CornerRadius = UDim.new(0, R)
 	KazeUI:AddPanel(PagesRound, PagesElevation)
 
-	local isSidebarOpen = true
-	Avatar.MouseButton1Click:Connect(function()
-		if activeDialogsCount > 0 then return end
-		isSidebarOpen = not isSidebarOpen
-		local tInfo = TweenInfo.new(0.35, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
-		if isSidebarOpen then
-			TweenService:Create(SideBarMask, tInfo, {Size = UDim2.new(0, 190, 1, 0)}):Play()
-			TweenService:Create(VertDivider, tInfo, {Position = UDim2.new(0, 190, 0, 0), BackgroundTransparency = 0}):Play()
-			TweenService:Create(Pages, tInfo, {Position = UDim2.new(0, 191, 0, 0), Size = UDim2.new(1, -191, 1, 0)}):Play()
-		else
-			TweenService:Create(SideBarMask, tInfo, {Size = UDim2.new(0, 0, 1, 0)}):Play()
-			TweenService:Create(VertDivider, tInfo, {Position = UDim2.new(0, 0, 0, 0), BackgroundTransparency = 1}):Play()
-			TweenService:Create(Pages, tInfo, {Position = UDim2.new(0, 0, 0, 0), Size = UDim2.new(1, 0, 1, 0)}):Play()
-		end
-	end)
-
 	local TabsScroller = Instance.new("ScrollingFrame")
 	TabsScroller.Parent = SideBar
 	TabsScroller.Position = UDim2.fromOffset(8, 8)
@@ -4410,6 +4563,18 @@ local function BuildWindow(config)
 
 	function Win:Notify(...)
 		return KazeUI:Notify(...)
+	end
+
+	function Win:SetPopupTitle(text)
+		return KazeUI:SetPopupTitle(text)
+	end
+
+	function Win:SetPopupContent(text)
+		return KazeUI:SetPopupContent(text)
+	end
+
+	function Win:SetDiscordLink(url)
+		return KazeUI:SetDiscordLink(url)
 	end
 
 	function Win:Dialog(dialogConfig)
@@ -5037,4 +5202,3 @@ function KazeUI:CreateWindow(config)
 end
 
 return KazeUI
-
