@@ -3845,7 +3845,9 @@ local function BuildWindow(config)
 	AvatarPopupCard.Size = UDim2.new(1, -20, 0, 76)
 	AvatarPopupCard.ZIndex = 51
 	AvatarPopupCard.Parent = AvatarPopup
-	KazeUI:AddPanel(AvatarPopupCard, -0.02)
+	KazeUI:AddPanel(AvatarPopupCard, -0.02, true, true)
+	AvatarPopupCard.BackgroundColor3 = Color3.fromRGB(14, 14, 17)
+	AvatarPopupCard.BackgroundTransparency = 0.05
 	Instance.new("UICorner", AvatarPopupCard).CornerRadius = UDim.new(0, 16)
 
 	local AvatarPopupStroke = Instance.new("UIStroke")
@@ -3923,22 +3925,36 @@ local function BuildWindow(config)
 	LockOverlay.Visible = false
 	LockOverlay.Parent = Window
 
+	local topBarNormalColor = TopBarMainBody.BackgroundColor3
+	local topBarDarkColor = Color3.fromRGB(10, 10, 12)
+	local topBarPanels = {TopBarMainBody, TopBarMiddleTop, TopBarLeftRound, TopBarRightRound}
+
+	local lockOverlayOpen = false
 	local function setLockOverlay(open)
+		if lockOverlayOpen == open then return end
+		lockOverlayOpen = open
 		local tInfo = TweenInfo.new(0.3, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
+
 		if open then
 			LockOverlay.Visible = true
 			TweenService:Create(LockOverlay, tInfo, {BackgroundTransparency = 0.55}):Play()
 		else
 			local tween = TweenService:Create(LockOverlay, tInfo, {BackgroundTransparency = 1})
 			tween.Completed:Connect(function()
-				if not avatarPopupOpen then LockOverlay.Visible = false end
+				if not lockOverlayOpen then LockOverlay.Visible = false end
 			end)
 			tween:Play()
+		end
+
+		local targetColor = open and topBarDarkColor or topBarNormalColor
+		for _, panel in ipairs(topBarPanels) do
+			TweenService:Create(panel, tInfo, {BackgroundColor3 = targetColor}):Play()
 		end
 	end
 
 	local avatarPopupOpen = false
 	local function setAvatarPopupOpen(open)
+		if avatarPopupOpen == open then return end
 		avatarPopupOpen = open
 		local hasDiscord = KazeUI.DiscordLink ~= nil and KazeUI.DiscordLink ~= ""
 		DiscordButton.Visible = hasDiscord
@@ -4157,25 +4173,26 @@ local function BuildWindow(config)
 	end)
 
 	local miniDragStart
+	local miniStartPos
 	local miniDragMoved = false
 
 	MiniButton.InputBegan:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 			miniDragStart = input.Position
+			miniStartPos = MiniButton.Position
 			miniDragMoved = false
 		end
 	end)
 
 	local miniDragConn1 = UIS.InputChanged:Connect(function(input)
 		if miniDragStart and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-			if (input.Position - miniDragStart).Magnitude > 8 then
+			local delta = input.Position - miniDragStart
+			if miniDragMoved or delta.Magnitude > 8 then
 				miniDragMoved = true
-				local delta = input.Position - miniDragStart
 				MiniButton.Position = UDim2.new(
-					0, MiniButton.Position.X.Offset + delta.X,
-					0, MiniButton.Position.Y.Offset + delta.Y
+					0, miniStartPos.X.Offset + delta.X,
+					0, miniStartPos.Y.Offset + delta.Y
 				)
-				miniDragStart = input.Position
 			end
 		end
 	end)
@@ -4191,6 +4208,7 @@ local function BuildWindow(config)
 				end
 			end
 			miniDragStart = nil
+			miniStartPos = nil
 			miniDragMoved = false
 		end
 	end)
