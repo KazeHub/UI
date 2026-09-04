@@ -30,7 +30,7 @@ KazeUI.Themes = {
 		MutedText = Color3.fromRGB(215, 210, 225),
 		Border = Color3.fromRGB(95, 95, 100),
 		LightnessFactor = 1,
-		BackgroundImage = "https://pbs.twimg.com/media/Gu-hWtyX0AA5-5s.jpg",
+		BackgroundImage = "https://images3.alphacoders.com/124/1244059.jpg",
 		BackgroundImageTransparency = 0.1,
 		OverlayTransparency = 0.65,
 		PanelTransparency = 0.70
@@ -343,35 +343,103 @@ pcall(function()
 	end
 end)
 
+-- Cache of already-resolved URL -> rbxasset:// (or similar) strings, so that
+-- switching themes / re-applying settings never has to re-download an image
+-- that already loaded successfully once.
+local ResolvedAssetCache = {}
+
+-- Minimal magic-byte sniffing so we never cache/apply a "wallpaper" that is
+-- actually an HTML error page (common when a host like alphacoders/twimg
+-- blocks hotlinking) or an empty response.
+local function IsValidImageData(bytes)
+	if not bytes or #bytes < 8 then return false end
+	if string.sub(bytes, 1, 3) == "\255\216\255" then return true end -- JPEG
+	if string.sub(bytes, 1, 8) == "\137PNG\13\10\26\10" then return true end -- PNG
+	if string.sub(bytes, 1, 4) == "GIF8" then return true end -- GIF
+	if string.sub(bytes, 1, 2) == "BM" then return true end -- BMP
+	if string.sub(bytes, 1, 4) == "RIFF" and string.find(bytes, "WEBP", 1, true) == 9 then return true end -- WEBP
+	return false
+end
+
+-- Tries every request-capable function the executor might expose so we can
+-- send a User-Agent/Referer. Plain game:HttpGet sends no headers at all,
+-- which is exactly why hotlink-protected hosts (alphacoders, twimg, etc.)
+-- hand back a 403/HTML page instead of the actual image.
+local function HttpGetImageBytes(url)
+	local requestFn = syn and syn.request
+	requestFn = requestFn or http_request
+	requestFn = requestFn or request
+	requestFn = requestFn or (fluxus and fluxus.request)
+
+	if requestFn then
+		local ok, res = pcall(requestFn, {
+			Url = url,
+			Method = "GET",
+			Headers = {
+				["User-Agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+				["Referer"] = "https://www.google.com/"
+			}
+		})
+		if ok and res and res.Body and #res.Body > 0 and (res.StatusCode == nil or res.StatusCode == 200 or res.Success) then
+			return res.Body
+		end
+	end
+
+	local ok, bytes = pcall(function() return game:HttpGet(url) end)
+	if ok and bytes and #bytes > 0 then return bytes end
+	return nil
+end
+
 local function GetCustomAssetFromURL(url)
+	if ResolvedAssetCache[url] then return ResolvedAssetCache[url] end
+
 	local getasset = (getcustomasset or getsynasset or (drawing and drawing.new and drawing.custom_asset))
-	if not getasset or not writefile or not game or not game.HttpGet then
+	if not getasset or not writefile or not isfile or not game or not game.HttpGet then
+		warn("[KazeUI] Wallpaper failed: this executor doesn't expose getcustomasset/writefile, so custom image URLs can't be loaded. Use an rbxassetid:// instead.")
+		pcall(function()
+			KazeUI:Notify({Title = "Wallpaper Error", Content = "Your executor doesn't support custom image links. Use an rbxassetid instead.", Duration = 5})
+		end)
 		return url
 	end
 
 	local hashName = string.gsub(url, "%W", "")
 	local filename = "KazeUI/Cache/" .. string.sub(hashName, 1, 30) .. ".png"
 
-	if isfile and isfile(filename) then
-		local s, asset = pcall(getasset, filename)
-		if s and asset then return asset end
-	end
-
-	local success, bytes = pcall(function()
-		return game:HttpGet(url)
-	end)
-
-	if success and bytes and string.len(bytes) > 0 then
-		if makefolder then
-			pcall(makefolder, "KazeUI")
-			pcall(makefolder, "KazeUI/Cache")
+	if isfile(filename) then
+		local readOk, cachedBytes = pcall(readfile, filename)
+		if readOk and IsValidImageData(cachedBytes) then
+			local s, asset = pcall(getasset, filename)
+			if s and asset then
+				ResolvedAssetCache[url] = asset
+				return asset
+			end
+		else
+			-- Stale/corrupt cache entry (e.g. an old failed download) -- wipe it
+			-- so we try to fetch fresh instead of reusing a broken image forever.
+			if delfile then pcall(delfile, filename) end
 		end
-		pcall(writefile, filename, bytes)
-		local s, asset = pcall(getasset, filename)
-		if s and asset then return asset end
 	end
 
-	return url
+	local bytes = HttpGetImageBytes(url)
+
+	if bytes and IsValidImageData(bytes) then
+		pcall(makefolder, "KazeUI")
+		pcall(makefolder, "KazeUI/Cache")
+		local wroteOk = pcall(writefile, filename, bytes)
+		if wroteOk then
+			local s, asset = pcall(getasset, filename)
+			if s and asset then
+				ResolvedAssetCache[url] = asset
+				return asset
+			end
+		end
+	end
+
+	warn("[KazeUI] Wallpaper failed to load from: " .. tostring(url) .. " -- the link may not be a direct image, or the host is blocking hotlinking.")
+	pcall(function()
+		KazeUI:Notify({Title = "Wallpaper Error", Content = "Couldn't load that image link (blocked or not a direct image URL).", Duration = 5})
+	end)
+	return ""
 end
 
 local function FormatImage(id)
@@ -726,10 +794,13 @@ function KazeUI:SetTheme(themeName)
 	local bgOverlayTrans = targetTheme.OverlayTransparency or 0.25
 	local hasImage = (bgImgId ~= "") and (bgImgTrans < 1)
 
+	local resolvedBgImg = hasImage and FormatImage(bgImgId) or ""
+	local wallpaperReady = resolvedBgImg ~= ""
+
 	for _, wp in ipairs(KazeUI.WallpaperElements) do
 		if wp.ImageLabel and wp.ImageLabel.Parent then
-			if hasImage then
-				wp.ImageLabel.Image = FormatImage(bgImgId)
+			if wallpaperReady then
+				wp.ImageLabel.Image = resolvedBgImg
 				TweenService:Create(wp.ImageLabel, TWEEN_SMOOTH, {ImageTransparency = bgImgTrans}):Play()
 				TweenService:Create(wp.OverlayFrame, TWEEN_SMOOTH, {BackgroundTransparency = bgOverlayTrans}):Play()
 			else
@@ -4887,19 +4958,39 @@ local function BuildWindow(config)
 			Placeholder = "rbxassetid://ID or HTTPS Image Link",
 			Default = KazeUI.CurrentTheme.BackgroundImage or "",
 			Callback = function(val)
+				val = tostring(val or "")
+				if val == "" then
+					KazeUI.CurrentTheme.BackgroundImage = ""
+					for _, wp in ipairs(KazeUI.WallpaperElements) do
+						if wp.ImageLabel and wp.ImageLabel.Parent then
+							TweenService:Create(wp.ImageLabel, TWEEN_SMOOTH, {ImageTransparency = 1}):Play()
+							TweenService:Create(wp.OverlayFrame, TWEEN_SMOOTH, {BackgroundTransparency = 1}):Play()
+						end
+					end
+					return
+				end
+
+				-- FormatImage does the actual downloading/validation and only
+				-- returns a usable id/asset on success (see GetCustomAssetFromURL).
 				local cleanVal = FormatImage(val)
+				local loadedOk = cleanVal ~= ""
+
 				KazeUI.CurrentTheme.BackgroundImage = val
+
 				for _, wp in ipairs(KazeUI.WallpaperElements) do
 					if wp.ImageLabel and wp.ImageLabel.Parent then
-						wp.ImageLabel.Image = cleanVal
-						local hasImg = val ~= ""
+						if loadedOk then wp.ImageLabel.Image = cleanVal end
 						TweenService:Create(wp.ImageLabel, TWEEN_SMOOTH, {
-							ImageTransparency = hasImg and (KazeUI.CurrentTheme.BackgroundImageTransparency or 0) or 1
+							ImageTransparency = loadedOk and (KazeUI.CurrentTheme.BackgroundImageTransparency or 0) or 1
 						}):Play()
 						TweenService:Create(wp.OverlayFrame, TWEEN_SMOOTH, {
-							BackgroundTransparency = hasImg and (KazeUI.CurrentTheme.OverlayTransparency or 0.7) or 1
+							BackgroundTransparency = loadedOk and (KazeUI.CurrentTheme.OverlayTransparency or 0.7) or 1
 						}):Play()
 					end
+				end
+
+				if loadedOk then
+					KazeUI:Notify({Title = "Wallpaper", Content = "Wallpaper updated successfully.", Duration = 3})
 				end
 			end
 		})
