@@ -1771,17 +1771,26 @@ local function CreateBoxDropdown(parentFrame, title, options, defaultOption, cal
 	local isOpen = false
 	local isLockedState = locked or false
 
+	local function OptionText(opt)
+		if type(opt) == "table" then return tostring(opt.Text or opt.Name or "") end
+		return tostring(opt)
+	end
+	local function OptionIcon(opt)
+		if type(opt) == "table" then return opt.Icon end
+		return nil
+	end
+
 	local selectedSingle = ""
 	local selectedMulti = {}
 
 	if isMulti then
-		if type(defaultOption) == "table" then
+		if type(defaultOption) == "table" and defaultOption[1] ~= nil then
 			for _, v in ipairs(defaultOption) do selectedMulti[tostring(v)] = true end
 		elseif defaultOption then
 			selectedMulti[tostring(defaultOption)] = true
 		end
 	else
-		selectedSingle = defaultOption or (options[1] or "")
+		selectedSingle = (defaultOption and tostring(defaultOption)) or OptionText(options[1] or "")
 	end
 
 	local wrapper = Instance.new("Frame")
@@ -1897,15 +1906,20 @@ local function CreateBoxDropdown(parentFrame, title, options, defaultOption, cal
 		table.clear(boxItems)
 
 		options = type(newOptions) == "table" and newOptions or {}
+
+		local anyIcons = false
+		for _, o in ipairs(options) do
+			if OptionIcon(o) then anyIcons = true break end
+		end
+		gridLayout.CellSize = anyIcons and UDim2.fromOffset(72, 64) or UDim2.fromOffset(76, 32)
+
 		for i, opt in ipairs(options) do
-			local optStr = tostring(opt)
+			local optStr = OptionText(opt)
+			local optIcon = OptionIcon(opt)
 			local box = Instance.new("TextButton")
 			box.LayoutOrder = i
 			box.BorderSizePixel = 0
-			box.Text = optStr
-			box.Font = Enum.Font.Gotham
-			box.TextSize = 11
-			box.TextTruncate = Enum.TextTruncate.AtEnd
+			box.Text = ""
 			box.Parent = gridContainer
 			Instance.new("UICorner", box).CornerRadius = UDim.new(0, 8)
 			KazeUI:AddPanel(box, 0.03, true)
@@ -1913,6 +1927,34 @@ local function CreateBoxDropdown(parentFrame, title, options, defaultOption, cal
 			local boxStrokeItem = Instance.new("UIStroke", box)
 			boxStrokeItem.Thickness = 1
 			KazeUI:RegisterBorder(boxStrokeItem)
+
+			local iconImg
+			if optIcon and anyIcons then
+				iconImg = Instance.new("ImageLabel")
+				iconImg.AnchorPoint = Vector2.new(0.5, 0)
+				iconImg.Position = UDim2.new(0.5, 0, 0, 8)
+				iconImg.Size = UDim2.fromOffset(26, 26)
+				iconImg.BackgroundTransparency = 1
+				iconImg.ScaleType = Enum.ScaleType.Fit
+				iconImg.Image = FormatImage(optIcon)
+				iconImg.Parent = box
+				KazeUI:OnThemeChanged(iconImg, function(t) iconImg.ImageColor3 = t.Text end)
+			end
+
+			local label = Instance.new("TextLabel")
+			label.BackgroundTransparency = 1
+			label.Font = Enum.Font.Gotham
+			label.TextSize = 11
+			label.TextTruncate = Enum.TextTruncate.AtEnd
+			label.Text = optStr
+			label.Parent = box
+			if anyIcons then
+				label.Size = UDim2.new(1, -6, 0, 16)
+				label.Position = UDim2.new(0, 3, 1, -20)
+			else
+				label.Size = UDim2.new(1, -6, 1, 0)
+				label.Position = UDim2.new(0, 3, 0, 0)
+			end
 
 			local isHovering = false
 
@@ -1928,10 +1970,10 @@ local function CreateBoxDropdown(parentFrame, title, options, defaultOption, cal
 
 				if instant then
 					box.BackgroundColor3 = targetBg
-					box.TextColor3 = targetTxt
+					label.TextColor3 = targetTxt
 				else
 					TweenService:Create(box, TWEEN_FAST, {BackgroundColor3 = targetBg}):Play()
-					TweenService:Create(box, TWEEN_FAST, {TextColor3 = targetTxt}):Play()
+					TweenService:Create(label, TWEEN_FAST, {TextColor3 = targetTxt}):Play()
 				end
 
 				if active then
@@ -1957,7 +1999,8 @@ local function CreateBoxDropdown(parentFrame, title, options, defaultOption, cal
 
 			box.MouseButton1Click:Connect(function()
 				if isLockedState or activeDialogsCount > 0 then return end
-				TweenService:Create(box, TweenInfo.new(0.1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, 0, true), {Size = UDim2.fromOffset(72, 29)}):Play()
+				local pressSize = anyIcons and UDim2.fromOffset(68, 61) or UDim2.fromOffset(72, 29)
+				TweenService:Create(box, TweenInfo.new(0.1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, 0, true), {Size = pressSize}):Play()
 
 				if isMulti then
 					selectedMulti[optStr] = not selectedMulti[optStr]
@@ -2536,8 +2579,8 @@ local function CreateIconToggle(parentFrame, title, body, defaultState, onIcon, 
 	body = tostring(body or "")
 	local state = defaultState or false
 	local isLockedState = locked or false
-	onIcon = onIcon or 748737053944
-	offIcon = offIcon or 135609604299
+	onIcon = onIcon or 74873705394436
+	offIcon = offIcon or 135609604299893
 
 	local measuredWidth = 598 * 0.92
 	if parentFrame and parentFrame.AbsoluteSize and parentFrame.AbsoluteSize.X > 0 then measuredWidth = parentFrame.AbsoluteSize.X * 0.95 end
@@ -3577,8 +3620,8 @@ AttachElementsToAPI = function(apiTable, parentFrame, depth)
 		local title = arg1.Title or ""
 		local desc = arg1.Description or arg1.Content or ""
 		local def = arg1.Default or false
-		local onIcon = arg1.OnIcon or 748737053944   -- Pause icon (shown while "on"/playing)
-		local offIcon = arg1.OffIcon or 135609604299 -- Play icon (shown while "off"/paused)
+		local onIcon = arg1.OnIcon or 74873705394436   -- Pause icon (shown while "on"/playing)
+		local offIcon = arg1.OffIcon or 135609604299893 -- Play icon (shown while "off"/paused)
 		local callback = arg1.Callback
 		local flag = arg1.Flag
 		local locked = arg1.Locked
@@ -4496,7 +4539,7 @@ local function BuildWindow(config)
 		})
 	end)
 
-	local YoutubeButton = CreateSocialButton(123663668456, Color3.fromRGB(255, 0, 0), "YouTube", function()
+	local YoutubeButton = CreateSocialButton(123663668456341, Color3.fromRGB(255, 0, 0), "YouTube", function()
 		if not KazeUI.YoutubeLink or KazeUI.YoutubeLink == "" then return end
 		local copied = pcall(function() setclipboard(KazeUI.YoutubeLink) end)
 		KazeUI:Notify({
