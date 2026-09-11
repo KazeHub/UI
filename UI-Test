@@ -635,12 +635,21 @@ function KazeUI:SetTheme(themeName)
 	local targetTheme = KazeUI.Themes[themeName]
 
 	if not targetTheme and type(themeName) == "string" and (string.find(themeName, "^http://") or string.find(themeName, "^https://")) then
-		local success, rawTheme = pcall(function()
-			return game:HttpGet(themeName)
-		end)
+		-- Assume it's a plain background image immediately so window creation never blocks
+		-- on a network round-trip. If it turns out to actually be a JSON/Lua theme file,
+		-- we upgrade the theme a moment later in the background (see task.spawn below).
+		KazeUI.Themes.CustomWallpaper.BackgroundImage = themeName
+		KazeUI.Themes.CustomWallpaper.BackgroundImageTransparency = 0.1
+		KazeUI.Themes.CustomWallpaper.OverlayTransparency = 0.65
+		targetTheme = KazeUI.Themes.CustomWallpaper
 
-		local parsedSuccessfully = false
-		if success and rawTheme then
+		local themeUrl = themeName
+		task.spawn(function()
+			local success, rawTheme = pcall(function()
+				return game:HttpGet(themeUrl)
+			end)
+			if not (success and rawTheme) then return end
+
 			local themeTable = nil
 			local s, parsed = pcall(function()
 				return HttpService:JSONDecode(rawTheme)
@@ -657,45 +666,42 @@ function KazeUI:SetTheme(themeName)
 				end
 			end
 
-			if themeTable then
-				local function parseColor(val)
-					if typeof(val) == "Color3" then
-						return val
-					elseif type(val) == "string" then
-						local cleanHex = string.gsub(val, "#", "")
-						local s4, res = pcall(function() return Color3.fromHex(cleanHex) end)
-						if s4 and res then return res end
-					elseif type(val) == "table" then
-						local r = val.r or val.R or val[1] or 0
-						local g = val.g or val.G or val[2] or 0
-						local b = val.b or val.B or val[3] or 0
-						if r > 1 or g > 1 or b > 1 then
-							return Color3.fromRGB(r, g, b)
-						else
-							return Color3.new(r, g, b)
-						end
+			if not themeTable then return end -- genuinely just an image; nothing more to do
+
+			local function parseColor(val)
+				if typeof(val) == "Color3" then
+					return val
+				elseif type(val) == "string" then
+					local cleanHex = string.gsub(val, "#", "")
+					local s4, res = pcall(function() return Color3.fromHex(cleanHex) end)
+					if s4 and res then return res end
+				elseif type(val) == "table" then
+					local r = val.r or val.R or val[1] or 0
+					local g = val.g or val.G or val[2] or 0
+					local b = val.b or val.B or val[3] or 0
+					if r > 1 or g > 1 or b > 1 then
+						return Color3.fromRGB(r, g, b)
+					else
+						return Color3.new(r, g, b)
 					end
-					return nil
 				end
-
-				KazeUI.Themes.CustomWallpaper.Background = parseColor(themeTable.Background) or Color3.fromRGB(12, 12, 14)
-				KazeUI.Themes.CustomWallpaper.Text = parseColor(themeTable.Text) or Color3.fromRGB(255, 255, 255)
-				KazeUI.Themes.CustomWallpaper.MutedText = parseColor(themeTable.MutedText) or Color3.fromRGB(215, 210, 225)
-				KazeUI.Themes.CustomWallpaper.Border = parseColor(themeTable.Border) or Color3.fromRGB(55, 55, 60)
-				KazeUI.Themes.CustomWallpaper.LightnessFactor = tonumber(themeTable.LightnessFactor) or 1
-				KazeUI.Themes.CustomWallpaper.BackgroundImage = tostring(themeTable.BackgroundImage or "")
-				KazeUI.Themes.CustomWallpaper.BackgroundImageTransparency = tonumber(themeTable.BackgroundImageTransparency) or 0.1
-				KazeUI.Themes.CustomWallpaper.OverlayTransparency = tonumber(themeTable.OverlayTransparency) or 0.65
-				parsedSuccessfully = true
+				return nil
 			end
-		end
 
-		if not parsedSuccessfully then
-			KazeUI.Themes.CustomWallpaper.BackgroundImage = themeName
-			KazeUI.Themes.CustomWallpaper.BackgroundImageTransparency = 0.1
-			KazeUI.Themes.CustomWallpaper.OverlayTransparency = 0.65
-		end
-		targetTheme = KazeUI.Themes.CustomWallpaper
+			KazeUI.Themes.CustomWallpaper.Background = parseColor(themeTable.Background) or Color3.fromRGB(12, 12, 14)
+			KazeUI.Themes.CustomWallpaper.Text = parseColor(themeTable.Text) or Color3.fromRGB(255, 255, 255)
+			KazeUI.Themes.CustomWallpaper.MutedText = parseColor(themeTable.MutedText) or Color3.fromRGB(215, 210, 225)
+			KazeUI.Themes.CustomWallpaper.Border = parseColor(themeTable.Border) or Color3.fromRGB(55, 55, 60)
+			KazeUI.Themes.CustomWallpaper.LightnessFactor = tonumber(themeTable.LightnessFactor) or 1
+			KazeUI.Themes.CustomWallpaper.BackgroundImage = tostring(themeTable.BackgroundImage or themeUrl)
+			KazeUI.Themes.CustomWallpaper.BackgroundImageTransparency = tonumber(themeTable.BackgroundImageTransparency) or 0.1
+			KazeUI.Themes.CustomWallpaper.OverlayTransparency = tonumber(themeTable.OverlayTransparency) or 0.65
+
+			-- Only re-apply if the person hasn't switched to a different theme since
+			if KazeUI.CurrentTheme == KazeUI.Themes.CustomWallpaper then
+				KazeUI:SetTheme("CustomWallpaper")
+			end
+		end)
 	end
 
 	targetTheme = targetTheme or KazeUI.Themes[themeName] or KazeUI.Themes.CustomWallpaper
@@ -2689,27 +2695,15 @@ local function CreateIconToggle(parentFrame, title, body, defaultState, onIcon, 
 		iconImage.Image = FormatImage(state and onIcon or offIcon)
 
 		if instant then
-			if state then
-				iconContainer.BackgroundColor3 = KazeUI.GlowColor
-				StartNeonLoop(iconContainer)
-			else
-				StopNeonLoop(iconContainer)
-				iconContainer.BackgroundColor3 = KazeUI.GetColor(0.08)
-			end
+			iconContainer.BackgroundColor3 = KazeUI.GetColor(0.08)
 		else
 			TweenService:Create(iconImage, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, 0, true), {Size = UDim2.fromOffset(14, 14)}):Play()
-			if state then
-				StartNeonLoop(iconContainer)
-			else
-				StopNeonLoop(iconContainer)
-				TweenService:Create(iconContainer, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.08)}):Play()
-			end
 		end
 	end
 	setToggleState(state, true)
 
 	KazeUI:OnThemeChanged(iconContainer, function()
-		if not state then iconContainer.BackgroundColor3 = KazeUI.GetColor(0.08) end
+		iconContainer.BackgroundColor3 = KazeUI.GetColor(0.08)
 	end)
 
 	local isHovering = false
@@ -4818,34 +4812,45 @@ local function BuildWindow(config)
 		minimizeWindow()
 	end)
 
+	local miniDragInput
 	local miniDragStart
 	local miniStartPos
 	local miniDragMoved = false
 
 	MiniButton.InputBegan:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			miniDragInput = input
 			miniDragStart = input.Position
 			miniStartPos = MiniButton.Position
 			miniDragMoved = false
+
+			local changeCon
+			changeCon = input.Changed:Connect(function()
+				if input.UserInputState == Enum.UserInputState.End then
+					if miniDragInput == input then miniDragInput = nil end
+					if changeCon then changeCon:Disconnect() end
+				end
+			end)
 		end
 	end)
 
 	local miniDragConn1 = UIS.InputChanged:Connect(function(input)
-		if miniDragStart and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+		if miniDragInput and input == miniDragInput and miniDragStart then
+			local scale = UIScale.Scale
 			local delta = input.Position - miniDragStart
 			if miniDragMoved or delta.Magnitude > 8 then
 				miniDragMoved = true
 				MiniButton.Position = UDim2.new(
-					0, miniStartPos.X.Offset + delta.X,
-					0, miniStartPos.Y.Offset + delta.Y
+					0, miniStartPos.X.Offset + (delta.X / scale),
+					0, miniStartPos.Y.Offset + (delta.Y / scale)
 				)
 			end
 		end
 	end)
 
 	local miniDragConn2 = UIS.InputEnded:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-			if miniDragStart and not miniDragMoved then
+		if miniDragInput and input == miniDragInput then
+			if not miniDragMoved then
 				if isMinimized then
 					unminimizeWindow()
 				elseif not openButtonHidable and activeDialogsCount == 0 then
@@ -4853,6 +4858,7 @@ local function BuildWindow(config)
 					minimizeWindow()
 				end
 			end
+			miniDragInput = nil
 			miniDragStart = nil
 			miniStartPos = nil
 			miniDragMoved = false
