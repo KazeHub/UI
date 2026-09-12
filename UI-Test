@@ -3355,7 +3355,7 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 	}
 end
 
-local function CreateKeybindInput(parentFrame, title, defaultKey, callback, flag, locked)
+local function CreateKeybindInput(parentFrame, title, defaultKey, callback, flag, locked, toggleUI)
 	title = tostring(title or "Keybind")
 	local currentKey = defaultKey or Enum.KeyCode.Unknown
 	local isBinding = false
@@ -3491,6 +3491,7 @@ local function CreateKeybindInput(parentFrame, title, defaultKey, callback, flag
 
 	local uisConn = UIS.InputBegan:Connect(function(input, gp)
 		if not gp and not isBinding and currentKey ~= Enum.KeyCode.Unknown and input.KeyCode == currentKey then
+			if toggleUI and KazeUI._ToggleWindow then KazeUI._ToggleWindow() end
 			if typeof(callback) == "function" then task.spawn(callback, currentKey) end
 		end
 	end)
@@ -3676,13 +3677,13 @@ AttachElementsToAPI = function(apiTable, parentFrame, depth)
 	end
 
 	function apiTable:Keybind(arg1, arg2, arg3, arg4)
-		local title, def, cb, flag, locked = "", Enum.KeyCode.Unknown, nil, nil, false
+		local title, def, cb, flag, locked, toggleUI = "", Enum.KeyCode.Unknown, nil, nil, false, false
 		if type(arg1) == "table" then
-			title, def, cb, flag, locked = arg1.Title, arg1.Default, arg1.Callback, arg1.Flag, arg1.Locked
+			title, def, cb, flag, locked, toggleUI = arg1.Title, arg1.Default, arg1.Callback, arg1.Flag, arg1.Locked, arg1.ToggleUI
 		else
 			title, def, cb, flag = arg1, arg2, arg3, arg4
 		end
-		return CreateKeybindInput(parentFrame, title, def, cb, flag, locked)
+		return CreateKeybindInput(parentFrame, title, def, cb, flag, locked, toggleUI)
 	end
 
 	function apiTable:SectionUI(arg1)
@@ -5212,6 +5213,8 @@ local function BuildWindow(config)
 		end
 	}
 
+	KazeUI._ToggleWindow = function() Win:Toggle() end
+
 	function Win:Notify(...)
 		return KazeUI:Notify(...)
 	end
@@ -5245,6 +5248,22 @@ local function BuildWindow(config)
 		local actions = dialogConfig.Actions or {}
 		if #actions == 0 then actions = {{ Name = "OK" }} end
 
+		-- Preserve original order, but let individual actions override via `Order`
+		local orderedActions = {}
+		for i, act in ipairs(actions) do orderedActions[i] = act end
+		table.sort(orderedActions, function(a, b)
+			local oa, ob = tonumber(a.Order), tonumber(b.Order)
+			if oa and ob then return oa < ob end
+			if oa and not ob then return true end
+			if ob and not oa then return false end
+			return false
+		end)
+
+		-- ActionsPosition: "Bottom" (default) or "Top" — where the button row sits in the dialog
+		local actionsPosition = (dialogConfig.ActionsPosition == "Top") and "Top" or "Bottom"
+		-- ActionsLayout: "Horizontal", "Vertical", "Grid", or nil/"Auto" (stacks vertically at 4+ buttons)
+		local actionsLayout = dialogConfig.ActionsLayout
+
 		activeDialogsCount = activeDialogsCount + 1
 
 		InteractionBlocker.Visible = true
@@ -5267,6 +5286,29 @@ local function BuildWindow(config)
 		KazeUI:RegisterBorder(stroke)
 
 		TweenService:Create(DialogFrame, TWEEN_SPRING, {Position = UDim2.fromScale(0.5, 0.5)}):Play()
+
+		local totalActions = #orderedActions
+		local shouldStack
+		if actionsLayout == "Vertical" then
+			shouldStack = true
+		elseif actionsLayout == "Horizontal" then
+			shouldStack = false
+		elseif actionsLayout == "Grid" then
+			shouldStack = "grid"
+		else
+			shouldStack = (totalActions >= 4)
+		end
+
+		local gridColumns = 2
+		local actionsHeight
+		if shouldStack == "grid" then
+			local rows = math.ceil(totalActions / gridColumns)
+			actionsHeight = (rows * 32) + ((rows - 1) * 8)
+		elseif shouldStack then
+			actionsHeight = (totalActions * 32) + ((totalActions - 1) * 8)
+		else
+			actionsHeight = 32
+		end
 
 		local topOffset = 18
 		if hasIcon then
@@ -5298,9 +5340,16 @@ local function BuildWindow(config)
 		titleLabel.ZIndex = 102
 		KazeUI:RegisterText(titleLabel, false)
 
+		-- Where the action row sits relative to the content text
+		local actionsTop = topOffset + titleHeight + 8
+		local contentTop = actionsTop
+		if actionsPosition == "Top" then
+			contentTop = actionsTop + actionsHeight + 12
+		end
+
 		local contentLabel = Instance.new("TextLabel", DialogFrame)
 		contentLabel.Size = UDim2.new(1, -40, 0, contentHeight)
-		contentLabel.Position = UDim2.fromOffset(20, topOffset + titleHeight + 8)
+		contentLabel.Position = UDim2.fromOffset(20, contentTop)
 		contentLabel.BackgroundTransparency = 1
 		contentLabel.Text = content
 		contentLabel.Font = Enum.Font.GothamMedium
@@ -5312,32 +5361,47 @@ local function BuildWindow(config)
 		KazeUI:RegisterText(contentLabel, false)
 
 		local ActionsFrame = Instance.new("Frame", DialogFrame)
-		ActionsFrame.Position = UDim2.new(0, 15, 1, -15)
-		ActionsFrame.AnchorPoint = Vector2.new(0, 1)
 		ActionsFrame.BackgroundTransparency = 1
 		ActionsFrame.ZIndex = 102
-
-		local listLayout = Instance.new("UIListLayout", ActionsFrame)
-		listLayout.SortOrder = Enum.SortOrder.LayoutOrder
+		if actionsPosition == "Top" then
+			ActionsFrame.Position = UDim2.fromOffset(15, actionsTop)
+		else
+			ActionsFrame.Position = UDim2.new(0, 15, 1, -15)
+			ActionsFrame.AnchorPoint = Vector2.new(0, 1)
+		end
 
 		local alignMap = {
 			Left = Enum.HorizontalAlignment.Left,
 			Center = Enum.HorizontalAlignment.Center,
 			Right = Enum.HorizontalAlignment.Right
 		}
-		listLayout.HorizontalAlignment = alignMap[dialogConfig.ActionsAlign] or Enum.HorizontalAlignment.Center
-		listLayout.VerticalAlignment = Enum.VerticalAlignment.Center
-		listLayout.Padding = UDim.new(0, 8)
 
-		local totalActions = #actions
-		local shouldStack = (totalActions >= 4)
-
-		if shouldStack then
-			listLayout.FillDirection = Enum.FillDirection.Vertical
-			ActionsFrame.Size = UDim2.new(1, -30, 0, (totalActions * 32) + ((totalActions - 1) * 8))
+		local buttonWidth
+		if shouldStack == "grid" then
+			buttonWidth = (350 - ((gridColumns - 1) * 8)) / gridColumns
+			local gridLayout = Instance.new("UIGridLayout", ActionsFrame)
+			gridLayout.CellSize = UDim2.fromOffset(buttonWidth, 32)
+			gridLayout.CellPadding = UDim2.fromOffset(8, 8)
+			gridLayout.FillDirectionMaxCells = gridColumns
+			gridLayout.HorizontalAlignment = alignMap[dialogConfig.ActionsAlign] or Enum.HorizontalAlignment.Center
+			gridLayout.SortOrder = Enum.SortOrder.LayoutOrder
+			ActionsFrame.Size = UDim2.new(1, -30, 0, actionsHeight)
 		else
-			listLayout.FillDirection = Enum.FillDirection.Horizontal
-			ActionsFrame.Size = UDim2.new(1, -30, 0, 32)
+			local listLayout = Instance.new("UIListLayout", ActionsFrame)
+			listLayout.SortOrder = Enum.SortOrder.LayoutOrder
+			listLayout.HorizontalAlignment = alignMap[dialogConfig.ActionsAlign] or Enum.HorizontalAlignment.Center
+			listLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+			listLayout.Padding = UDim.new(0, 8)
+
+			if shouldStack then
+				listLayout.FillDirection = Enum.FillDirection.Vertical
+				buttonWidth = 350
+				ActionsFrame.Size = UDim2.new(1, -30, 0, actionsHeight)
+			else
+				listLayout.FillDirection = Enum.FillDirection.Horizontal
+				buttonWidth = totalActions > 0 and (350 - ((totalActions - 1) * 8)) / totalActions or 100
+				ActionsFrame.Size = UDim2.new(1, -30, 0, 32)
+			end
 		end
 
 		local function closeDialog()
@@ -5350,9 +5414,7 @@ local function BuildWindow(config)
 			activeDialogsCount = math.max(0, activeDialogsCount - 1)
 		end
 
-		local buttonWidth = shouldStack and 350 or (totalActions > 0 and (350 - ((totalActions - 1) * 8)) / totalActions or 100)
-
-		for i, act in ipairs(actions) do
+		for i, act in ipairs(orderedActions) do
 			local btnName = act.Name or "Button"
 			local callback = act.Callback
 
@@ -5425,8 +5487,12 @@ local function BuildWindow(config)
 			end)
 		end
 
-		local actionsHeight = shouldStack and ((totalActions * 32) + ((totalActions - 1) * 8)) or 32
-		local finalHeight = topOffset + titleHeight + 8 + contentHeight + 20 + actionsHeight + 18
+		local finalHeight
+		if actionsPosition == "Top" then
+			finalHeight = contentTop + contentHeight + 20
+		else
+			finalHeight = topOffset + titleHeight + 8 + contentHeight + 20 + actionsHeight + 18
+		end
 		DialogFrame.Size = UDim2.fromOffset(380, finalHeight)
 
 		return {
