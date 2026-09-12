@@ -1773,11 +1773,13 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 	}
 end
 
-local function CreateBoxDropdown(parentFrame, title, options, defaultOption, callback, isMulti, flag, locked)
+local function CreateBoxDropdown(parentFrame, title, options, defaultOption, callback, isMulti, flag, locked, searchBarEnabled)
 	title = tostring(title or "Dropdown")
 	options = type(options) == "table" and options or {}
 	local isOpen = false
 	local isLockedState = locked or false
+	if searchBarEnabled == nil then searchBarEnabled = true end
+	local searchQuery = ""
 
 	local function OptionText(opt)
 		if type(opt) == "table" then return tostring(opt.Text or opt.Name or "") end
@@ -1891,21 +1893,100 @@ local function CreateBoxDropdown(parentFrame, title, options, defaultOption, cal
 		end
 	end
 
+	-- Search bar (optional, shown above the box grid)
+	local searchWrap, searchBox
+	if searchBarEnabled then
+		searchWrap = Instance.new("Frame")
+		searchWrap.Name = "SearchWrap"
+		searchWrap.Size = UDim2.new(1, -20, 0, 28)
+		searchWrap.BackgroundTransparency = 1
+		searchWrap.LayoutOrder = 2
+		searchWrap.Visible = false
+		searchWrap.Parent = dropFrame
+		KazeUI:AddPanel(searchWrap, 0.05)
+		Instance.new("UICorner", searchWrap).CornerRadius = UDim.new(0, 8)
+
+		local searchIcon = Instance.new("ImageLabel", searchWrap)
+		searchIcon.AnchorPoint = Vector2.new(0, 0.5)
+		searchIcon.Position = UDim2.new(0, 8, 0.5, 0)
+		searchIcon.Size = UDim2.fromOffset(14, 14)
+		searchIcon.BackgroundTransparency = 1
+		searchIcon.Image = FormatImage("search")
+		KazeUI:OnThemeChanged(searchIcon, function(t) searchIcon.ImageColor3 = t.MutedText end)
+
+		searchBox = Instance.new("TextBox")
+		searchBox.Size = UDim2.new(1, -34, 1, 0)
+		searchBox.Position = UDim2.fromOffset(28, 0)
+		searchBox.BackgroundTransparency = 1
+		searchBox.Font = Enum.Font.Gotham
+		searchBox.TextSize = 12
+		searchBox.PlaceholderText = "Search..."
+		searchBox.ClearTextOnFocus = false
+		searchBox.Text = ""
+		searchBox.TextXAlignment = Enum.TextXAlignment.Left
+		searchBox.Parent = searchWrap
+		KazeUI:RegisterText(searchBox, false)
+	end
+
+	local MAX_VISIBLE_HEIGHT = 180
+
+	local scrollFrame = Instance.new("ScrollingFrame")
+	scrollFrame.Name = "BoxGridScroll"
+	scrollFrame.Size = UDim2.new(1, -20, 0, 0)
+	scrollFrame.BackgroundTransparency = 1
+	scrollFrame.BorderSizePixel = 0
+	scrollFrame.LayoutOrder = 3
+	scrollFrame.Visible = false
+	scrollFrame.ScrollBarThickness = 4
+	scrollFrame.ScrollBarImageTransparency = 0.4
+	scrollFrame.AutomaticCanvasSize = Enum.AutomaticCanvasSize.Y
+	scrollFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+	scrollFrame.Parent = dropFrame
+	KazeUI:OnThemeChanged(scrollFrame, function(t) scrollFrame.ScrollBarImageColor3 = t.MutedText end)
+
 	local gridContainer = Instance.new("Frame")
 	gridContainer.Name = "BoxGrid"
-	gridContainer.Size = UDim2.new(1, -20, 0, 0)
+	gridContainer.Size = UDim2.new(1, 0, 0, 0)
 	gridContainer.BackgroundTransparency = 1
-	gridContainer.LayoutOrder = 2
-	gridContainer.Visible = false
 	gridContainer.AutomaticSize = Enum.AutomaticSize.Y
-	gridContainer.Parent = dropFrame
+	gridContainer.Parent = scrollFrame
 
+	local GRID_COLUMNS = 4
 	local gridLayout = Instance.new("UIGridLayout", gridContainer)
 	gridLayout.CellSize = UDim2.fromOffset(76, 32)
 	gridLayout.CellPadding = UDim2.fromOffset(6, 6)
 	gridLayout.FillDirection = Enum.FillDirection.Horizontal
+	gridLayout.FillDirectionMaxCells = GRID_COLUMNS
 	gridLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left
 	gridLayout.SortOrder = Enum.SortOrder.LayoutOrder
+
+	local function ResolveIconImage(iconImg, iconSpec)
+		if type(iconSpec) == "table" and (iconSpec.Avatar ~= nil or iconSpec.Player ~= nil or iconSpec.UserId ~= nil) then
+			local avatarSpec = iconSpec.Avatar or iconSpec.Player or iconSpec.UserId
+			local userId
+			if typeof(avatarSpec) == "Instance" and avatarSpec:IsA("Player") then
+				userId = avatarSpec.UserId
+			elseif type(avatarSpec) == "number" then
+				userId = avatarSpec
+			elseif type(avatarSpec) == "string" then
+				local p = Players:FindFirstChild(avatarSpec)
+				if p then userId = p.UserId end
+			end
+			if userId then
+				task.spawn(function()
+					local ok, content = pcall(function()
+						return Players:GetUserThumbnailAsync(userId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size150x150)
+					end)
+					if ok and iconImg.Parent then
+						iconImg.Image = content
+						iconImg.ImageColor3 = Color3.fromRGB(255, 255, 255)
+					end
+				end)
+			end
+			return
+		end
+		iconImg.Image = FormatImage(iconSpec)
+	end
 
 	local boxItems = {}
 
@@ -1913,15 +1994,28 @@ local function CreateBoxDropdown(parentFrame, title, options, defaultOption, cal
 		for _, item in ipairs(boxItems) do item.Btn:Destroy() end
 		table.clear(boxItems)
 
-		options = type(newOptions) == "table" and newOptions or {}
+		options = type(newOptions) == "table" and newOptions or options
+
+		local visibleOptions = {}
+		local q = string.lower(searchQuery)
+		for _, o in ipairs(options) do
+			if q == "" or string.find(string.lower(OptionText(o)), q, 1, true) then
+				table.insert(visibleOptions, o)
+			end
+		end
 
 		local anyIcons = false
-		for _, o in ipairs(options) do
+		for _, o in ipairs(visibleOptions) do
 			if OptionIcon(o) then anyIcons = true break end
 		end
-		gridLayout.CellSize = anyIcons and UDim2.fromOffset(72, 64) or UDim2.fromOffset(76, 32)
+		local cellSize = anyIcons and UDim2.fromOffset(72, 64) or UDim2.fromOffset(76, 32)
+		gridLayout.CellSize = cellSize
 
-		for i, opt in ipairs(options) do
+		local rows = math.max(1, math.ceil(#visibleOptions / GRID_COLUMNS))
+		local naturalHeight = (rows * cellSize.Y.Offset) + ((rows - 1) * 6)
+		scrollFrame.Size = UDim2.new(1, -20, 0, math.min(naturalHeight, MAX_VISIBLE_HEIGHT))
+
+		for i, opt in ipairs(visibleOptions) do
 			local optStr = OptionText(opt)
 			local optIcon = OptionIcon(opt)
 			local box = Instance.new("TextButton")
@@ -1944,9 +2038,9 @@ local function CreateBoxDropdown(parentFrame, title, options, defaultOption, cal
 				iconImg.Size = UDim2.fromOffset(26, 26)
 				iconImg.BackgroundTransparency = 1
 				iconImg.ScaleType = Enum.ScaleType.Fit
-				iconImg.Image = FormatImage(optIcon)
 				iconImg.Parent = box
 				KazeUI:OnThemeChanged(iconImg, function(t) iconImg.ImageColor3 = t.Text end)
+				ResolveIconImage(iconImg, optIcon)
 			end
 
 			local label = Instance.new("TextLabel")
@@ -2033,10 +2127,18 @@ local function CreateBoxDropdown(parentFrame, title, options, defaultOption, cal
 
 	Refresh(options)
 
+	if searchBarEnabled and searchBox then
+		searchBox:GetPropertyChangedSignal("Text"):Connect(function()
+			searchQuery = searchBox.Text
+			Refresh(options)
+		end)
+	end
+
 	clickBtn.MouseButton1Click:Connect(function()
 		if isLockedState or activeDialogsCount > 0 then return end
 		isOpen = not isOpen
-		gridContainer.Visible = isOpen
+		scrollFrame.Visible = isOpen
+		if searchWrap then searchWrap.Visible = isOpen end
 		TweenService:Create(arrowIcon, TWEEN_SPRING, {Rotation = isOpen and 180 or 0}):Play()
 		if isOpen then
 			StartNeonLoop(boxStroke)
@@ -3657,13 +3759,14 @@ AttachElementsToAPI = function(apiTable, parentFrame, depth)
 	end
 
 	function apiTable:BoxDropdown(arg1, arg2, arg3, arg4, arg5, arg6)
-		local title, vals, def, multi, callback, flag, locked = "", {}, nil, false, nil, nil, false
+		local title, vals, def, multi, callback, flag, locked, searchBar = "", {}, nil, false, nil, nil, false, true
 		if type(arg1) == "table" then
 			title, vals, def, multi, callback, flag, locked = arg1.Title, (arg1.Values or arg1.Options), arg1.Default, (arg1.Multi or false), arg1.Callback, arg1.Flag, arg1.Locked
+			if type(arg1.SearchBar) == "boolean" then searchBar = arg1.SearchBar end
 		else
 			title, vals, def, callback, multi, flag = arg1, arg2, arg3, arg4, (arg5 or false), arg6
 		end
-		return CreateBoxDropdown(parentFrame, title, vals, def, callback, multi, flag, locked)
+		return CreateBoxDropdown(parentFrame, title, vals, def, callback, multi, flag, locked, searchBar)
 	end
 
 	function apiTable:ColorPicker(arg1, arg2, arg3, arg4)
@@ -4125,6 +4228,90 @@ end
 
 local function BuildWindow(config)
 	config = config or {}
+
+	local LoadingScreen = Instance.new("Frame")
+	LoadingScreen.Name = "KazeLoadingScreen"
+	LoadingScreen.Size = UDim2.fromScale(1, 1)
+	LoadingScreen.BackgroundColor3 = Color3.fromRGB(8, 8, 10)
+	LoadingScreen.BackgroundTransparency = 0
+	LoadingScreen.BorderSizePixel = 0
+	LoadingScreen.ZIndex = 500
+	LoadingScreen.Parent = ScreenGui
+
+	local loadLogo = Instance.new("ImageLabel", LoadingScreen)
+	loadLogo.AnchorPoint = Vector2.new(0.5, 0.5)
+	loadLogo.Position = UDim2.new(0.5, 0, 0.5, -46)
+	loadLogo.Size = UDim2.fromOffset(56, 56)
+	loadLogo.BackgroundTransparency = 1
+	loadLogo.Image = FormatImage(config.Icon or "house")
+	loadLogo.ZIndex = 501
+
+	local loadStroke = Instance.new("UIStroke", loadLogo)
+	loadStroke.Thickness = 1.5
+	loadStroke.Color = Color3.fromRGB(255, 55, 90)
+
+	local loadTitle = Instance.new("TextLabel", LoadingScreen)
+	loadTitle.AnchorPoint = Vector2.new(0.5, 0.5)
+	loadTitle.Position = UDim2.new(0.5, 0, 0.5, 4)
+	loadTitle.Size = UDim2.fromOffset(300, 20)
+	loadTitle.BackgroundTransparency = 1
+	loadTitle.Text = tostring(config.Title or "Loading")
+	loadTitle.Font = Enum.Font.GothamBold
+	loadTitle.TextSize = 15
+	loadTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
+	loadTitle.ZIndex = 501
+
+	local barTrack = Instance.new("Frame", LoadingScreen)
+	barTrack.AnchorPoint = Vector2.new(0.5, 0.5)
+	barTrack.Position = UDim2.new(0.5, 0, 0.5, 34)
+	barTrack.Size = UDim2.fromOffset(220, 6)
+	barTrack.BackgroundColor3 = Color3.fromRGB(35, 35, 40)
+	barTrack.BorderSizePixel = 0
+	barTrack.ZIndex = 501
+	Instance.new("UICorner", barTrack).CornerRadius = UDim.new(1, 0)
+
+	local barFill = Instance.new("Frame", barTrack)
+	barFill.Size = UDim2.new(0, 0, 1, 0)
+	barFill.BackgroundColor3 = Color3.fromRGB(255, 55, 90)
+	barFill.BorderSizePixel = 0
+	barFill.ZIndex = 502
+	Instance.new("UICorner", barFill).CornerRadius = UDim.new(1, 0)
+
+	local loadStatus = Instance.new("TextLabel", LoadingScreen)
+	loadStatus.AnchorPoint = Vector2.new(0.5, 0.5)
+	loadStatus.Position = UDim2.new(0.5, 0, 0.5, 52)
+	loadStatus.Size = UDim2.fromOffset(300, 16)
+	loadStatus.BackgroundTransparency = 1
+	loadStatus.Text = "Initializing... 0%"
+	loadStatus.Font = Enum.Font.Gotham
+	loadStatus.TextSize = 11
+	loadStatus.TextColor3 = Color3.fromRGB(170, 170, 180)
+	loadStatus.ZIndex = 501
+
+	local function SetLoadingProgress(pct, label)
+		pct = math.clamp(pct, 0, 100)
+		TweenService:Create(barFill, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+			Size = UDim2.new(pct / 100, 0, 1, 0)
+		}):Play()
+		loadStatus.Text = string.format("%s... %d%%", label or "Loading", math.floor(pct))
+	end
+
+	local function FinishLoadingScreen()
+		SetLoadingProgress(100, "Ready")
+		task.wait(0.15)
+		local fade = TweenService:Create(LoadingScreen, TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundTransparency = 1})
+		TweenService:Create(loadLogo, TWEEN_FAST, {ImageTransparency = 1}):Play()
+		TweenService:Create(loadTitle, TWEEN_FAST, {TextTransparency = 1}):Play()
+		TweenService:Create(loadStatus, TWEEN_FAST, {TextTransparency = 1}):Play()
+		TweenService:Create(barTrack, TWEEN_FAST, {BackgroundTransparency = 1}):Play()
+		TweenService:Create(barFill, TWEEN_FAST, {BackgroundTransparency = 1}):Play()
+		fade:Play()
+		fade.Completed:Wait()
+		LoadingScreen:Destroy()
+	end
+
+	SetLoadingProgress(8, "Initializing")
+
 	local Title = config.Title or "Kaze UI"
 	local Author = config.Author or "Unknown"
 	local Version = config.Version or "1.0"
@@ -4262,6 +4449,7 @@ local function BuildWindow(config)
 
 	Instance.new("UICorner", Window).CornerRadius = UDim.new(0, 28)
 	KazeUI:AddPanel(Window, 0)
+	SetLoadingProgress(70, "Building interface")
 
 	local outerShadow = Instance.new("Frame", Window)
 	outerShadow.Size = UDim2.new(1, 14, 1, 14)
@@ -4338,6 +4526,7 @@ local function BuildWindow(config)
 	end)
 
 	KazeUI:SetTheme(selectedTheme)
+	SetLoadingProgress(45, "Applying theme")
 
 	Window.Size = UDim2.fromOffset(math.max(100, initialSize.X.Offset - 50), math.max(100, initialSize.Y.Offset - 50))
 	TweenService:Create(Window, TweenInfo.new(0.5, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {Size = initialSize}):Play()
@@ -5907,6 +6096,7 @@ local function BuildWindow(config)
 
 	table.insert(KazeUI.ActiveWindows, Window)
 	if typeof(config.Callback) == "function" then pcall(config.Callback) end
+	FinishLoadingScreen()
 	return Win
 end
 
