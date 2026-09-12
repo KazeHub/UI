@@ -3,6 +3,7 @@ KazeUI.__index = KazeUI
 
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
+local ContentProvider = game:GetService("ContentProvider")
 local UIS = game:GetService("UserInputService")
 local TextService = game:GetService("TextService")
 local HttpService = game:GetService("HttpService")
@@ -174,6 +175,7 @@ KazeUI.GlowColor = Color3.fromRGB(255, 55, 90)
 KazeUI.GlowMode = "Sequence"
 KazeUI.GlowRainbow = true
 KazeUI.PerformanceMode = false
+KazeUI._PreloadSet = {}
 KazeUI._userSetGlow = false
 KazeUI.BackgroundColor = KazeUI.CurrentTheme.Background
 KazeUI.BackgroundTransparency = 0.60
@@ -379,24 +381,32 @@ local function FormatImage(id)
 	if not id or id == "" then return "" end
 	id = tostring(id)
 	local lowerId = string.lower(id)
+
+	local function track(result)
+		if result and result ~= "" then
+			KazeUI._PreloadSet[result] = true
+		end
+		return result
+	end
+
 	if IconsMap[lowerId] then
 		local mapped = IconsMap[lowerId]
 		if not string.find(mapped, "rbxassetid://") and not string.find(mapped, "http") then
 			local clean = string.gsub(mapped, "%D", "")
-			if clean ~= "" then return "rbxassetid://" .. clean end
+			if clean ~= "" then return track("rbxassetid://" .. clean) end
 		end
-		return mapped
+		return track(mapped)
 	end
 
-	if string.find(id, "rbxassetid://") then return id end
+	if string.find(id, "rbxassetid://") then return track(id) end
 
 	if string.find(id, "^http://") or string.find(id, "^https://") then
-		return GetCustomAssetFromURL(id)
+		return track(GetCustomAssetFromURL(id))
 	end
 
 	local clean = string.gsub(id, "%D", "")
 	if clean == "" then return id end
-	return "rbxassetid://" .. clean
+	return track("rbxassetid://" .. clean)
 end
 
 function KazeUI:OnGlowChanged(inst, callback)
@@ -4310,6 +4320,47 @@ local function BuildWindow(config)
 		LoadingScreen:Destroy()
 	end
 
+	-- Real asset preloading: everything routed through FormatImage (tab icons, button icons,
+	-- dropdown option icons, the wallpaper, etc.) gets tracked in KazeUI._PreloadSet. Once the
+	-- rest of the calling script has finished building tabs/components (it runs synchronously
+	-- right after CreateWindow returns), we preload every one of those assets for real via
+	-- ContentProvider before revealing the window -- this is what actually removes the
+	-- first-render hitch instead of just faking a progress bar.
+	local preloadStarted = false
+	local function RunAssetPreload()
+		if preloadStarted then return end
+		preloadStarted = true
+
+		local assetList = {}
+		for assetId in pairs(KazeUI._PreloadSet) do
+			table.insert(assetList, assetId)
+		end
+
+		local total = #assetList
+		if total == 0 then
+			FinishLoadingScreen()
+			return
+		end
+
+		SetLoadingProgress(50, "Loading assets")
+		local loaded = 0
+		pcall(function()
+			ContentProvider:PreloadAsync(assetList, function()
+				loaded = loaded + 1
+				local pct = 50 + math.floor((loaded / total) * 50)
+				SetLoadingProgress(pct, "Loading assets")
+			end)
+		end)
+
+		FinishLoadingScreen()
+	end
+
+	KazeUI._RunAssetPreload = RunAssetPreload
+	task.spawn(function()
+		task.wait(0.15) -- let the rest of the calling script finish creating tabs/components first
+		RunAssetPreload()
+	end)
+
 	SetLoadingProgress(8, "Initializing")
 
 	local Title = config.Title or "Kaze UI"
@@ -4449,7 +4500,7 @@ local function BuildWindow(config)
 
 	Instance.new("UICorner", Window).CornerRadius = UDim.new(0, 28)
 	KazeUI:AddPanel(Window, 0)
-	SetLoadingProgress(70, "Building interface")
+	SetLoadingProgress(50, "Building interface")
 
 	local outerShadow = Instance.new("Frame", Window)
 	outerShadow.Size = UDim2.new(1, 14, 1, 14)
@@ -5428,6 +5479,10 @@ local function BuildWindow(config)
 		return KazeUI:SetPerformanceMode(enabled)
 	end
 
+	function Win:Ready()
+		if KazeUI._ManualReady then KazeUI._ManualReady() end
+	end
+
 	function Win:Dialog(dialogConfig)
 		dialogConfig = dialogConfig or {}
 		local title = tostring(dialogConfig.Title or "Dialog")
@@ -6096,7 +6151,7 @@ local function BuildWindow(config)
 
 	table.insert(KazeUI.ActiveWindows, Window)
 	if typeof(config.Callback) == "function" then pcall(config.Callback) end
-	FinishLoadingScreen()
+	KazeUI._ManualReady = RunAssetPreload
 	return Win
 end
 
