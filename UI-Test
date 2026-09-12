@@ -4345,15 +4345,29 @@ local function BuildWindow(config)
 
 		SetLoadingProgress(50, "Loading assets")
 		local loaded = 0
-		pcall(function()
-			ContentProvider:PreloadAsync(assetList, function()
-				loaded = loaded + 1
-				local pct = 50 + math.floor((loaded / total) * 50)
-				SetLoadingProgress(pct, "Loading assets")
+		local finished = false
+		local function safeFinish()
+			if finished then return end
+			finished = true
+			FinishLoadingScreen()
+		end
+
+		-- PreloadAsync runs on its own thread. If any single asset id is bad/blocked and
+		-- never resolves, PreloadAsync can hang indefinitely with nothing to unblock it --
+		-- that's what causes the loading screen to freeze partway. A hard timeout guarantees
+		-- the window reveals no matter what happens to the preload call.
+		task.spawn(function()
+			pcall(function()
+				ContentProvider:PreloadAsync(assetList, function()
+					loaded = loaded + 1
+					local pct = 50 + math.floor((loaded / total) * 50)
+					SetLoadingProgress(pct, "Loading assets")
+				end)
 			end)
+			safeFinish()
 		end)
 
-		FinishLoadingScreen()
+		task.delay(2, safeFinish)
 	end
 
 	KazeUI._RunAssetPreload = RunAssetPreload
