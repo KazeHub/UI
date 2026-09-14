@@ -5148,11 +5148,11 @@ local function BuildWindow(config)
 					return
 				end
 
-				local decodeOk, gifOrErr = pcall(function()
+				local decodeOk, gifOrErr, decodeReason = pcall(function()
 					return GifDecoder.Decode(rawOrErr, tonumber(liveConfig.MaxSize) or 512)
 				end)
 				if not decodeOk or not gifOrErr then
-					warn("[KazeUI] Failed to decode GIF: " .. tostring(gifOrErr))
+					warn("[KazeUI] Failed to decode GIF: " .. tostring(decodeOk and decodeReason or gifOrErr))
 					return
 				end
 
@@ -5194,6 +5194,15 @@ local function BuildWindow(config)
 	KazeUI._SetLiveWallpaper = SetLiveWallpaper
 	if config.LiveWallpaper then
 		SetLiveWallpaper(config.LiveWallpaper)
+	elseif type(config.Theme) == "string" and string.find(string.lower(config.Theme), "%.gif$")
+		and (string.find(config.Theme, "^http://") or string.find(config.Theme, "^https://")) then
+		-- Theme was handed a direct .gif URL -- treat the GIF itself as the theme's
+		-- live wallpaper instead of just grabbing a single static frame from it.
+		SetLiveWallpaper({
+			Type = "GIF",
+			Url = config.Theme,
+			MaxSize = config.LiveWallpaperMaxSize or 512
+		})
 	end
 
 	Window.Destroying:Connect(function()
