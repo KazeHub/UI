@@ -438,6 +438,118 @@ local function FormatVideo(id)
 	return "rbxassetid://" .. clean
 end
 
+-- Normalizes a GIF frame list into an array of ready-to-use image asset ids.
+-- Accepts either a Lua table of ids/urls, or a comma/semicolon separated string
+-- (handy for a TextBox in the UI). Each frame is routed through FormatImage so
+-- rbxassetid, numeric ids, and http(s) image links all resolve/preload the same
+-- way a normal wallpaper image does.
+local function FormatGifFrames(frames)
+	local list = {}
+	if type(frames) == "table" then
+		for _, id in ipairs(frames) do
+			local formatted = FormatImage(id)
+			if formatted and formatted ~= "" then table.insert(list, formatted) end
+		end
+	elseif type(frames) == "string" then
+		for piece in string.gmatch(frames, "([^,;]+)") do
+			local trimmed = string.match(piece, "^%s*(.-)%s*$")
+			if trimmed and trimmed ~= "" then
+				local formatted = FormatImage(trimmed)
+				if formatted and formatted ~= "" then table.insert(list, formatted) end
+			end
+		end
+	end
+	return list
+end
+
+-- Applies a theme's wallpaper (static image, looping video, or frame-sequence GIF)
+-- to every currently registered wallpaper element. Pulled out of SetTheme so the
+-- live Theme Manager wallpaper controls can re-apply changes without re-running
+-- the rest of SetTheme (text colors, glow, panel transparency, etc).
+local function ApplyWallpaper(theme)
+	theme = theme or KazeUI.CurrentTheme
+	if not theme then return end
+
+	local bgImgId = theme.BackgroundImage or ""
+	local bgImgTrans = theme.BackgroundImageTransparency or 1
+	local bgOverlayTrans = theme.OverlayTransparency or 0.25
+	local hasImage = (bgImgId ~= "") and (bgImgTrans < 1) and not KazeUI.PerformanceMode
+	local isVideo = hasImage and theme.IsVideo == true
+
+	local gifFrames = nil
+	if hasImage and not isVideo and theme.IsGif == true then
+		local formatted = FormatGifFrames(theme.GifFrames)
+		if #formatted > 0 then gifFrames = formatted end
+	end
+	local isGif = gifFrames ~= nil
+	local gifFrameRate = math.clamp(tonumber(theme.GifFrameRate) or 12, 1, 60)
+
+	for _, wp in ipairs(KazeUI.WallpaperElements) do
+		if wp.ImageLabel and wp.ImageLabel.Parent then
+			if isVideo then
+				wp.GifFrames = nil
+				if wp.VideoLabel then
+					wp.VideoLabel.Video = FormatVideo(bgImgId)
+					wp.VideoLabel.Visible = true
+					pcall(function() wp.VideoLabel:Play() end)
+				end
+				TweenService:Create(wp.ImageLabel, TWEEN_SMOOTH, {ImageTransparency = 1}):Play()
+				TweenService:Create(wp.OverlayFrame, TWEEN_SMOOTH, {BackgroundTransparency = bgOverlayTrans}):Play()
+			elseif isGif then
+				if wp.VideoLabel and wp.VideoLabel.Visible then
+					pcall(function() wp.VideoLabel:Pause() end)
+					wp.VideoLabel.Visible = false
+				end
+				wp.GifFrames = gifFrames
+				wp.GifFrameRate = gifFrameRate
+				wp.GifIndex = 1
+				wp.GifElapsed = 0
+				wp.ImageLabel.Image = gifFrames[1]
+				TweenService:Create(wp.ImageLabel, TWEEN_SMOOTH, {ImageTransparency = bgImgTrans}):Play()
+				TweenService:Create(wp.OverlayFrame, TWEEN_SMOOTH, {BackgroundTransparency = bgOverlayTrans}):Play()
+			elseif hasImage then
+				wp.GifFrames = nil
+				if wp.VideoLabel and wp.VideoLabel.Visible then
+					pcall(function() wp.VideoLabel:Pause() end)
+					wp.VideoLabel.Visible = false
+				end
+				wp.ImageLabel.Image = FormatImage(bgImgId)
+				TweenService:Create(wp.ImageLabel, TWEEN_SMOOTH, {ImageTransparency = bgImgTrans}):Play()
+				TweenService:Create(wp.OverlayFrame, TWEEN_SMOOTH, {BackgroundTransparency = bgOverlayTrans}):Play()
+			else
+				wp.GifFrames = nil
+				if wp.VideoLabel and wp.VideoLabel.Visible then
+					pcall(function() wp.VideoLabel:Pause() end)
+					wp.VideoLabel.Visible = false
+				end
+				TweenService:Create(wp.ImageLabel, TWEEN_SMOOTH, {ImageTransparency = 1}):Play()
+				TweenService:Create(wp.OverlayFrame, TWEEN_SMOOTH, {BackgroundTransparency = 1}):Play()
+			end
+		end
+	end
+end
+
+-- Single global driver for every animated GIF wallpaper currently on screen.
+-- Only touches wallpaper elements that have GifFrames assigned (set by
+-- ApplyWallpaper above), so there is zero overhead for image/video wallpapers
+-- or when PerformanceMode has cleared everyone's GifFrames.
+RunService.Heartbeat:Connect(function(dt)
+	for _, wp in ipairs(KazeUI.WallpaperElements) do
+		if wp.GifFrames and wp.ImageLabel and wp.ImageLabel.Parent then
+			local frameCount = #wp.GifFrames
+			if frameCount > 0 then
+				local frameDuration = 1 / (wp.GifFrameRate or 12)
+				wp.GifElapsed = (wp.GifElapsed or 0) + dt
+				while wp.GifElapsed >= frameDuration do
+					wp.GifElapsed = wp.GifElapsed - frameDuration
+					wp.GifIndex = (wp.GifIndex or 0) % frameCount + 1
+					wp.ImageLabel.Image = wp.GifFrames[wp.GifIndex]
+				end
+			end
+		end
+	end
+end)
+
 function KazeUI:OnGlowChanged(inst, callback)
 	table.insert(KazeUI.GlowCallbacks, {Inst = inst, Callback = callback})
 	task.spawn(callback, KazeUI.GlowColor)
@@ -767,40 +879,7 @@ function KazeUI:SetTheme(themeName)
 		if inst and inst.Parent then inst.Color = targetTheme.Border end
 	end
 
-	local bgImgId = targetTheme.BackgroundImage or ""
-	local bgImgTrans = targetTheme.BackgroundImageTransparency or 1
-	local bgOverlayTrans = targetTheme.OverlayTransparency or 0.25
-	local hasImage = (bgImgId ~= "") and (bgImgTrans < 1) and not KazeUI.PerformanceMode
-	local isVideo = hasImage and targetTheme.IsVideo == true
-
-	for _, wp in ipairs(KazeUI.WallpaperElements) do
-		if wp.ImageLabel and wp.ImageLabel.Parent then
-			if isVideo then
-				if wp.VideoLabel then
-					wp.VideoLabel.Video = FormatVideo(bgImgId)
-					wp.VideoLabel.Visible = true
-					pcall(function() wp.VideoLabel:Play() end)
-				end
-				TweenService:Create(wp.ImageLabel, TWEEN_SMOOTH, {ImageTransparency = 1}):Play()
-				TweenService:Create(wp.OverlayFrame, TWEEN_SMOOTH, {BackgroundTransparency = bgOverlayTrans}):Play()
-			elseif hasImage then
-				if wp.VideoLabel and wp.VideoLabel.Visible then
-					pcall(function() wp.VideoLabel:Pause() end)
-					wp.VideoLabel.Visible = false
-				end
-				wp.ImageLabel.Image = FormatImage(bgImgId)
-				TweenService:Create(wp.ImageLabel, TWEEN_SMOOTH, {ImageTransparency = bgImgTrans}):Play()
-				TweenService:Create(wp.OverlayFrame, TWEEN_SMOOTH, {BackgroundTransparency = bgOverlayTrans}):Play()
-			else
-				if wp.VideoLabel and wp.VideoLabel.Visible then
-					pcall(function() wp.VideoLabel:Pause() end)
-					wp.VideoLabel.Visible = false
-				end
-				TweenService:Create(wp.ImageLabel, TWEEN_SMOOTH, {ImageTransparency = 1}):Play()
-				TweenService:Create(wp.OverlayFrame, TWEEN_SMOOTH, {BackgroundTransparency = 1}):Play()
-			end
-		end
-	end
+	ApplyWallpaper(targetTheme)
 
 	for _, data in ipairs(KazeUI.ThemeCallbacks) do
 		if data.Inst and data.Inst.Parent then pcall(data.Callback, targetTheme) end
@@ -4791,7 +4870,11 @@ local function BuildWindow(config)
 	table.insert(KazeUI.WallpaperElements, {
 		ImageLabel = WallpaperImage,
 		VideoLabel = WallpaperVideo,
-		OverlayFrame = DarkOverlay
+		OverlayFrame = DarkOverlay,
+		GifFrames = nil,
+		GifFrameRate = 12,
+		GifIndex = 1,
+		GifElapsed = 0
 	})
 
 	Window.Destroying:Connect(function()
@@ -6070,8 +6153,10 @@ local function BuildWindow(config)
 			Callback = function(val)
 				local cleanVal = FormatImage(val)
 				KazeUI.CurrentTheme.BackgroundImage = val
+				KazeUI.CurrentTheme.IsGif = false
 				for _, wp in ipairs(KazeUI.WallpaperElements) do
 					if wp.ImageLabel and wp.ImageLabel.Parent then
+						wp.GifFrames = nil
 						wp.ImageLabel.Image = cleanVal
 						local hasImg = val ~= ""
 						TweenService:Create(wp.ImageLabel, TWEEN_SMOOTH, {
@@ -6113,6 +6198,51 @@ local function BuildWindow(config)
 					if wp.OverlayFrame and wp.OverlayFrame.Parent then
 						TweenService:Create(wp.OverlayFrame, TWEEN_FAST, {BackgroundTransparency = trans}):Play()
 					end
+				end
+			end
+		})
+
+		-- Animated GIF wallpaper: Roblox has no native GIF decoder, so this plays
+		-- a sequence of still image assets (the individual GIF frames, e.g. exported
+		-- via ezgif.com "Split to frames" then uploaded to Roblox) back-to-back on
+		-- WallpaperImage at a fixed rate, exactly like a flipbook/sprite animation.
+		local gifSec = tab:SectionUI("Animated GIF Wallpaper")
+
+		gifSec:TextBox({
+			Title = "GIF Frame IDs (comma-separated, in order)",
+			Placeholder = "rbxassetid://111,rbxassetid://222,rbxassetid://333",
+			Default = type(KazeUI.CurrentTheme.GifFrames) == "table"
+				and table.concat(KazeUI.CurrentTheme.GifFrames, ",")
+				or (KazeUI.CurrentTheme.GifFrames or ""),
+			Callback = function(val)
+				KazeUI.CurrentTheme.GifFrames = val
+				if val ~= "" and KazeUI.CurrentTheme.BackgroundImageTransparency == nil then
+					KazeUI.CurrentTheme.BackgroundImageTransparency = 0
+				end
+				ApplyWallpaper(KazeUI.CurrentTheme)
+			end
+		})
+
+		gifSec:Toggle({
+			Title = "Enable Animated GIF Wallpaper",
+			Description = "When on, the frame list above plays as an animated wallpaper instead of a static image or video.",
+			Default = KazeUI.CurrentTheme.IsGif == true,
+			Callback = function(state)
+				KazeUI.CurrentTheme.IsGif = state
+				if state then KazeUI.CurrentTheme.IsVideo = false end
+				ApplyWallpaper(KazeUI.CurrentTheme)
+			end
+		})
+
+		gifSec:Slider({
+			Title = "GIF Playback Speed (FPS)",
+			Min = 1,
+			Max = 30,
+			Default = tonumber(KazeUI.CurrentTheme.GifFrameRate) or 12,
+			Callback = function(val)
+				KazeUI.CurrentTheme.GifFrameRate = val
+				for _, wp in ipairs(KazeUI.WallpaperElements) do
+					wp.GifFrameRate = val
 				end
 			end
 		})
