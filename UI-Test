@@ -4660,7 +4660,25 @@ local function BuildWindow(config)
 	end
 
 	local initialSize = config.Size or UDim2.fromOffset(600, 400)
-	local MiniButtonSize = (config.OpenButton and config.OpenButton.Size) or UDim2.fromOffset(48, 48)
+
+	local openButtonShape = "Circle"
+	if config.OpenButton and config.OpenButton.Shape then
+		local shapeStr = string.lower(tostring(config.OpenButton.Shape))
+		if shapeStr == "square" then
+			openButtonShape = "Square"
+		elseif shapeStr == "rectangle" or shapeStr == "rect" then
+			openButtonShape = "Rectangle"
+		else
+			openButtonShape = "Circle"
+		end
+	end
+
+	local openButtonLabel = (config.OpenButton and config.OpenButton.Label and tostring(config.OpenButton.Label))
+		or Title
+		or "Kaze Hub"
+
+	local defaultMiniButtonSize = (openButtonShape == "Rectangle") and UDim2.fromOffset(150, 48) or UDim2.fromOffset(48, 48)
+	local MiniButtonSize = (config.OpenButton and config.OpenButton.Size) or defaultMiniButtonSize
 
 	local openButtonHidable = true
 	if config.OpenButton and config.OpenButton.Hidable ~= nil then
@@ -5036,6 +5054,7 @@ local function BuildWindow(config)
 	LockOverlay.ZIndex = 40
 	LockOverlay.Visible = false
 	LockOverlay.Parent = Window
+	Instance.new("UICorner", LockOverlay).CornerRadius = UDim.new(0, 28)
 
 	local topBarNormalColor = TopBarMainBody.BackgroundColor3
 	local topBarDarkColor = Color3.fromRGB(10, 10, 12)
@@ -5174,33 +5193,79 @@ local function BuildWindow(config)
 	local MiniButton = Instance.new("TextButton")
 	MiniButton.Size = MiniButtonSize
 	MiniButton.Position = UDim2.new(0, 24, 0, 85)
-	MiniButton.BackgroundTransparency = 1
+	MiniButton.BackgroundTransparency = 0
+	MiniButton.AutoButtonColor = false
 	MiniButton.Text = ""
 	MiniButton.Visible = not openButtonHidable
 	MiniButton.Parent = OpenButtonGui
 	MiniButton.ZIndex = 999
-	Instance.new("UICorner", MiniButton).CornerRadius = UDim.new(1, 0)
+	KazeUI:AddPanel(MiniButton, 0.02)
 
-	local MiniIcon = Instance.new("ImageLabel")
-	MiniIcon.Size = UDim2.fromScale(1, 1)
-	MiniIcon.Position = UDim2.fromScale(0.5, 0.5)
-	MiniIcon.AnchorPoint = Vector2.new(0.5, 0.5)
-	MiniIcon.BackgroundTransparency = 0
-	MiniIcon.Image = OpenIcon
-	MiniIcon.ScaleType = Enum.ScaleType.Fit
-	MiniIcon.Parent = MiniButton
-	MiniIcon.ZIndex = 1000
-
-	Instance.new("UICorner", MiniIcon).CornerRadius = UDim.new(1, 0)
-	KazeUI:AddPanel(MiniIcon, 0.02)
-	KazeUI:OnThemeChanged(MiniIcon, function(t) MiniIcon.ImageColor3 = t.Text end)
+	local MiniButtonCorner = Instance.new("UICorner", MiniButton)
+	if openButtonShape == "Square" then
+		MiniButtonCorner.CornerRadius = UDim.new(0, 14)
+	elseif openButtonShape == "Rectangle" then
+		MiniButtonCorner.CornerRadius = UDim.new(0, 16)
+	else
+		MiniButtonCorner.CornerRadius = UDim.new(1, 0)
+	end
 
 	local MiniStroke = Instance.new("UIStroke")
 	MiniStroke.Thickness = 1.5
 	MiniStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-	MiniStroke.Parent = MiniIcon
+	MiniStroke.Parent = MiniButton
 	KazeUI:RegisterBorder(MiniStroke)
 	StartNeonLoop(MiniStroke)
+
+	-- The logo icon itself always stays a circle, regardless of the button's outer shape.
+	local MiniIcon = Instance.new("ImageLabel")
+	MiniIcon.BackgroundTransparency = 1
+	MiniIcon.Image = OpenIcon
+	MiniIcon.ScaleType = Enum.ScaleType.Fit
+	MiniIcon.Parent = MiniButton
+	MiniIcon.ZIndex = 1000
+	Instance.new("UICorner", MiniIcon).CornerRadius = UDim.new(1, 0)
+	KazeUI:OnThemeChanged(MiniIcon, function(t) MiniIcon.ImageColor3 = t.Text end)
+
+	local MiniLabel
+	if openButtonShape == "Rectangle" then
+		MiniIcon.AnchorPoint = Vector2.new(0, 0.5)
+		MiniIcon.Position = UDim2.new(0, 6, 0.5, 0)
+		MiniIcon.Size = UDim2.new(0, 36, 0, 36)
+		MiniIcon.BackgroundTransparency = 0
+		KazeUI:AddPanel(MiniIcon, 0.04)
+
+		MiniLabel = Instance.new("TextLabel")
+		MiniLabel.BackgroundTransparency = 1
+		MiniLabel.Position = UDim2.new(0, 50, 0, 0)
+		MiniLabel.Size = UDim2.new(1, -60, 1, 0)
+		MiniLabel.Font = Enum.Font.GothamBold
+		MiniLabel.TextSize = 14
+		MiniLabel.TextWrapped = false
+		MiniLabel.TextXAlignment = Enum.TextXAlignment.Left
+		MiniLabel.TextYAlignment = Enum.TextYAlignment.Center
+		MiniLabel.TextTruncate = Enum.TextTruncate.AtEnd
+		MiniLabel.Text = openButtonLabel
+		MiniLabel.ZIndex = 1000
+		MiniLabel.Parent = MiniButton
+		KazeUI:RegisterText(MiniLabel, false)
+	elseif openButtonShape == "Square" then
+		MiniIcon.AnchorPoint = Vector2.new(0.5, 0.5)
+		MiniIcon.Position = UDim2.fromScale(0.5, 0.5)
+		MiniIcon.Size = UDim2.fromScale(0.66, 0.66)
+	else -- Circle (default) -- unchanged from the original look
+		MiniIcon.AnchorPoint = Vector2.new(0.5, 0.5)
+		MiniIcon.Position = UDim2.fromScale(0.5, 0.5)
+		MiniIcon.Size = UDim2.fromScale(1, 1)
+		MiniIcon.BackgroundTransparency = 0
+		KazeUI:AddPanel(MiniIcon, 0.02)
+	end
+
+	function KazeUI:SetOpenButtonLabel(text)
+		if MiniLabel then
+			MiniLabel.Text = tostring(text or "")
+		end
+	end
 
 	local isMinimized = false
 
