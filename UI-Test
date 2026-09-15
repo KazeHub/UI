@@ -1,4 +1,3 @@
--- updated
 local KazeUI = {}
 KazeUI.__index = KazeUI
 
@@ -177,6 +176,7 @@ KazeUI.GlowColor = Color3.fromRGB(255, 55, 90)
 KazeUI.GlowMode = "Sequence"
 KazeUI.GlowRainbow = true
 KazeUI.PerformanceMode = false
+KazeUI.LiveWallpaperActive = false
 KazeUI._PreloadSet = {}
 KazeUI._userSetGlow = false
 KazeUI.BackgroundColor = KazeUI.CurrentTheme.Background
@@ -944,7 +944,27 @@ end
 function KazeUI:SetTheme(themeName)
 	local targetTheme = KazeUI.Themes[themeName]
 
+	-- Clean slate: release any active live wallpaper before deciding what this
+	-- theme actually wants. The .gif branch below re-activates it immediately
+	-- if that's what this theme is; every other theme just leaves it off.
+	if KazeUI._SetLiveWallpaper then
+		KazeUI._SetLiveWallpaper({Type = "Off"})
+	end
+
 	if not targetTheme and type(themeName) == "string" and (string.find(themeName, "^http://") or string.find(themeName, "^https://")) then
+		if string.find(string.lower(themeName), "%.gif$") then
+			-- A raw .gif can't be rendered as a static BackgroundImage texture --
+			-- route it into the live GIF wallpaper instead of fighting it for
+			-- control of the same ImageLabel. Keep the rest of CustomWallpaper's
+			-- styling (text/border colors) as-is; just clear the static image
+			-- fields so this theme doesn't also try to load a broken still frame.
+			KazeUI.Themes.CustomWallpaper.BackgroundImage = ""
+			KazeUI.Themes.CustomWallpaper.BackgroundImageTransparency = 1
+			targetTheme = KazeUI.Themes.CustomWallpaper
+			if KazeUI._SetLiveWallpaper then
+				KazeUI._SetLiveWallpaper({Type = "GIF", Url = themeName, MaxSize = 512})
+			end
+		else
 		-- Assume it's a plain background image immediately so window creation never blocks
 		-- on a network round-trip. If it turns out to actually be a JSON/Lua theme file,
 		-- we upgrade the theme a moment later in the background (see task.spawn below).
@@ -1012,6 +1032,7 @@ function KazeUI:SetTheme(themeName)
 				KazeUI:SetTheme("CustomWallpaper")
 			end
 		end)
+		end
 	end
 
 	targetTheme = targetTheme or KazeUI.Themes[themeName] or KazeUI.Themes.CustomWallpaper
@@ -1045,7 +1066,10 @@ function KazeUI:SetTheme(themeName)
 
 	for _, wp in ipairs(KazeUI.WallpaperElements) do
 		if wp.ImageLabel and wp.ImageLabel.Parent then
-			if hasImage then
+			if KazeUI.LiveWallpaperActive then
+				-- A live wallpaper owns ImageTransparency/Image/ImageContent on this
+				-- element while it's active -- leave it alone here.
+			elseif hasImage then
 				wp.ImageLabel.Image = FormatImage(bgImgId)
 				TweenService:Create(wp.ImageLabel, TWEEN_SMOOTH, {ImageTransparency = bgImgTrans}):Play()
 				TweenService:Create(wp.OverlayFrame, TWEEN_SMOOTH, {BackgroundTransparency = bgOverlayTrans}):Play()
@@ -5054,12 +5078,10 @@ local function BuildWindow(config)
 		OverlayFrame = DarkOverlay
 	})
 
-	-- Live wallpaper: real Roblox video (rbxassetid) looping, or a frame-cycling
-	-- image sequence to simulate an animated GIF. Raw external .gif/.mp4 URLs can't be
-	-- decoded/played by the Roblox engine directly -- there is no GIF decoder or arbitrary
-	-- video streaming in the client -- so this uses Roblox's real asset pipeline instead:
-	-- an uploaded rbxassetid video for Video mode, or an array of uploaded image frames
-	-- for Animated mode (the actual, working equivalent of a "live wallpaper" on this platform).
+	-- Live wallpaper: real Roblox video (rbxassetid) looping, a frame-cycling image
+	-- sequence, or a real .gif URL decoded frame-by-frame via GifDecoder + EditableImage.
+	-- Raw .mp4/.webm/.mov URLs still can't be streamed directly by the client -- Video
+	-- mode needs an rbxassetid already uploaded to Roblox -- but .gif is fully supported.
 	local animatedWallpaperThread = nil
 	local function StopAnimatedWallpaper()
 		if animatedWallpaperThread then
@@ -5086,21 +5108,31 @@ local function BuildWindow(config)
 		local wpType = liveConfig.Type
 
 		if not wpType or wpType == "Off" then
+			KazeUI.LiveWallpaperActive = false
 			return
 		end
 
 		if KazeUI.PerformanceMode then
+			KazeUI.LiveWallpaperActive = false
 			return -- Performance Mode skips all wallpaper rendering, live or static
 		end
+
+		-- Claimed up front (before any async work) so the static theme logic backs
+		-- off immediately instead of racing the network fetch/decode below.
+		KazeUI.LiveWallpaperActive = true
 
 		if wpType == "Video" then
 			local videoSrc = liveConfig.Video
 			if LooksLikeUnsupportedURL(videoSrc) then
 				warn("[KazeUI] LiveWallpaper.Video must be an rbxassetid:// video already uploaded to Roblox -- a raw " ..
 					tostring(videoSrc):match("%.(%a+)$") .. " URL can't be streamed directly by the Roblox engine.")
+				KazeUI.LiveWallpaperActive = false
 				return
 			end
-			if not videoSrc or videoSrc == "" then return end
+			if not videoSrc or videoSrc == "" then
+				KazeUI.LiveWallpaperActive = false
+				return
+			end
 
 			WallpaperVideo.Video = FormatImage(videoSrc)
 			WallpaperVideo.Volume = tonumber(liveConfig.Volume) or 0
@@ -5111,6 +5143,7 @@ local function BuildWindow(config)
 			local frames = liveConfig.Frames
 			if type(frames) ~= "table" or #frames == 0 then
 				warn("[KazeUI] LiveWallpaper.Frames needs an array of rbxassetid:// images (a GIF exported frame-by-frame). Raw .gif URLs can't be decoded by the Roblox engine.")
+				KazeUI.LiveWallpaperActive = false
 				return
 			end
 
@@ -5118,6 +5151,7 @@ local function BuildWindow(config)
 			for _, f in ipairs(frames) do
 				if LooksLikeUnsupportedURL(f) then
 					warn("[KazeUI] LiveWallpaper.Frames entries must be rbxassetid:// images, not raw web URLs.")
+					KazeUI.LiveWallpaperActive = false
 					return
 				end
 				table.insert(resolvedFrames, FormatImage(f))
@@ -5126,6 +5160,7 @@ local function BuildWindow(config)
 			local fps = tonumber(liveConfig.FPS) or 10
 			local frameDelay = 1 / math.max(1, fps)
 
+			WallpaperImage.ImageTransparency = 0
 			animatedWallpaperThread = task.spawn(function()
 				local i = 0
 				while true do
@@ -5142,6 +5177,7 @@ local function BuildWindow(config)
 			local url = liveConfig.Url
 			if type(url) ~= "string" or url == "" then
 				warn("[KazeUI] LiveWallpaper.Url is required for Type = \"GIF\".")
+				KazeUI.LiveWallpaperActive = false
 				return
 			end
 
@@ -5149,6 +5185,7 @@ local function BuildWindow(config)
 				local ok, rawOrErr = pcall(function() return game:HttpGet(url) end)
 				if not ok or not rawOrErr or rawOrErr == "" then
 					warn("[KazeUI] Failed to download GIF from URL: " .. tostring(rawOrErr))
+					KazeUI.LiveWallpaperActive = false
 					return
 				end
 
@@ -5157,6 +5194,7 @@ local function BuildWindow(config)
 				end)
 				if not decodeOk or not gifOrErr then
 					warn("[KazeUI] Failed to decode GIF: " .. tostring(decodeOk and decodeReason or gifOrErr))
+					KazeUI.LiveWallpaperActive = false
 					return
 				end
 
@@ -5166,6 +5204,7 @@ local function BuildWindow(config)
 				end)
 				if not editableOk or not editableImg then
 					warn("[KazeUI] Could not create EditableImage -- this game/client may not allow the Mesh & Image APIs. LiveWallpaper GIF is unavailable here.")
+					KazeUI.LiveWallpaperActive = false
 					return
 				end
 
@@ -5175,8 +5214,10 @@ local function BuildWindow(config)
 				end)
 				if not contentOk then
 					warn("[KazeUI] Could not bind EditableImage to the wallpaper -- Content.fromObject failed.")
+					KazeUI.LiveWallpaperActive = false
 					return
 				end
+				WallpaperImage.Image = ""
 				WallpaperImage.ImageTransparency = 0
 
 				animatedWallpaperThread = task.spawn(function()
@@ -5198,16 +5239,10 @@ local function BuildWindow(config)
 	KazeUI._SetLiveWallpaper = SetLiveWallpaper
 	if config.LiveWallpaper then
 		SetLiveWallpaper(config.LiveWallpaper)
-	elseif type(config.Theme) == "string" and string.find(string.lower(config.Theme), "%.gif$")
-		and (string.find(config.Theme, "^http://") or string.find(config.Theme, "^https://")) then
-		-- Theme was handed a direct .gif URL -- treat the GIF itself as the theme's
-		-- live wallpaper instead of just grabbing a single static frame from it.
-		SetLiveWallpaper({
-			Type = "GIF",
-			Url = config.Theme,
-			MaxSize = config.LiveWallpaperMaxSize or 512
-		})
 	end
+	-- Note: a .gif Theme URL is handled centrally inside SetTheme (called just below
+	-- via KazeUI:SetTheme(selectedTheme)), which routes it into SetLiveWallpaper --
+	-- that also makes it work when a .gif theme is picked later from the Theme Manager.
 
 	Window.Destroying:Connect(function()
 		StopAnimatedWallpaper()
