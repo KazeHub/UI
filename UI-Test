@@ -1,4 +1,3 @@
--- updated
 local KazeUI = {}
 KazeUI.__index = KazeUI
 
@@ -168,19 +167,6 @@ KazeUI.Themes = {
 		BackgroundImageTransparency = 1,
 		OverlayTransparency = 1,
 		PanelTransparency = 0.05
-	},
-	LiveWallpaper = {
-		Name = "Live",
-		Background = Color3.fromRGB(10, 10, 14),
-		Text = Color3.fromRGB(255, 255, 255),
-		MutedText = Color3.fromRGB(215, 210, 225),
-		Border = Color3.fromRGB(150, 210, 255),
-		LightnessFactor = 1,
-		IsVideo = true,
-		BackgroundImage = "https://example.com/your-video.mp4",
-		BackgroundImageTransparency = 0,
-		OverlayTransparency = 0.45,
-		PanelTransparency = 0.70
 	}
 }
 
@@ -424,49 +410,11 @@ local function FormatImage(id)
 	return track("rbxassetid://" .. clean)
 end
 
-local function FormatVideo(id)
-	if not id or id == "" then return "" end
-	id = tostring(id)
 
-	if string.find(id, "rbxassetid://") then return id end
-
-	if string.find(id, "^http://") or string.find(id, "^https://") then
-		return GetCustomAssetFromURL(id, "mp4")
-	end
-
-	local clean = string.gsub(id, "%D", "")
-	if clean == "" then return id end
-	return "rbxassetid://" .. clean
-end
-
--- Normalizes a GIF frame list into an array of ready-to-use image asset ids.
--- Accepts either a Lua table of ids/urls, or a comma/semicolon separated string
--- (handy for a TextBox in the UI). Each frame is routed through FormatImage so
--- rbxassetid, numeric ids, and http(s) image links all resolve/preload the same
--- way a normal wallpaper image does.
-local function FormatGifFrames(frames)
-	local list = {}
-	if type(frames) == "table" then
-		for _, id in ipairs(frames) do
-			local formatted = FormatImage(id)
-			if formatted and formatted ~= "" then table.insert(list, formatted) end
-		end
-	elseif type(frames) == "string" then
-		for piece in string.gmatch(frames, "([^,;]+)") do
-			local trimmed = string.match(piece, "^%s*(.-)%s*$")
-			if trimmed and trimmed ~= "" then
-				local formatted = FormatImage(trimmed)
-				if formatted and formatted ~= "" then table.insert(list, formatted) end
-			end
-		end
-	end
-	return list
-end
-
--- Applies a theme's wallpaper (static image, looping video, or frame-sequence GIF)
--- to every currently registered wallpaper element. Pulled out of SetTheme so the
--- live Theme Manager wallpaper controls can re-apply changes without re-running
--- the rest of SetTheme (text colors, glow, panel transparency, etc).
+-- Applies a theme's wallpaper (static image only) to every currently
+-- registered wallpaper element. Pulled out of SetTheme so the live Theme
+-- Manager wallpaper controls can re-apply changes without re-running the
+-- rest of SetTheme (text colors, glow, panel transparency, etc).
 local function ApplyWallpaper(theme)
 	theme = theme or KazeUI.CurrentTheme
 	if not theme then return end
@@ -475,81 +423,20 @@ local function ApplyWallpaper(theme)
 	local bgImgTrans = theme.BackgroundImageTransparency or 1
 	local bgOverlayTrans = theme.OverlayTransparency or 0.25
 	local hasImage = (bgImgId ~= "") and (bgImgTrans < 1) and not KazeUI.PerformanceMode
-	local isVideo = hasImage and theme.IsVideo == true
-
-	local gifFrames = nil
-	if hasImage and not isVideo and theme.IsGif == true then
-		local formatted = FormatGifFrames(theme.GifFrames)
-		if #formatted > 0 then gifFrames = formatted end
-	end
-	local isGif = gifFrames ~= nil
-	local gifFrameRate = math.clamp(tonumber(theme.GifFrameRate) or 12, 1, 60)
 
 	for _, wp in ipairs(KazeUI.WallpaperElements) do
 		if wp.ImageLabel and wp.ImageLabel.Parent then
-			if isVideo then
-				wp.GifFrames = nil
-				if wp.VideoLabel then
-					wp.VideoLabel.Video = FormatVideo(bgImgId)
-					wp.VideoLabel.Visible = true
-					pcall(function() wp.VideoLabel:Play() end)
-				end
-				TweenService:Create(wp.ImageLabel, TWEEN_SMOOTH, {ImageTransparency = 1}):Play()
-				TweenService:Create(wp.OverlayFrame, TWEEN_SMOOTH, {BackgroundTransparency = bgOverlayTrans}):Play()
-			elseif isGif then
-				if wp.VideoLabel and wp.VideoLabel.Visible then
-					pcall(function() wp.VideoLabel:Pause() end)
-					wp.VideoLabel.Visible = false
-				end
-				wp.GifFrames = gifFrames
-				wp.GifFrameRate = gifFrameRate
-				wp.GifIndex = 1
-				wp.GifElapsed = 0
-				wp.ImageLabel.Image = gifFrames[1]
-				TweenService:Create(wp.ImageLabel, TWEEN_SMOOTH, {ImageTransparency = bgImgTrans}):Play()
-				TweenService:Create(wp.OverlayFrame, TWEEN_SMOOTH, {BackgroundTransparency = bgOverlayTrans}):Play()
-			elseif hasImage then
-				wp.GifFrames = nil
-				if wp.VideoLabel and wp.VideoLabel.Visible then
-					pcall(function() wp.VideoLabel:Pause() end)
-					wp.VideoLabel.Visible = false
-				end
+			if hasImage then
 				wp.ImageLabel.Image = FormatImage(bgImgId)
 				TweenService:Create(wp.ImageLabel, TWEEN_SMOOTH, {ImageTransparency = bgImgTrans}):Play()
 				TweenService:Create(wp.OverlayFrame, TWEEN_SMOOTH, {BackgroundTransparency = bgOverlayTrans}):Play()
 			else
-				wp.GifFrames = nil
-				if wp.VideoLabel and wp.VideoLabel.Visible then
-					pcall(function() wp.VideoLabel:Pause() end)
-					wp.VideoLabel.Visible = false
-				end
 				TweenService:Create(wp.ImageLabel, TWEEN_SMOOTH, {ImageTransparency = 1}):Play()
 				TweenService:Create(wp.OverlayFrame, TWEEN_SMOOTH, {BackgroundTransparency = 1}):Play()
 			end
 		end
 	end
 end
-
--- Single global driver for every animated GIF wallpaper currently on screen.
--- Only touches wallpaper elements that have GifFrames assigned (set by
--- ApplyWallpaper above), so there is zero overhead for image/video wallpapers
--- or when PerformanceMode has cleared everyone's GifFrames.
-RunService.Heartbeat:Connect(function(dt)
-	for _, wp in ipairs(KazeUI.WallpaperElements) do
-		if wp.GifFrames and wp.ImageLabel and wp.ImageLabel.Parent then
-			local frameCount = #wp.GifFrames
-			if frameCount > 0 then
-				local frameDuration = 1 / (wp.GifFrameRate or 12)
-				wp.GifElapsed = (wp.GifElapsed or 0) + dt
-				while wp.GifElapsed >= frameDuration do
-					wp.GifElapsed = wp.GifElapsed - frameDuration
-					wp.GifIndex = (wp.GifIndex or 0) % frameCount + 1
-					wp.ImageLabel.Image = wp.GifFrames[wp.GifIndex]
-				end
-			end
-		end
-	end
-end)
 
 function KazeUI:OnGlowChanged(inst, callback)
 	table.insert(KazeUI.GlowCallbacks, {Inst = inst, Callback = callback})
@@ -1232,15 +1119,11 @@ function KazeUI:SetPerformanceMode(enabled)
 		end
 		KazeUI.GlowElements = {}
 
-		-- Drop the wallpaper image/video so nothing is decoded/rendered behind the panels
+		-- Drop the wallpaper image so nothing is decoded/rendered behind the panels
 		for _, wp in ipairs(KazeUI.WallpaperElements) do
 			if wp.ImageLabel and wp.ImageLabel.Parent then
 				wp.ImageLabel.ImageTransparency = 1
 				wp.ImageLabel.Image = ""
-			end
-			if wp.VideoLabel and wp.VideoLabel.Parent then
-				pcall(function() wp.VideoLabel:Pause() end)
-				wp.VideoLabel.Visible = false
 			end
 			if wp.OverlayFrame and wp.OverlayFrame.Parent then
 				wp.OverlayFrame.BackgroundTransparency = 1
@@ -4848,17 +4731,6 @@ local function BuildWindow(config)
 	WallpaperImage.Parent = ContentClipper
 	Instance.new("UICorner", WallpaperImage).CornerRadius = UDim.new(0, 28)
 
-	local WallpaperVideo = Instance.new("VideoFrame")
-	WallpaperVideo.Name = "WallpaperVideo"
-	WallpaperVideo.Size = UDim2.fromScale(1, 1)
-	WallpaperVideo.BackgroundTransparency = 1
-	WallpaperVideo.ZIndex = -2
-	WallpaperVideo.Looped = true
-	WallpaperVideo.Volume = 0
-	WallpaperVideo.Visible = false
-	WallpaperVideo.Parent = ContentClipper
-	Instance.new("UICorner", WallpaperVideo).CornerRadius = UDim.new(0, 28)
-
 	local DarkOverlay = Instance.new("Frame")
 	DarkOverlay.Name = "DarkOverlay"
 	DarkOverlay.Size = UDim2.fromScale(1, 1)
@@ -4870,12 +4742,7 @@ local function BuildWindow(config)
 
 	table.insert(KazeUI.WallpaperElements, {
 		ImageLabel = WallpaperImage,
-		VideoLabel = WallpaperVideo,
-		OverlayFrame = DarkOverlay,
-		GifFrames = nil,
-		GifFrameRate = 12,
-		GifIndex = 1,
-		GifElapsed = 0
+		OverlayFrame = DarkOverlay
 	})
 
 	Window.Destroying:Connect(function()
@@ -4975,6 +4842,12 @@ local function BuildWindow(config)
 	if config.YoutubeLink and config.YoutubeLink ~= "" then
 		KazeUI.YoutubeLink = tostring(config.YoutubeLink)
 	end
+	if config.DiscordName and config.DiscordName ~= "" then
+		KazeUI.DiscordName = tostring(config.DiscordName)
+	end
+	if config.YoutubeName and config.YoutubeName ~= "" then
+		KazeUI.YoutubeName = tostring(config.YoutubeName)
+	end
 
 	local AvatarPopup = Instance.new("Frame")
 	AvatarPopup.Name = "AvatarPopup"
@@ -5037,51 +4910,100 @@ local function BuildWindow(config)
 	local SocialRow = Instance.new("Frame")
 	SocialRow.Name = "SocialRow"
 	SocialRow.BackgroundTransparency = 1
-	SocialRow.Position = UDim2.new(0, 0, 1, -40)
-	SocialRow.Size = UDim2.new(1, 0, 0, 40)
+	SocialRow.Position = UDim2.new(0, 0, 1, -104)
+	SocialRow.Size = UDim2.new(1, 0, 0, 104)
 	SocialRow.ZIndex = 52
 	SocialRow.Parent = AvatarPopupCard
 
 	local SocialRowLayout = Instance.new("UIListLayout", SocialRow)
-	SocialRowLayout.FillDirection = Enum.FillDirection.Horizontal
+	SocialRowLayout.FillDirection = Enum.FillDirection.Vertical
 	SocialRowLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-	SocialRowLayout.VerticalAlignment = Enum.VerticalAlignment.Center
-	SocialRowLayout.Padding = UDim.new(0, 12)
+	SocialRowLayout.VerticalAlignment = Enum.VerticalAlignment.Top
+	SocialRowLayout.Padding = UDim.new(0, 8)
 
-	local function CreateSocialButton(iconId, accentColor, tooltip, onClick)
-		local btn = Instance.new("TextButton")
-		btn.Size = UDim2.fromOffset(40, 40)
-		btn.BackgroundColor3 = accentColor
-		btn.AutoButtonColor = false
-		btn.Text = ""
-		btn.ZIndex = 53
-		btn.Visible = false
-		btn.Parent = SocialRow
-		Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 12)
+	local function CreateSocialButton(iconId, accentColor, platformLabel, handleLabel, onClick)
+		local row = Instance.new("TextButton")
+		row.Size = UDim2.new(1, 0, 0, 48)
+		row.BackgroundTransparency = 1
+		row.AutoButtonColor = false
+		row.Text = ""
+		row.ZIndex = 53
+		row.Visible = false
+		row.Parent = SocialRow
+		KazeUI:AddPanel(row, 0.04)
+		Instance.new("UICorner", row).CornerRadius = UDim.new(0, 12)
+
+		local iconCircle = Instance.new("Frame")
+		iconCircle.AnchorPoint = Vector2.new(0, 0.5)
+		iconCircle.Position = UDim2.new(0, 8, 0.5, 0)
+		iconCircle.Size = UDim2.fromOffset(34, 34)
+		iconCircle.BackgroundColor3 = accentColor
+		iconCircle.BorderSizePixel = 0
+		iconCircle.ZIndex = 54
+		iconCircle.Parent = row
+		Instance.new("UICorner", iconCircle).CornerRadius = UDim.new(1, 0)
 
 		local icon = Instance.new("ImageLabel")
 		icon.AnchorPoint = Vector2.new(0.5, 0.5)
 		icon.Position = UDim2.fromScale(0.5, 0.5)
-		icon.Size = UDim2.fromOffset(20, 20)
+		icon.Size = UDim2.fromOffset(18, 18)
 		icon.BackgroundTransparency = 1
 		icon.Image = FormatImage(iconId)
 		icon.ImageColor3 = Color3.fromRGB(255, 255, 255)
 		icon.ScaleType = Enum.ScaleType.Fit
-		icon.ZIndex = 54
-		icon.Parent = btn
+		icon.ZIndex = 55
+		icon.Parent = iconCircle
 
-		btn.MouseEnter:Connect(function()
-			TweenService:Create(btn, TWEEN_FAST, {Size = UDim2.fromOffset(44, 44)}):Play()
-		end)
-		btn.MouseLeave:Connect(function()
-			TweenService:Create(btn, TWEEN_FAST, {Size = UDim2.fromOffset(40, 40)}):Play()
-		end)
-		btn.MouseButton1Click:Connect(onClick)
+		local platformText = Instance.new("TextLabel")
+		platformText.AnchorPoint = Vector2.new(0, 0)
+		platformText.Position = UDim2.new(0, 54, 0, 7)
+		platformText.Size = UDim2.new(1, -70, 0, 16)
+		platformText.BackgroundTransparency = 1
+		platformText.Text = platformLabel
+		platformText.Font = Enum.Font.GothamBold
+		platformText.TextSize = 13
+		platformText.TextXAlignment = Enum.TextXAlignment.Left
+		platformText.TextTruncate = Enum.TextTruncate.AtEnd
+		platformText.ZIndex = 54
+		platformText.Parent = row
+		KazeUI:RegisterText(platformText, false)
 
-		return btn
+		local handleText = Instance.new("TextLabel")
+		handleText.AnchorPoint = Vector2.new(0, 0)
+		handleText.Position = UDim2.new(0, 54, 0, 25)
+		handleText.Size = UDim2.new(1, -70, 0, 14)
+		handleText.BackgroundTransparency = 1
+		handleText.Text = handleLabel
+		handleText.Font = Enum.Font.Gotham
+		handleText.TextSize = 11
+		handleText.TextXAlignment = Enum.TextXAlignment.Left
+		handleText.TextTruncate = Enum.TextTruncate.AtEnd
+		handleText.ZIndex = 54
+		handleText.Parent = row
+		KazeUI:RegisterText(handleText, true)
+
+		local chevron = Instance.new("ImageLabel")
+		chevron.AnchorPoint = Vector2.new(1, 0.5)
+		chevron.Position = UDim2.new(1, -12, 0.5, 0)
+		chevron.Size = UDim2.fromOffset(12, 12)
+		chevron.BackgroundTransparency = 1
+		chevron.Image = FormatImage("external-link")
+		chevron.ZIndex = 54
+		chevron.Parent = row
+		KazeUI:OnThemeChanged(chevron, function(t) chevron.ImageColor3 = t.MutedText end)
+
+		row.MouseEnter:Connect(function()
+			TweenService:Create(row, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.08)}):Play()
+		end)
+		row.MouseLeave:Connect(function()
+			TweenService:Create(row, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.04)}):Play()
+		end)
+		row.MouseButton1Click:Connect(onClick)
+
+		return row
 	end
 
-	local DiscordButton = CreateSocialButton(73132811772878, Color3.fromRGB(88, 101, 242), "Discord", function()
+	local DiscordButton = CreateSocialButton(73132811772878, Color3.fromRGB(88, 101, 242), "Discord", KazeUI.DiscordName or "Join our server", function()
 		if not KazeUI.DiscordLink or KazeUI.DiscordLink == "" then return end
 		local copied = pcall(function() setclipboard(KazeUI.DiscordLink) end)
 		KazeUI:Notify({
@@ -5091,7 +5013,7 @@ local function BuildWindow(config)
 		})
 	end)
 
-	local YoutubeButton = CreateSocialButton(123663668456341, Color3.fromRGB(255, 0, 0), "YouTube", function()
+	local YoutubeButton = CreateSocialButton(123663668456341, Color3.fromRGB(255, 0, 0), "YouTube", KazeUI.YoutubeName or "Watch our videos", function()
 		if not KazeUI.YoutubeLink or KazeUI.YoutubeLink == "" then return end
 		local copied = pcall(function() setclipboard(KazeUI.YoutubeLink) end)
 		KazeUI:Notify({
@@ -5150,8 +5072,11 @@ local function BuildWindow(config)
 		local hasYoutube = KazeUI.YoutubeLink ~= nil and KazeUI.YoutubeLink ~= ""
 		DiscordButton.Visible = hasDiscord
 		YoutubeButton.Visible = hasYoutube
-		SocialRow.Visible = hasDiscord or hasYoutube
-		local cardHeight = 64 + AvatarPopupContent.Size.Y.Offset + ((hasDiscord or hasYoutube) and 48 or 0)
+		local socialCount = (hasDiscord and 1 or 0) + (hasYoutube and 1 or 0)
+		SocialRow.Visible = socialCount > 0
+		local socialHeight = socialCount > 0 and ((socialCount * 48) + ((socialCount - 1) * 8)) or 0
+		SocialRow.Size = UDim2.new(1, 0, 0, socialHeight)
+		local cardHeight = 64 + AvatarPopupContent.Size.Y.Offset + (socialCount > 0 and (socialHeight + 10) or 0)
 		AvatarPopupCard.Size = UDim2.new(1, -20, 0, cardHeight)
 		local targetHeight = open and (cardHeight + 10) or 0
 		TweenService:Create(AvatarPopup, TweenInfo.new(0.3, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {Size = UDim2.new(1, 0, 0, targetHeight)}):Play()
@@ -5254,6 +5179,7 @@ local function BuildWindow(config)
 	MiniButton.Visible = not openButtonHidable
 	MiniButton.Parent = OpenButtonGui
 	MiniButton.ZIndex = 999
+	Instance.new("UICorner", MiniButton).CornerRadius = UDim.new(1, 0)
 
 	local MiniIcon = Instance.new("ImageLabel")
 	MiniIcon.Size = UDim2.fromScale(1, 1)
@@ -5265,7 +5191,7 @@ local function BuildWindow(config)
 	MiniIcon.Parent = MiniButton
 	MiniIcon.ZIndex = 1000
 
-	Instance.new("UICorner", MiniIcon).CornerRadius = UDim.new(0, 14)
+	Instance.new("UICorner", MiniIcon).CornerRadius = UDim.new(1, 0)
 	KazeUI:AddPanel(MiniIcon, 0.02)
 	KazeUI:OnThemeChanged(MiniIcon, function(t) MiniIcon.ImageColor3 = t.Text end)
 
@@ -6154,10 +6080,8 @@ local function BuildWindow(config)
 			Callback = function(val)
 				local cleanVal = FormatImage(val)
 				KazeUI.CurrentTheme.BackgroundImage = val
-				KazeUI.CurrentTheme.IsGif = false
 				for _, wp in ipairs(KazeUI.WallpaperElements) do
 					if wp.ImageLabel and wp.ImageLabel.Parent then
-						wp.GifFrames = nil
 						wp.ImageLabel.Image = cleanVal
 						local hasImg = val ~= ""
 						TweenService:Create(wp.ImageLabel, TWEEN_SMOOTH, {
@@ -6199,51 +6123,6 @@ local function BuildWindow(config)
 					if wp.OverlayFrame and wp.OverlayFrame.Parent then
 						TweenService:Create(wp.OverlayFrame, TWEEN_FAST, {BackgroundTransparency = trans}):Play()
 					end
-				end
-			end
-		})
-
-		-- Animated GIF wallpaper: Roblox has no native GIF decoder, so this plays
-		-- a sequence of still image assets (the individual GIF frames, e.g. exported
-		-- via ezgif.com "Split to frames" then uploaded to Roblox) back-to-back on
-		-- WallpaperImage at a fixed rate, exactly like a flipbook/sprite animation.
-		local gifSec = tab:SectionUI("Animated GIF Wallpaper")
-
-		gifSec:TextBox({
-			Title = "GIF Frame IDs (comma-separated, in order)",
-			Placeholder = "rbxassetid://111,rbxassetid://222,rbxassetid://333",
-			Default = type(KazeUI.CurrentTheme.GifFrames) == "table"
-				and table.concat(KazeUI.CurrentTheme.GifFrames, ",")
-				or (KazeUI.CurrentTheme.GifFrames or ""),
-			Callback = function(val)
-				KazeUI.CurrentTheme.GifFrames = val
-				if val ~= "" and KazeUI.CurrentTheme.BackgroundImageTransparency == nil then
-					KazeUI.CurrentTheme.BackgroundImageTransparency = 0
-				end
-				ApplyWallpaper(KazeUI.CurrentTheme)
-			end
-		})
-
-		gifSec:Toggle({
-			Title = "Enable Animated GIF Wallpaper",
-			Description = "When on, the frame list above plays as an animated wallpaper instead of a static image or video.",
-			Default = KazeUI.CurrentTheme.IsGif == true,
-			Callback = function(state)
-				KazeUI.CurrentTheme.IsGif = state
-				if state then KazeUI.CurrentTheme.IsVideo = false end
-				ApplyWallpaper(KazeUI.CurrentTheme)
-			end
-		})
-
-		gifSec:Slider({
-			Title = "GIF Playback Speed (FPS)",
-			Min = 1,
-			Max = 30,
-			Default = tonumber(KazeUI.CurrentTheme.GifFrameRate) or 12,
-			Callback = function(val)
-				KazeUI.CurrentTheme.GifFrameRate = val
-				for _, wp in ipairs(KazeUI.WallpaperElements) do
-					wp.GifFrameRate = val
 				end
 			end
 		})
