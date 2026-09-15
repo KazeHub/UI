@@ -418,7 +418,7 @@ end
 -- Supports transparency, frame disposal methods, and interlacing.
 -- Output: a list of {Pixels = <flat RGBA byte array>, Delay = <seconds>}
 -- frames plus the logical canvas Width/Height, ready to feed into an
--- EditableImage via WritePixels.
+-- EditableImage via WritePixelsBuffer.
 -- =========================================================================
 local GifDecoder = {}
 
@@ -656,22 +656,29 @@ function GifDecoder.Decode(raw, maxDimension)
 				end
 			end
 
-			-- Downscale (nearest-neighbor) to the output buffer for this frame
-			local frameBuffer = table.create(outW * outH * 4, 0)
+			-- Downscale (nearest-neighbor) straight into a Luau `buffer` -- this is the
+			-- exact type EditableImage:WritePixelsBuffer expects (a flat byte sequence,
+			-- RGBA per pixel, NOT a Lua number array). Building it here at decode time
+			-- means playback later does zero table/buffer allocation per frame -- it
+			-- just hands this same buffer object to WritePixelsBuffer every tick.
+			local frameBuffer = buffer.create(outW * outH * 4)
 			for y = 0, outH - 1 do
 				local srcY = math.min(screenH - 1, math.floor(y * scale))
 				for x = 0, outW - 1 do
 					local srcX = math.min(screenW - 1, math.floor(x * scale))
 					local srcBase = (srcY * screenW + srcX) * 4
 					local dstBase = (y * outW + x) * 4
-					frameBuffer[dstBase + 1] = canvas[srcBase + 1] or 0
-					frameBuffer[dstBase + 2] = canvas[srcBase + 2] or 0
-					frameBuffer[dstBase + 3] = canvas[srcBase + 3] or 0
-					frameBuffer[dstBase + 4] = canvas[srcBase + 4] or 0
+					buffer.writeu8(frameBuffer, dstBase, canvas[srcBase + 1] or 0)
+					buffer.writeu8(frameBuffer, dstBase + 1, canvas[srcBase + 2] or 0)
+					buffer.writeu8(frameBuffer, dstBase + 2, canvas[srcBase + 3] or 0)
+					buffer.writeu8(frameBuffer, dstBase + 3, canvas[srcBase + 4] or 0)
 				end
 			end
 
-			table.insert(frames, {Pixels = frameBuffer, Delay = pendingDelay})
+			-- Minimum delay guard lives here too (not just at GCE-parse time) so a
+			-- frame that never got a Graphic Control Extension at all can't play at
+			-- an unbounded framerate.
+			table.insert(frames, {PixelBuffer = frameBuffer, Delay = math.max(pendingDelay, 0.02)})
 
 			-- Apply this frame's disposal method before the next frame composites
 			if pendingDisposal == 2 then
@@ -5082,8 +5089,29 @@ local function BuildWindow(config)
 	-- sequence, or a real .gif URL decoded frame-by-frame via GifDecoder + EditableImage.
 	-- Raw .mp4/.webm/.mov URLs still can't be streamed directly by the client -- Video
 	-- mode needs an rbxassetid already uploaded to Roblox -- but .gif is fully supported.
-	local animatedWallpaperThread = nil
+	local liveWallpaperThread = nil     -- the GIF download+decode task
+	local animatedWallpaperThread = nil -- the actual per-frame playback loop (GIF or Animated)
+	local liveEditableImage = nil
+
+	-- Bumped on every SetLiveWallpaper call. In-flight async work (HTTP download, GIF
+	-- decode, EditableImage creation) re-checks this before touching any shared state,
+	-- so an old call that's still downloading when a newer call comes in can't clobber
+	-- it once it finally finishes -- this is what makes rapid back-to-back
+	-- SetLiveWallpaper calls (including the same GIF fired twice) safe.
+	local liveWallpaperGeneration = 0
+
+	local function DestroyLiveEditableImage()
+		if liveEditableImage then
+			pcall(function() liveEditableImage:Destroy() end)
+			liveEditableImage = nil
+		end
+	end
+
 	local function StopAnimatedWallpaper()
+		if liveWallpaperThread then
+			task.cancel(liveWallpaperThread)
+			liveWallpaperThread = nil
+		end
 		if animatedWallpaperThread then
 			task.cancel(animatedWallpaperThread)
 			animatedWallpaperThread = nil
@@ -5097,12 +5125,32 @@ local function BuildWindow(config)
 			(string.find(lower, "%.gif$") or string.find(lower, "%.mp4$") or string.find(lower, "%.webm$") or string.find(lower, "%.mov$"))
 	end
 
-	local liveEditableImage = nil
+	local function GifLog(liveConfig, ...)
+		if liveConfig and liveConfig.Debug then
+			print("[ KazeUI GIF ]", ...)
+		end
+	end
 
 	local function SetLiveWallpaper(liveConfig)
 		StopAnimatedWallpaper()
 		WallpaperVideo.Visible = false
 		WallpaperVideo:Pause()
+
+		-- Roblox has a known engine quirk where an ImageContent bound to an Object
+		-- (our EditableImage) won't cleanly revert to a plain Image/Uri afterwards
+		-- unless it's cleared back to Content.none first. Doing this up front, before
+		-- anything new is assigned, is what makes GIF -> static and static -> GIF work
+		-- reliably instead of leaving the last GIF frame stuck on screen.
+		local contentResetOk = pcall(function()
+			WallpaperImage.ImageContent = Content.none
+		end)
+		if not contentResetOk then
+			WallpaperImage.ImageContent = Content.fromUri("")
+		end
+		DestroyLiveEditableImage()
+
+		liveWallpaperGeneration = liveWallpaperGeneration + 1
+		local myGeneration = liveWallpaperGeneration
 
 		liveConfig = liveConfig or {}
 		local wpType = liveConfig.Type
@@ -5142,7 +5190,7 @@ local function BuildWindow(config)
 		elseif wpType == "Animated" then
 			local frames = liveConfig.Frames
 			if type(frames) ~= "table" or #frames == 0 then
-				warn("[KazeUI] LiveWallpaper.Frames needs an array of rbxassetid:// images (a GIF exported frame-by-frame). Raw .gif URLs can't be decoded by the Roblox engine.")
+				warn("[KazeUI] LiveWallpaper.Frames needs an array of rbxassetid:// images (a GIF exported frame-by-frame). Raw .gif URLs should use Type = \"GIF\" instead.")
 				KazeUI.LiveWallpaperActive = false
 				return
 			end
@@ -5163,7 +5211,7 @@ local function BuildWindow(config)
 			WallpaperImage.ImageTransparency = 0
 			animatedWallpaperThread = task.spawn(function()
 				local i = 0
-				while true do
+				while myGeneration == liveWallpaperGeneration do
 					i = (i % #resolvedFrames) + 1
 					WallpaperImage.Image = resolvedFrames[i]
 					task.wait(frameDelay)
@@ -5181,17 +5229,44 @@ local function BuildWindow(config)
 				return
 			end
 
-			task.spawn(function()
+			local maxSize = tonumber(liveConfig.MaxSize) or 512
+
+			liveWallpaperThread = task.spawn(function()
+				GifLog(liveConfig, "Download started:", url)
 				local ok, rawOrErr = pcall(function() return game:HttpGet(url) end)
+				if myGeneration ~= liveWallpaperGeneration then return end -- superseded mid-download
+
 				if not ok or not rawOrErr or rawOrErr == "" then
 					warn("[KazeUI] Failed to download GIF from URL: " .. tostring(rawOrErr))
 					KazeUI.LiveWallpaperActive = false
 					return
 				end
+				GifLog(liveConfig, "Downloaded", #rawOrErr, "bytes")
+
+				-- Confirm this is actually a GIF before handing it to the decoder -- an
+				-- HTML error page, a JSON API response, or a dead link are all common
+				-- failure modes for a bad/expired URL and deserve a clear message.
+				local signature = string.sub(rawOrErr, 1, 6)
+				if signature ~= "GIF87a" and signature ~= "GIF89a" then
+					local hint = "unrecognized content (not a GIF)"
+					local trimmed = string.match(rawOrErr, "^%s*(.-)%s*$") or ""
+					local firstChar = string.sub(trimmed, 1, 1)
+					if firstChar == "<" then
+						hint = "an HTML page (bad URL, redirect, or error page), not a GIF"
+					elseif firstChar == "{" or firstChar == "[" then
+						hint = "a JSON response, not a GIF"
+					end
+					warn("[KazeUI] URL did not return a GIF -- got " .. hint .. ".")
+					KazeUI.LiveWallpaperActive = false
+					return
+				end
+				GifLog(liveConfig, "Valid GIF detected")
 
 				local decodeOk, gifOrErr, decodeReason = pcall(function()
-					return GifDecoder.Decode(rawOrErr, tonumber(liveConfig.MaxSize) or 512)
+					return GifDecoder.Decode(rawOrErr, maxSize)
 				end)
+				if myGeneration ~= liveWallpaperGeneration then return end -- superseded mid-decode
+
 				if not decodeOk or not gifOrErr then
 					warn("[KazeUI] Failed to decode GIF: " .. tostring(decodeOk and decodeReason or gifOrErr))
 					KazeUI.LiveWallpaperActive = false
@@ -5199,9 +5274,21 @@ local function BuildWindow(config)
 				end
 
 				local gif = gifOrErr
+				GifLog(liveConfig, "Decoded", #gif.Frames, "frames")
+				GifLog(liveConfig, "Canvas:", gif.Width, "x", gif.Height)
+
+				GifLog(liveConfig, "Creating EditableImage")
 				local editableOk, editableImg = pcall(function()
 					return AssetService:CreateEditableImage({Size = Vector2.new(gif.Width, gif.Height)})
 				end)
+
+				if myGeneration ~= liveWallpaperGeneration then
+					-- A newer call already took over while we were creating this --
+					-- don't leak the EditableImage we just made for nothing.
+					if editableOk and editableImg then pcall(function() editableImg:Destroy() end) end
+					return
+				end
+
 				if not editableOk or not editableImg then
 					warn("[KazeUI] Could not create EditableImage -- this game/client may not allow the Mesh & Image APIs. LiveWallpaper GIF is unavailable here.")
 					KazeUI.LiveWallpaperActive = false
@@ -5215,22 +5302,35 @@ local function BuildWindow(config)
 				if not contentOk then
 					warn("[KazeUI] Could not bind EditableImage to the wallpaper -- Content.fromObject failed.")
 					KazeUI.LiveWallpaperActive = false
+					DestroyLiveEditableImage()
 					return
 				end
 				WallpaperImage.Image = ""
 				WallpaperImage.ImageTransparency = 0
 
+				GifLog(liveConfig, "Playback started")
+				local size = Vector2.new(gif.Width, gif.Height)
+				local origin = Vector2.zero
+				local frameCount = #gif.Frames
 				animatedWallpaperThread = task.spawn(function()
 					local i = 0
-					local frameCount = #gif.Frames
-					while true do
+					while myGeneration == liveWallpaperGeneration do
 						i = (i % frameCount) + 1
 						local frame = gif.Frames[i]
-						pcall(function()
-							editableImg:WritePixels(Vector2.new(0, 0), Vector2.new(gif.Width, gif.Height), frame.Pixels)
+						GifLog(liveConfig, "Frame", i .. "/" .. frameCount)
+						-- One pre-allocated buffer per frame (built once, back in
+						-- GifDecoder.Decode) means this write is the only per-tick
+						-- cost -- no table churn, no per-frame allocation.
+						local writeOk = pcall(function()
+							editableImg:WritePixelsBuffer(origin, size, frame.PixelBuffer)
 						end)
+						if not writeOk then
+							warn("[KazeUI] GIF playback stopped -- WritePixelsBuffer failed.")
+							break
+						end
 						task.wait(frame.Delay)
 					end
+					GifLog(liveConfig, "Playback stopped")
 				end)
 			end)
 		end
@@ -5246,6 +5346,7 @@ local function BuildWindow(config)
 
 	Window.Destroying:Connect(function()
 		StopAnimatedWallpaper()
+		DestroyLiveEditableImage()
 		for i = #KazeUI.WallpaperElements, 1, -1 do
 			if KazeUI.WallpaperElements[i].ImageLabel == WallpaperImage then
 				table.remove(KazeUI.WallpaperElements, i)
