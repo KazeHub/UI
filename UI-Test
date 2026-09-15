@@ -450,25 +450,6 @@ function KazeUI:OnGlowChanged(inst, callback)
 	end
 end
 
--- Subtle top-to-bottom text fade: the top stays fully solid, the bottom eases into a
--- lighter (but still fully legible) transparency. Purely a text-glyph gradient -- it
--- never touches the background, and never fades far enough to hurt readability.
-local TEXT_FADE_SEQUENCE = NumberSequence.new({
-	NumberSequenceKeypoint.new(0, 0),
-	NumberSequenceKeypoint.new(0.55, 0),
-	NumberSequenceKeypoint.new(1, 0.4)
-})
-
-local function ApplyTextFade(inst)
-	if not (inst:IsA("TextLabel") or inst:IsA("TextButton") or inst:IsA("TextBox")) then return end
-	if inst:FindFirstChild("KazeUITextFade") then return end
-	local fade = Instance.new("UIGradient")
-	fade.Name = "KazeUITextFade"
-	fade.Rotation = 90
-	fade.Transparency = TEXT_FADE_SEQUENCE
-	fade.Parent = inst
-end
-
 function KazeUI:RegisterText(inst, isMuted)
 	if not inst then return end
 	if isMuted then
@@ -481,13 +462,84 @@ function KazeUI:RegisterText(inst, isMuted)
 		table.insert(KazeUI.TextElements, inst)
 		inst.TextColor3 = KazeUI.CurrentTheme.Text
 	end
-	ApplyTextFade(inst)
 	inst.Destroying:Connect(function()
 		local tbl = isMuted and KazeUI.MutedTextElements or KazeUI.TextElements
 		for i = #tbl, 1, -1 do
 			if tbl[i] == inst then table.remove(tbl, i) end
 		end
 	end)
+end
+
+-- Adds a soft, gently-pulsing drop shadow behind a text label. The shadow sits
+-- BEHIND the real text (lower ZIndex, offset a couple px, never fully opaque),
+-- so the label on top always stays fully readable -- it just gets a "lifted"
+-- look instead of looking flat/washed out on busy backgrounds.
+-- opts: Color, Offset (Vector2), Transparency (0-1 base), Animate (bool), PulseAmount, Speed
+function KazeUI:ApplyTextShadow(label, opts)
+	if not label or not (label:IsA("TextLabel") or label:IsA("TextButton")) then return nil end
+	opts = opts or {}
+	local shadowColor = opts.Color or Color3.fromRGB(0, 0, 0)
+	local offset = opts.Offset or Vector2.new(0, 2)
+	local baseTransparency = opts.Transparency
+	if baseTransparency == nil then baseTransparency = 0.55 end
+	local animate = opts.Animate
+	if animate == nil then animate = true end
+	local pulseAmount = opts.PulseAmount or 0.22
+	local speed = opts.Speed or 1.4
+
+	local shadow = Instance.new(label.ClassName)
+	shadow.Name = (label.Name ~= "" and label.Name or "Text") .. "Shadow"
+	shadow.Size = label.Size
+	shadow.AnchorPoint = label.AnchorPoint
+	shadow.Position = UDim2.new(label.Position.X.Scale, label.Position.X.Offset + offset.X, label.Position.Y.Scale, label.Position.Y.Offset + offset.Y)
+	shadow.BackgroundTransparency = 1
+	shadow.Text = label.Text
+	shadow.Font = label.Font
+	shadow.TextSize = label.TextSize
+	shadow.TextScaled = label.TextScaled
+	shadow.TextWrapped = label.TextWrapped
+	shadow.TextXAlignment = label.TextXAlignment
+	shadow.TextYAlignment = label.TextYAlignment
+	shadow.TextColor3 = shadowColor
+	shadow.TextTransparency = baseTransparency
+	shadow.Selectable = false
+	if shadow:IsA("TextButton") then
+		shadow.AutoButtonColor = false
+		shadow.Active = false
+	end
+	shadow.ZIndex = label.ZIndex - 1
+	shadow.Parent = label.Parent
+
+	label:GetPropertyChangedSignal("Text"):Connect(function() shadow.Text = label.Text end)
+	label:GetPropertyChangedSignal("Size"):Connect(function() shadow.Size = label.Size end)
+	label:GetPropertyChangedSignal("Visible"):Connect(function() shadow.Visible = label.Visible end)
+	label:GetPropertyChangedSignal("ZIndex"):Connect(function() shadow.ZIndex = label.ZIndex - 1 end)
+	label:GetPropertyChangedSignal("Position"):Connect(function()
+		shadow.Position = UDim2.new(label.Position.X.Scale, label.Position.X.Offset + offset.X, label.Position.Y.Scale, label.Position.Y.Offset + offset.Y)
+	end)
+	label.Destroying:Connect(function()
+		if shadow then shadow:Destroy() end
+	end)
+
+	if animate then
+		task.spawn(function()
+			while shadow and shadow.Parent do
+				local upT = TweenService:Create(shadow, TweenInfo.new(speed, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {
+					TextTransparency = math.clamp(baseTransparency + pulseAmount, 0, 0.92)
+				})
+				upT:Play()
+				upT.Completed:Wait()
+				if not (shadow and shadow.Parent) then break end
+				local downT = TweenService:Create(shadow, TweenInfo.new(speed, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {
+					TextTransparency = baseTransparency
+				})
+				downT:Play()
+				downT.Completed:Wait()
+			end
+		end)
+	end
+
+	return shadow
 end
 
 function KazeUI:RegisterBorder(inst)
@@ -4680,17 +4732,6 @@ local function BuildWindow(config)
 	end
 
 	local initialSize = config.Size or UDim2.fromOffset(600, 400)
-
-	local openButtonShape = "Circle"
-	if config.OpenButton and config.OpenButton.Shape then
-		local shapeStr = string.lower(tostring(config.OpenButton.Shape))
-		if shapeStr == "square" then
-			openButtonShape = "Square"
-		else
-			openButtonShape = "Circle"
-		end
-	end
-
 	local MiniButtonSize = (config.OpenButton and config.OpenButton.Size) or UDim2.fromOffset(48, 48)
 
 	local openButtonHidable = true
@@ -4888,7 +4929,7 @@ local function BuildWindow(config)
 	AvatarPopup.Position = UDim2.new(0, 0, 0, 52)
 	AvatarPopup.Size = UDim2.new(1, 0, 0, 0)
 	AvatarPopup.ZIndex = 50
-	AvatarPopup.Parent = Window
+	AvatarPopup.Parent = ContentClipper -- was Window: Window has no clipping, so this frame could render past the window's rounded edge
 
 	local AvatarPopupCard = Instance.new("Frame")
 	AvatarPopupCard.BorderSizePixel = 0
@@ -5066,8 +5107,7 @@ local function BuildWindow(config)
 	LockOverlay.Size = UDim2.new(1, 0, 1, -52)
 	LockOverlay.ZIndex = 40
 	LockOverlay.Visible = false
-	LockOverlay.Parent = Window
-	Instance.new("UICorner", LockOverlay).CornerRadius = UDim.new(0, 28)
+	LockOverlay.Parent = ContentClipper -- was Window: same clipping fix as AvatarPopup above, this is what was showing as the stray black shape below the logo
 
 	local topBarNormalColor = TopBarMainBody.BackgroundColor3
 	local topBarDarkColor = Color3.fromRGB(10, 10, 12)
@@ -5155,6 +5195,7 @@ local function BuildWindow(config)
 	TitleLabel.TextYAlignment = Enum.TextYAlignment.Center
 	TitleLabel.Parent = TopBar
 	KazeUI:RegisterText(TitleLabel, false)
+	KazeUI:ApplyTextShadow(TitleLabel, {Offset = Vector2.new(0, 2), Transparency = 0.6, PulseAmount = 0.25})
 
 	local SubLabel = Instance.new("TextLabel")
 	SubLabel.Size = UDim2.new(0, 180, 1, 0)
@@ -5206,47 +5247,60 @@ local function BuildWindow(config)
 	local MiniButton = Instance.new("TextButton")
 	MiniButton.Size = MiniButtonSize
 	MiniButton.Position = UDim2.new(0, 24, 0, 85)
-	MiniButton.BackgroundTransparency = 0
-	MiniButton.AutoButtonColor = false
+	MiniButton.BackgroundTransparency = 1
 	MiniButton.Text = ""
 	MiniButton.Visible = not openButtonHidable
 	MiniButton.Parent = OpenButtonGui
 	MiniButton.ZIndex = 999
-	KazeUI:AddPanel(MiniButton, 0.02)
-
 	local MiniButtonCorner = Instance.new("UICorner", MiniButton)
-	if openButtonShape == "Square" then
-		MiniButtonCorner.CornerRadius = UDim.new(0, 14)
-	else
-		MiniButtonCorner.CornerRadius = UDim.new(1, 0)
-	end
 
-	local MiniStroke = Instance.new("UIStroke")
-	MiniStroke.Thickness = 1.5
-	MiniStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-	MiniStroke.Parent = MiniButton
-	KazeUI:RegisterBorder(MiniStroke)
-	StartNeonLoop(MiniStroke)
-
-	-- The logo icon itself always stays a circle, regardless of the button's outer shape.
 	local MiniIcon = Instance.new("ImageLabel")
-	MiniIcon.AnchorPoint = Vector2.new(0.5, 0.5)
+	MiniIcon.Size = UDim2.fromScale(1, 1)
 	MiniIcon.Position = UDim2.fromScale(0.5, 0.5)
+	MiniIcon.AnchorPoint = Vector2.new(0.5, 0.5)
 	MiniIcon.BackgroundTransparency = 0
 	MiniIcon.Image = OpenIcon
 	MiniIcon.ScaleType = Enum.ScaleType.Fit
 	MiniIcon.Parent = MiniButton
 	MiniIcon.ZIndex = 1000
-	Instance.new("UICorner", MiniIcon).CornerRadius = UDim.new(1, 0)
+
+	local MiniIconCorner = Instance.new("UICorner", MiniIcon)
+	KazeUI:AddPanel(MiniIcon, 0.02)
 	KazeUI:OnThemeChanged(MiniIcon, function(t) MiniIcon.ImageColor3 = t.Text end)
 
-	if openButtonShape == "Square" then
-		MiniIcon.Size = UDim2.fromScale(0.66, 0.66)
-		KazeUI:AddPanel(MiniIcon, 0.02)
-	else -- Circle (default)
-		MiniIcon.Size = UDim2.fromScale(1, 1)
-		KazeUI:AddPanel(MiniIcon, 0.02)
+	-- Open button shape: "Circle" (default, fully round) or "Square" (soft-rounded square)
+	local openButtonShape = "Circle"
+	local function applyOpenButtonShape(shape)
+		shape = tostring(shape or "Circle"):lower()
+		if shape == "square" then
+			openButtonShape = "Square"
+			local side = math.min(MiniButtonSize.X.Offset, MiniButtonSize.Y.Offset)
+			if side <= 0 then side = 48 end
+			local radius = UDim.new(0, math.max(8, math.floor(side * 0.22)))
+			MiniButtonCorner.CornerRadius = radius
+			MiniIconCorner.CornerRadius = radius
+		else
+			openButtonShape = "Circle"
+			MiniButtonCorner.CornerRadius = UDim.new(1, 0)
+			MiniIconCorner.CornerRadius = UDim.new(1, 0)
+		end
 	end
+	applyOpenButtonShape((config.OpenButton and config.OpenButton.Shape) or "Circle")
+
+	function KazeUI:SetOpenButtonShape(shape)
+		applyOpenButtonShape(shape)
+	end
+
+	function KazeUI:GetOpenButtonShape()
+		return openButtonShape
+	end
+
+	local MiniStroke = Instance.new("UIStroke")
+	MiniStroke.Thickness = 1.5
+	MiniStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+	MiniStroke.Parent = MiniIcon
+	KazeUI:RegisterBorder(MiniStroke)
+	StartNeonLoop(MiniStroke)
 
 	local isMinimized = false
 
@@ -5468,7 +5522,6 @@ local function BuildWindow(config)
 		ConfirmBtn.TextSize = 11
 		ConfirmBtn.ZIndex = 103
 		Instance.new("UICorner", ConfirmBtn).CornerRadius = UDim.new(0, 10)
-		ApplyTextFade(ConfirmBtn)
 
 		local CancelBtn = Instance.new("TextButton", ButtonsFrame)
 		CancelBtn.Size = UDim2.new(0, 100, 0, 30)
@@ -5980,7 +6033,6 @@ local function BuildWindow(config)
 			if btnColor then
 				actionBtn.BackgroundColor3 = btnColor
 				btnText.TextColor3 = Color3.fromRGB(255, 255, 255)
-				ApplyTextFade(btnText)
 			else
 				KazeUI:AddPanel(actionBtn, 0.04)
 				KazeUI:RegisterText(btnText, false)
@@ -6227,7 +6279,6 @@ local function BuildWindow(config)
 
 		txt.TextXAlignment = Enum.TextXAlignment.Left
 		txt.Parent = btn
-		ApplyTextFade(txt)
 
 		local page = Instance.new("Frame")
 		page.Size = UDim2.new(1, 0, 1, 0)
