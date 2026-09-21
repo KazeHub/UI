@@ -5509,6 +5509,59 @@ local function BuildWindow(config)
 	Pages.ClipsDescendants = true
 	Pages.Parent = Content
 
+	-- HidableTab: after a few seconds of no sidebar interaction, collapse the
+	-- sidebar down to icon-only width. Clicking it while collapsed expands it
+	-- back and restarts the idle countdown.
+	local hidableTab = config.HidableTab == true
+	local sidebarCollapsed = false
+	local sidebarIdleThread = nil
+	local hidableTabLabels = {}
+	local SidebarExpandCatcherRef = nil
+	local SIDEBAR_FULL_WIDTH = 190
+	local SIDEBAR_ICON_WIDTH = 52
+
+	local function SetSidebarCollapsed(state)
+		if not hidableTab or sidebarCollapsed == state then return end
+		sidebarCollapsed = state
+		local targetWidth = state and SIDEBAR_ICON_WIDTH or SIDEBAR_FULL_WIDTH
+
+		TweenService:Create(SideBarMask, TWEEN_SMOOTH, {Size = UDim2.new(0, targetWidth, 1, 0)}):Play()
+		TweenService:Create(SideBar, TWEEN_SMOOTH, {Size = UDim2.new(0, targetWidth, 1, 0)}):Play()
+		TweenService:Create(VertDivider, TWEEN_SMOOTH, {Position = UDim2.new(0, targetWidth, 0, 0)}):Play()
+		TweenService:Create(Pages, TWEEN_SMOOTH, {Position = UDim2.new(0, targetWidth + 1, 0, 0), Size = UDim2.new(1, -(targetWidth + 1), 1, 0)}):Play()
+
+		if SidebarExpandCatcherRef then SidebarExpandCatcherRef.Visible = state end
+
+		for _, item in ipairs(hidableTabLabels) do
+			TweenService:Create(item.Label, TWEEN_FAST, {TextTransparency = state and 1 or 0}):Play()
+		end
+	end
+
+	local function ResetSidebarIdleTimer()
+		if not hidableTab then return end
+		if sidebarIdleThread then task.cancel(sidebarIdleThread) end
+		if sidebarCollapsed then SetSidebarCollapsed(false) end
+		sidebarIdleThread = task.delay(3, function()
+			SetSidebarCollapsed(true)
+		end)
+	end
+
+	if hidableTab then
+		local SidebarExpandCatcher = Instance.new("TextButton")
+		SidebarExpandCatcher.Size = UDim2.fromScale(1, 1)
+		SidebarExpandCatcher.BackgroundTransparency = 1
+		SidebarExpandCatcher.Text = ""
+		SidebarExpandCatcher.ZIndex = 500
+		SidebarExpandCatcher.Visible = false
+		SidebarExpandCatcher.Parent = SideBarMask
+		SidebarExpandCatcher.MouseButton1Click:Connect(function()
+			if sidebarCollapsed then ResetSidebarIdleTimer() end
+		end)
+		SidebarExpandCatcherRef = SidebarExpandCatcher
+		SideBarMask.MouseEnter:Connect(ResetSidebarIdleTimer)
+		ResetSidebarIdleTimer()
+	end
+
 	local PagesElevation = -0.01
 
 	local PagesMainBody = Instance.new("Frame", Pages)
@@ -6310,6 +6363,7 @@ local function BuildWindow(config)
 		updateState()
 
 		table.insert(self._Tabs, {Button = btn, Indicator = leftIndicator, Label = txt, Page = page, Icon = iconLabel})
+		table.insert(hidableTabLabels, {Label = txt})
 
 		local isHovering = false
 
@@ -6371,7 +6425,11 @@ local function BuildWindow(config)
 				TweenService:Create(iconLabel, TWEEN_FAST, {ImageColor3 = KazeUI.CurrentTheme.MutedText}):Play()
 			end
 		end)
-		btn.MouseButton1Click:Connect(activate)
+		btn.MouseButton1Click:Connect(function()
+		TweenService:Create(btn, TweenInfo.new(0.1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, 0, true), {Size = UDim2.new(1, -14, 0, 33)}):Play()
+		if hidableTab then ResetSidebarIdleTimer() end
+		activate()
+	end)
 		if #self._Tabs == 1 then activate() end
 
 		KazeUI:OnThemeChanged(btn, function(t)
