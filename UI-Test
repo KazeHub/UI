@@ -1388,10 +1388,14 @@ local function ToggleScrollingAncestors(element, state)
 	end
 end
 
--- Animates a container's direct children sliding in from the right, one after
--- another with a small stagger, back to their normal (UIListLayout-assigned)
--- position. Used on tab switch so a page's components visibly cascade in
--- instead of just popping into view.
+-- Animates a container's direct children dropping smoothly into place from
+-- just above their resting spot, top child first and each one below starting
+-- a beat later -- a gentle top-to-bottom "waterfall" run instead of everything
+-- popping in at once. Used on tab switch so a page's components cascade in.
+local TWEEN_CASCADE = TweenInfo.new(0.45, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
+local CASCADE_STAGGER = 0.06
+local CASCADE_RISE = 26
+
 local function AnimateComponentsIn(container)
 	if not container then return end
 	local index = 0
@@ -1400,10 +1404,10 @@ local function AnimateComponentsIn(container)
 			index = index + 1
 			local i = index
 			local originalPos = child.Position
-			child.Position = UDim2.new(originalPos.X.Scale, originalPos.X.Offset + 40, originalPos.Y.Scale, originalPos.Y.Offset)
-			task.delay((i - 1) * 0.035, function()
+			child.Position = UDim2.new(originalPos.X.Scale, originalPos.X.Offset, originalPos.Y.Scale, originalPos.Y.Offset - CASCADE_RISE)
+			task.delay((i - 1) * CASCADE_STAGGER, function()
 				if child and child.Parent then
-					TweenService:Create(child, TWEEN_SPRING, {Position = originalPos}):Play()
+					TweenService:Create(child, TWEEN_CASCADE, {Position = originalPos}):Play()
 				end
 			end)
 		end
@@ -5518,7 +5522,10 @@ local function BuildWindow(config)
 	local hidableTabLabels = {}
 	local SidebarExpandCatcherRef = nil
 	local SIDEBAR_FULL_WIDTH = 190
-	local SIDEBAR_ICON_WIDTH = 52
+	local SIDEBAR_ICON_WIDTH = 60 -- was 52: too narrow, clipped the 18px tab icons by a few px once the
+	-- scroller padding (16) and button margin (10) were subtracted -- that was the cut-off icon bug
+	local ICON_EXPANDED_X = 12
+	local ICON_COLLAPSED_X = math.floor(((SIDEBAR_ICON_WIDTH - 16 - 10) - 18) / 2) -- re-centers the icon in the narrower rail
 
 	local function SetSidebarCollapsed(state)
 		if not hidableTab or sidebarCollapsed == state then return end
@@ -5534,6 +5541,10 @@ local function BuildWindow(config)
 
 		for _, item in ipairs(hidableTabLabels) do
 			TweenService:Create(item.Label, TWEEN_FAST, {TextTransparency = state and 1 or 0}):Play()
+			if item.Icon then
+				local iconX = state and ICON_COLLAPSED_X or ICON_EXPANDED_X
+				TweenService:Create(item.Icon, TWEEN_SMOOTH, {Position = UDim2.new(0, iconX, 0.5, -9)}):Play()
+			end
 		end
 	end
 
@@ -6198,7 +6209,7 @@ local function BuildWindow(config)
 
 		local iconLabel = Instance.new("ImageLabel", btn)
 		iconLabel.Size = UDim2.fromOffset(18, 18)
-		iconLabel.Position = UDim2.new(0, 12, 0.5, -9)
+		iconLabel.Position = UDim2.new(0, ICON_EXPANDED_X, 0.5, -9)
 		iconLabel.BackgroundTransparency = 1
 		iconLabel.Image = formattedIcon
 		iconLabel.ScaleType = Enum.ScaleType.Fit
@@ -6363,7 +6374,7 @@ local function BuildWindow(config)
 		updateState()
 
 		table.insert(self._Tabs, {Button = btn, Indicator = leftIndicator, Label = txt, Page = page, Icon = iconLabel})
-		table.insert(hidableTabLabels, {Label = txt})
+		table.insert(hidableTabLabels, {Label = txt, Icon = iconLabel})
 
 		local isHovering = false
 
