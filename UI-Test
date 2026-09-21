@@ -481,6 +481,71 @@ function KazeUI:RegisterBorder(inst)
 	end)
 end
 
+-- Keeps a 1px hairline divider a perfectly constant, crisp thickness no matter
+-- what happens to its parent: window resizing, window dragging, min/max size
+-- clamping, the global UIScale factor, or plain fractional-pixel drift from
+-- being center-anchored. Root cause: the divider's real on-screen size/position
+-- is `localOffset * UIScale.Scale`, and neither the resize math, the drag math,
+-- nor the center-anchor math guarantee that comes out to a whole pixel -- so
+-- the line was getting anti-aliased across two pixels by a different amount
+-- every frame, which reads as the thickness "breathing" while you drag.
+--
+-- Fix: `anchorFrame` keeps whatever Position/Size logic it already had
+-- (untouched -- so any existing tween, like the sidebar collapse slide, keeps
+-- working exactly as before). A plain child frame is added inside it as the
+-- actual visible line, and every render step that child's Size/Position are
+-- recomputed FROM the anchor's live AbsolutePosition/AbsoluteSize so the
+-- child's own final on-screen size/position are forced to whole pixels. This
+-- runs continuously off RunService, so it self-corrects regardless of cause
+-- (resize, drag, fast resize, PC or touch input) without needing to hook into
+-- every place that might move the anchor.
+function KazeUI:MakePixelStableLine(anchorFrame, axis, thicknessPx)
+	if not anchorFrame then return end
+	axis = (axis == "X") and "X" or "Y" -- "Y" = horizontal line (thin vertically), "X" = vertical line (thin horizontally)
+	thicknessPx = thicknessPx or 1
+
+	anchorFrame.BackgroundTransparency = 1
+	anchorFrame.BorderSizePixel = 0
+
+	local line = Instance.new("Frame")
+	line.Name = "PixelStableLine"
+	line.BorderSizePixel = 0
+	line.ZIndex = anchorFrame.ZIndex
+	line.Parent = anchorFrame
+
+	local function correct()
+		if not anchorFrame.Parent then return end
+		local scale = UIScale.Scale
+		if not scale or scale <= 0 then scale = 1 end
+
+		local absPos = anchorFrame.AbsolutePosition
+
+		if axis == "Y" then
+			local snappedTop = math.floor(absPos.Y + 0.5)
+			local localY = (snappedTop - absPos.Y) / scale
+			line.Size = UDim2.new(1, 0, 0, thicknessPx / scale)
+			line.Position = UDim2.new(0, 0, 0, localY)
+		else
+			local snappedLeft = math.floor(absPos.X + 0.5)
+			local localX = (snappedLeft - absPos.X) / scale
+			line.Size = UDim2.new(0, thicknessPx / scale, 1, 0)
+			line.Position = UDim2.new(0, localX, 0, 0)
+		end
+	end
+
+	local heartbeatConn = RunService.RenderStepped:Connect(correct)
+	correct()
+
+	anchorFrame.Destroying:Connect(function()
+		if heartbeatConn then
+			heartbeatConn:Disconnect()
+			heartbeatConn = nil
+		end
+	end)
+
+	return line
+end
+
 function KazeUI:OnThemeChanged(inst, cb)
 	if not inst then return end
 	table.insert(KazeUI.ThemeCallbacks, {Inst = inst, Callback = cb})
@@ -5132,7 +5197,8 @@ local function BuildWindow(config)
 	TopDivider.BorderSizePixel = 0
 	TopDivider.ZIndex = 5
 	TopDivider.Parent = TopBar
-	KazeUI:OnThemeChanged(TopDivider, function(t) TopDivider.BackgroundColor3 = t.Border end)
+	local TopDividerLine = KazeUI:MakePixelStableLine(TopDivider, "Y", 1)
+	KazeUI:OnThemeChanged(TopDivider, function(t) TopDividerLine.BackgroundColor3 = t.Border end)
 
 	local lastNormalSize = initialSize
 	local toggledMaximized = false
@@ -5503,7 +5569,8 @@ local function BuildWindow(config)
 	VertDivider.Position = UDim2.new(0, 190, 0, 0)
 	VertDivider.BorderSizePixel = 0
 	VertDivider.Parent = Content
-	KazeUI:OnThemeChanged(VertDivider, function(t) VertDivider.BackgroundColor3 = t.Border end)
+	local VertDividerLine = KazeUI:MakePixelStableLine(VertDivider, "X", 1)
+	KazeUI:OnThemeChanged(VertDivider, function(t) VertDividerLine.BackgroundColor3 = t.Border end)
 
 	local Pages = Instance.new("Frame")
 	Pages.Position = UDim2.new(0, 191, 0, 0)
