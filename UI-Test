@@ -6373,7 +6373,8 @@ local function BuildWindow(config)
 
 		updateState()
 
-		table.insert(self._Tabs, {Button = btn, Indicator = leftIndicator, Label = txt, Page = page, Icon = iconLabel})
+		local tabEntry = {Button = btn, Indicator = leftIndicator, Label = txt, Page = page, Icon = iconLabel, HideTween = nil}
+		table.insert(self._Tabs, tabEntry)
 		table.insert(hidableTabLabels, {Label = txt, Icon = iconLabel})
 
 		local isHovering = false
@@ -6382,17 +6383,41 @@ local function BuildWindow(config)
 			if activeDialogsCount > 0 then return end
 			if leftIndicator.Visible then return end -- already the active tab
 
-			local previousPage = nil
+			-- If this tab has a hide-tween still in flight from a moment ago (fast
+			-- A -> B -> A clicking), cancel it now so its Completed callback can't
+			-- fire later and yank the page back out from under the user.
+			if tabEntry.HideTween then
+				tabEntry.HideTween:Cancel()
+				tabEntry.HideTween = nil
+			end
+
+			-- Hide EVERY other currently-visible page, not just "the previous one" --
+			-- clicking through tabs faster than the exit tween finishes used to leave
+			-- earlier pages stuck visible underneath the new one. Cancelling each
+			-- tab's own in-flight hide-tween first also stops duplicate tweens from
+			-- stacking up when a tab is left rapidly more than once.
 			for _, t in ipairs(self._Tabs) do
-				if t.Page.Visible and t.Page ~= page then
-					previousPage = t.Page
-				end
 				TweenService:Create(t.Button, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.02)}):Play()
 				t.Indicator.Visible = false
 				t.Label.TextColor3 = KazeUI.CurrentTheme.MutedText
 				t.Icon.ImageColor3 = KazeUI.CurrentTheme.MutedText
 				t.Label.Font = Enum.Font.Gotham
 				StopNeonLoop(t.Indicator)
+
+				if t.Page ~= page and t.Page.Visible then
+					if t.HideTween then t.HideTween:Cancel() end
+					local otherPage = t.Page
+					local outTween = TweenService:Create(otherPage, TWEEN_SMOOTH, {Position = UDim2.new(-1, -40, 0, 0)})
+					t.HideTween = outTween
+					outTween:Play()
+					outTween.Completed:Connect(function()
+						if t.HideTween == outTween then
+							otherPage.Visible = false
+							otherPage.Position = UDim2.new(0, 0, 0, 0)
+							t.HideTween = nil
+						end
+					end)
+				end
 			end
 
 			TweenService:Create(btn, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.04)}):Play()
@@ -6403,20 +6428,11 @@ local function BuildWindow(config)
 			TweenService:Create(iconLabel, TWEEN_FAST, {ImageColor3 = KazeUI.CurrentTheme.Text}):Play()
 			StartNeonLoop(leftIndicator)
 
-			-- Slide transition: incoming page enters from the right, outgoing page exits to the left
+			-- Slide transition: incoming page enters from the right
 			page.Position = UDim2.new(1, 40, 0, 0)
 			page.Visible = true
 			TweenService:Create(page, TWEEN_SPRING, {Position = UDim2.new(0, 0, 0, 0)}):Play()
 			AnimateComponentsIn(pageContent)
-
-			if previousPage and previousPage ~= page then
-				local outTween = TweenService:Create(previousPage, TWEEN_SMOOTH, {Position = UDim2.new(-1, -40, 0, 0)})
-				outTween:Play()
-				outTween.Completed:Connect(function()
-					previousPage.Visible = false
-					previousPage.Position = UDim2.new(0, 0, 0, 0)
-				end)
-			end
 		end
 
 		btn.MouseEnter:Connect(function()
