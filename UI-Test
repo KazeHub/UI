@@ -481,71 +481,6 @@ function KazeUI:RegisterBorder(inst)
 	end)
 end
 
--- Keeps a 1px hairline divider a perfectly constant, crisp thickness no matter
--- what happens to its parent: window resizing, window dragging, min/max size
--- clamping, the global UIScale factor, or plain fractional-pixel drift from
--- being center-anchored. Root cause: the divider's real on-screen size/position
--- is `localOffset * UIScale.Scale`, and neither the resize math, the drag math,
--- nor the center-anchor math guarantee that comes out to a whole pixel -- so
--- the line was getting anti-aliased across two pixels by a different amount
--- every frame, which reads as the thickness "breathing" while you drag.
---
--- Fix: `anchorFrame` keeps whatever Position/Size logic it already had
--- (untouched -- so any existing tween, like the sidebar collapse slide, keeps
--- working exactly as before). A plain child frame is added inside it as the
--- actual visible line, and every render step that child's Size/Position are
--- recomputed FROM the anchor's live AbsolutePosition/AbsoluteSize so the
--- child's own final on-screen size/position are forced to whole pixels. This
--- runs continuously off RunService, so it self-corrects regardless of cause
--- (resize, drag, fast resize, PC or touch input) without needing to hook into
--- every place that might move the anchor.
-function KazeUI:MakePixelStableLine(anchorFrame, axis, thicknessPx)
-	if not anchorFrame then return end
-	axis = (axis == "X") and "X" or "Y" -- "Y" = horizontal line (thin vertically), "X" = vertical line (thin horizontally)
-	thicknessPx = thicknessPx or 1
-
-	anchorFrame.BackgroundTransparency = 1
-	anchorFrame.BorderSizePixel = 0
-
-	local line = Instance.new("Frame")
-	line.Name = "PixelStableLine"
-	line.BorderSizePixel = 0
-	line.ZIndex = anchorFrame.ZIndex
-	line.Parent = anchorFrame
-
-	local function correct()
-		if not anchorFrame.Parent then return end
-		local scale = UIScale.Scale
-		if not scale or scale <= 0 then scale = 1 end
-
-		local absPos = anchorFrame.AbsolutePosition
-
-		if axis == "Y" then
-			local snappedTop = math.floor(absPos.Y + 0.5)
-			local localY = (snappedTop - absPos.Y) / scale
-			line.Size = UDim2.new(1, 0, 0, thicknessPx / scale)
-			line.Position = UDim2.new(0, 0, 0, localY)
-		else
-			local snappedLeft = math.floor(absPos.X + 0.5)
-			local localX = (snappedLeft - absPos.X) / scale
-			line.Size = UDim2.new(0, thicknessPx / scale, 1, 0)
-			line.Position = UDim2.new(0, localX, 0, 0)
-		end
-	end
-
-	local heartbeatConn = RunService.RenderStepped:Connect(correct)
-	correct()
-
-	anchorFrame.Destroying:Connect(function()
-		if heartbeatConn then
-			heartbeatConn:Disconnect()
-			heartbeatConn = nil
-		end
-	end)
-
-	return line
-end
-
 function KazeUI:OnThemeChanged(inst, cb)
 	if not inst then return end
 	table.insert(KazeUI.ThemeCallbacks, {Inst = inst, Callback = cb})
@@ -1450,32 +1385,6 @@ local function ToggleScrollingAncestors(element, state)
 	while current do
 		if current:IsA("ScrollingFrame") then current.ScrollingEnabled = state end
 		current = current.Parent
-	end
-end
-
--- Animates a container's direct children dropping smoothly into place from
--- just above their resting spot, top child first and each one below starting
--- a beat later -- a gentle top-to-bottom "waterfall" run instead of everything
--- popping in at once. Used on tab switch so a page's components cascade in.
-local TWEEN_CASCADE = TweenInfo.new(0.45, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
-local CASCADE_STAGGER = 0.06
-local CASCADE_RISE = 26
-
-local function AnimateComponentsIn(container)
-	if not container then return end
-	local index = 0
-	for _, child in ipairs(container:GetChildren()) do
-		if child:IsA("GuiObject") then
-			index = index + 1
-			local i = index
-			local originalPos = child.Position
-			child.Position = UDim2.new(originalPos.X.Scale, originalPos.X.Offset, originalPos.Y.Scale, originalPos.Y.Offset - CASCADE_RISE)
-			task.delay((i - 1) * CASCADE_STAGGER, function()
-				if child and child.Parent then
-					TweenService:Create(child, TWEEN_CASCADE, {Position = originalPos}):Play()
-				end
-			end)
-		end
 	end
 end
 
@@ -3980,6 +3889,14 @@ CreateCollapsibleSection = function(parentFrame, titleArg, currentDepth)
 		arrowIcon.ImageColor3 = isOpen and t.Text or t.MutedText
 	end)
 
+	local divider = Instance.new("Frame")
+	divider.Size = UDim2.new(0.95, 0, 0, 1)
+	divider.BorderSizePixel = 0
+	divider.LayoutOrder = 2
+	divider.Visible = false
+	divider.Parent = sectionBox
+	KazeUI:OnThemeChanged(divider, function(t) divider.BackgroundColor3 = t.Border end)
+
 	local contentClipper = Instance.new("Frame")
 	contentClipper.Name = "ContentClipper"
 	contentClipper.Size = UDim2.new(1, 0, 0, 0)
@@ -4041,6 +3958,7 @@ CreateCollapsibleSection = function(parentFrame, titleArg, currentDepth)
 
 	local function toggleSection()
 		isOpen = not isOpen
+		divider.Visible = isOpen
 		setClipperOpen(isOpen)
 
 		if isOpen then
@@ -4181,6 +4099,14 @@ CreateGroupBox = function(parentFrame, titleArg, currentDepth, depthOverride)
 		arrowIcon.ImageColor3 = isOpen and t.Text or t.MutedText
 	end)
 
+	local divider = Instance.new("Frame")
+	divider.Size = UDim2.new(0.95, 0, 0, 1)
+	divider.BorderSizePixel = 0
+	divider.LayoutOrder = 2
+	divider.Visible = false
+	divider.Parent = groupFrame
+	KazeUI:OnThemeChanged(divider, function(t) divider.BackgroundColor3 = t.Border end)
+
 	local containerClipper = Instance.new("Frame")
 	containerClipper.Name = "ContainerClipper"
 	containerClipper.Size = UDim2.new(1, 0, 0, 0)
@@ -4238,6 +4164,7 @@ CreateGroupBox = function(parentFrame, titleArg, currentDepth, depthOverride)
 
 	local function toggleGroup()
 		isOpen = not isOpen
+		divider.Visible = isOpen
 		setClipperOpen(isOpen)
 
 		if isOpen then
@@ -5168,28 +5095,30 @@ local function BuildWindow(config)
 	end
 
 	local TitleLabel = Instance.new("TextLabel")
-	TitleLabel.Size = UDim2.new(1, 0, 1, 0)
-	TitleLabel.Position = UDim2.fromOffset(0, 0)
+	TitleLabel.Size = UDim2.new(0, 260, 0, 20)
+	TitleLabel.Position = UDim2.fromOffset(64, 6)
 	TitleLabel.BackgroundTransparency = 1
 	TitleLabel.Text = Title
-	TitleLabel.Font = Enum.Font.GothamBold
-	TitleLabel.TextSize = 16
-	TitleLabel.TextXAlignment = Enum.TextXAlignment.Center
+	TitleLabel.Font = Enum.Font.Michroma
+	TitleLabel.TextSize = 13
+	TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
 	TitleLabel.TextYAlignment = Enum.TextYAlignment.Center
+	TitleLabel.TextTruncate = Enum.TextTruncate.AtEnd
 	TitleLabel.Parent = TopBar
 	KazeUI:RegisterText(TitleLabel, false)
 
 	local SubLabel = Instance.new("TextLabel")
-	SubLabel.Size = UDim2.new(0, 180, 1, 0)
-	SubLabel.Position = UDim2.fromOffset(64, 0)
+	SubLabel.Size = UDim2.new(0, 260, 0, 16)
+	SubLabel.Position = UDim2.fromOffset(64, 27)
 	SubLabel.BackgroundTransparency = 1
-	SubLabel.Text = Author .. "  " .. Version
+	SubLabel.Text = Author .. "  •  " .. Version
 	SubLabel.Font = Enum.Font.GothamMedium
-	SubLabel.TextSize = 13
+	SubLabel.TextSize = 11
 	SubLabel.TextXAlignment = Enum.TextXAlignment.Left
 	SubLabel.TextYAlignment = Enum.TextYAlignment.Center
+	SubLabel.TextTruncate = Enum.TextTruncate.AtEnd
 	SubLabel.Parent = TopBar
-	KazeUI:RegisterText(SubLabel, false)
+	KazeUI:RegisterText(SubLabel, true)
 
 	local TopDivider = Instance.new("Frame")
 	TopDivider.Size = UDim2.new(1, 0, 0, 1)
@@ -5197,8 +5126,7 @@ local function BuildWindow(config)
 	TopDivider.BorderSizePixel = 0
 	TopDivider.ZIndex = 5
 	TopDivider.Parent = TopBar
-	local TopDividerLine = KazeUI:MakePixelStableLine(TopDivider, "Y", 1)
-	KazeUI:OnThemeChanged(TopDivider, function(t) TopDividerLine.BackgroundColor3 = t.Border end)
+	KazeUI:OnThemeChanged(TopDivider, function(t) TopDivider.BackgroundColor3 = t.Border end)
 
 	local lastNormalSize = initialSize
 	local toggledMaximized = false
@@ -5235,7 +5163,7 @@ local function BuildWindow(config)
 	MiniButton.Visible = not openButtonHidable
 	MiniButton.Parent = OpenButtonGui
 	MiniButton.ZIndex = 999
-	local MiniButtonCorner = Instance.new("UICorner", MiniButton)
+	Instance.new("UICorner", MiniButton).CornerRadius = UDim.new(1, 0)
 
 	local MiniIcon = Instance.new("ImageLabel")
 	MiniIcon.Size = UDim2.fromScale(1, 1)
@@ -5247,36 +5175,9 @@ local function BuildWindow(config)
 	MiniIcon.Parent = MiniButton
 	MiniIcon.ZIndex = 1000
 
-	local MiniIconCorner = Instance.new("UICorner", MiniIcon)
+	Instance.new("UICorner", MiniIcon).CornerRadius = UDim.new(1, 0)
 	KazeUI:AddPanel(MiniIcon, 0.02)
 	KazeUI:OnThemeChanged(MiniIcon, function(t) MiniIcon.ImageColor3 = t.Text end)
-
-	-- Open button shape: "Circle" (default, fully round) or "Square" (soft-rounded square)
-	local openButtonShape = "Circle"
-	local function applyOpenButtonShape(shape)
-		shape = tostring(shape or "Circle"):lower()
-		if shape == "square" then
-			openButtonShape = "Square"
-			local side = math.min(MiniButtonSize.X.Offset, MiniButtonSize.Y.Offset)
-			if side <= 0 then side = 48 end
-			local radius = UDim.new(0, math.max(8, math.floor(side * 0.22)))
-			MiniButtonCorner.CornerRadius = radius
-			MiniIconCorner.CornerRadius = radius
-		else
-			openButtonShape = "Circle"
-			MiniButtonCorner.CornerRadius = UDim.new(1, 0)
-			MiniIconCorner.CornerRadius = UDim.new(1, 0)
-		end
-	end
-	applyOpenButtonShape((config.OpenButton and config.OpenButton.Shape) or "Circle")
-
-	function KazeUI:SetOpenButtonShape(shape)
-		applyOpenButtonShape(shape)
-	end
-
-	function KazeUI:GetOpenButtonShape()
-		return openButtonShape
-	end
 
 	local MiniStroke = Instance.new("UIStroke")
 	MiniStroke.Thickness = 1.5
@@ -5596,76 +5497,14 @@ local function BuildWindow(config)
 	VertDivider.Position = UDim2.new(0, 190, 0, 0)
 	VertDivider.BorderSizePixel = 0
 	VertDivider.Parent = Content
-	local VertDividerLine = KazeUI:MakePixelStableLine(VertDivider, "X", 1)
-	KazeUI:OnThemeChanged(VertDivider, function(t) VertDividerLine.BackgroundColor3 = t.Border end)
+	KazeUI:OnThemeChanged(VertDivider, function(t) VertDivider.BackgroundColor3 = t.Border end)
 
 	local Pages = Instance.new("Frame")
 	Pages.Position = UDim2.new(0, 191, 0, 0)
 	Pages.Size = UDim2.new(1, -191, 1, 0)
 	Pages.BorderSizePixel = 0
 	Pages.BackgroundTransparency = 1
-	Pages.ClipsDescendants = true
 	Pages.Parent = Content
-
-	-- HidableTab: after a few seconds of no sidebar interaction, collapse the
-	-- sidebar down to icon-only width. Clicking it while collapsed expands it
-	-- back and restarts the idle countdown.
-	local hidableTab = config.HidableTab == true
-	local sidebarCollapsed = false
-	local sidebarIdleThread = nil
-	local hidableTabLabels = {}
-	local SidebarExpandCatcherRef = nil
-	local SIDEBAR_FULL_WIDTH = 190
-	local SIDEBAR_ICON_WIDTH = 60 -- was 52: too narrow, clipped the 18px tab icons by a few px once the
-	-- scroller padding (16) and button margin (10) were subtracted -- that was the cut-off icon bug
-	local ICON_EXPANDED_X = 12
-	local ICON_COLLAPSED_X = math.floor(((SIDEBAR_ICON_WIDTH - 16 - 10) - 18) / 2) -- re-centers the icon in the narrower rail
-
-	local function SetSidebarCollapsed(state)
-		if not hidableTab or sidebarCollapsed == state then return end
-		sidebarCollapsed = state
-		local targetWidth = state and SIDEBAR_ICON_WIDTH or SIDEBAR_FULL_WIDTH
-
-		TweenService:Create(SideBarMask, TWEEN_SMOOTH, {Size = UDim2.new(0, targetWidth, 1, 0)}):Play()
-		TweenService:Create(SideBar, TWEEN_SMOOTH, {Size = UDim2.new(0, targetWidth, 1, 0)}):Play()
-		TweenService:Create(VertDivider, TWEEN_SMOOTH, {Position = UDim2.new(0, targetWidth, 0, 0)}):Play()
-		TweenService:Create(Pages, TWEEN_SMOOTH, {Position = UDim2.new(0, targetWidth + 1, 0, 0), Size = UDim2.new(1, -(targetWidth + 1), 1, 0)}):Play()
-
-		if SidebarExpandCatcherRef then SidebarExpandCatcherRef.Visible = state end
-
-		for _, item in ipairs(hidableTabLabels) do
-			TweenService:Create(item.Label, TWEEN_FAST, {TextTransparency = state and 1 or 0}):Play()
-			if item.Icon then
-				local iconX = state and ICON_COLLAPSED_X or ICON_EXPANDED_X
-				TweenService:Create(item.Icon, TWEEN_SMOOTH, {Position = UDim2.new(0, iconX, 0.5, -9)}):Play()
-			end
-		end
-	end
-
-	local function ResetSidebarIdleTimer()
-		if not hidableTab then return end
-		if sidebarIdleThread then task.cancel(sidebarIdleThread) end
-		if sidebarCollapsed then SetSidebarCollapsed(false) end
-		sidebarIdleThread = task.delay(3, function()
-			SetSidebarCollapsed(true)
-		end)
-	end
-
-	if hidableTab then
-		local SidebarExpandCatcher = Instance.new("TextButton")
-		SidebarExpandCatcher.Size = UDim2.fromScale(1, 1)
-		SidebarExpandCatcher.BackgroundTransparency = 1
-		SidebarExpandCatcher.Text = ""
-		SidebarExpandCatcher.ZIndex = 500
-		SidebarExpandCatcher.Visible = false
-		SidebarExpandCatcher.Parent = SideBarMask
-		SidebarExpandCatcher.MouseButton1Click:Connect(function()
-			if sidebarCollapsed then ResetSidebarIdleTimer() end
-		end)
-		SidebarExpandCatcherRef = SidebarExpandCatcher
-		SideBarMask.MouseEnter:Connect(ResetSidebarIdleTimer)
-		ResetSidebarIdleTimer()
-	end
 
 	local PagesElevation = -0.01
 
@@ -5767,12 +5606,8 @@ local function BuildWindow(config)
 		local delta = inputPos - resizeStartPos
 		local scale = UIScale.Scale
 
-		-- Round to whole pixels every frame. Left unrounded, the window's size
-		-- (and anything positioned relative to it, like the 1px divider lines)
-		-- kept landing on fractional sub-pixel values while dragging, which made
-		-- those hairlines flicker thin/thick as they got anti-aliased.
-		local newWidth = math.floor(math.clamp(resizeStartSize.X + (delta.X / scale), minWidth, maxWidth) + 0.5)
-		local newHeight = math.floor(math.clamp(resizeStartSize.Y + (delta.Y / scale), minHeight, maxHeight) + 0.5)
+		local newWidth = math.clamp(resizeStartSize.X + (delta.X / scale), minWidth, maxWidth)
+		local newHeight = math.clamp(resizeStartSize.Y + (delta.Y / scale), minHeight, maxHeight)
 
 		Window.Size = UDim2.fromOffset(newWidth, newHeight)
 		lastNormalSize = Window.Size
@@ -5787,10 +5622,7 @@ local function BuildWindow(config)
 			KazeUI.IsResizing = true
 			resizeTouchID = input
 
-			resizeStartSize = Vector2.new(
-				math.floor(Window.AbsoluteSize.X / UIScale.Scale + 0.5),
-				math.floor(Window.AbsoluteSize.Y / UIScale.Scale + 0.5)
-			)
+			resizeStartSize = Vector2.new(Window.AbsoluteSize.X / UIScale.Scale, Window.AbsoluteSize.Y / UIScale.Scale)
 			resizeStartPos = Vector2.new(input.Position.X, input.Position.Y)
 
 			ResizeBlocker.Visible = true
@@ -6310,7 +6142,7 @@ local function BuildWindow(config)
 
 		local iconLabel = Instance.new("ImageLabel", btn)
 		iconLabel.Size = UDim2.fromOffset(18, 18)
-		iconLabel.Position = UDim2.new(0, ICON_EXPANDED_X, 0.5, -9)
+		iconLabel.Position = UDim2.new(0, 12, 0.5, -9)
 		iconLabel.BackgroundTransparency = 1
 		iconLabel.Image = formattedIcon
 		iconLabel.ScaleType = Enum.ScaleType.Fit
@@ -6474,66 +6306,38 @@ local function BuildWindow(config)
 
 		updateState()
 
-		local tabEntry = {Button = btn, Indicator = leftIndicator, Label = txt, Page = page, Icon = iconLabel, HideTween = nil}
-		table.insert(self._Tabs, tabEntry)
-		table.insert(hidableTabLabels, {Label = txt, Icon = iconLabel})
+		local myTabEntry = {Button = btn, Indicator = leftIndicator, Label = txt, Page = page, Icon = iconLabel}
+		table.insert(self._Tabs, myTabEntry)
 
 		local isHovering = false
 
 		local function activate()
 			if activeDialogsCount > 0 then return end
-			if leftIndicator.Visible then return end -- already the active tab
-
-			-- If this tab has a hide-tween still in flight from a moment ago (fast
-			-- A -> B -> A clicking), cancel it now so its Completed callback can't
-			-- fire later and yank the page back out from under the user.
-			if tabEntry.HideTween then
-				tabEntry.HideTween:Cancel()
-				tabEntry.HideTween = nil
-			end
-
-			-- Hide EVERY other currently-visible page, not just "the previous one" --
-			-- clicking through tabs faster than the exit tween finishes used to leave
-			-- earlier pages stuck visible underneath the new one. Cancelling each
-			-- tab's own in-flight hide-tween first also stops duplicate tweens from
-			-- stacking up when a tab is left rapidly more than once.
-			for _, t in ipairs(self._Tabs) do
-				TweenService:Create(t.Button, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.02)}):Play()
-				t.Indicator.Visible = false
-				t.Label.TextColor3 = KazeUI.CurrentTheme.MutedText
-				t.Icon.ImageColor3 = KazeUI.CurrentTheme.MutedText
-				t.Label.Font = Enum.Font.Gotham
-				StopNeonLoop(t.Indicator)
-
-				if t.Page ~= page and t.Page.Visible then
-					if t.HideTween then t.HideTween:Cancel() end
-					local otherPage = t.Page
-					local outTween = TweenService:Create(otherPage, TWEEN_SMOOTH, {Position = UDim2.new(-1, -40, 0, 0)})
-					t.HideTween = outTween
-					outTween:Play()
-					outTween.Completed:Connect(function()
-						if t.HideTween == outTween then
-							otherPage.Visible = false
-							otherPage.Position = UDim2.new(0, 0, 0, 0)
-							t.HideTween = nil
-						end
-					end)
-				end
+			-- Only the previously-active tab actually needs to change state --
+			-- looping over every tab and re-tweening each one to a color most of
+			-- them are already at is exactly the tween-stacking rapid tab-switching
+			-- would otherwise cause.
+			local previous = self._ActiveTabEntry
+			if previous and previous ~= myTabEntry then
+				TweenService:Create(previous.Button, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.02)}):Play()
+				previous.Indicator.Visible = false
+				previous.Page.Visible = false
+				previous.Label.TextColor3 = KazeUI.CurrentTheme.MutedText
+				previous.Icon.ImageColor3 = KazeUI.CurrentTheme.MutedText
+				previous.Label.Font = Enum.Font.Gotham
+				StopNeonLoop(previous.Indicator)
 			end
 
 			TweenService:Create(btn, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.04)}):Play()
 			leftIndicator.Visible = true
+			page.Visible = true
 			txt.TextColor3 = KazeUI.CurrentTheme.Text
 			txt.Font = Enum.Font.GothamBold
 
 			TweenService:Create(iconLabel, TWEEN_FAST, {ImageColor3 = KazeUI.CurrentTheme.Text}):Play()
 			StartNeonLoop(leftIndicator)
 
-			-- Slide transition: incoming page enters from the right
-			page.Position = UDim2.new(1, 40, 0, 0)
-			page.Visible = true
-			TweenService:Create(page, TWEEN_SPRING, {Position = UDim2.new(0, 0, 0, 0)}):Play()
-			AnimateComponentsIn(pageContent)
+			self._ActiveTabEntry = myTabEntry
 		end
 
 		btn.MouseEnter:Connect(function()
@@ -6553,11 +6357,7 @@ local function BuildWindow(config)
 				TweenService:Create(iconLabel, TWEEN_FAST, {ImageColor3 = KazeUI.CurrentTheme.MutedText}):Play()
 			end
 		end)
-		btn.MouseButton1Click:Connect(function()
-		TweenService:Create(btn, TweenInfo.new(0.1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, 0, true), {Size = UDim2.new(1, -14, 0, 33)}):Play()
-		if hidableTab then ResetSidebarIdleTimer() end
-		activate()
-	end)
+		btn.MouseButton1Click:Connect(activate)
 		if #self._Tabs == 1 then activate() end
 
 		KazeUI:OnThemeChanged(btn, function(t)
