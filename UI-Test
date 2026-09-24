@@ -346,10 +346,38 @@ pcall(function()
 	end
 end)
 
+-- In-session cache + in-flight dedup for remote asset URLs: once a URL has
+-- been resolved this session the result is returned instantly (no disk check,
+-- no HTTP), and if a second caller asks for the same URL while the first
+-- request is still in flight, it waits on that same request instead of firing
+-- a duplicate HttpGet (this is in addition to the on-disk cache below, which
+-- only helps across separate sessions).
+local AssetURLCache = {}
+local AssetURLPending = {}
+
 local function GetCustomAssetFromURL(url, ext)
 	local getasset = (getcustomasset or getsynasset or (drawing and drawing.new and drawing.custom_asset))
 	if not getasset or not writefile or not game or not game.HttpGet then
 		return url
+	end
+
+	if AssetURLCache[url] ~= nil then return AssetURLCache[url] end
+
+	local pending = AssetURLPending[url]
+	if pending then
+		local ok, result = pcall(function() return pending:Wait() end)
+		return (ok and result) or url
+	end
+
+	local bindable = Instance.new("BindableEvent")
+	AssetURLPending[url] = bindable
+
+	local function finish(result)
+		AssetURLCache[url] = result
+		AssetURLPending[url] = nil
+		bindable:Fire(result)
+		task.defer(function() bindable:Destroy() end)
+		return result
 	end
 
 	ext = ext or "png"
@@ -358,7 +386,7 @@ local function GetCustomAssetFromURL(url, ext)
 
 	if isfile and isfile(filename) then
 		local s, asset = pcall(getasset, filename)
-		if s and asset then return asset end
+		if s and asset then return finish(asset) end
 	end
 
 	local success, bytes = pcall(function()
@@ -372,10 +400,10 @@ local function GetCustomAssetFromURL(url, ext)
 		end
 		pcall(writefile, filename, bytes)
 		local s, asset = pcall(getasset, filename)
-		if s and asset then return asset end
+		if s and asset then return finish(asset) end
 	end
 
-	return url
+	return finish(url)
 end
 
 local function FormatImage(id)
@@ -756,8 +784,10 @@ end
 
 function KazeUI:SetTheme(themeName)
 	local targetTheme = KazeUI.Themes[themeName]
+	local isUrlTheme = false
 
 	if not targetTheme and type(themeName) == "string" and (string.find(themeName, "^http://") or string.find(themeName, "^https://")) then
+		isUrlTheme = true
 		-- Assume it's a plain background image immediately so window creation never blocks
 		-- on a network round-trip. If it turns out to actually be a JSON/Lua theme file,
 		-- we upgrade the theme a moment later in the background (see task.spawn below).
@@ -828,6 +858,14 @@ function KazeUI:SetTheme(themeName)
 	end
 
 	targetTheme = targetTheme or KazeUI.Themes[themeName] or KazeUI.Themes.CustomWallpaper
+
+	-- Re-applying the theme that's already active is a no-op: every text/border/
+	-- panel color is already correct and every theme callback has already seen
+	-- this theme, so skip the whole propagation pass instead of redoing it.
+	if not isUrlTheme and targetTheme == KazeUI.CurrentTheme then
+		return
+	end
+
 	KazeUI.CurrentTheme = targetTheme
 	KazeUI.BackgroundColor = targetTheme.Background
 
