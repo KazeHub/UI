@@ -858,6 +858,22 @@ function KazeUI:SetTheme(themeName)
 	end
 end
 
+-- ============================================================================
+-- GLOW SYSTEM -- event-driven / native-tween architecture.
+--
+-- There is NO Heartbeat/RenderStepped loop anywhere in this section. Every
+-- glowing element owns its own native TweenService animation, driven entirely
+-- by the Roblox engine once started. KazeUI's own Lua code only runs again
+-- when:
+--   * the element starts/stops glowing (StartNeonLoop / StopNeonLoop / AddGlowHalo)
+--   * a global glow setting actually changes (SetGlow / SetGlowMode / SetGlowRainbow)
+--   * one animation segment finishes and the next keyframe needs queuing
+--     (an engine Completed event firing a few times per second per element --
+--     not a per-frame poll, and never touches any *other* element)
+--   * the element is destroyed
+-- With zero glowing elements, there is zero glow-related work of any kind.
+-- ============================================================================
+
 local GLOW_BREATHE_PERIOD = 4.0
 
 local GLOW_SEQUENCE_PERIOD = 6.0
@@ -874,8 +890,12 @@ local GLOW_CHASE_WIDTH = 2.6
 
 local GLOW_RAINBOW_BREATHE_SPEED = 40
 
-local glowClock = 0
-local glowHeartbeatConn = nil
+-- How many keyframes the Breathing/Pulse/Chase envelope is pre-sampled into.
+-- The engine's own tween interpolation supplies the smoothness *between*
+-- keyframes, so a small number here still looks continuous while keeping the
+-- Completed-event rate low (a handful of events per second per element,
+-- versus the 24-60 Hz a Lua-driven loop would cost).
+local GLOW_KEYFRAME_SAMPLES = 10
 
 local function BuildGlowGradientSequence()
 	local baseH = Color3.toHSV(KazeUI.GlowColor)
@@ -905,20 +925,12 @@ end
 
 local GLOW_RING_COLORSEQUENCE = BuildGlowGradientSequence()
 
+-- Only recomputes the shared gradient palette; any currently-animating
+-- gradient elements are brought up to date by RebuildAllGlowAnimations()
+-- (called right after this everywhere it matters), so there is no need to
+-- also walk GlowElements here.
 local function RefreshGlowGradientSequence()
 	GLOW_RING_COLORSEQUENCE = BuildGlowGradientSequence()
-	for _, data in ipairs(KazeUI.GlowElements) do
-		local target = data.Target
-		if target and target.Parent then
-			local grad = target:FindFirstChild("KazeGlowGradient")
-			if grad then grad.Color = GLOW_RING_COLORSEQUENCE end
-		end
-	end
-end
-
-local function LerpHueShortest(hueA, hueB, alpha)
-	local diff = (hueB - hueA + 1.5) % 1 - 0.5
-	return (hueA + diff * alpha) % 1
 end
 
 local function EnsureGlowGradient(inst)
@@ -936,142 +948,269 @@ local function EnsureGlowGradient(inst)
 	return nil
 end
 
-local function ComputeGlowColor()
-	local baseH = Color3.toHSV(KazeUI.GlowColor)
-	local baseS, baseV = 1, 1
-
-	if KazeUI.GlowMode == "Sequence" then
-		local stops = KazeUI.GlowRainbow and GLOW_SEQUENCE_RAINBOW_STOPS or GLOW_SEQUENCE_STOPS
-		local n = #stops
-		local segDur = GLOW_SEQUENCE_PERIOD / n
-		local raw = (glowClock % GLOW_SEQUENCE_PERIOD) / segDur
-		local idx = math.floor(raw) + 1
-		local nextIdx = (idx % n) + 1
-		local frac = raw - math.floor(raw)
-		local eased = frac * frac * (3 - 2 * frac)
-		local hueA = (baseH * 360 + stops[idx]) / 360 % 1
-		local hueB = (baseH * 360 + stops[nextIdx]) / 360 % 1
-		local hue = LerpHueShortest(hueA, hueB, eased)
-		local intensity = 0.7 + math.sin(eased * math.pi) * 0.3
-		return Color3.fromHSV(hue, baseS, baseV), intensity
-
-	elseif KazeUI.GlowMode == "Pulse" then
+-- Samples the Breathing/Pulse envelope's color+intensity at an explicit time
+-- value `t` (instead of a live running clock) so it can be used to bake a
+-- fixed keyframe ring once, up front, rather than recomputed every frame.
+local function SampleEnvelopeColor(mode, rainbow, baseH, baseS, baseV, t)
+	if mode == "Pulse" then
 		local total = GLOW_PULSE_ATTACK + GLOW_PULSE_DECAY
-		local phase = glowClock % total
+		local phase = t % total
 		local envelope
 		if phase < GLOW_PULSE_ATTACK then
-			local t = phase / GLOW_PULSE_ATTACK
-			envelope = t * t
+			local a = phase / GLOW_PULSE_ATTACK
+			envelope = a * a
 		else
-			local t = (phase - GLOW_PULSE_ATTACK) / GLOW_PULSE_DECAY
-			envelope = 1 - (t * t)
+			local a = (phase - GLOW_PULSE_ATTACK) / GLOW_PULSE_DECAY
+			envelope = 1 - (a * a)
 		end
-		local hue = baseH
-		if KazeUI.GlowRainbow then
-			hue = (glowClock * (GLOW_RAINBOW_BREATHE_SPEED / 360)) % 1
-		end
+		local hue = rainbow and ((t * (GLOW_RAINBOW_BREATHE_SPEED / 360)) % 1) or baseH
 		local troughV = baseV * 0.8
-		local peakV = 1
-		return Color3.fromHSV(hue, baseS, troughV + envelope * (peakV - troughV)), envelope
-
+		return Color3.fromHSV(hue, baseS, troughV + envelope * (1 - troughV)), envelope
 	else
-		local hue = baseH
-		if KazeUI.GlowRainbow then
-			hue = (glowClock * (GLOW_RAINBOW_BREATHE_SPEED / 360)) % 1
-		end
-		local envelope = (math.sin((glowClock / GLOW_BREATHE_PERIOD) * math.pi * 2) + 1) / 2
+		local envelope = (math.sin((t / GLOW_BREATHE_PERIOD) * math.pi * 2) + 1) / 2
+		local hue = rainbow and ((t * (GLOW_RAINBOW_BREATHE_SPEED / 360)) % 1) or baseH
 		local troughV = baseV * 0.85
-		local peakV = 1
-		return Color3.fromHSV(hue, baseS, troughV + envelope * (peakV - troughV)), envelope
+		return Color3.fromHSV(hue, baseS, troughV + envelope * (1 - troughV)), envelope
 	end
 end
 
-local function ApplyGlowToElement(data, color, intensity, useRingGradient)
-	if data.HaloRings then
-		for _, ring in ipairs(data.HaloRings) do
-			ring.Instance.Color = color
-			local t = ring.BaseTransparency - intensity * ring.IntensityBoost
-			ring.Instance.Transparency = math.clamp(t, 0.05, 0.95)
+local function SampleChaseColor(rainbow, baseH, baseS, baseV, phase)
+	local t = phase / GLOW_CHASE_PERIOD
+	local envelope = math.clamp(1 - math.abs(t - 0.5) * 2 * GLOW_CHASE_WIDTH, 0, 1)
+	local hue = rainbow and ((phase * (GLOW_RAINBOW_BREATHE_SPEED / 360)) % 1) or baseH
+	local troughV = baseV * 0.8
+	return Color3.fromHSV(hue, baseS, troughV + envelope * (1 - troughV)), envelope
+end
+
+-- Builds the fixed keyframe ring (colors + matching intensity/envelope
+-- values, plus the per-segment duration) for the current glow mode. Computed
+-- ONCE per element start / settings change -- never per frame.
+local function BuildKeyframeRing(mode, rainbow, baseH, baseS, baseV)
+	local colors, envelopes, period
+
+	if mode == "Sequence" then
+		local stops = rainbow and GLOW_SEQUENCE_RAINBOW_STOPS or GLOW_SEQUENCE_STOPS
+		local n = #stops
+		colors, envelopes = {}, {}
+		for i = 1, n do
+			local hue = (baseH * 360 + stops[i]) / 360 % 1
+			colors[i] = Color3.fromHSV(hue, baseS, baseV)
+			envelopes[i] = 1
 		end
+		period = GLOW_SEQUENCE_PERIOD
+		return colors, envelopes, period / n
+
+	elseif mode == "Chase" then
+		local n = GLOW_KEYFRAME_SAMPLES
+		colors, envelopes = {}, {}
+		for i = 0, n - 1 do
+			local phase = (i / n) * GLOW_CHASE_PERIOD
+			colors[i + 1], envelopes[i + 1] = SampleChaseColor(rainbow, baseH, baseS, baseV, phase)
+		end
+		return colors, envelopes, GLOW_CHASE_PERIOD / n
+
+	else -- Breathing / Pulse
+		local n = GLOW_KEYFRAME_SAMPLES
+		local total = (mode == "Pulse") and (GLOW_PULSE_ATTACK + GLOW_PULSE_DECAY) or GLOW_BREATHE_PERIOD
+		colors, envelopes = {}, {}
+		for i = 0, n - 1 do
+			local t = (i / n) * total
+			colors[i + 1], envelopes[i + 1] = SampleEnvelopeColor(mode, rainbow, baseH, baseS, baseV, t)
+		end
+		return colors, envelopes, total / n
+	end
+end
+
+local function EasingForMode(mode)
+	if mode == "Sequence" then return Enum.EasingStyle.Quad end
+	if mode == "Pulse" then return Enum.EasingStyle.Quad end
+	return Enum.EasingStyle.Sine -- Breathing, Chase
+end
+
+-- Generic looping native-tween chain driving a single (target, property)
+-- pair through a fixed keyframe ring. Each keyframe segment is one
+-- TweenService tween; the NEXT segment is only queued when the current one's
+-- Completed event fires, so between events this does nothing at all.
+local function StartColorKeyframeLoop(target, propName, colors, segDuration, easingStyle, startDelay)
+	local n = #colors
+	if n == 0 then return {Stop = function() end} end
+	if n == 1 then
+		target[propName] = colors[1]
+		return {Stop = function() end}
+	end
+
+	target[propName] = colors[1]
+
+	local handle = {Active = true, Conn = nil, Tween = nil}
+	local cur = 1
+
+	local function playNext()
+		if not handle.Active then return end
+		if not target.Parent then handle.Active = false return end
+		local nextIdx = (cur % n) + 1
+		local info = TweenInfo.new(segDuration, easingStyle, Enum.EasingDirection.InOut)
+		local tw = TweenService:Create(target, info, {[propName] = colors[nextIdx]})
+		handle.Tween = tw
+		if handle.Conn then handle.Conn:Disconnect() end
+		handle.Conn = tw.Completed:Connect(function()
+			cur = nextIdx
+			playNext()
+		end)
+		tw:Play()
+	end
+
+	if startDelay and startDelay > 0 then
+		task.delay(startDelay, playNext)
+	else
+		playNext()
+	end
+
+	function handle.Stop()
+		handle.Active = false
+		if handle.Conn then handle.Conn:Disconnect() handle.Conn = nil end
+		if handle.Tween then handle.Tween:Cancel() handle.Tween = nil end
+	end
+
+	return handle
+end
+
+-- One infinite native rotation loop for a "Sequence" ring-gradient element.
+-- 360 degrees looks identical to 0, so looping back to the start on Completed
+-- is visually seamless -- a single tween re-armed a couple of times a minute,
+-- never a per-frame Rotation write.
+local function StartGradientRotationLoop(grad)
+	local info = TweenInfo.new(GLOW_SEQUENCE_ROTATE_SECONDS, Enum.EasingStyle.Linear, Enum.EasingDirection.InOut)
+	local handle = {Active = true, Conn = nil, Tween = nil}
+
+	local function playNext()
+		if not handle.Active or not grad.Parent then handle.Active = false return end
+		grad.Rotation = 0
+		local tw = TweenService:Create(grad, info, {Rotation = 360})
+		handle.Tween = tw
+		if handle.Conn then handle.Conn:Disconnect() end
+		handle.Conn = tw.Completed:Connect(playNext)
+		tw:Play()
+	end
+	playNext()
+
+	function handle.Stop()
+		handle.Active = false
+		if handle.Conn then handle.Conn:Disconnect() handle.Conn = nil end
+		if handle.Tween then handle.Tween:Cancel() handle.Tween = nil end
+	end
+
+	return handle
+end
+
+-- Same looping-chain concept as StartColorKeyframeLoop, but drives all three
+-- halo rings' Color + Transparency together from one shared keyframe ring.
+local function StartHaloKeyframeLoop(rings, colors, envelopes, segDuration, easingStyle, startDelay)
+	local n = #colors
+	if n == 0 then return {Stop = function() end} end
+
+	for _, ring in ipairs(rings) do
+		ring.Instance.Color = colors[1]
+		ring.Instance.Transparency = math.clamp(ring.BaseTransparency - envelopes[1] * ring.IntensityBoost, 0.05, 0.95)
+	end
+
+	local handle = {Active = true, Conn = nil, Tweens = {}}
+	local cur = 1
+
+	local function playNext()
+		if not handle.Active then return end
+		local nextIdx = (cur % n) + 1
+		local info = TweenInfo.new(segDuration, easingStyle, Enum.EasingDirection.InOut)
+		local color = colors[nextIdx]
+		local env = envelopes[nextIdx]
+
+		local tweens, anchor = {}, nil
+		for _, ring in ipairs(rings) do
+			local targetTrans = math.clamp(ring.BaseTransparency - env * ring.IntensityBoost, 0.05, 0.95)
+			local tw = TweenService:Create(ring.Instance, info, {Color = color, Transparency = targetTrans})
+			table.insert(tweens, tw)
+			anchor = anchor or tw
+			tw:Play()
+		end
+		handle.Tweens = tweens
+
+		if handle.Conn then handle.Conn:Disconnect() end
+		handle.Conn = anchor.Completed:Connect(function()
+			cur = nextIdx
+			playNext()
+		end)
+	end
+
+	if startDelay and startDelay > 0 then
+		task.delay(startDelay, playNext)
+	else
+		playNext()
+	end
+
+	function handle.Stop()
+		handle.Active = false
+		if handle.Conn then handle.Conn:Disconnect() handle.Conn = nil end
+		for _, tw in ipairs(handle.Tweens) do tw:Cancel() end
+		handle.Tweens = {}
+	end
+
+	return handle
+end
+
+local function StopGlowAnimation(data)
+	if data.AnimHandle then
+		data.AnimHandle.Stop()
+		data.AnimHandle = nil
+	end
+end
+
+-- (Re)builds the native animation for one GlowElements entry from the
+-- CURRENT GlowColor/GlowMode/GlowRainbow settings. Called once when an
+-- element starts glowing, and again -- once, for every active element -- only
+-- when a global glow setting actually changes.
+local function BuildGlowAnimation(data, index)
+	StopGlowAnimation(data)
+
+	local baseH = Color3.toHSV(KazeUI.GlowColor)
+	local baseS, baseV = 1, 1
+	local mode = KazeUI.GlowMode
+	local rainbow = KazeUI.GlowRainbow
+
+	if data.HaloRings then
+		local colors, envelopes, seg = BuildKeyframeRing(mode, rainbow, baseH, baseS, baseV)
+		local delay = (mode == "Chase") and ((index - 1) * GLOW_CHASE_STAGGER) or 0
+		data.AnimHandle = StartHaloKeyframeLoop(data.HaloRings, colors, envelopes, seg, EasingForMode(mode), delay)
 		return
 	end
 
 	local target = data.Target
-	if useRingGradient then
+	if mode == "Sequence" and data.IsStrokeLike then
 		local grad = EnsureGlowGradient(target)
 		if grad then
+			grad.Color = GLOW_RING_COLORSEQUENCE
 			grad.Enabled = true
-			grad.Rotation = (glowClock / GLOW_SEQUENCE_ROTATE_SECONDS * 360) % 360
+			data.AnimHandle = StartGradientRotationLoop(grad)
 			return
 		end
 	end
 
-	local grad = target:FindFirstChild("KazeGlowGradient")
-	if grad then grad.Enabled = false end
-	data.Target[data.Prop] = color
+	local existingGrad = target:FindFirstChild("KazeGlowGradient")
+	if existingGrad then existingGrad.Enabled = false end
+
+	local colors, envelopes, seg = BuildKeyframeRing(mode, rainbow, baseH, baseS, baseV)
+	local delay = (mode == "Chase") and ((index - 1) * GLOW_CHASE_STAGGER) or 0
+	data.AnimHandle = StartColorKeyframeLoop(target, data.Prop, colors, seg, EasingForMode(mode), delay)
 end
 
-local GLOW_UPDATE_INTERVAL = 1 / 30
-local glowUpdateAccum = 0
-
-local function StepGlow(dt)
-	if #KazeUI.GlowElements == 0 then
-		if glowHeartbeatConn then
-			glowHeartbeatConn:Disconnect()
-			glowHeartbeatConn = nil
-		end
-		return
-	end
-
-	glowClock = glowClock + dt
-	glowUpdateAccum = glowUpdateAccum + dt
-	if glowUpdateAccum < GLOW_UPDATE_INTERVAL then
-		return
-	end
-	glowUpdateAccum = 0
-
-	if KazeUI.GlowMode == "Chase" then
-		local baseH = Color3.toHSV(KazeUI.GlowColor)
-		local baseS, baseV = 1, 1
-		local troughV = baseV * 0.8
-		local peakV = 1
-		for i = #KazeUI.GlowElements, 1, -1 do
-			local data = KazeUI.GlowElements[i]
-			local target = data.Target
-			if target and target.Parent then
-				local phase = (glowClock - (i - 1) * GLOW_CHASE_STAGGER) % GLOW_CHASE_PERIOD
-				local t = phase / GLOW_CHASE_PERIOD
-				local envelope = math.clamp(1 - math.abs(t - 0.5) * 2 * GLOW_CHASE_WIDTH, 0, 1)
-				local hue = baseH
-				if KazeUI.GlowRainbow then
-					hue = (glowClock * (GLOW_RAINBOW_BREATHE_SPEED / 360) - (i - 1) * 0.015) % 1
-				end
-				local color = Color3.fromHSV(hue, baseS, troughV + envelope * (peakV - troughV))
-				ApplyGlowToElement(data, color, envelope, false)
-			else
-				table.remove(KazeUI.GlowElements, i)
-			end
-		end
-		return
-	end
-
-	local color, intensity = ComputeGlowColor()
-	local sequenceModeActive = (KazeUI.GlowMode == "Sequence")
+local function RebuildAllGlowAnimations()
 	for i = #KazeUI.GlowElements, 1, -1 do
 		local data = KazeUI.GlowElements[i]
 		local target = data.Target
 		if target and target.Parent then
-			local useRingGradient = sequenceModeActive and data.IsStrokeLike
-			ApplyGlowToElement(data, color, intensity, useRingGradient)
+			BuildGlowAnimation(data, i)
 		else
+			StopGlowAnimation(data)
 			table.remove(KazeUI.GlowElements, i)
 		end
-	end
-end
-
-local function EnsureGlowHeartbeat()
-	if not glowHeartbeatConn then
-		glowHeartbeatConn = RunService.Heartbeat:Connect(StepGlow)
 	end
 end
 
@@ -1086,10 +1225,18 @@ local function StartNeonLoop(target)
 		target[propName] = KazeUI.GlowColor
 		return
 	end
-	table.insert(KazeUI.GlowElements, {Target = target, Prop = propName, IsStrokeLike = isStroke})
-	EnsureGlowHeartbeat()
-end
 
+	local data = {Target = target, Prop = propName, IsStrokeLike = isStroke}
+	table.insert(KazeUI.GlowElements, data)
+	BuildGlowAnimation(data, #KazeUI.GlowElements)
+
+	target.Destroying:Connect(function()
+		StopGlowAnimation(data)
+		for i = #KazeUI.GlowElements, 1, -1 do
+			if KazeUI.GlowElements[i] == data then table.remove(KazeUI.GlowElements, i) break end
+		end
+	end)
+end
 
 function KazeUI:AddGlowHalo(hostFrame, cornerRadius)
 	if not hostFrame then return end
@@ -1120,103 +1267,112 @@ function KazeUI:AddGlowHalo(hostFrame, cornerRadius)
 		table.insert(rings, {Instance = ring, BaseTransparency = def.BaseTransparency, IntensityBoost = def.IntensityBoost})
 	end
 
-	table.insert(KazeUI.GlowElements, {Target = halo, HaloRings = rings})
-	EnsureGlowHeartbeat()
+	local data = {Target = halo, HaloRings = rings}
+	table.insert(KazeUI.GlowElements, data)
+	BuildGlowAnimation(data, #KazeUI.GlowElements)
+
+	halo.Destroying:Connect(function()
+		StopGlowAnimation(data)
+		for i = #KazeUI.GlowElements, 1, -1 do
+			if KazeUI.GlowElements[i] == data then table.remove(KazeUI.GlowElements, i) break end
+		end
+	end)
+
 	return halo
 end
 
 local function StopNeonLoop(target)
 	if not target then return end
 	for i = #KazeUI.GlowElements, 1, -1 do
-		if KazeUI.GlowElements[i].Target == target then table.remove(KazeUI.GlowElements, i) end
+		local data = KazeUI.GlowElements[i]
+		if data.Target == target then
+			StopGlowAnimation(data)
+			table.remove(KazeUI.GlowElements, i)
+		end
 	end
 	local ok, grad = pcall(function() return target:FindFirstChild("KazeGlowGradient") end)
 	if ok and grad then grad.Enabled = false end
 end
 
+-- Forces a UIStroke to redraw around its parent's final settled size (a
+-- known engine quirk after AutomaticSize/layout changes). Event-driven: waits
+-- for AbsoluteSize change signals to go quiet for a short moment instead of
+-- polling Heartbeat for up to 30 frames.
+local KICKSTROKE_SETTLE_DELAY = 0.05
+
 local function KickStroke(strokeInst)
 	if not strokeInst then return end
-	task.defer(function()
 
-		local ref = strokeInst.Parent
-		if ref then
-			local lastSize = ref.AbsoluteSize
-			for _ = 1, 30 do
-				RunService.Heartbeat:Wait()
-				if not ref.Parent then return end
-				local newSize = ref.AbsoluteSize
-				if newSize == lastSize then break end
-				lastSize = newSize
-			end
-		else
-			RunService.Heartbeat:Wait()
-			RunService.Heartbeat:Wait()
-		end
+	local function doKick()
 		if strokeInst and strokeInst.Parent then
 			strokeInst.Enabled = false
-			task.wait()
-			if strokeInst and strokeInst.Parent then
-				strokeInst.Enabled = true
-			end
+			task.defer(function()
+				if strokeInst and strokeInst.Parent then
+					strokeInst.Enabled = true
+				end
+			end)
 		end
+	end
+
+	task.defer(function()
+		local ref = strokeInst.Parent
+		if not (ref and ref.Parent) then
+			doKick()
+			return
+		end
+
+		local generation = 0
+		local conn
+		local function scheduleCheck()
+			generation = generation + 1
+			local myGen = generation
+			task.delay(KICKSTROKE_SETTLE_DELAY, function()
+				if myGen ~= generation then return end
+				if conn then conn:Disconnect() conn = nil end
+				doKick()
+			end)
+		end
+
+		conn = ref:GetPropertyChangedSignal("AbsoluteSize"):Connect(scheduleCheck)
+		scheduleCheck()
 	end)
 end
 
--- Centralized scheduler for "RGB"/rainbow-cycling text (currently used by
--- Notify's RGBTitle option). Mirrors the glow scheduler above: one throttled
--- Heartbeat connection shared by every rainbow-text element instead of one
--- per-frame RenderStepped connection per notification, so opening several
--- RGB-title notifications at once still costs a single connection, and the
--- connection tears itself down automatically once no rainbow text is left.
-local RainbowTextElements = {}
-local rainbowHeartbeatConn = nil
-local RAINBOW_UPDATE_INTERVAL = 1 / 24
-local rainbowUpdateAccum = 0
+-- "RGB"/rainbow-cycling text (used by Notify's RGBTitle option). Reuses the
+-- same native keyframe-loop machinery as glow: no Heartbeat, no shared
+-- registry to iterate -- each rainbow title just owns its own looping color
+-- tween, costing nothing between its own Completed events, and nothing at
+-- all once the notification is gone.
+local RAINBOW_TITLE_PERIOD = 4.0
+local RAINBOW_TITLE_SAMPLES = 10
 
-local function StepRainbowText(dt)
-	if #RainbowTextElements == 0 then
-		if rainbowHeartbeatConn then
-			rainbowHeartbeatConn:Disconnect()
-			rainbowHeartbeatConn = nil
-		end
-		return
+local function BuildRainbowTitleKeyframes()
+	local colors = {}
+	for i = 0, RAINBOW_TITLE_SAMPLES - 1 do
+		colors[i + 1] = Color3.fromHSV(i / RAINBOW_TITLE_SAMPLES, 0.8, 1)
 	end
-
-	rainbowUpdateAccum = rainbowUpdateAccum + dt
-	if rainbowUpdateAccum < RAINBOW_UPDATE_INTERVAL then return end
-	rainbowUpdateAccum = 0
-
-	local hue = (tick() % 4) / 4
-	local rainbowColor = Color3.fromHSV(hue, 0.8, 1)
-	for i = #RainbowTextElements, 1, -1 do
-		local data = RainbowTextElements[i]
-		if data.TextLabel and data.TextLabel.Parent then
-			data.TextLabel.TextColor3 = rainbowColor
-			if data.IconLabel and data.IconLabel.Parent then
-				data.IconLabel.ImageColor3 = rainbowColor
-			end
-		else
-			table.remove(RainbowTextElements, i)
-		end
-	end
-end
-
-local function EnsureRainbowHeartbeat()
-	if not rainbowHeartbeatConn then
-		rainbowHeartbeatConn = RunService.Heartbeat:Connect(StepRainbowText)
-	end
+	return colors, RAINBOW_TITLE_PERIOD / RAINBOW_TITLE_SAMPLES
 end
 
 local function StartRainbowText(textLabel, iconLabel)
 	if not textLabel then return end
-	table.insert(RainbowTextElements, {TextLabel = textLabel, IconLabel = iconLabel})
-	EnsureRainbowHeartbeat()
+	local colors, seg = BuildRainbowTitleKeyframes()
+	local textHandle = StartColorKeyframeLoop(textLabel, "TextColor3", colors, seg, Enum.EasingStyle.Linear, 0)
+	local iconHandle = nil
+	if iconLabel then
+		iconHandle = StartColorKeyframeLoop(iconLabel, "ImageColor3", colors, seg, Enum.EasingStyle.Linear, 0)
+	end
+	textLabel.Destroying:Connect(function()
+		if textHandle then textHandle.Stop() end
+		if iconHandle then iconHandle.Stop() end
+	end)
 end
 
 function KazeUI:SetGlow(color)
 	KazeUI.GlowColor = color
 	KazeUI._userSetGlow = true
 	RefreshGlowGradientSequence()
+	RebuildAllGlowAnimations()
 
 	for i = #KazeUI.GlowCallbacks, 1, -1 do
 		local data = KazeUI.GlowCallbacks[i]
@@ -1233,20 +1389,23 @@ function KazeUI:SetGlowMode(mode)
 	local valid = {Breathing = true, Sequence = true, Pulse = true, Chase = true}
 	if not valid[mode] then mode = "Breathing" end
 	KazeUI.GlowMode = mode
+	RebuildAllGlowAnimations()
 end
 
 function KazeUI:SetGlowRainbow(enabled)
 	KazeUI.GlowRainbow = enabled and true or false
 	RefreshGlowGradientSequence()
+	RebuildAllGlowAnimations()
 end
 
 function KazeUI:SetPerformanceMode(enabled)
 	KazeUI.PerformanceMode = enabled and true or false
 	if KazeUI.PerformanceMode then
-		-- Freeze every animated glow element to a static color and stop the update loop
+		-- Cancel every native glow animation and freeze to a static color
 		for _, data in ipairs(KazeUI.GlowElements) do
+			StopGlowAnimation(data)
 			local target = data.Target
-			if target and target.Parent then
+			if target and target.Parent and data.Prop then
 				target[data.Prop] = KazeUI.GlowColor
 				local grad = target:FindFirstChild("KazeGlowGradient")
 				if grad then grad.Enabled = false end
@@ -5408,17 +5567,22 @@ local function BuildWindow(config)
 			end
 		end
 
-		local pinConn
-		pinConn = RunService.Heartbeat:Connect(function()
-			for sf, pos in pairs(savedPositions) do
-				if sf and sf.Parent then
+		-- Event-driven pin instead of a per-frame Heartbeat: each ScrollingFrame
+		-- only needs correcting on the rare occasions the restore tween's layout
+		-- pass actually nudges its CanvasPosition, so listen for that specific
+		-- property changing rather than reasserting it unconditionally every frame.
+		local pinConns = {}
+		for sf, pos in pairs(savedPositions) do
+			pinConns[sf] = sf:GetPropertyChangedSignal("CanvasPosition"):Connect(function()
+				if sf.CanvasPosition ~= pos then
 					sf.CanvasPosition = pos
 				end
-			end
-		end)
+			end)
+		end
 
 		local function finishRestore()
-			if pinConn then pinConn:Disconnect() pinConn = nil end
+			for _, conn in pairs(pinConns) do conn:Disconnect() end
+			pinConns = {}
 			for sf in pairs(savedPositions) do
 				if sf and sf.Parent then sf.ScrollingEnabled = true end
 			end
