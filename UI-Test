@@ -167,6 +167,24 @@ KazeUI.Themes = {
 		BackgroundImageTransparency = 1,
 		OverlayTransparency = 1,
 		PanelTransparency = 0.05
+	},
+	-- A calmer, "script-hub" style palette inspired by the flatter dark-plus-single-accent
+	-- look popular in libraries like WindUI: near-black panels, a lime accent instead of
+	-- KazeUI's usual saturated neon borders, and slightly more panel transparency for a
+	-- lighter "glass" feel. Built entirely from KazeUI's own theme schema and components --
+	-- no external code or assets -- so every KazeUI feature (glow, wallpaper, etc.) still
+	-- works normally under it.
+	Zephyr = {
+		Name = "Zephyr",
+		Background = Color3.fromRGB(13, 14, 16),
+		Text = Color3.fromRGB(232, 236, 230),
+		MutedText = Color3.fromRGB(148, 156, 148),
+		Border = Color3.fromRGB(174, 255, 92),
+		LightnessFactor = 1.1,
+		BackgroundImage = "",
+		BackgroundImageTransparency = 1,
+		OverlayTransparency = 1,
+		PanelTransparency = 0.18
 	}
 }
 
@@ -327,23 +345,39 @@ end
 UpdateScale()
 workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(UpdateScale)
 
+-- Named-icon lookup table (e.g. "house" -> rbxassetid://...). Populated from a
+-- remote file, so this used to be a synchronous game:HttpGet() sitting directly
+-- in the script's top-level init path -- meaning EVERY window build stalled
+-- until that network request returned, before a single UI Instance was even
+-- created. It's now fetched on its own thread instead: window/tab/component
+-- creation proceeds immediately using FormatImage's existing numeric-id
+-- fallback, and any named icon requested before the map lands gets quietly
+-- swapped to its real image the moment the fetch completes (see
+-- ScheduleImageSwap below), so nothing is left permanently blank.
 local IconsMap = {}
-pcall(function()
-	if game and game.HttpGet then
-		local rawIcons = game:HttpGet("https://raw.githubusercontent.com/KazeHub/UI/refs/heads/main/Icons.lua.txt")
-		if rawIcons then
-			local s, res = pcall(function()
-				local func = loadstring(rawIcons)
-				return func and func()
-			end)
-			if not s or type(res) ~= "table" then
-				s, res = pcall(function() return HttpService:JSONDecode(rawIcons) end)
-			end
-			if type(res) == "table" then
-				for k, v in pairs(res) do IconsMap[string.lower(tostring(k))] = tostring(v) end
+local IconsMapLoaded = false
+local IconsMapReadyEvent = Instance.new("BindableEvent")
+
+task.spawn(function()
+	pcall(function()
+		if game and game.HttpGet then
+			local rawIcons = game:HttpGet("https://raw.githubusercontent.com/KazeHub/UI/refs/heads/main/Icons.lua.txt")
+			if rawIcons then
+				local s, res = pcall(function()
+					local func = loadstring(rawIcons)
+					return func and func()
+				end)
+				if not s or type(res) ~= "table" then
+					s, res = pcall(function() return HttpService:JSONDecode(rawIcons) end)
+				end
+				if type(res) == "table" then
+					for k, v in pairs(res) do IconsMap[string.lower(tostring(k))] = tostring(v) end
+				end
 			end
 		end
-	end
+	end)
+	IconsMapLoaded = true
+	IconsMapReadyEvent:Fire()
 end)
 
 -- In-session cache + in-flight dedup for remote asset URLs: once a URL has
@@ -430,12 +464,59 @@ local function FormatImage(id)
 	if string.find(id, "rbxassetid://") then return track(id) end
 
 	if string.find(id, "^http://") or string.find(id, "^https://") then
-		return track(GetCustomAssetFromURL(id))
+		-- Already resolved this session (cache hit) -> return the final asset
+		-- instantly, no network involved. Otherwise DON'T download here: return
+		-- the raw URL as an immediate placeholder and let ScheduleImageSwap (see
+		-- below, called by every FormatImage call site) do the actual download on
+		-- its own thread and swap the real asset into the target once it lands.
+		if AssetURLCache[id] ~= nil then return track(AssetURLCache[id]) end
+		return id
 	end
 
 	local clean = string.gsub(id, "%D", "")
 	if clean == "" then return id end
 	return track("rbxassetid://" .. clean)
+end
+
+-- Companion to FormatImage: call this right after assigning a FormatImage(id)
+-- result to some target[prop] (target must exist by then, which is why this is
+-- a separate call rather than a parameter on FormatImage itself -- several
+-- callers compute the icon before the ImageLabel that will show it exists).
+-- If `id` already resolved to its final value synchronously, this is a cheap
+-- no-op. Otherwise it kicks off the missing resolution (icon map load and/or
+-- HTTP download) on its own thread and swaps target[prop] to the real result
+-- once ready -- and only if target[prop] hasn't been asked to show something
+-- else in the meantime (the attribute check below guards against a stale,
+-- slow-to-resolve request clobbering a newer one on the same target, e.g. a
+-- Toggle's on/off icon flipping again before the first icon finished loading).
+local IMG_SWAP_ATTR = "_KazeImgReq"
+
+local function ScheduleImageSwap(target, prop, id)
+	if not (target and prop and id and id ~= "") then return end
+	id = tostring(id)
+
+	local isUrl = string.find(id, "^http://") or string.find(id, "^https://")
+	if isUrl then
+		if AssetURLCache[id] ~= nil then return end -- already resolved, nothing pending
+	else
+		if IconsMapLoaded or IconsMap[string.lower(id)] ~= nil then return end
+		if string.find(id, "rbxassetid://") then return end
+		if string.gsub(id, "%D", "") ~= "" then return end -- plain numeric id, already final
+	end
+
+	local ok = pcall(function() target:SetAttribute(IMG_SWAP_ATTR, id) end)
+	if not ok then return end
+
+	task.spawn(function()
+		if isUrl then
+			GetCustomAssetFromURL(id)
+		else
+			IconsMapReadyEvent.Event:Wait()
+		end
+		if target and target.Parent and target:GetAttribute(IMG_SWAP_ATTR) == id then
+			target[prop] = FormatImage(id)
+		end
+	end)
 end
 
 
@@ -456,6 +537,7 @@ local function ApplyWallpaper(theme)
 		if wp.ImageLabel and wp.ImageLabel.Parent then
 			if hasImage then
 				wp.ImageLabel.Image = FormatImage(bgImgId)
+				ScheduleImageSwap(wp.ImageLabel, "Image", bgImgId)
 				TweenService:Create(wp.ImageLabel, TWEEN_SMOOTH, {ImageTransparency = bgImgTrans}):Play()
 				TweenService:Create(wp.OverlayFrame, TWEEN_SMOOTH, {BackgroundTransparency = bgOverlayTrans}):Play()
 			else
@@ -1536,6 +1618,7 @@ function KazeUI:Notify(config)
 		iconLabel.Position = UDim2.fromOffset(16, 16)
 		iconLabel.BackgroundTransparency = 1
 		iconLabel.Image = iconId
+		ScheduleImageSwap(iconLabel, "Image", config.Icon)
 		iconLabel.ImageColor3 = iconColor
 		iconLabel.ScaleType = Enum.ScaleType.Fit
 	end
@@ -1891,6 +1974,7 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 	searchIcon.Size = UDim2.fromOffset(14, 14)
 	searchIcon.BackgroundTransparency = 1
 	searchIcon.Image = FormatImage("search")
+	ScheduleImageSwap(searchIcon, "Image", "search")
 	KazeUI:OnThemeChanged(searchIcon, function(t) searchIcon.ImageColor3 = t.MutedText end)
 
 	local searchBox = Instance.new("TextBox")
@@ -2276,6 +2360,7 @@ local function CreateBoxDropdown(parentFrame, title, options, defaultOption, cal
 		searchIcon.Size = UDim2.fromOffset(14, 14)
 		searchIcon.BackgroundTransparency = 1
 		searchIcon.Image = FormatImage("search")
+		ScheduleImageSwap(searchIcon, "Image", "search")
 		KazeUI:OnThemeChanged(searchIcon, function(t) searchIcon.ImageColor3 = t.MutedText end)
 
 		searchBox = Instance.new("TextBox")
@@ -2350,6 +2435,7 @@ local function CreateBoxDropdown(parentFrame, title, options, defaultOption, cal
 			return
 		end
 		iconImg.Image = FormatImage(iconSpec)
+		ScheduleImageSwap(iconImg, "Image", iconSpec)
 	end
 
 	local boxItems = {}
@@ -3119,6 +3205,7 @@ local function CreateIconToggle(parentFrame, title, body, defaultState, onIcon, 
 	iconImage.BackgroundTransparency = 1
 	iconImage.ScaleType = Enum.ScaleType.Fit
 	iconImage.Image = FormatImage(state and onIcon or offIcon)
+	ScheduleImageSwap(iconImage, "Image", state and onIcon or offIcon)
 	iconImage.ImageColor3 = Color3.fromRGB(255, 255, 255)
 	iconImage.Parent = iconContainer
 
@@ -3161,6 +3248,7 @@ local function CreateIconToggle(parentFrame, title, body, defaultState, onIcon, 
 	local function setToggleState(newState, instant)
 		state = newState
 		iconImage.Image = FormatImage(state and onIcon or offIcon)
+		ScheduleImageSwap(iconImage, "Image", state and onIcon or offIcon)
 
 		if instant then
 			iconContainer.BackgroundColor3 = KazeUI.GetColor(0.08)
@@ -4655,6 +4743,7 @@ local function BuildWindow(config)
 	loadLogo.BackgroundTransparency = 1
 	loadLogo.ImageTransparency = 1
 	loadLogo.Image = FormatImage(config.Icon or "house")
+	ScheduleImageSwap(loadLogo, "Image", config.Icon or "house")
 	loadLogo.ZIndex = 502
 
 	local logoScale = Instance.new("UIScale", loadLogo)
@@ -4866,8 +4955,10 @@ local function BuildWindow(config)
 	local Title = config.Title or "Kaze UI"
 	local Author = config.Author or "Unknown"
 	local Version = config.Version or "1.0"
-	local MainIcon = FormatImage(config.Icon or "house")
-	local OpenIcon = FormatImage((config.OpenButton and config.OpenButton.Icon) or config.Icon or "house")
+	local MainIconSpec = config.Icon or "house"
+	local OpenIconSpec = (config.OpenButton and config.OpenButton.Icon) or config.Icon or "house"
+	local MainIcon = FormatImage(MainIconSpec)
+	local OpenIcon = FormatImage(OpenIconSpec)
 
 	KazeUI.AuthorName = Author
 
@@ -5147,6 +5238,7 @@ local function BuildWindow(config)
 	Avatar.Size = UDim2.fromOffset(40, 40)
 	Avatar.Position = UDim2.fromOffset(14, 6)
 	Avatar.Image = MainIcon
+	ScheduleImageSwap(Avatar, "Image", MainIconSpec)
 	Avatar.ScaleType = Enum.ScaleType.Fit
 	Avatar.AutoButtonColor = false
 	Avatar.Parent = TopBar
@@ -5272,6 +5364,7 @@ local function BuildWindow(config)
 		icon.Size = UDim2.fromOffset(18, 18)
 		icon.BackgroundTransparency = 1
 		icon.Image = FormatImage(iconId)
+		ScheduleImageSwap(icon, "Image", iconId)
 		icon.ImageColor3 = Color3.fromRGB(255, 255, 255)
 		icon.ScaleType = Enum.ScaleType.Fit
 		icon.ZIndex = 55
@@ -5311,6 +5404,7 @@ local function BuildWindow(config)
 		chevron.Size = UDim2.fromOffset(12, 12)
 		chevron.BackgroundTransparency = 1
 		chevron.Image = FormatImage("external-link")
+		ScheduleImageSwap(chevron, "Image", "external-link")
 		chevron.ZIndex = 54
 		chevron.Parent = row
 		KazeUI:OnThemeChanged(chevron, function(t) chevron.ImageColor3 = t.MutedText end)
@@ -5511,6 +5605,7 @@ local function BuildWindow(config)
 	MiniIcon.AnchorPoint = Vector2.new(0.5, 0.5)
 	MiniIcon.BackgroundTransparency = 0
 	MiniIcon.Image = OpenIcon
+	ScheduleImageSwap(MiniIcon, "Image", OpenIconSpec)
 	MiniIcon.ScaleType = Enum.ScaleType.Fit
 	MiniIcon.Parent = MiniButton
 	MiniIcon.ZIndex = 1000
@@ -6222,6 +6317,7 @@ local function BuildWindow(config)
 			dIcon.Position = UDim2.new(0.5, -18, 0, 18)
 			dIcon.BackgroundTransparency = 1
 			dIcon.Image = iconId
+			ScheduleImageSwap(dIcon, "Image", dialogConfig.Icon)
 			dIcon.ZIndex = 102
 			KazeUI:OnThemeChanged(dIcon, function(t) dIcon.ImageColor3 = KazeUI.GlowColor end)
 			topOffset = 62
@@ -6508,6 +6604,7 @@ local function BuildWindow(config)
 				for _, wp in ipairs(KazeUI.WallpaperElements) do
 					if wp.ImageLabel and wp.ImageLabel.Parent then
 						wp.ImageLabel.Image = cleanVal
+						ScheduleImageSwap(wp.ImageLabel, "Image", val)
 						local hasImg = val ~= ""
 						TweenService:Create(wp.ImageLabel, TWEEN_SMOOTH, {
 							ImageTransparency = hasImg and (KazeUI.CurrentTheme.BackgroundImageTransparency or 0) or 1
@@ -6586,6 +6683,7 @@ local function BuildWindow(config)
 		iconLabel.Position = UDim2.new(0, ICON_EXPANDED_X, 0.5, -9)
 		iconLabel.BackgroundTransparency = 1
 		iconLabel.Image = formattedIcon
+		ScheduleImageSwap(iconLabel, "Image", iconId or "")
 		iconLabel.ScaleType = Enum.ScaleType.Fit
 		iconLabel.Parent = btn
 
