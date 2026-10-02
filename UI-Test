@@ -242,6 +242,16 @@ local TWEEN_NOTIF_IN = TweenInfo.new(0.5, Enum.EasingStyle.Back, Enum.EasingDire
 local TWEEN_NOTIF_OUT = TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.In)
 local TWEEN_NOTIF_SHRINK = TweenInfo.new(0.3, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
 
+local function CollectMultiSelection(selMap)
+	local ret = {}
+	for k, v in pairs(selMap) do if v then table.insert(ret, k) end end
+	return ret
+end
+
+local function FireCallback(cb, ...)
+	if typeof(cb) == "function" then task.spawn(cb, ...) end
+end
+
 local LinearTweenInfos = {}
 local function GetLinearTweenInfo(duration)
 	local info = LinearTweenInfos[duration]
@@ -259,10 +269,7 @@ local function RegisterFlag(flag, getFunc, setFunc)
 end
 
 function KazeUI:SafeCall(fn, label)
-	local ok, err = pcall(fn)
-	if not ok then
-		warn("[KazeUI] Error in " .. tostring(label or "SafeCall block") .. ": " .. tostring(err))
-	end
+	local ok = pcall(fn)
 	return ok
 end
 
@@ -506,11 +513,9 @@ local function ApplyWallpaper(theme)
 	end
 end
 
-local Destroyed = setmetatable({}, {__mode = "k"})
-local Tracked = setmetatable({}, {__mode = "k"})
-local RegText = setmetatable({}, {__mode = "k"})
-local RegMuted = setmetatable({}, {__mode = "k"})
-local RegBorder = setmetatable({}, {__mode = "k"})
+local TrackState = setmetatable({}, {__mode = "k"})
+local Registered = setmetatable({}, {__mode = "k"})
+local Destroyed = setmetatable({}, {__mode = "k", __index = function(_, k) return TrackState[k] == true end})
 local GlowTargetSet = setmetatable({}, {__mode = "k"})
 local ScrollerRegistry = setmetatable({}, {__mode = "k"})
 local FrozenGlow = {}
@@ -553,10 +558,10 @@ local function PruneRegistries()
 end
 
 local function TrackDestroy(inst)
-	if Tracked[inst] then return end
-	Tracked[inst] = true
+	if TrackState[inst] ~= nil then return end
+	TrackState[inst] = false
 	inst.Destroying:Connect(function()
-		Destroyed[inst] = true
+		TrackState[inst] = true
 		if not prunePending then
 			prunePending = true
 			task.defer(PruneRegistries)
@@ -575,9 +580,11 @@ end
 function KazeUI:RegisterText(inst, isMuted)
 	if not inst then return end
 	local theme = KazeUI.CurrentTheme
+	local reg = Registered[inst]
+	if not reg then reg = {} Registered[inst] = reg end
 	if isMuted then
-		if not RegMuted[inst] then
-			RegMuted[inst] = true
+		if not reg.Muted then
+			reg.Muted = true
 			table.insert(KazeUI.MutedTextElements, inst)
 		end
 		inst.TextColor3 = theme.MutedText
@@ -585,8 +592,8 @@ function KazeUI:RegisterText(inst, isMuted)
 			inst.PlaceholderColor3 = theme.MutedText
 		end
 	else
-		if not RegText[inst] then
-			RegText[inst] = true
+		if not reg.Text then
+			reg.Text = true
 			table.insert(KazeUI.TextElements, inst)
 		end
 		inst.TextColor3 = theme.Text
@@ -596,8 +603,10 @@ end
 
 function KazeUI:RegisterBorder(inst)
 	if not inst then return end
-	if not RegBorder[inst] then
-		RegBorder[inst] = true
+	local reg = Registered[inst]
+	if not reg then reg = {} Registered[inst] = reg end
+	if not reg.Border then
+		reg.Border = true
 		table.insert(KazeUI.BorderElements, inst)
 	end
 	inst.Color = KazeUI.CurrentTheme.Border
@@ -1169,7 +1178,6 @@ local function SchedStep(dt)
 				if not ok then
 					t.Dead = true
 					if schedByKey[t.Key] == t then schedByKey[t.Key] = nil end
-					warn("[KazeUI] scheduler task '" .. tostring(t.Key) .. "' failed: " .. tostring(result))
 				elseif result == false then
 					t.Dead = true
 					if schedByKey[t.Key] == t then schedByKey[t.Key] = nil end
@@ -1411,9 +1419,8 @@ function KazeUI:AddGlowHalo(hostFrame, cornerRadius)
 	corner.CornerRadius = cornerRadius or UDim.new(0, 28)
 
 	local ringDefs = {
-		{Thickness = 2, BaseTransparency = 0.30, IntensityBoost = 0.12},
-		{Thickness = 6, BaseTransparency = 0.60, IntensityBoost = 0.22},
-		{Thickness = 12, BaseTransparency = 0.80, IntensityBoost = 0.28},
+		{Thickness = 3, BaseTransparency = 0.35, IntensityBoost = 0.15},
+		{Thickness = 10, BaseTransparency = 0.72, IntensityBoost = 0.26},
 	}
 	local rings = {}
 	for _, def in ipairs(ringDefs) do
@@ -2269,17 +2276,13 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 					selectedMulti[optStr] = not selectedMulti[optStr]
 					UpdateVisuals(false)
 					UpdateHeaderVisual()
-					if type(callback) == "function" then
-						local ret = {}
-						for k,v in pairs(selectedMulti) do if v then table.insert(ret, k) end end
-						task.spawn(callback, ret)
-					end
+					FireCallback(callback, CollectMultiSelection(selectedMulti))
 				else
 					selectedSingle = optStr
 					UpdateHeaderVisual()
 					CloseDropdown()
 					for _, item in ipairs(optionItems) do item.Update(false) end
-					if type(callback) == "function" then task.spawn(callback, selectedSingle) end
+					FireCallback(callback, selectedSingle)
 				end
 			end)
 
@@ -2318,11 +2321,7 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 	end)
 
 	RegisterFlag(flag, function()
-		if isMulti then
-			local ret = {}
-			for k,v in pairs(selectedMulti) do if v then table.insert(ret, k) end end
-			return ret
-		end
+		if isMulti then return CollectMultiSelection(selectedMulti) end
 		return selectedSingle
 	end, function(val)
 		if isMulti then
@@ -2335,14 +2334,10 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 		end
 		UpdateHeaderVisual()
 		Refresh(options)
-		if typeof(callback) == "function" then
-			if isMulti then
-				local ret = {}
-				for k,v in pairs(selectedMulti) do if v then table.insert(ret, k) end end
-				task.spawn(callback, ret)
-			else
-				task.spawn(callback, selectedSingle)
-			end
+		if isMulti then
+			FireCallback(callback, CollectMultiSelection(selectedMulti))
+		else
+			FireCallback(callback, selectedSingle)
 		end
 	end)
 
@@ -2353,11 +2348,7 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 		Frame = dropFrame,
 		Refresh = function(self, newOpts) Refresh(newOpts) end,
 		GetValue = function()
-			if isMulti then
-				local ret = {}
-				for k,v in pairs(selectedMulti) do if v then table.insert(ret, k) end end
-				return ret
-			end
+			if isMulti then return CollectMultiSelection(selectedMulti) end
 			return selectedSingle
 		end,
 		SetText = function(self, newTitle) titleLabel.Text = newTitle end,
@@ -2707,16 +2698,12 @@ local function CreateBoxDropdown(parentFrame, title, options, defaultOption, cal
 				if isMulti then
 					selectedMulti[optStr] = not selectedMulti[optStr]
 					UpdateHeaderVisual()
-					if type(callback) == "function" then
-						local ret = {}
-						for k, v in pairs(selectedMulti) do if v then table.insert(ret, k) end end
-						task.spawn(callback, ret)
-					end
+					FireCallback(callback, CollectMultiSelection(selectedMulti))
 				else
 					selectedSingle = optStr
 					UpdateHeaderVisual()
 					for _, item in ipairs(boxItems) do item.Update(false) end
-					if type(callback) == "function" then task.spawn(callback, selectedSingle) end
+					FireCallback(callback, selectedSingle)
 				end
 				UpdateVisuals(false)
 			end)
@@ -2755,11 +2742,7 @@ local function CreateBoxDropdown(parentFrame, title, options, defaultOption, cal
 	end)
 
 	RegisterFlag(flag, function()
-		if isMulti then
-			local ret = {}
-			for k, v in pairs(selectedMulti) do if v then table.insert(ret, k) end end
-			return ret
-		end
+		if isMulti then return CollectMultiSelection(selectedMulti) end
 		return selectedSingle
 	end, function(val)
 		if isMulti then
@@ -2772,14 +2755,10 @@ local function CreateBoxDropdown(parentFrame, title, options, defaultOption, cal
 		end
 		UpdateHeaderVisual()
 		Refresh(options)
-		if typeof(callback) == "function" then
-			if isMulti then
-				local ret = {}
-				for k, v in pairs(selectedMulti) do if v then table.insert(ret, k) end end
-				task.spawn(callback, ret)
-			else
-				task.spawn(callback, selectedSingle)
-			end
+		if isMulti then
+			FireCallback(callback, CollectMultiSelection(selectedMulti))
+		else
+			FireCallback(callback, selectedSingle)
 		end
 	end)
 
@@ -2790,11 +2769,7 @@ local function CreateBoxDropdown(parentFrame, title, options, defaultOption, cal
 		Frame = dropFrame,
 		Refresh = function(self, newOpts) Refresh(newOpts) end,
 		GetValue = function()
-			if isMulti then
-				local ret = {}
-				for k, v in pairs(selectedMulti) do if v then table.insert(ret, k) end end
-				return ret
-			end
+			if isMulti then return CollectMultiSelection(selectedMulti) end
 			return selectedSingle
 		end,
 		SetText = function(self, newTitle) titleLabel.Text = newTitle end,
@@ -3076,7 +3051,7 @@ local function CreateClickableParagraph(parentFrame, title, body, callback, lock
 			}):Play()
 		end,
 		function()
-			if typeof(callback) == "function" then task.spawn(callback) end
+			FireCallback(callback)
 		end
 	)
 
@@ -3258,7 +3233,7 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 		end,
 		function()
 			setToggleState(not state, false)
-			if typeof(callback) == "function" then task.spawn(callback, state) end
+			FireCallback(callback, state)
 		end
 	)
 
@@ -3268,7 +3243,7 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 
 	RegisterFlag(flag, function() return state end, function(val)
 		setToggleState(val, false)
-		if typeof(callback) == "function" then task.spawn(callback, state) end
+		FireCallback(callback, state)
 	end)
 
 	local lockCtrl = ApplyLock(paraFrame, locked, wrapper, UDim2.new(0.95, 0, 1, -3), UDim2.new(0.5, 0, 0, 3), Vector2.new(0.5, 0))
@@ -3439,7 +3414,7 @@ local function CreateIconToggle(parentFrame, title, body, defaultState, onIcon, 
 		end,
 		function()
 			setToggleState(not state, false)
-			if typeof(callback) == "function" then task.spawn(callback, state) end
+			FireCallback(callback, state)
 		end
 	)
 
@@ -3449,7 +3424,7 @@ local function CreateIconToggle(parentFrame, title, body, defaultState, onIcon, 
 
 	RegisterFlag(flag, function() return state end, function(val)
 		setToggleState(val, false)
-		if typeof(callback) == "function" then task.spawn(callback, state) end
+		FireCallback(callback, state)
 	end)
 
 	local lockCtrl = ApplyLock(paraFrame, locked, wrapper, UDim2.new(0.95, 0, 1, -3), UDim2.new(0.5, 0, 0, 3), Vector2.new(0.5, 0))
@@ -3573,7 +3548,7 @@ local function CreateTextBoxInput(parentFrame, title, placeholder, defaultVal, c
 		TweenService:Create(paraFrame, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.02)}):Play()
 		StopNeonLoop(paraStroke)
 		TweenService:Create(paraStroke, TWEEN_FAST, {Color = KazeUI.CurrentTheme.Border}):Play()
-		if typeof(callback) == "function" then task.spawn(callback, textBox.Text, enterPressed) end
+		FireCallback(callback, textBox.Text, enterPressed)
 	end)
 
 	KazeUI:OnGlowChanged(innerStroke, function(c)
@@ -3585,7 +3560,7 @@ local function CreateTextBoxInput(parentFrame, title, placeholder, defaultVal, c
 
 	RegisterFlag(flag, function() return textBox.Text end, function(val)
 		textBox.Text = val
-		if typeof(callback) == "function" then task.spawn(callback, val) end
+		FireCallback(callback, val)
 	end)
 
 	local lockCtrl = ApplyLock(paraFrame, locked, wrapper, UDim2.new(0.95, 0, 1, -3), UDim2.new(0.5, 0, 0, 3), Vector2.new(0.5, 0))
@@ -3732,7 +3707,7 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 
 		TweenService:Create(fill, TWEEN_FAST, {Size = UDim2.new(visualPercentage, 0, 1, 0)}):Play()
 		TweenService:Create(knob, TWEEN_FAST, {Position = UDim2.new(visualPercentage, 0, 0.5, 0)}):Play()
-		if typeof(callback) == "function" then task.spawn(callback, value) end
+		FireCallback(callback, value)
 	end
 
 	local startingPercentage = 0
@@ -3791,7 +3766,7 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 			if max > min then valPercentage = (value - min) / (max - min) end
 			fill.Size = UDim2.new(valPercentage, 0, 1, 0)
 			knob.Position = UDim2.new(valPercentage, 0, 0.5, 0)
-			if typeof(callback) == "function" then task.spawn(callback, value) end
+			FireCallback(callback, value)
 		end,
 		SetText = function(self, newTitle)
 			if ptitleLabel and newTitle then ptitleLabel.Text = newTitle end
@@ -3951,7 +3926,7 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 		color = Color3.fromHSV(h, s, v)
 		previewColor.BackgroundColor3 = color
 		svMap.BackgroundColor3 = Color3.fromHSV(h, 1, 1)
-		if typeof(callback) == "function" then task.spawn(callback, color) end
+		FireCallback(callback, color)
 	end
 
 	local function SetCursorPositions()
@@ -4215,7 +4190,7 @@ local function CreateKeybindInput(parentFrame, title, defaultKey, callback, flag
 	local uisConn = UIS.InputBegan:Connect(function(input, gp)
 		if not gp and not isBinding and currentKey ~= Enum.KeyCode.Unknown and input.KeyCode == currentKey then
 			if toggleUI and KazeUI._ToggleWindow then KazeUI._ToggleWindow() end
-			if typeof(callback) == "function" then task.spawn(callback, currentKey) end
+			FireCallback(callback, currentKey)
 		end
 	end)
 
@@ -7165,7 +7140,6 @@ end
 function KazeUI:CreateWindow(config)
 	local ok, resultOrErr = pcall(BuildWindow, config)
 	if not ok then
-		warn("[KazeUI] CreateWindow failed -- the UI will not show. Error: " .. tostring(resultOrErr))
 		pcall(function()
 			game:GetService("StarterGui"):SetCore("SendNotification", {
 				Title = "KazeUI failed to load",
