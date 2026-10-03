@@ -268,6 +268,39 @@ local function RegisterFlag(flag, getFunc, setFunc)
 	end
 end
 
+local function ChainCallback(prev, fn)
+	if typeof(fn) ~= "function" then return prev end
+	if typeof(prev) ~= "function" then return fn end
+	return function(...)
+		task.spawn(prev, ...)
+		task.spawn(fn, ...)
+	end
+end
+
+local function NoOp() end
+
+local function ElementSetVisible(self, visible)
+	local f = self.Wrapper or self.Frame
+	f.Visible = visible ~= false
+end
+
+local function ElementDestroy(self)
+	local flag, entry = self.FlagName, self.FlagEntry
+	if flag and entry and KazeUI.Flags[flag] == entry then KazeUI.Flags[flag] = nil end
+	local f = self.Wrapper or self.Frame
+	f:Destroy()
+end
+
+local function FinishElement(api, flag)
+	api.SetVisible = ElementSetVisible
+	api.Destroy = ElementDestroy
+	if flag then
+		api.FlagName = flag
+		api.FlagEntry = KazeUI.Flags[flag]
+	end
+	return api
+end
+
 function KazeUI:SafeCall(fn, label)
 	local ok = pcall(fn)
 	return ok
@@ -1981,9 +2014,9 @@ local function AnimateComponentsIn(container)
 	end)
 end
 
-local function BuildPlayerListOptions(withIcons)
+local function BuildPlayerListOptions(withIcons, plrs)
 	local list = {}
-	for _, p in ipairs(Players:GetPlayers()) do
+	for _, p in ipairs(plrs or Players:GetPlayers()) do
 		if p ~= LP then
 			if withIcons then
 				table.insert(list, {Text = p.Name, Icon = "rbxthumb://type=AvatarHeadShot&id=" .. p.UserId .. "&w=48&h=48"})
@@ -2000,11 +2033,27 @@ end
 
 local function WirePlayerListRefresh(ownerInst, refreshFn, withIcons, interval)
 	interval = tonumber(interval) or 1
-	refreshFn(BuildPlayerListOptions(withIcons))
+	local last, lastN = {}, -1
+	local function Sync()
+		local plrs = Players:GetPlayers()
+		local n = #plrs
+		local changed = n ~= lastN
+		if not changed then
+			for i = 1, n do
+				if plrs[i] ~= last[i] then changed = true break end
+			end
+		end
+		if not changed then return end
+		for i = 1, n do last[i] = plrs[i] end
+		for i = n + 1, lastN do last[i] = nil end
+		lastN = n
+		refreshFn(BuildPlayerListOptions(withIcons, plrs))
+	end
+	Sync()
 	local key = ownerInst
 	SchedAdd(key, function()
 		if not ownerInst.Parent then return false end
-		refreshFn(BuildPlayerListOptions(withIcons))
+		Sync()
 	end, interval)
 	ownerInst.Destroying:Connect(function()
 		SchedRemove(key)
@@ -2352,10 +2401,7 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 		end
 	end)
 
-	RegisterFlag(flag, function()
-		if isMulti then return CollectMultiSelection(selectedMulti) end
-		return selectedSingle
-	end, function(val)
+	local function ApplySelection(val)
 		if isMulti then
 			selectedMulti = {}
 			if type(val) == "table" then
@@ -2371,7 +2417,12 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 		else
 			FireCallback(callback, selectedSingle)
 		end
-	end)
+	end
+
+	RegisterFlag(flag, function()
+		if isMulti then return CollectMultiSelection(selectedMulti) end
+		return selectedSingle
+	end, ApplySelection)
 
 	local lockCtrl = ApplyLock(dropFrame, locked, wrapper, UDim2.new(0.95, 0, 1, -3), UDim2.new(0.5, 0, 0, 3), Vector2.new(0.5, 0))
 
@@ -2392,7 +2443,7 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 		end, false, playerListInterval)
 	end
 
-	return {
+	return FinishElement({
 		Wrapper = wrapper,
 		Frame = dropFrame,
 		Refresh = function(self, newOpts) Refresh(newOpts) end,
@@ -2404,8 +2455,10 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 		SetLocked = function(self, state)
 			isLockedState = state
 			lockCtrl:SetLocked(state)
-		end
-	}
+		end,
+		SetValue = function(self, val) ApplySelection(val) end,
+		OnChanged = function(self, fn) callback = ChainCallback(callback, fn) end
+	}, flag)
 end
 
 local function CreateBoxDropdown(parentFrame, title, options, defaultOption, callback, isMulti, flag, locked, searchBarEnabled, playerList, playerListInterval)
@@ -2794,10 +2847,7 @@ local function CreateBoxDropdown(parentFrame, title, options, defaultOption, cal
 		end
 	end)
 
-	RegisterFlag(flag, function()
-		if isMulti then return CollectMultiSelection(selectedMulti) end
-		return selectedSingle
-	end, function(val)
+	local function ApplySelection(val)
 		if isMulti then
 			selectedMulti = {}
 			if type(val) == "table" then
@@ -2813,7 +2863,12 @@ local function CreateBoxDropdown(parentFrame, title, options, defaultOption, cal
 		else
 			FireCallback(callback, selectedSingle)
 		end
-	end)
+	end
+
+	RegisterFlag(flag, function()
+		if isMulti then return CollectMultiSelection(selectedMulti) end
+		return selectedSingle
+	end, ApplySelection)
 
 	local lockCtrl = ApplyLock(dropFrame, locked, wrapper, UDim2.new(0.95, 0, 1, -3), UDim2.new(0.5, 0, 0, 3), Vector2.new(0.5, 0))
 
@@ -2834,7 +2889,7 @@ local function CreateBoxDropdown(parentFrame, title, options, defaultOption, cal
 		end, true, playerListInterval)
 	end
 
-	return {
+	return FinishElement({
 		Wrapper = wrapper,
 		Frame = dropFrame,
 		Refresh = function(self, newOpts) Refresh(newOpts) end,
@@ -2846,8 +2901,10 @@ local function CreateBoxDropdown(parentFrame, title, options, defaultOption, cal
 		SetLocked = function(self, state)
 			isLockedState = state
 			lockCtrl:SetLocked(state)
-		end
-	}
+		end,
+		SetValue = function(self, val) ApplySelection(val) end,
+		OnChanged = function(self, fn) callback = ChainCallback(callback, fn) end
+	}, flag)
 end
 
 local function CreateParagraph(parentFrame, title, body)
@@ -2918,14 +2975,25 @@ local function CreateParagraph(parentFrame, title, body)
 	bodyLabel.TextYAlignment = Enum.TextYAlignment.Top
 	KazeUI:RegisterText(bodyLabel, true)
 
-	return {
+	local changedCb
+	return FinishElement({
 		Wrapper = wrapper,
 		Frame = paraFrame,
 		SetText = function(self, newTitle, newBody)
 			if ptitleLabel and newTitle then ptitleLabel.Text = newTitle end
-			if bodyLabel and newBody then bodyLabel.Text = newBody end
-		end
-	}
+			if bodyLabel and newBody then
+				bodyLabel.Text = newBody
+				FireCallback(changedCb, bodyLabel.Text)
+			end
+		end,
+		GetValue = function() return bodyLabel and bodyLabel.Text or "" end,
+		SetValue = function(self, v)
+			if not bodyLabel then return end
+			bodyLabel.Text = tostring(v == nil and "" or v)
+			FireCallback(changedCb, bodyLabel.Text)
+		end,
+		OnChanged = function(self, fn) changedCb = ChainCallback(changedCb, fn) end
+	})
 end
 
 local PRESS_DRAG_CANCEL_DISTANCE = 10
@@ -3131,7 +3199,7 @@ local function CreateClickableParagraph(parentFrame, title, body, callback, lock
 
 	local lockCtrl = ApplyLock(paraFrame, locked, wrapper, UDim2.new(0.95, 0, 1, -3), UDim2.new(0.5, 0, 0, 3), Vector2.new(0.5, 0))
 
-	return {
+	return FinishElement({
 		Wrapper = wrapper,
 		Frame = paraFrame,
 		SetText = function(self, newTitle, newBody)
@@ -3141,8 +3209,13 @@ local function CreateClickableParagraph(parentFrame, title, body, callback, lock
 		SetLocked = function(self, state)
 			isLockedState = state
 			lockCtrl:SetLocked(state)
-		end
-	}
+		end,
+		GetValue = function() return bodyLabel and bodyLabel.Text or "" end,
+		SetValue = function(self, v)
+			if bodyLabel then bodyLabel.Text = tostring(v == nil and "" or v) end
+		end,
+		OnChanged = function(self, fn) callback = ChainCallback(callback, fn) end
+	})
 end
 
 local function CreateToggleSwitch(parentFrame, title, body, defaultState, callback, flag, locked)
@@ -3318,7 +3391,7 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 
 	local lockCtrl = ApplyLock(paraFrame, locked, wrapper, UDim2.new(0.95, 0, 1, -3), UDim2.new(0.5, 0, 0, 3), Vector2.new(0.5, 0))
 
-	return {
+	return FinishElement({
 		Wrapper = wrapper,
 		SetState = function(self, newState, instant) setToggleState(newState, instant) end,
 		SetText = function(self, newTitle, newBody)
@@ -3328,8 +3401,14 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 		SetLocked = function(self, state)
 			isLockedState = state
 			lockCtrl:SetLocked(state)
-		end
-	}
+		end,
+		GetValue = function() return state end,
+		SetValue = function(self, v, instant)
+			setToggleState(v and true or false, instant)
+			FireCallback(callback, state)
+		end,
+		OnChanged = function(self, fn) callback = ChainCallback(callback, fn) end
+	}, flag)
 end
 
 local function CreateIconToggle(parentFrame, title, body, defaultState, onIcon, offIcon, callback, flag, locked)
@@ -3499,7 +3578,7 @@ local function CreateIconToggle(parentFrame, title, body, defaultState, onIcon, 
 
 	local lockCtrl = ApplyLock(paraFrame, locked, wrapper, UDim2.new(0.95, 0, 1, -3), UDim2.new(0.5, 0, 0, 3), Vector2.new(0.5, 0))
 
-	return {
+	return FinishElement({
 		Wrapper = wrapper,
 		SetState = function(self, newState, instant) setToggleState(newState, instant) end,
 		SetText = function(self, newTitle, newBody)
@@ -3509,8 +3588,14 @@ local function CreateIconToggle(parentFrame, title, body, defaultState, onIcon, 
 		SetLocked = function(self, state)
 			isLockedState = state
 			lockCtrl:SetLocked(state)
-		end
-	}
+		end,
+		GetValue = function() return state end,
+		SetValue = function(self, v, instant)
+			setToggleState(v and true or false, instant)
+			FireCallback(callback, state)
+		end,
+		OnChanged = function(self, fn) callback = ChainCallback(callback, fn) end
+	}, flag)
 end
 
 local function CreateTextBoxInput(parentFrame, title, placeholder, defaultVal, callback, flag, locked)
@@ -3635,7 +3720,7 @@ local function CreateTextBoxInput(parentFrame, title, placeholder, defaultVal, c
 
 	local lockCtrl = ApplyLock(paraFrame, locked, wrapper, UDim2.new(0.95, 0, 1, -3), UDim2.new(0.5, 0, 0, 3), Vector2.new(0.5, 0))
 
-	return {
+	return FinishElement({
 		Wrapper = wrapper,
 		SetText = function(self, value) textBox.Text = tostring(value or "") end,
 		SetPlaceholder = function(self, val) textBox.PlaceholderText = val end,
@@ -3645,8 +3730,14 @@ local function CreateTextBoxInput(parentFrame, title, placeholder, defaultVal, c
 		SetLocked = function(self, state)
 			isLockedState = state
 			lockCtrl:SetLocked(state)
-		end
-	}
+		end,
+		GetValue = function() return textBox.Text end,
+		SetValue = function(self, v)
+			textBox.Text = tostring(v == nil and "" or v)
+			FireCallback(callback, textBox.Text)
+		end,
+		OnChanged = function(self, fn) callback = ChainCallback(callback, fn) end
+	}, flag)
 end
 
 local function CreateSliderInput(parentFrame, title, min, max, default, callback, flag, locked)
@@ -3844,10 +3935,12 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 		SetLocked = function(self, state)
 			isLockedState = state
 			lockCtrl:SetLocked(state)
-		end
+		end,
+		GetValue = function() return value end,
+		OnChanged = function(self, fn) callback = ChainCallback(callback, fn) end
 	}
 	RegisterFlag(flag, function() return value end, function(val) api:SetValue(val) end)
-	return api
+	return FinishElement(api, flag)
 end
 
 local function CreateColorPicker(parentFrame, title, defaultColor, callback, flag, locked)
@@ -4107,7 +4200,7 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 
 	local lockCtrl = ApplyLock(dropFrame, locked, wrapper, UDim2.new(0.95, 0, 1, -3), UDim2.new(0.5, 0, 0, 3), Vector2.new(0.5, 0))
 
-	return {
+	return FinishElement({
 		Wrapper = wrapper,
 		SetValue = function(self, newColor)
 			color = newColor
@@ -4119,13 +4212,17 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 		SetLocked = function(self, state)
 			isLockedState = state
 			lockCtrl:SetLocked(state)
-		end
-	}
+		end,
+		GetValue = function() return color end,
+		OnChanged = function(self, fn) callback = ChainCallback(callback, fn) end
+	}, flag)
 end
 
 local function CreateKeybindInput(parentFrame, title, defaultKey, callback, flag, locked, toggleUI)
 	title = tostring(title or "Keybind")
 	local currentKey = defaultKey or Enum.KeyCode.Unknown
+	local notifiedKey = currentKey
+	local changedCb
 	local isBinding = false
 	local isLockedState = locked or false
 
@@ -4245,6 +4342,10 @@ local function CreateKeybindInput(parentFrame, title, defaultKey, callback, flag
 				end
 
 				bindLabel.Text = currentKey == Enum.KeyCode.Unknown and "None" or currentKey.Name
+				if currentKey ~= notifiedKey then
+					notifiedKey = currentKey
+					FireCallback(changedCb, currentKey)
+				end
 				if not isHovering then
 					StopNeonLoop(bindStroke)
 					TweenService:Create(bindStroke, TWEEN_FAST, {Color = KazeUI.CurrentTheme.Border}):Play()
@@ -4282,7 +4383,7 @@ local function CreateKeybindInput(parentFrame, title, defaultKey, callback, flag
 
 	local lockCtrl = ApplyLock(paraFrame, locked, wrapper, UDim2.new(0.95, 0, 1, -3), UDim2.new(0.5, 0, 0, 3), Vector2.new(0.5, 0))
 
-	return {
+	return FinishElement({
 		Wrapper = wrapper,
 		SetText = function(self, newTitle)
 			if ptitleLabel and newTitle then ptitleLabel.Text = newTitle end
@@ -4294,8 +4395,22 @@ local function CreateKeybindInput(parentFrame, title, defaultKey, callback, flag
 		SetLocked = function(self, state)
 			isLockedState = state
 			lockCtrl:SetLocked(state)
-		end
-	}
+		end,
+		GetValue = function() return currentKey end,
+		SetValue = function(self, k)
+			if type(k) == "string" then
+				local ok, kc = pcall(function() return Enum.KeyCode[k] end)
+				k = ok and kc or Enum.KeyCode.Unknown
+			end
+			currentKey = typeof(k) == "EnumItem" and k or Enum.KeyCode.Unknown
+			bindLabel.Text = currentKey == Enum.KeyCode.Unknown and "None" or currentKey.Name
+			if currentKey ~= notifiedKey then
+				notifiedKey = currentKey
+				FireCallback(changedCb, currentKey)
+			end
+		end,
+		OnChanged = function(self, fn) changedCb = ChainCallback(changedCb, fn) end
+	}, flag)
 end
 
 local function CreateVisualSectionDivider(parentFrame, titleArg)
@@ -4328,11 +4443,47 @@ local function CreateVisualSectionDivider(parentFrame, titleArg)
 	KazeUI:OnGlowChanged(leftLine, function(c) leftLine.BackgroundColor3 = c end)
 	StartNeonLoop(leftLine)
 
-	return {
+	local changedCb
+	return FinishElement({
+		Wrapper = wrapper,
 		Label = label,
 		LeftLine = leftLine,
-		SetText = function(self, t) label.Text = t end
-	}
+		SetText = function(self, t)
+			label.Text = t
+			FireCallback(changedCb, label.Text)
+		end,
+		GetValue = function() return label.Text end,
+		SetValue = function(self, t)
+			label.Text = tostring(t == nil and "" or t)
+			FireCallback(changedCb, label.Text)
+		end,
+		OnChanged = function(self, fn) changedCb = ChainCallback(changedCb, fn) end
+	})
+end
+
+local function CreateDivider(parentFrame, arg)
+	local height = type(arg) == "table" and tonumber(arg.Height) or 10
+	local wrapper = Instance.new("Frame")
+	wrapper.Name = "Divider"
+	wrapper.Size = UDim2.new(0.95, 0, 0, height)
+	wrapper.BackgroundTransparency = 1
+	wrapper.Parent = parentFrame
+
+	local line = Instance.new("Frame")
+	line.AnchorPoint = Vector2.new(0.5, 0.5)
+	line.Position = UDim2.fromScale(0.5, 0.5)
+	line.Size = UDim2.new(1, -8, 0, 1)
+	line.BorderSizePixel = 0
+	line.Parent = wrapper
+	KazeUI:OnThemeChanged(line, function(t) line.BackgroundColor3 = t.Border end)
+
+	return FinishElement({
+		Wrapper = wrapper,
+		Line = line,
+		GetValue = NoOp,
+		SetValue = NoOp,
+		OnChanged = NoOp
+	})
 end
 
 local CreateCollapsibleSection
@@ -4471,6 +4622,12 @@ AttachElementsToAPI = function(apiTable, parentFrame, depth)
 		local title = type(arg1) == "table" and arg1.Title or arg1
 		return CreateVisualSectionDivider(parentFrame, title)
 	end
+
+	function apiTable:Divider(arg1)
+		return CreateDivider(parentFrame, arg1)
+	end
+
+	apiTable.Separator = apiTable.Divider
 
 	function apiTable:GroupBox(arg1, depthOverride)
 		return CreateGroupBox(parentFrame, arg1, depth, depthOverride)
@@ -4671,6 +4828,8 @@ CreateCollapsibleSection = function(parentFrame, titleArg, currentDepth)
 	local sectionPublic = { Frame = sectionBox, ContentFrame = sectionContent, Header = headerFrame }
 	AttachElementsToAPI(sectionPublic, sectionContent, currentDepth + 1)
 	function sectionPublic:SetText(newText) titleLabel.Text = newText end
+	sectionPublic.SetVisible = ElementSetVisible
+	sectionPublic.Destroy = ElementDestroy
 	return sectionPublic
 end
 
@@ -4879,6 +5038,8 @@ CreateGroupBox = function(parentFrame, titleArg, currentDepth, depthOverride)
 		end
 	end
 
+	groupPublic.SetVisible = ElementSetVisible
+	groupPublic.Destroy = ElementDestroy
 	return groupPublic
 end
 
