@@ -460,6 +460,8 @@ local function FormatImageUncached(id)
 
 	if string.find(id, "rbxassetid://") then return track(id) end
 
+	if string.find(id, "rbxthumb://") then return track(id) end
+
 	if string.find(id, "^http://") or string.find(id, "^https://") then
 		return track(GetCustomAssetFromURL(id))
 	end
@@ -1979,7 +1981,37 @@ local function AnimateComponentsIn(container)
 	end)
 end
 
-local function CreateDropdown(parentFrame, title, options, defaultOption, callback, isMulti, flag, locked)
+local function BuildPlayerListOptions(withIcons)
+	local list = {}
+	for _, p in ipairs(Players:GetPlayers()) do
+		if p ~= LP then
+			if withIcons then
+				table.insert(list, {Text = p.Name, Icon = "rbxthumb://type=AvatarHeadShot&id=" .. p.UserId .. "&w=48&h=48"})
+			else
+				table.insert(list, p.Name)
+			end
+		end
+	end
+	if #list == 0 then
+		list[1] = withIcons and {Text = "None", Icon = ""} or "None"
+	end
+	return list
+end
+
+local function WirePlayerListRefresh(ownerInst, refreshFn, withIcons, interval)
+	interval = tonumber(interval) or 1
+	refreshFn(BuildPlayerListOptions(withIcons))
+	local key = ownerInst
+	SchedAdd(key, function()
+		if not ownerInst.Parent then return false end
+		refreshFn(BuildPlayerListOptions(withIcons))
+	end, interval)
+	ownerInst.Destroying:Connect(function()
+		SchedRemove(key)
+	end)
+end
+
+local function CreateDropdown(parentFrame, title, options, defaultOption, callback, isMulti, flag, locked, playerList, playerListInterval)
 	title = tostring(title or "Dropdown")
 	options = type(options) == "table" and options or {}
 	local isOpen = false
@@ -2343,6 +2375,10 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 
 	local lockCtrl = ApplyLock(dropFrame, locked, wrapper, UDim2.new(0.95, 0, 1, -3), UDim2.new(0.5, 0, 0, 3), Vector2.new(0.5, 0))
 
+	if playerList then
+		WirePlayerListRefresh(wrapper, Refresh, false, playerListInterval)
+	end
+
 	return {
 		Wrapper = wrapper,
 		Frame = dropFrame,
@@ -2359,7 +2395,7 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 	}
 end
 
-local function CreateBoxDropdown(parentFrame, title, options, defaultOption, callback, isMulti, flag, locked, searchBarEnabled)
+local function CreateBoxDropdown(parentFrame, title, options, defaultOption, callback, isMulti, flag, locked, searchBarEnabled, playerList, playerListInterval)
 	title = tostring(title or "Dropdown")
 	options = type(options) == "table" and options or {}
 	local isOpen = false
@@ -2632,9 +2668,13 @@ local function CreateBoxDropdown(parentFrame, title, options, defaultOption, cal
 			label.BackgroundTransparency = 1
 			label.Font = Enum.Font.Gotham
 			label.TextSize = 11
-			label.TextTruncate = Enum.TextTruncate.AtEnd
+			label.TextScaled = true
 			label.Text = optStr
 			label.Parent = box
+			local labelSizeConstraint = Instance.new("UITextSizeConstraint")
+			labelSizeConstraint.MaxTextSize = 11
+			labelSizeConstraint.MinTextSize = 7
+			labelSizeConstraint.Parent = label
 			if anyIcons then
 				label.Size = UDim2.new(1, -6, 0, 16)
 				label.Position = UDim2.new(0, 3, 1, -20)
@@ -2763,6 +2803,10 @@ local function CreateBoxDropdown(parentFrame, title, options, defaultOption, cal
 	end)
 
 	local lockCtrl = ApplyLock(dropFrame, locked, wrapper, UDim2.new(0.95, 0, 1, -3), UDim2.new(0.5, 0, 0, 3), Vector2.new(0.5, 0))
+
+	if playerList then
+		WirePlayerListRefresh(wrapper, Refresh, true, playerListInterval)
+	end
 
 	return {
 		Wrapper = wrapper,
@@ -4346,23 +4390,31 @@ AttachElementsToAPI = function(apiTable, parentFrame, depth)
 
 	function apiTable:Dropdown(arg1, arg2, arg3, arg4, arg5, arg6)
 		local title, vals, def, multi, callback, flag, locked = "", {}, nil, false, nil, nil, false
+		local playerList, playerListInterval = false, nil
 		if type(arg1) == "table" then
 			title, vals, def, multi, callback, flag, locked = arg1.Title, (arg1.Values or arg1.Options), arg1.Default, (arg1.Multi or false), arg1.Callback, arg1.Flag, arg1.Locked
+			playerList = arg1.PlayerList or false
+			playerListInterval = arg1.PlayerListInterval
 		else
 			title, vals, def, callback, multi, flag = arg1, arg2, arg3, arg4, (arg5 or false), arg6
 		end
-		return CreateDropdown(parentFrame, title, vals, def, callback, multi, flag, locked)
+		if playerList then vals = {} end
+		return CreateDropdown(parentFrame, title, vals, def, callback, multi, flag, locked, playerList, playerListInterval)
 	end
 
 	function apiTable:BoxDropdown(arg1, arg2, arg3, arg4, arg5, arg6)
 		local title, vals, def, multi, callback, flag, locked, searchBar = "", {}, nil, false, nil, nil, false, true
+		local playerList, playerListInterval = false, nil
 		if type(arg1) == "table" then
 			title, vals, def, multi, callback, flag, locked = arg1.Title, (arg1.Values or arg1.Options), arg1.Default, (arg1.Multi or false), arg1.Callback, arg1.Flag, arg1.Locked
 			if type(arg1.SearchBar) == "boolean" then searchBar = arg1.SearchBar end
+			playerList = arg1.PlayerList or false
+			playerListInterval = arg1.PlayerListInterval
 		else
 			title, vals, def, callback, multi, flag = arg1, arg2, arg3, arg4, (arg5 or false), arg6
 		end
-		return CreateBoxDropdown(parentFrame, title, vals, def, callback, multi, flag, locked, searchBar)
+		if playerList then vals = {} end
+		return CreateBoxDropdown(parentFrame, title, vals, def, callback, multi, flag, locked, searchBar, playerList, playerListInterval)
 	end
 
 	function apiTable:ColorPicker(arg1, arg2, arg3, arg4)
