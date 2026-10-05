@@ -272,8 +272,8 @@ local function ChainCallback(prev, fn)
 	if typeof(fn) ~= "function" then return prev end
 	if typeof(prev) ~= "function" then return fn end
 	return function(...)
-		task.spawn(prev, ...)
-		task.spawn(fn, ...)
+		pcall(prev, ...)
+		pcall(fn, ...)
 	end
 end
 
@@ -1191,8 +1191,11 @@ local schedConn = nil
 local schedStepping = false
 
 local function SchedCompact()
-	for i = #schedList, 1, -1 do
-		if schedList[i].Dead then table.remove(schedList, i) end
+	if schedList.Dirty then
+		schedList.Dirty = nil
+		for i = #schedList, 1, -1 do
+			if schedList[i].Dead then table.remove(schedList, i) end
+		end
 	end
 	if #schedList == 0 and schedConn then
 		schedConn:Disconnect()
@@ -1212,9 +1215,11 @@ local function SchedStep(dt)
 				local ok, result = pcall(t.Fn, elapsed)
 				if not ok then
 					t.Dead = true
+					schedList.Dirty = true
 					if schedByKey[t.Key] == t then schedByKey[t.Key] = nil end
 				elseif result == false then
 					t.Dead = true
+					schedList.Dirty = true
 					if schedByKey[t.Key] == t then schedByKey[t.Key] = nil end
 				end
 			end
@@ -1244,6 +1249,7 @@ local function SchedRemove(key)
 	local t = schedByKey[key]
 	if not t then return end
 	t.Dead = true
+	schedList.Dirty = true
 	schedByKey[key] = nil
 	if not schedStepping then SchedCompact() end
 end
@@ -1497,32 +1503,44 @@ local function StopNeonLoop(target)
 	if ok and grad and grad.Enabled then grad.Enabled = false end
 end
 
-local function KickStroke(strokeInst)
-	if not strokeInst then return end
-	task.defer(function()
-
+local KickStroke
+do
+	local pending = setmetatable({}, {__mode = "k"})
+	local function Check(strokeInst, state)
+		if not strokeInst.Parent then
+			state.Conn:Disconnect()
+			pending[strokeInst] = nil
+			return
+		end
+		local now = os.clock()
+		if now - state.Last < 0.05 and now - state.Start < 0.6 then
+			task.delay(0.05, Check, strokeInst, state)
+			return
+		end
+		state.Conn:Disconnect()
+		pending[strokeInst] = nil
+		strokeInst.Enabled = false
+		task.delay(0, function()
+			if strokeInst.Parent then strokeInst.Enabled = true end
+		end)
+	end
+	KickStroke = function(strokeInst)
+		if not strokeInst then return end
+		local state = pending[strokeInst]
+		if state then
+			state.Last = os.clock()
+			return
+		end
 		local ref = strokeInst.Parent
-		if ref then
-			local lastSize = ref.AbsoluteSize
-			for _ = 1, 30 do
-				RunService.Heartbeat:Wait()
-				if not ref.Parent then return end
-				local newSize = ref.AbsoluteSize
-				if newSize == lastSize then break end
-				lastSize = newSize
-			end
-		else
-			RunService.Heartbeat:Wait()
-			RunService.Heartbeat:Wait()
-		end
-		if strokeInst and strokeInst.Parent then
-			strokeInst.Enabled = false
-			task.wait()
-			if strokeInst and strokeInst.Parent then
-				strokeInst.Enabled = true
-			end
-		end
-	end)
+		if not ref then return end
+		local now = os.clock()
+		state = {Last = now, Start = now}
+		state.Conn = ref:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+			state.Last = os.clock()
+		end)
+		pending[strokeInst] = state
+		task.delay(0.05, Check, strokeInst, state)
+	end
 end
 
 function KazeUI:SetGlow(color)
@@ -2014,50 +2032,87 @@ local function AnimateComponentsIn(container)
 	end)
 end
 
-local function BuildPlayerListOptions(withIcons, plrs)
+local PlayerHub = {Subs = {}, Count = 0, Pending = false, Conns = nil, Names = nil, Icons = nil, Leaving = setmetatable({}, {__mode = "k"})}
+
+function PlayerHub.Options(withIcons)
+	local cached = withIcons and PlayerHub.Icons or PlayerHub.Names
+	if cached then return cached end
 	local list = {}
-	for _, p in ipairs(plrs or Players:GetPlayers()) do
-		if p ~= LP then
+	local leaving = PlayerHub.Leaving
+	for _, p in ipairs(Players:GetPlayers()) do
+		if p ~= LP and not leaving[p] then
 			if withIcons then
-				table.insert(list, {Text = p.Name, Icon = "rbxthumb://type=AvatarHeadShot&id=" .. p.UserId .. "&w=48&h=48"})
+				list[#list + 1] = {Text = p.Name, Icon = "rbxthumb://type=AvatarHeadShot&id=" .. p.UserId .. "&w=48&h=48"}
 			else
-				table.insert(list, p.Name)
+				list[#list + 1] = p.Name
 			end
 		end
 	end
 	if #list == 0 then
 		list[1] = withIcons and {Text = "None", Icon = ""} or "None"
 	end
+	if withIcons then PlayerHub.Icons = list else PlayerHub.Names = list end
 	return list
 end
 
-local function WirePlayerListRefresh(ownerInst, refreshFn, withIcons, interval)
-	interval = tonumber(interval) or 1
-	local last, lastN = {}, -1
-	local function Sync()
-		local plrs = Players:GetPlayers()
-		local n = #plrs
-		local changed = n ~= lastN
-		if not changed then
-			for i = 1, n do
-				if plrs[i] ~= last[i] then changed = true break end
-			end
+function PlayerHub.Unsubscribe(owner)
+	if not PlayerHub.Subs[owner] then return end
+	PlayerHub.Subs[owner] = nil
+	PlayerHub.Count = PlayerHub.Count - 1
+	if PlayerHub.Count <= 0 then
+		PlayerHub.Count = 0
+		local conns = PlayerHub.Conns
+		if conns then
+			PlayerHub.Conns = nil
+			conns[1]:Disconnect()
+			conns[2]:Disconnect()
 		end
-		if not changed then return end
-		for i = 1, n do last[i] = plrs[i] end
-		for i = n + 1, lastN do last[i] = nil end
-		lastN = n
-		refreshFn(BuildPlayerListOptions(withIcons, plrs))
 	end
-	Sync()
-	local key = ownerInst
-	SchedAdd(key, function()
-		if not ownerInst.Parent then return false end
-		Sync()
-	end, interval)
-	ownerInst.Destroying:Connect(function()
-		SchedRemove(key)
-	end)
+end
+
+function PlayerHub.Flush()
+	PlayerHub.Pending = false
+	PlayerHub.Names, PlayerHub.Icons = nil, nil
+	for owner, sub in pairs(PlayerHub.Subs) do
+		if owner.Parent then
+			pcall(sub.Fn, PlayerHub.Options(sub.Icons))
+		else
+			PlayerHub.Unsubscribe(owner)
+		end
+	end
+end
+
+function PlayerHub.Mark(plr)
+	if plr == LP then return end
+	PlayerHub.Names, PlayerHub.Icons = nil, nil
+	if not PlayerHub.Pending then
+		PlayerHub.Pending = true
+		task.defer(PlayerHub.Flush)
+	end
+end
+
+function PlayerHub.OnRemoving(plr)
+	PlayerHub.Leaving[plr] = true
+	PlayerHub.Mark(plr)
+end
+
+function PlayerHub.Subscribe(owner, fn, withIcons)
+	if PlayerHub.Subs[owner] then return end
+	PlayerHub.Subs[owner] = {Fn = fn, Icons = withIcons}
+	PlayerHub.Count = PlayerHub.Count + 1
+	if PlayerHub.Count == 1 then
+		PlayerHub.Names, PlayerHub.Icons = nil, nil
+		PlayerHub.Conns = {
+			Players.PlayerAdded:Connect(PlayerHub.Mark),
+			Players.PlayerRemoving:Connect(PlayerHub.OnRemoving)
+		}
+	end
+	owner.Destroying:Connect(function() PlayerHub.Unsubscribe(owner) end)
+	fn(PlayerHub.Options(withIcons))
+end
+
+local function WirePlayerListRefresh(ownerInst, refreshFn, withIcons, interval)
+	PlayerHub.Subscribe(ownerInst, refreshFn, withIcons and true or false)
 end
 
 local function CreateDropdown(parentFrame, title, options, defaultOption, callback, isMulti, flag, locked, playerList, playerListInterval)
@@ -2246,6 +2301,7 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 	listLayout.Padding = UDim.new(0, 4)
 
 	local optionItems = {}
+	local itemsStale = true
 
 	local function CalcHeight()
 		local count = 0
@@ -2268,6 +2324,7 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 	local function Refresh(newOptions)
 		for _, item in ipairs(optionItems) do item.Btn:Destroy() end
 		table.clear(optionItems)
+		itemsStale = false
 
 		options = type(newOptions) == "table" and newOptions or {}
 		for _, opt in ipairs(options) do
@@ -2351,7 +2408,7 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 
 			btn.MouseButton1Click:Connect(function()
 				if isLockedState or activeDialogsCount > 0 then return end
-				TweenService:Create(btn, TweenInfo.new(0.1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, 0, true), {Size = UDim2.new(1, -8, 0, 28)}):Play()
+				TweenService:Create(btn, TWEEN_PRESS_SHORT, {Size = UDim2.new(1, -8, 0, 28)}):Play()
 
 				if isMulti then
 					selectedMulti[optStr] = not selectedMulti[optStr]
@@ -2376,8 +2433,6 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 		CalcHeight()
 	end
 
-	Refresh(options)
-
 	searchBox:GetPropertyChangedSignal("Text"):Connect(function()
 		if isLockedState or activeDialogsCount > 0 then return end
 		local q = string.lower(searchBox.Text)
@@ -2393,7 +2448,7 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 		if isOpen then
 			searchWrapper.Visible = true
 			listContainer.Visible = true
-			CalcHeight()
+			if itemsStale then Refresh(options) else CalcHeight() end
 			TweenService:Create(arrowIcon, TWEEN_SPRING, {Rotation = 180}):Play()
 			StartNeonLoop(boxStroke)
 		else
@@ -2411,7 +2466,7 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 			selectedSingle = tostring(val)
 		end
 		UpdateHeaderVisual()
-		Refresh(options)
+		for _, item in ipairs(optionItems) do item.Update(true) end
 		if isMulti then
 			FireCallback(callback, CollectMultiSelection(selectedMulti))
 		else
@@ -2439,7 +2494,12 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 				selectedSingle = ""
 			end
 			UpdateHeaderVisual()
-			Refresh(opts)
+			if isOpen then
+				Refresh(opts)
+			else
+				options = opts
+				itemsStale = true
+			end
 		end, false, playerListInterval)
 	end
 
@@ -2616,6 +2676,8 @@ local function CreateBoxDropdown(parentFrame, title, options, defaultOption, cal
 	end
 
 	local MAX_VISIBLE_HEIGHT = 180
+	local GRID_GAP = 4
+	local GRID_MIN_CELL = 66
 
 	local scrollFrame = NewScroller()
 	scrollFrame.Name = "BoxGridScroll"
@@ -2633,17 +2695,16 @@ local function CreateBoxDropdown(parentFrame, title, options, defaultOption, cal
 
 	local gridContainer = Instance.new("Frame")
 	gridContainer.Name = "BoxGrid"
-	gridContainer.Size = UDim2.new(1, 0, 0, 0)
+	gridContainer.Size = UDim2.new(1, -6, 0, 0)
 	gridContainer.BackgroundTransparency = 1
 	gridContainer.AutomaticSize = Enum.AutomaticSize.Y
 	gridContainer.Parent = scrollFrame
 
-	local GRID_COLUMNS = 4
 	local gridLayout = Instance.new("UIGridLayout", gridContainer)
-	gridLayout.CellSize = UDim2.fromOffset(76, 32)
-	gridLayout.CellPadding = UDim2.fromOffset(6, 6)
+	gridLayout.CellSize = UDim2.new(0.25, -4, 0, 32)
+	gridLayout.CellPadding = UDim2.fromOffset(GRID_GAP, GRID_GAP)
 	gridLayout.FillDirection = Enum.FillDirection.Horizontal
-	gridLayout.FillDirectionMaxCells = GRID_COLUMNS
+	gridLayout.FillDirectionMaxCells = 4
 	gridLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left
 	gridLayout.SortOrder = Enum.SortOrder.LayoutOrder
 
@@ -2676,33 +2737,58 @@ local function CreateBoxDropdown(parentFrame, title, options, defaultOption, cal
 	end
 
 	local boxItems = {}
+	local itemsStale = true
+	local anyIcons = false
+	local cellHeight = 32
+	local visibleCount = 0
+	local appliedCols, appliedHeight = 0, 0
+	local lastWidth = 0
+
+	local function ApplyGrid()
+		local scale = header.AbsoluteSize.Y / 34
+		if scale <= 0 then scale = 1 end
+		local width = scrollFrame.AbsoluteSize.X / scale - 6
+		if width < GRID_MIN_CELL then width = 280 end
+		local cols = math.clamp(math.floor((width + GRID_GAP) / (GRID_MIN_CELL + GRID_GAP)), 2, 6)
+		if cols ~= appliedCols or cellHeight ~= appliedHeight then
+			appliedCols, appliedHeight = cols, cellHeight
+			gridLayout.FillDirectionMaxCells = cols
+			gridLayout.CellSize = UDim2.new(1 / cols, -(math.ceil(GRID_GAP * (cols - 1) / cols) + 1), 0, cellHeight)
+		end
+		local rows = math.max(1, math.ceil(visibleCount / cols))
+		local target = UDim2.new(1, -20, 0, math.min(rows * cellHeight + (rows - 1) * GRID_GAP, MAX_VISIBLE_HEIGHT))
+		if scrollFrame.Size ~= target then scrollFrame.Size = target end
+	end
+
+	local function ApplyFilter()
+		local q = string.lower(searchQuery)
+		local n = 0
+		for _, item in ipairs(boxItems) do
+			local show = q == "" or string.find(item.Lower, q, 1, true) ~= nil
+			if item.Btn.Visible ~= show then item.Btn.Visible = show end
+			if show then
+				n = n + 1
+				if item.Btn.LayoutOrder ~= n then item.Btn.LayoutOrder = n end
+			end
+		end
+		visibleCount = n
+		ApplyGrid()
+	end
 
 	local function Refresh(newOptions)
 		for _, item in ipairs(boxItems) do item.Btn:Destroy() end
 		table.clear(boxItems)
+		itemsStale = false
 
 		options = type(newOptions) == "table" and newOptions or options
 
-		local visibleOptions = {}
-		local q = string.lower(searchQuery)
+		anyIcons = false
 		for _, o in ipairs(options) do
-			if q == "" or string.find(string.lower(OptionText(o)), q, 1, true) then
-				table.insert(visibleOptions, o)
-			end
-		end
-
-		local anyIcons = false
-		for _, o in ipairs(visibleOptions) do
 			if OptionIcon(o) then anyIcons = true break end
 		end
-		local cellSize = anyIcons and UDim2.fromOffset(72, 64) or UDim2.fromOffset(76, 32)
-		gridLayout.CellSize = cellSize
+		cellHeight = anyIcons and 64 or 32
 
-		local rows = math.max(1, math.ceil(#visibleOptions / GRID_COLUMNS))
-		local naturalHeight = (rows * cellSize.Y.Offset) + ((rows - 1) * 6)
-		scrollFrame.Size = UDim2.new(1, -20, 0, math.min(naturalHeight, MAX_VISIBLE_HEIGHT))
-
-		for i, opt in ipairs(visibleOptions) do
+		for i, opt in ipairs(options) do
 			local optStr = OptionText(opt)
 			local optIcon = OptionIcon(opt)
 			local box = Instance.new("TextButton")
@@ -2798,8 +2884,6 @@ local function CreateBoxDropdown(parentFrame, title, options, defaultOption, cal
 
 			box.MouseButton1Click:Connect(function()
 				if isLockedState or activeDialogsCount > 0 then return end
-				local pressSize = anyIcons and UDim2.fromOffset(68, 61) or UDim2.fromOffset(72, 29)
-				TweenService:Create(box, TweenInfo.new(0.1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, 0, true), {Size = pressSize}):Play()
 
 				if isMulti then
 					selectedMulti[optStr] = not selectedMulti[optStr]
@@ -2814,30 +2898,34 @@ local function CreateBoxDropdown(parentFrame, title, options, defaultOption, cal
 				UpdateVisuals(false)
 			end)
 
-			table.insert(boxItems, {Btn = box, Text = optStr, Update = function(instant) UpdateVisuals(instant) end})
+			table.insert(boxItems, {Btn = box, Text = optStr, Lower = string.lower(optStr), Update = function(instant) UpdateVisuals(instant) end})
 		end
-	end
 
-	Refresh(options)
+		ApplyFilter()
+	end
 
 	if searchBarEnabled and searchBox then
-
-		local searchToken = 0
 		searchBox:GetPropertyChangedSignal("Text"):Connect(function()
 			searchQuery = searchBox.Text
-			searchToken = searchToken + 1
-			local token = searchToken
-			task.delay(0.08, function()
-				if token == searchToken and searchBox.Parent then Refresh(options) end
-			end)
+			if isOpen then ApplyFilter() end
 		end)
 	end
+
+	scrollFrame:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+		local w = scrollFrame.AbsoluteSize.X
+		if w == lastWidth then return end
+		lastWidth = w
+		if isOpen then ApplyGrid() end
+	end)
 
 	clickBtn.MouseButton1Click:Connect(function()
 		if isLockedState or activeDialogsCount > 0 then return end
 		isOpen = not isOpen
 		scrollFrame.Visible = isOpen
 		if searchWrap then searchWrap.Visible = isOpen end
+		if isOpen then
+			if itemsStale then Refresh(options) else ApplyGrid() end
+		end
 		TweenService:Create(arrowIcon, TWEEN_SPRING, {Rotation = isOpen and 180 or 0}):Play()
 		if isOpen then
 			StartNeonLoop(boxStroke)
@@ -2857,7 +2945,7 @@ local function CreateBoxDropdown(parentFrame, title, options, defaultOption, cal
 			selectedSingle = tostring(val)
 		end
 		UpdateHeaderVisual()
-		Refresh(options)
+		for _, item in ipairs(boxItems) do item.Update(true) end
 		if isMulti then
 			FireCallback(callback, CollectMultiSelection(selectedMulti))
 		else
@@ -2885,7 +2973,12 @@ local function CreateBoxDropdown(parentFrame, title, options, defaultOption, cal
 				selectedSingle = ""
 			end
 			UpdateHeaderVisual()
-			Refresh(opts)
+			if isOpen then
+				Refresh(opts)
+			else
+				options = opts
+				itemsStale = true
+			end
 		end, true, playerListInterval)
 	end
 
@@ -3177,7 +3270,7 @@ local function CreateClickableParagraph(parentFrame, title, body, callback, lock
 	BindPressAnimation(clickDetector,
 		function() return not (isLockedState or activeDialogsCount > 0) end,
 		function()
-			TweenService:Create(paraFrame, TweenInfo.new(0.1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+			TweenService:Create(paraFrame, TWEEN_QUICK, {
 				Size = UDim2.new(0.93, 0, 0, totalHeight - 2),
 				Position = UDim2.new(0.5, 0, 0, 4)
 			}):Play()
@@ -3528,7 +3621,7 @@ local function CreateIconToggle(parentFrame, title, body, defaultState, onIcon, 
 		if instant then
 			iconContainer.BackgroundColor3 = KazeUI.GetColor(0.08)
 		else
-			TweenService:Create(iconImage, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, 0, true), {Size = UDim2.fromOffset(14, 14)}):Play()
+			TweenService:Create(iconImage, TWEEN_PRESS, {Size = UDim2.fromOffset(14, 14)}):Play()
 		end
 	end
 	setToggleState(state, true)
@@ -4462,7 +4555,6 @@ local function CreateVisualSectionDivider(parentFrame, titleArg)
 end
 
 local function CreateDivider(parentFrame, arg)
-	-- The page layout already adds 5px above and below every element, so the visible gap is Height + 10.
 	local height = type(arg) == "table" and tonumber(arg.Height) or 4
 	local wrapper = Instance.new("Frame")
 	wrapper.Name = "Spacer"
@@ -4795,22 +4887,22 @@ CreateCollapsibleSection = function(parentFrame, titleArg, currentDepth)
 
 	toggleDetector.MouseEnter:Connect(function()
 		if activeDialogsCount > 0 then return end
-		TweenService:Create(headerFrame, TweenInfo.new(0.15), {BackgroundColor3 = KazeUI.GetColor(0.04), BackgroundTransparency = 0.4}):Play()
+		TweenService:Create(headerFrame, TWEEN_HOVER_SLOW, {BackgroundColor3 = KazeUI.GetColor(0.04), BackgroundTransparency = 0.4}):Play()
 	end)
 	toggleDetector.MouseLeave:Connect(function()
-		TweenService:Create(headerFrame, TweenInfo.new(0.15), {BackgroundTransparency = 1}):Play()
+		TweenService:Create(headerFrame, TWEEN_HOVER_SLOW, {BackgroundTransparency = 1}):Play()
 	end)
 
 	BindPressAnimation(toggleDetector,
 		function() return activeDialogsCount == 0 end,
 		function()
 			local curY = sectionBox.Size.Y
-			TweenService:Create(sectionBox, TweenInfo.new(0.1), {Size = UDim2.new(0.93, 0, curY.Scale, curY.Offset)}):Play()
+			TweenService:Create(sectionBox, TWEEN_QUICK, {Size = UDim2.new(0.93, 0, curY.Scale, curY.Offset)}):Play()
 		end,
 		function()
 			task.defer(function()
 				local curY = sectionBox.Size.Y
-				TweenService:Create(sectionBox, TweenInfo.new(0.1), {Size = UDim2.new(0.95, 0, curY.Scale, curY.Offset)}):Play()
+				TweenService:Create(sectionBox, TWEEN_QUICK, {Size = UDim2.new(0.95, 0, curY.Scale, curY.Offset)}):Play()
 			end)
 		end,
 		toggleSection
@@ -4994,22 +5086,22 @@ CreateGroupBox = function(parentFrame, titleArg, currentDepth, depthOverride)
 
 	toggleDetector.MouseEnter:Connect(function()
 		if activeDialogsCount > 0 then return end
-		TweenService:Create(header, TweenInfo.new(0.15), {BackgroundColor3 = KazeUI.GetColor(0.04), BackgroundTransparency = 0.4}):Play()
+		TweenService:Create(header, TWEEN_HOVER_SLOW, {BackgroundColor3 = KazeUI.GetColor(0.04), BackgroundTransparency = 0.4}):Play()
 	end)
 	toggleDetector.MouseLeave:Connect(function()
-		TweenService:Create(header, TweenInfo.new(0.15), {BackgroundTransparency = 1}):Play()
+		TweenService:Create(header, TWEEN_HOVER_SLOW, {BackgroundTransparency = 1}):Play()
 	end)
 
 	toggleDetector.MouseButton1Down:Connect(function()
 		if activeDialogsCount > 0 then return end
 		local curY = groupFrame.Size.Y
-		TweenService:Create(groupFrame, TweenInfo.new(0.1), {Size = UDim2.new(scaledWidth - 0.02, 0, curY.Scale, curY.Offset)}):Play()
+		TweenService:Create(groupFrame, TWEEN_QUICK, {Size = UDim2.new(scaledWidth - 0.02, 0, curY.Scale, curY.Offset)}):Play()
 	end)
 	toggleDetector.MouseButton1Up:Connect(function()
 		if activeDialogsCount > 0 then return end
 		task.defer(function()
 			local curY = groupFrame.Size.Y
-			TweenService:Create(groupFrame, TweenInfo.new(0.1), {Size = UDim2.new(scaledWidth, 0, curY.Scale, curY.Offset)}):Play()
+			TweenService:Create(groupFrame, TWEEN_QUICK, {Size = UDim2.new(scaledWidth, 0, curY.Scale, curY.Offset)}):Play()
 		end)
 		toggleGroup()
 	end)
@@ -5555,7 +5647,7 @@ local function BuildWindow(config)
 	SetLoadingProgress(45, "Applying theme")
 
 	Window.Size = UDim2.fromOffset(math.max(100, initialSize.X.Offset - 50), math.max(100, initialSize.Y.Offset - 50))
-	TweenService:Create(Window, TweenInfo.new(0.5, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {Size = initialSize}):Play()
+	TweenService:Create(Window, TWEEN_WINDOW_OPEN, {Size = initialSize}):Play()
 
 	local TopBar = Instance.new("Frame")
 	TopBar.Size = UDim2.new(1, 0, 0, 52)
@@ -5842,7 +5934,7 @@ local function BuildWindow(config)
 	local function setLockOverlay(open)
 		if lockOverlayOpen == open then return end
 		lockOverlayOpen = open
-		local tInfo = TweenInfo.new(0.3, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
+		local tInfo = TWEEN_PANEL
 
 		if open then
 			LockOverlay.Visible = true
@@ -5876,7 +5968,7 @@ local function BuildWindow(config)
 		local cardHeight = 64 + AvatarPopupContent.Size.Y.Offset + (socialCount > 0 and (socialHeight + 10) or 0)
 		AvatarPopupCard.Size = UDim2.new(1, -20, 0, cardHeight)
 		local targetHeight = open and (cardHeight + 10) or 0
-		TweenService:Create(AvatarPopup, TweenInfo.new(0.3, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {Size = UDim2.new(1, 0, 0, targetHeight)}):Play()
+		TweenService:Create(AvatarPopup, TWEEN_PANEL, {Size = UDim2.new(1, 0, 0, targetHeight)}):Play()
 		setLockOverlay(open)
 	end
 
@@ -6513,14 +6605,14 @@ local function BuildWindow(config)
 		if activeDialogsCount > 0 then return end
 		if not KazeUI.IsResizing and not toggledMaximized then
 			Mouse.Icon = hoverCursor
-			TweenService:Create(ResizeHandle, TweenInfo.new(0.12), {ImageColor3 = KazeUI.GlowColor}):Play()
+			TweenService:Create(ResizeHandle, TWEEN_HOVER, {ImageColor3 = KazeUI.GlowColor}):Play()
 		end
 	end)
 
 	ResizeHandle.MouseLeave:Connect(function()
 		if not KazeUI.IsResizing then
 			Mouse.Icon = ""
-			TweenService:Create(ResizeHandle, TweenInfo.new(0.12), {ImageColor3 = KazeUI.CurrentTheme.MutedText}):Play()
+			TweenService:Create(ResizeHandle, TWEEN_HOVER, {ImageColor3 = KazeUI.CurrentTheme.MutedText}):Play()
 		end
 	end)
 
