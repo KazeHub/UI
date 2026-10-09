@@ -5321,6 +5321,8 @@ local function BuildWindow(config)
 	local lastProgressClock = 0
 	local barTween = nil
 	local loadingDone = false
+	KazeUI._IntroDone = false
+	KazeUI._IntroQueue = nil
 
 	local function SetLoadingProgress(pct, label)
 		if loadingDone then return end
@@ -5378,6 +5380,14 @@ local function BuildWindow(config)
 		if shimmerTween then shimmerTween:Cancel() end
 		if barTween then barTween:Cancel() barTween = nil end
 		LoadingScreen:Destroy()
+		KazeUI._IntroDone = true
+		local queue = KazeUI._IntroQueue
+		if queue then
+			KazeUI._IntroQueue = nil
+			for _, fn in ipairs(queue) do
+				task.spawn(function() pcall(fn) end)
+			end
+		end
 	end
 
 	local preloadStarted = false
@@ -6734,6 +6744,20 @@ local function BuildWindow(config)
 
 	function Win:Ready()
 		if KazeUI._ManualReady then KazeUI._ManualReady() end
+	end
+
+	function Win:OnReady(fn)
+		if typeof(fn) ~= "function" then return end
+		if KazeUI._IntroDone then
+			task.spawn(function() pcall(fn) end)
+			return
+		end
+		local queue = KazeUI._IntroQueue
+		if not queue then
+			queue = {}
+			KazeUI._IntroQueue = queue
+		end
+		queue[#queue + 1] = fn
 	end
 
 	function Win:Dialog(dialogConfig)
