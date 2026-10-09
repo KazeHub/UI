@@ -7021,6 +7021,300 @@ local function BuildWindow(config)
 		}
 	end
 
+	function Win:Destroy()
+		ScreenGui:Destroy()
+		OpenButtonGui:Destroy()
+		DialogGui:Destroy()
+		NotifScreenGui:Destroy()
+	end
+
+	local cardDepth = 0
+
+	local function CardColor(c)
+		if type(c) == "string" then
+			local ok, res = pcall(Color3.fromHex, (string.gsub(c, "#", "")))
+			if ok and res then return res end
+			return nil
+		end
+		if typeof(c) == "Color3" then return c end
+		return nil
+	end
+
+	function Win:Card(cfg)
+		cfg = type(cfg) == "table" and cfg or {}
+		local actions = type(cfg.Actions) == "table" and #cfg.Actions > 0 and cfg.Actions or {{ Name = "OK" }}
+		local items = type(cfg.Items) == "table" and #cfg.Items > 0 and cfg.Items or nil
+
+		cardDepth = cardDepth + 1
+		local depth = cardDepth
+		local z = 100 + depth * 10
+		activeDialogsCount = activeDialogsCount + 1
+
+		local shield
+		if depth == 1 then
+			InteractionBlocker.Visible = true
+			TweenService:Create(InteractionBlocker, TWEEN_FAST, {BackgroundTransparency = 0.65}):Play()
+		else
+			shield = Instance.new("TextButton")
+			shield.Name = "CardShield"
+			shield.Size = UDim2.fromScale(1, 1)
+			shield.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+			shield.BackgroundTransparency = 1
+			shield.BorderSizePixel = 0
+			shield.Text = ""
+			shield.AutoButtonColor = false
+			shield.Active = true
+			shield.ZIndex = z - 1
+			shield.Parent = Window
+			Instance.new("UICorner", shield).CornerRadius = blockerCorner.CornerRadius
+			TweenService:Create(shield, TWEEN_FAST, {BackgroundTransparency = 0.55}):Play()
+		end
+
+		local card = Instance.new("Frame")
+		card.Name = "KazeCard"
+		card.AnchorPoint = Vector2.new(0.5, 0.5)
+		card.Position = UDim2.fromScale(0.5, 0.45)
+		card.Size = UDim2.fromOffset(300, 0)
+		card.AutomaticSize = Enum.AutomaticSize.Y
+		card.ZIndex = z
+		card.Active = true
+		card.BackgroundTransparency = 0.08
+		card.Parent = Window
+		Instance.new("UICorner", card).CornerRadius = UDim.new(0, 14)
+		KazeUI:AddPanel(card, 0.04, false, true)
+
+		local cardStroke = Instance.new("UIStroke", card)
+		cardStroke.Thickness = 1.4
+		KazeUI:RegisterBorder(cardStroke)
+
+		local cardPad = Instance.new("UIPadding", card)
+		cardPad.PaddingTop = UDim.new(0, 16)
+		cardPad.PaddingBottom = UDim.new(0, 16)
+		cardPad.PaddingLeft = UDim.new(0, 16)
+		cardPad.PaddingRight = UDim.new(0, 16)
+
+		local cardList = Instance.new("UIListLayout", card)
+		cardList.SortOrder = Enum.SortOrder.LayoutOrder
+		cardList.HorizontalAlignment = Enum.HorizontalAlignment.Center
+		cardList.Padding = UDim.new(0, 8)
+
+		TweenService:Create(card, TWEEN_SPRING, {Position = UDim2.fromScale(0.5, 0.5)}):Play()
+
+		local function NewText(parent, text, font, size, muted, order)
+			local t = Instance.new("TextLabel")
+			t.BackgroundTransparency = 1
+			t.Text = text
+			t.Font = font
+			t.TextSize = size
+			t.TextWrapped = true
+			t.ZIndex = z + 1
+			t.LayoutOrder = order or 0
+			t.Parent = parent
+			KazeUI:RegisterText(t, muted)
+			return t
+		end
+
+		local imageLabel
+		if cfg.Image ~= nil then
+			local holder = Instance.new("Frame")
+			holder.Name = "Thumb"
+			holder.Size = UDim2.fromOffset(96, 96)
+			holder.LayoutOrder = 1
+			holder.ZIndex = z + 1
+			holder.Parent = card
+			Instance.new("UICorner", holder).CornerRadius = UDim.new(0, 18)
+			KazeUI:AddPanel(holder, 0.06)
+			local holderStroke = Instance.new("UIStroke", holder)
+			holderStroke.Thickness = 1
+			KazeUI:RegisterBorder(holderStroke)
+
+			imageLabel = Instance.new("ImageLabel")
+			imageLabel.Size = UDim2.fromScale(1, 1)
+			imageLabel.BackgroundTransparency = 1
+			imageLabel.ScaleType = Enum.ScaleType.Crop
+			imageLabel.Image = FormatImage(cfg.Image)
+			imageLabel.ZIndex = z + 2
+			imageLabel.Parent = holder
+			Instance.new("UICorner", imageLabel).CornerRadius = UDim.new(0, 18)
+		end
+
+		local titleLabel = NewText(card, tostring(cfg.Title or ""), Enum.Font.GothamBold, 16, false, 2)
+		titleLabel.Size = UDim2.new(1, 0, 0, 0)
+		titleLabel.AutomaticSize = Enum.AutomaticSize.Y
+
+		local subtitleLabel
+		if cfg.Subtitle ~= nil then
+			local subColor = CardColor(cfg.SubtitleColor)
+			subtitleLabel = NewText(card, tostring(cfg.Subtitle), Enum.Font.GothamBold, 12, true, 3)
+			subtitleLabel.Size = UDim2.new(1, 0, 0, 0)
+			subtitleLabel.AutomaticSize = Enum.AutomaticSize.Y
+			if subColor then subtitleLabel.TextColor3 = subColor end
+		end
+
+		if cfg.Content ~= nil and tostring(cfg.Content) ~= "" then
+			local contentLabel = NewText(card, tostring(cfg.Content), Enum.Font.Gotham, 12, true, 4)
+			contentLabel.Size = UDim2.new(1, 0, 0, 0)
+			contentLabel.AutomaticSize = Enum.AutomaticSize.Y
+		end
+
+		local rows = {}
+		if items then
+			local scroll = NewScroller()
+			scroll.Name = "CardItems"
+			scroll.Size = UDim2.new(1, 0, 0, math.min(#items * 56, 224))
+			scroll.BackgroundTransparency = 1
+			scroll.BorderSizePixel = 0
+			scroll.ScrollBarThickness = 3
+			scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+			scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+			scroll.LayoutOrder = 5
+			scroll.ZIndex = z + 1
+			scroll.Parent = card
+			local scrollList = Instance.new("UIListLayout", scroll)
+			scrollList.SortOrder = Enum.SortOrder.LayoutOrder
+			scrollList.Padding = UDim.new(0, 6)
+
+			for i, it in ipairs(items) do
+				local row = Instance.new("TextButton")
+				row.Size = UDim2.new(1, -6, 0, 50)
+				row.Text = ""
+				row.AutoButtonColor = false
+				row.BorderSizePixel = 0
+				row.LayoutOrder = i
+				row.ZIndex = z + 2
+				row.Parent = scroll
+				Instance.new("UICorner", row).CornerRadius = UDim.new(0, 10)
+				KazeUI:AddPanel(row, 0.03)
+
+				local thumb = Instance.new("ImageLabel")
+				thumb.Position = UDim2.fromOffset(8, 6)
+				thumb.Size = UDim2.fromOffset(38, 38)
+				thumb.BackgroundTransparency = 1
+				thumb.ScaleType = Enum.ScaleType.Crop
+				thumb.Image = FormatImage(it.Image or "")
+				thumb.ZIndex = z + 3
+				thumb.Parent = row
+				Instance.new("UICorner", thumb).CornerRadius = UDim.new(0, 8)
+
+				local nameLabel = NewText(row, tostring(it.Title or ""), Enum.Font.GothamBold, 12, false, 0)
+				nameLabel.Position = UDim2.fromOffset(54, 6)
+				nameLabel.Size = UDim2.new(1, -62, 0, 18)
+				nameLabel.TextXAlignment = Enum.TextXAlignment.Left
+				nameLabel.TextTruncate = Enum.TextTruncate.AtEnd
+				nameLabel.ZIndex = z + 3
+
+				local statusLabel = NewText(row, tostring(it.Subtitle or ""), Enum.Font.Gotham, 11, true, 0)
+				statusLabel.Position = UDim2.fromOffset(54, 26)
+				statusLabel.Size = UDim2.new(1, -62, 0, 16)
+				statusLabel.TextXAlignment = Enum.TextXAlignment.Left
+				statusLabel.TextTruncate = Enum.TextTruncate.AtEnd
+				statusLabel.ZIndex = z + 3
+				local statusColor = CardColor(it.SubtitleColor)
+				if statusColor then statusLabel.TextColor3 = statusColor end
+
+				row.MouseEnter:Connect(function()
+					TweenService:Create(row, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.06)}):Play()
+				end)
+				row.MouseLeave:Connect(function()
+					TweenService:Create(row, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.03)}):Play()
+				end)
+				row.MouseButton1Click:Connect(function()
+					if typeof(it.OnClick) == "function" then task.spawn(it.OnClick) end
+				end)
+
+				rows[i] = { Image = thumb, Title = nameLabel, Subtitle = statusLabel }
+			end
+		end
+
+		local actionsFrame = Instance.new("Frame")
+		actionsFrame.Size = UDim2.new(1, 0, 0, 34)
+		actionsFrame.BackgroundTransparency = 1
+		actionsFrame.LayoutOrder = 6
+		actionsFrame.ZIndex = z + 1
+		actionsFrame.Parent = card
+		local actionsLayout = Instance.new("UIListLayout", actionsFrame)
+		actionsLayout.FillDirection = Enum.FillDirection.Horizontal
+		actionsLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+		actionsLayout.SortOrder = Enum.SortOrder.LayoutOrder
+		actionsLayout.Padding = UDim.new(0, 8)
+
+		local closed = false
+		local function closeCard()
+			if closed then return end
+			closed = true
+			if depth == 1 then
+				TweenService:Create(InteractionBlocker, TWEEN_FAST, {BackgroundTransparency = 1}):Play()
+			elseif shield then
+				TweenService:Create(shield, TWEEN_FAST, {BackgroundTransparency = 1}):Play()
+			end
+			TweenService:Create(card, TWEEN_FAST, {Position = UDim2.fromScale(0.5, 0.45)}):Play()
+			task.wait(TWEEN_FAST.Time)
+			card:Destroy()
+			if shield then shield:Destroy() end
+			if depth == 1 then InteractionBlocker.Visible = false end
+			cardDepth = math.max(0, cardDepth - 1)
+			activeDialogsCount = math.max(0, activeDialogsCount - 1)
+		end
+
+		local n = #actions
+		for i, act in ipairs(actions) do
+			local btn = Instance.new("TextButton")
+			btn.Size = UDim2.new(1 / n, -math.floor(8 * (n - 1) / n), 0, 34)
+			btn.AutoButtonColor = false
+			btn.Text = ""
+			btn.BorderSizePixel = 0
+			btn.LayoutOrder = i
+			btn.ZIndex = z + 2
+			btn.Parent = actionsFrame
+			Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 10)
+
+			local btnText = Instance.new("TextLabel")
+			btnText.Size = UDim2.new(1, -12, 1, 0)
+			btnText.Position = UDim2.fromOffset(6, 0)
+			btnText.BackgroundTransparency = 1
+			btnText.Text = tostring(act.Name or "Button")
+			btnText.Font = Enum.Font.GothamBold
+			btnText.TextSize = 12
+			btnText.ZIndex = z + 3
+			btnText.Parent = btn
+
+			local btnColor = CardColor(act.Color)
+			if btnColor then
+				btn.BackgroundColor3 = btnColor
+				btnText.TextColor3 = Color3.fromRGB(255, 255, 255)
+				btn.MouseEnter:Connect(function()
+					local h, sat, v = Color3.toHSV(btnColor)
+					TweenService:Create(btn, TWEEN_FAST, {BackgroundColor3 = Color3.fromHSV(h, sat, math.clamp(v - 0.1, 0, 1))}):Play()
+				end)
+				btn.MouseLeave:Connect(function()
+					TweenService:Create(btn, TWEEN_FAST, {BackgroundColor3 = btnColor}):Play()
+				end)
+			else
+				KazeUI:AddPanel(btn, 0.04)
+				KazeUI:RegisterText(btnText, false)
+				btn.MouseEnter:Connect(function()
+					TweenService:Create(btn, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.06)}):Play()
+				end)
+				btn.MouseLeave:Connect(function()
+					TweenService:Create(btn, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.04)}):Play()
+				end)
+			end
+
+			btn.MouseButton1Click:Connect(function()
+				if typeof(act.Callback) == "function" then task.spawn(act.Callback) end
+				if not act.Keep then closeCard() end
+			end)
+		end
+
+		return {
+			Close = closeCard,
+			Image = imageLabel,
+			Title = titleLabel,
+			Subtitle = subtitleLabel,
+			Rows = rows
+		}
+	end
+
 	function Win:CreateConfigManager(tab)
 		local sec = tab:SectionUI("Config Manager")
 		local cfgName = "Default"
