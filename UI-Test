@@ -5380,14 +5380,154 @@ local function BuildWindow(config)
 		if shimmerTween then shimmerTween:Cancel() end
 		if barTween then barTween:Cancel() barTween = nil end
 		LoadingScreen:Destroy()
-		KazeUI._IntroDone = true
-		local queue = KazeUI._IntroQueue
-		if queue then
-			KazeUI._IntroQueue = nil
-			for _, fn in ipairs(queue) do
-				task.spawn(function() pcall(fn) end)
+
+		-- Show Welcome Popup first. Only after Continue is clicked does the main UI appear.
+		local skipWelcome = (config and (config.SkipWelcome == true or config.SkipIntro == true))
+		if skipWelcome then
+			if Window and Window.Parent then
+				Window.Visible = true
+				local openSize = Window.Size
+				Window.Size = UDim2.fromOffset(math.max(100, openSize.X.Offset - 50), math.max(100, openSize.Y.Offset - 50))
+				TweenService:Create(Window, TWEEN_WINDOW_OPEN, {Size = openSize}):Play()
 			end
+			if MiniButton and not openButtonHidable then
+				MiniButton.Visible = true
+			end
+			KazeUI._IntroDone = true
+			local queue = KazeUI._IntroQueue
+			if queue then
+				KazeUI._IntroQueue = nil
+				for _, fn in ipairs(queue) do
+					task.spawn(function() pcall(fn) end)
+				end
+			end
+			return
 		end
+
+		local welcomeGui = Instance.new("Frame")
+		welcomeGui.Name = "KazeWelcomePopup"
+		welcomeGui.Size = UDim2.fromScale(1, 1)
+		welcomeGui.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+		welcomeGui.BackgroundTransparency = 1
+		welcomeGui.BorderSizePixel = 0
+		welcomeGui.ZIndex = 400
+		welcomeGui.Parent = ScreenGui
+
+		local welcomeCard = Instance.new("Frame")
+		welcomeCard.Name = "WelcomeCard"
+		welcomeCard.AnchorPoint = Vector2.new(0.5, 0.5)
+		welcomeCard.Position = UDim2.fromScale(0.5, 0.48)
+		welcomeCard.Size = UDim2.fromOffset(340, 0)
+		welcomeCard.AutomaticSize = Enum.AutomaticSize.Y
+		welcomeCard.BackgroundColor3 = Color3.fromRGB(16, 16, 20)
+		welcomeCard.BackgroundTransparency = 0.05
+		welcomeCard.BorderSizePixel = 0
+		welcomeCard.ZIndex = 401
+		welcomeCard.Parent = welcomeGui
+		Instance.new("UICorner", welcomeCard).CornerRadius = UDim.new(0, 18)
+
+		local welcomeStroke = Instance.new("UIStroke", welcomeCard)
+		welcomeStroke.Thickness = 1.5
+		welcomeStroke.Color = KazeUI.GlowColor
+		welcomeStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+		StartNeonLoop(welcomeStroke)
+
+		local welcomePad = Instance.new("UIPadding", welcomeCard)
+		welcomePad.PaddingTop = UDim.new(0, 28)
+		welcomePad.PaddingBottom = UDim.new(0, 24)
+		welcomePad.PaddingLeft = UDim.new(0, 28)
+		welcomePad.PaddingRight = UDim.new(0, 28)
+
+		local welcomeList = Instance.new("UIListLayout", welcomeCard)
+		welcomeList.SortOrder = Enum.SortOrder.LayoutOrder
+		welcomeList.HorizontalAlignment = Enum.HorizontalAlignment.Center
+		welcomeList.Padding = UDim.new(0, 12)
+
+		local welcomeTitle = Instance.new("TextLabel")
+		welcomeTitle.BackgroundTransparency = 1
+		welcomeTitle.Size = UDim2.new(1, 0, 0, 28)
+		welcomeTitle.Font = Enum.Font.GothamBold
+		welcomeTitle.TextSize = 20
+		welcomeTitle.Text = (KazeUI.PopupTitle and KazeUI.PopupTitle ~= "") and KazeUI.PopupTitle or (Title or "Welcome")
+		welcomeTitle.TextColor3 = Color3.fromRGB(245, 245, 250)
+		welcomeTitle.TextXAlignment = Enum.TextXAlignment.Center
+		welcomeTitle.LayoutOrder = 1
+		welcomeTitle.ZIndex = 402
+		welcomeTitle.Parent = welcomeCard
+
+		local welcomeContent = Instance.new("TextLabel")
+		welcomeContent.BackgroundTransparency = 1
+		welcomeContent.Size = UDim2.new(1, 0, 0, 0)
+		welcomeContent.AutomaticSize = Enum.AutomaticSize.Y
+		welcomeContent.Font = Enum.Font.GothamMedium
+		welcomeContent.TextSize = 14
+		welcomeContent.TextWrapped = true
+		welcomeContent.Text = (KazeUI.PopupContent and KazeUI.PopupContent ~= "") and KazeUI.PopupContent or "Thank you for using KazeUI. Click Continue to open the interface."
+		welcomeContent.TextColor3 = Color3.fromRGB(200, 200, 215)
+		welcomeContent.TextXAlignment = Enum.TextXAlignment.Center
+		welcomeContent.LayoutOrder = 2
+		welcomeContent.ZIndex = 402
+		welcomeContent.Parent = welcomeCard
+
+		local continueBtn = Instance.new("TextButton")
+		continueBtn.Size = UDim2.new(0, 160, 0, 40)
+		continueBtn.BackgroundColor3 = KazeUI.GlowColor
+		continueBtn.BorderSizePixel = 0
+		continueBtn.Text = "Continue"
+		continueBtn.Font = Enum.Font.GothamBold
+		continueBtn.TextSize = 15
+		continueBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+		continueBtn.AutoButtonColor = false
+		continueBtn.LayoutOrder = 3
+		continueBtn.ZIndex = 402
+		continueBtn.Parent = welcomeCard
+		Instance.new("UICorner", continueBtn).CornerRadius = UDim.new(0, 12)
+
+		-- Entrance animation
+		welcomeCard.Position = UDim2.fromScale(0.5, 0.55)
+		welcomeCard.BackgroundTransparency = 1
+		TweenService:Create(welcomeGui, TweenInfo.new(0.3), {BackgroundTransparency = 0.55}):Play()
+		TweenService:Create(welcomeCard, TWEEN_SPRING, {Position = UDim2.fromScale(0.5, 0.5), BackgroundTransparency = 0.05}):Play()
+
+		local continuing = false
+		continueBtn.MouseEnter:Connect(function()
+			if continuing then return end
+			local h, s, v = Color3.toHSV(KazeUI.GlowColor)
+			TweenService:Create(continueBtn, TWEEN_FAST, {BackgroundColor3 = Color3.fromHSV(h, s, math.clamp(v - 0.12, 0, 1))}):Play()
+		end)
+		continueBtn.MouseLeave:Connect(function()
+			if continuing then return end
+			TweenService:Create(continueBtn, TWEEN_FAST, {BackgroundColor3 = KazeUI.GlowColor}):Play()
+		end)
+		continueBtn.MouseButton1Click:Connect(function()
+			if continuing then return end
+			continuing = true
+			StopNeonLoop(welcomeStroke)
+			TweenService:Create(welcomeGui, TWEEN_FAST, {BackgroundTransparency = 1}):Play()
+			TweenService:Create(welcomeCard, TWEEN_FAST, {Position = UDim2.fromScale(0.5, 0.45), BackgroundTransparency = 1}):Play()
+			task.wait(TWEEN_FAST.Time + 0.05)
+			welcomeGui:Destroy()
+
+			if Window and Window.Parent then
+				Window.Visible = true
+				local openSize = Window.Size
+				Window.Size = UDim2.fromOffset(math.max(100, openSize.X.Offset - 50), math.max(100, openSize.Y.Offset - 50))
+				TweenService:Create(Window, TWEEN_WINDOW_OPEN, {Size = openSize}):Play()
+			end
+			-- Show open button only if it is not meant to be hidable
+			if MiniButton and not openButtonHidable then
+				MiniButton.Visible = true
+			end
+
+			KazeUI._IntroDone = true
+			local queue = KazeUI._IntroQueue
+			if queue then
+				KazeUI._IntroQueue = nil
+				for _, fn in ipairs(queue) do
+					task.spawn(function() pcall(fn) end)
+				end
+			end
+		end)
 	end
 
 	local preloadStarted = false
@@ -5579,6 +5719,7 @@ local function BuildWindow(config)
 	Window.AnchorPoint = Vector2.new(0.5, 0.5)
 	Window.BorderSizePixel = 0
 	Window.Active = true
+	Window.Visible = false -- Hidden until welcome Continue is clicked
 	Window.Parent = ScreenGui
 
 	Instance.new("UICorner", Window).CornerRadius = UDim.new(0, 28)
@@ -5656,8 +5797,7 @@ local function BuildWindow(config)
 	KazeUI:SetTheme(selectedTheme)
 	SetLoadingProgress(45, "Applying theme")
 
-	Window.Size = UDim2.fromOffset(math.max(100, initialSize.X.Offset - 50), math.max(100, initialSize.Y.Offset - 50))
-	TweenService:Create(Window, TWEEN_WINDOW_OPEN, {Size = initialSize}):Play()
+	-- Size animation moved to after Welcome Continue (Window starts hidden)
 
 	local TopBar = Instance.new("Frame")
 	TopBar.Size = UDim2.new(1, 0, 0, 52)
@@ -6076,7 +6216,7 @@ local function BuildWindow(config)
 	MiniButton.Position = UDim2.new(0, 24, 0, 85)
 	MiniButton.BackgroundTransparency = 1
 	MiniButton.Text = ""
-	MiniButton.Visible = not openButtonHidable
+	MiniButton.Visible = false -- Stay hidden until after Welcome Continue (then respect openButtonHidable)
 	MiniButton.Parent = OpenButtonGui
 	MiniButton.ZIndex = 999
 	local MiniButtonCorner = Instance.new("UICorner", MiniButton)
