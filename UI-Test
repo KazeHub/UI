@@ -368,42 +368,13 @@ CameraLocker.Modal = false
 CameraLocker.Visible = true
 CameraLocker.Parent = ScreenGui
 
--- Reference-counted instead of a plain boolean: several independent drag
--- sources (window header drag, resize handle, sliders, color picker) each
--- call LockCamera()/UnlockCamera() around their own InputBegan/InputEnded
--- pair. A plain boolean is fragile if two locks ever overlap; counting makes
--- it safe regardless of ordering.
-local CameraLockCount = 0
-
 local function LockCamera()
-	CameraLockCount = CameraLockCount + 1
 	CameraLocker.Modal = true
 end
 
 local function UnlockCamera()
-	CameraLockCount = math.max(0, CameraLockCount - 1)
-	if CameraLockCount == 0 then
-		CameraLocker.Modal = false
-	end
-end
-
--- Root-cause fix for "I can't move or jump" / the UI acting like it's
--- overlaying the whole screen: every drag site below only clears its lock
--- via UserInputService.InputEnded (or a Changed -> End state) firing for the
--- SAME input object that started the drag. If the Roblox window loses OS
--- focus mid-drag (alt-tabbing away, clicking a system dialog, tabbing out on
--- mobile) and the mouse/touch is released while unfocused, that InputEnded
--- never fires for Roblox -- so CameraLocker.Modal (and KazeUI.IsResizing) can
--- get stuck `true` forever. A Modal GUI claims exclusive input focus, which
--- is exactly what was blocking WASD/jump: not a visual overlay, a stuck
--- input lock left over from an interrupted drag. WindowFocusReleased fires
--- reliably on focus loss no matter what the mouse button was doing, so it's
--- used here as a hard safety net to force every lock back off.
-UIS.WindowFocusReleased:Connect(function()
-	CameraLockCount = 0
 	CameraLocker.Modal = false
-	KazeUI.IsResizing = false
-end)
+end
 
 local NotifContainer = Instance.new("Frame")
 local notifLayout = Instance.new("UIListLayout", NotifContainer)
@@ -8017,6 +7988,18 @@ end
 --       OnContinue = function() local Window = KazeUI:CreateWindow({...}) end,
 --       OnExit = function() end, -- optional; gate just closes if omitted
 --   })
+-- Parses a status-dot color override (hex string like "#22c55e"/"EF4444", or
+-- a Color3 directly); falls back to the given default (used for the
+-- supported-game-list dots, which default to green).
+local function ResolveStatusColor(c, fallback)
+	if typeof(c) == "Color3" then return c end
+	if type(c) == "string" then
+		local ok, res = pcall(Color3.fromHex, (string.gsub(c, "#", "")))
+		if ok and res then return res end
+	end
+	return fallback
+end
+
 -- Shared, de-duplicated lookup of a place's real Roblox name/icon via
 -- MarketplaceService -- same technique as a typical hub's own GetInfo helper.
 -- Lets ShowGameSupportGate show each entry's ACTUAL game thumbnail just from
@@ -8267,36 +8250,44 @@ function KazeUI:ShowGameSupportGate(config)
 			ShowFallback()
 		end
 
-		-- Status dot moved off the thumbnail corner and in front of the game's
-		-- name instead (e.g. "● The Mimic"), per request. Done as an inline
-		-- RichText bullet rather than a separate Frame: the name label is
-		-- center-aligned text of variable width, so a separately-positioned
-		-- Frame can't reliably sit "just left of the text" -- an inline glyph
-		-- moves with the text automatically. Always green (a plain supported-
-		-- game marker) instead of the old greyed-out "not currently this
-		-- game" state.
-		local function EscapeRichText(s)
-			s = tostring(s)
-			s = string.gsub(s, "&", "&amp;")
-			s = string.gsub(s, "<", "&lt;")
-			s = string.gsub(s, ">", "&gt;")
-			s = string.gsub(s, "\"", "&quot;")
-			return s
-		end
+		-- Status dot + name, left-aligned under the image (same left edge as
+		-- the thumbnail above it): "• The Mimic". Every entry in this list is,
+		-- by definition, supported -- so the dot defaults to green. Pass
+		-- Color on an entry (hex string or Color3) to override it, e.g. orange
+		-- for "temporarily down".
+		local nameRow = Instance.new("Frame")
+		nameRow.Name = "NameRow"
+		nameRow.AnchorPoint = Vector2.new(0.5, 0)
+		nameRow.Position = UDim2.new(0.5, 0, 0, 84)
+		nameRow.Size = UDim2.fromOffset(76, 18)
+		nameRow.BackgroundTransparency = 1
+		nameRow.ZIndex = 504
+		nameRow.Parent = card
+
+		local entryColor = type(entry) == "table" and (entry.Color or entry.Status) or nil
+		local statusColor = ResolveStatusColor(entryColor, Color3.fromRGB(80, 220, 120))
+
+		local dot = Instance.new("Frame")
+		dot.AnchorPoint = Vector2.new(0, 0.5)
+		dot.Position = UDim2.new(0, 0, 0.5, 0)
+		dot.Size = UDim2.fromOffset(7, 7)
+		dot.BorderSizePixel = 0
+		dot.BackgroundColor3 = statusColor
+		dot.ZIndex = 505
+		dot.Parent = nameRow
+		Instance.new("UICorner", dot).CornerRadius = UDim.new(1, 0)
 
 		local nameLabel = Instance.new("TextLabel")
-		nameLabel.Position = UDim2.new(0, 0, 0, 82)
-		nameLabel.Size = UDim2.new(1, 0, 0, 26)
+		nameLabel.Position = UDim2.new(0, 13, 0, 0)
+		nameLabel.Size = UDim2.new(1, -13, 1, 0)
 		nameLabel.BackgroundTransparency = 1
 		nameLabel.Font = isThisGame and Enum.Font.GothamBold or Enum.Font.Gotham
 		nameLabel.TextSize = 12
-		nameLabel.TextWrapped = true
-		nameLabel.TextXAlignment = Enum.TextXAlignment.Center
-		nameLabel.TextYAlignment = Enum.TextYAlignment.Top
-		nameLabel.RichText = true
-		nameLabel.Text = "<font color=\"rgb(80,220,120)\">●</font> " .. EscapeRichText(name)
+		nameLabel.TextXAlignment = Enum.TextXAlignment.Left
+		nameLabel.TextTruncate = Enum.TextTruncate.AtEnd
+		nameLabel.Text = name
 		nameLabel.ZIndex = 504
-		nameLabel.Parent = card
+		nameLabel.Parent = nameRow
 		KazeUI:RegisterText(nameLabel, not isThisGame)
 	end
 
@@ -8359,12 +8350,20 @@ function KazeUI:ShowGameSupportGate(config)
 	local function closeGate(callback)
 		if closing then return end
 		closing = true
+		-- Release input the instant a choice is made, not after the fade
+		-- finishes. Backdrop covers the whole screen (including, on mobile,
+		-- the touch joystick/jump button underneath it) -- while Active stays
+		-- true that's blocked, so this needs to drop immediately rather than
+		-- waiting on the tween.
+		Backdrop.Active = false
 		local fade = TweenService:Create(Backdrop, TWEEN_SMOOTH, {BackgroundTransparency = 1})
 		fade:Play()
-		fade.Completed:Connect(function()
-			Backdrop:Destroy()
-			if callback then pcall(callback) end
+		-- Guaranteed cleanup even if Completed never fires for some reason
+		-- (interrupted tween, etc.) -- don't leave the backdrop sitting there.
+		task.delay(TWEEN_SMOOTH.Time, function()
+			if Backdrop and Backdrop.Parent then Backdrop:Destroy() end
 		end)
+		if callback then task.spawn(callback) end
 	end
 
 	local ExitBtn = Instance.new("TextButton")
