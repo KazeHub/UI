@@ -368,13 +368,54 @@ CameraLocker.Modal = false
 CameraLocker.Visible = true
 CameraLocker.Parent = ScreenGui
 
+-- GuiObject.Modal = true blocks ALL player input -- movement, jump, camera,
+-- everything -- until set back to false, regardless of the object's own size
+-- or visibility. Several features (window drag, slider drag, color-picker
+-- hue/map drag) lock/unlock this around a gesture, but each only released it
+-- through its own InputEnded handling for that one input object. If that
+-- specific event ever failed to fire -- losing OS focus mid-drag (alt-tab),
+-- a touch getting interrupted, anything cutting the gesture short before a
+-- clean release -- the lock stuck on forever and silently disabled the
+-- player's movement and jump with no way back short of reloading.
+--
+-- Fixed with two things: a depth counter so overlapping locks from different
+-- features don't release each other early, and a global safety net that
+-- force-clears the lock shortly after ANY mouse/touch input ends or the game
+-- window loses focus, regardless of whether the feature that locked it ever
+-- got to run its own cleanup.
+local cameraLockDepth = 0
+
 local function LockCamera()
+	cameraLockDepth = cameraLockDepth + 1
 	CameraLocker.Modal = true
 end
 
 local function UnlockCamera()
-	CameraLocker.Modal = false
+	cameraLockDepth = math.max(0, cameraLockDepth - 1)
+	if cameraLockDepth == 0 then
+		CameraLocker.Modal = false
+	end
 end
+
+local function ForceUnlockCamera()
+	if cameraLockDepth > 0 or CameraLocker.Modal then
+		cameraLockDepth = 0
+		CameraLocker.Modal = false
+	end
+end
+
+local cameraLockWatchdogConn = UIS.InputEnded:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+		if cameraLockDepth > 0 then
+			-- Give whatever feature locked it a moment to run its own normal
+			-- release first; if it already did (depth back to 0), this is a
+			-- no-op. If it didn't, this is the backstop that catches it.
+			task.delay(0.15, ForceUnlockCamera)
+		end
+	end
+end)
+
+local cameraLockFocusConn = UIS.WindowFocusReleased:Connect(ForceUnlockCamera)
 
 local NotifContainer = Instance.new("Frame")
 local notifLayout = Instance.new("UIListLayout", NotifContainer)
@@ -1720,6 +1761,9 @@ end
 local function ShutdownRuntime()
 	if viewportConn then viewportConn:Disconnect() viewportConn = nil end
 	if cameraChangedConn then cameraChangedConn:Disconnect() cameraChangedConn = nil end
+	if cameraLockWatchdogConn then cameraLockWatchdogConn:Disconnect() cameraLockWatchdogConn = nil end
+	if cameraLockFocusConn then cameraLockFocusConn:Disconnect() cameraLockFocusConn = nil end
+	ForceUnlockCamera() -- never leave the player's movement/camera locked out after shutdown
 	if glowPoll then
 		task.cancel(glowPoll)
 		glowPoll = nil
@@ -8215,6 +8259,20 @@ function KazeUI:ShowGameSupportGate(config)
 		KazeUI:AddPanel(thumb, 0.08)
 		Instance.new("UICorner", thumb).CornerRadius = UDim.new(0, 10)
 
+		-- Small hover polish: a soft accent outline fades in around the
+		-- thumbnail, giving each card a bit of life even though it isn't a
+		-- clickable button.
+		local thumbStroke = Instance.new("UIStroke", thumb)
+		thumbStroke.Thickness = 1.5
+		thumbStroke.Transparency = 1
+		KazeUI:OnThemeChanged(thumbStroke, function() thumbStroke.Color = KazeUI.GlowColor end)
+		thumb.MouseEnter:Connect(function()
+			TweenService:Create(thumbStroke, TWEEN_FAST, {Transparency = 0.2}):Play()
+		end)
+		thumb.MouseLeave:Connect(function()
+			TweenService:Create(thumbStroke, TWEEN_FAST, {Transparency = 1}):Play()
+		end)
+
 		local fallbackIcon
 		local function ShowFallback()
 			thumb.ImageTransparency = 1
@@ -8335,6 +8393,13 @@ function KazeUI:ShowGameSupportGate(config)
 			KazeUI:Notify({Title = label, Content = copied and "Link copied to clipboard." or link, Duration = 3})
 		end)
 
+		btn.MouseEnter:Connect(function()
+			TweenService:Create(btn, TWEEN_FAST, {Size = UDim2.fromOffset(35, 35)}):Play()
+		end)
+		btn.MouseLeave:Connect(function()
+			TweenService:Create(btn, TWEEN_FAST, {Size = UDim2.fromOffset(32, 32)}):Play()
+		end)
+
 		return btn
 	end
 
@@ -8380,6 +8445,12 @@ function KazeUI:ShowGameSupportGate(config)
 	KazeUI:RegisterText(ExitBtn, false)
 	Instance.new("UICorner", ExitBtn).CornerRadius = UDim.new(0, 10)
 	ExitBtn.MouseButton1Click:Connect(function() closeGate(onExit) end)
+	ExitBtn.MouseEnter:Connect(function()
+		TweenService:Create(ExitBtn, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.14)}):Play()
+	end)
+	ExitBtn.MouseLeave:Connect(function()
+		TweenService:Create(ExitBtn, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.06)}):Play()
+	end)
 
 	local ContinueBtn = Instance.new("TextButton")
 	ContinueBtn.AnchorPoint = Vector2.new(1, 0.5)
@@ -8395,6 +8466,13 @@ function KazeUI:ShowGameSupportGate(config)
 	Instance.new("UICorner", ContinueBtn).CornerRadius = UDim.new(0, 10)
 	KazeUI:OnThemeChanged(ContinueBtn, function() ContinueBtn.BackgroundColor3 = KazeUI.GlowColor end)
 	ContinueBtn.MouseButton1Click:Connect(function() closeGate(onContinue) end)
+	ContinueBtn.MouseEnter:Connect(function()
+		local h, s, v = Color3.toHSV(KazeUI.GlowColor)
+		TweenService:Create(ContinueBtn, TWEEN_FAST, {BackgroundColor3 = Color3.fromHSV(h, s, math.clamp(v + 0.12, 0, 1))}):Play()
+	end)
+	ContinueBtn.MouseLeave:Connect(function()
+		TweenService:Create(ContinueBtn, TWEEN_FAST, {BackgroundColor3 = KazeUI.GlowColor}):Play()
+	end)
 
 	-- Entrance
 	Card.Size = UDim2.fromOffset(CARD_W, 0)
