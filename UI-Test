@@ -8,6 +8,7 @@ local UIS = game:GetService("UserInputService")
 local TextService = game:GetService("TextService")
 local HttpService = game:GetService("HttpService")
 local RunService = game:GetService("RunService")
+local MarketplaceService = game:GetService("MarketplaceService")
 local LP = Players.LocalPlayer
 local Mouse = LP:GetMouse()
 
@@ -7987,6 +7988,40 @@ end
 --       OnContinue = function() local Window = KazeUI:CreateWindow({...}) end,
 --       OnExit = function() end, -- optional; gate just closes if omitted
 --   })
+-- Shared, de-duplicated lookup of a place's real Roblox name/icon via
+-- MarketplaceService -- same technique as a typical hub's own GetInfo helper.
+-- Lets ShowGameSupportGate show each entry's ACTUAL game thumbnail just from
+-- a PlaceId, instead of requiring the developer to supply an Image manually.
+-- Cached per PlaceId; concurrent requests for the same PlaceId share one call.
+local PlaceInfoCache = {}
+local PlaceInfoWaiting = {}
+local function GetPlaceInfo(placeId, callback)
+	local cached = PlaceInfoCache[placeId]
+	if cached then
+		callback(cached)
+		return
+	end
+	local waiting = PlaceInfoWaiting[placeId]
+	if waiting then
+		waiting[#waiting + 1] = callback
+		return
+	end
+	PlaceInfoWaiting[placeId] = {callback}
+	task.spawn(function()
+		local info = {}
+		local ok, res = pcall(function() return MarketplaceService:GetProductInfo(placeId) end)
+		if ok and type(res) == "table" then
+			info.Name = res.Name
+			local icon = tonumber(res.IconImageAssetId)
+			if icon and icon > 0 then info.Icon = "rbxassetid://" .. icon end
+		end
+		PlaceInfoCache[placeId] = info
+		local list = PlaceInfoWaiting[placeId]
+		PlaceInfoWaiting[placeId] = nil
+		for _, fn in ipairs(list) do pcall(fn, info) end
+	end)
+end
+
 function KazeUI:ShowGameSupportGate(config)
 	config = config or {}
 	local supportedGames = type(config.SupportedGames) == "table" and config.SupportedGames or {}
@@ -8147,10 +8182,12 @@ function KazeUI:ShowGameSupportGate(config)
 		card.ZIndex = 503
 		card.Parent = ListScroller
 
-		-- Game thumbnail. Entries can supply Image/Icon/Thumbnail (anything
-		-- FormatImage accepts: rbxassetid://, a direct URL, or an icon name).
-		-- With nothing supplied, fall back to a small muted glyph so every
-		-- card still lines up on the same grid instead of leaving a blank gap.
+		-- Game thumbnail. Priority: an explicit Image/Icon/Thumbnail on the
+		-- entry always wins; otherwise, if the entry has a PlaceId, fetch that
+		-- place's REAL Roblox game icon via MarketplaceService automatically
+		-- (same technique as a typical hub's own GetInfo helper). With
+		-- neither, fall back to a small muted glyph so every card still lines
+		-- up on the same grid instead of leaving a blank gap.
 		local thumb = Instance.new("ImageLabel")
 		thumb.Position = UDim2.new(0, 0, 0, 0)
 		thumb.Size = UDim2.new(1, 0, 0, 72)
@@ -8161,11 +8198,11 @@ function KazeUI:ShowGameSupportGate(config)
 		KazeUI:AddPanel(thumb, 0.08)
 		Instance.new("UICorner", thumb).CornerRadius = UDim.new(0, 10)
 
-		if imageId then
-			thumb.Image = FormatImage(imageId)
-		else
+		local fallbackIcon
+		local function ShowFallback()
 			thumb.ImageTransparency = 1
-			local fallbackIcon = Instance.new("ImageLabel")
+			if fallbackIcon then return end
+			fallbackIcon = Instance.new("ImageLabel")
 			fallbackIcon.AnchorPoint = Vector2.new(0.5, 0.5)
 			fallbackIcon.Position = UDim2.fromScale(0.5, 0.5)
 			fallbackIcon.Size = UDim2.fromOffset(26, 26)
@@ -8175,6 +8212,25 @@ function KazeUI:ShowGameSupportGate(config)
 			fallbackIcon.ZIndex = 505
 			fallbackIcon.Parent = thumb
 			KazeUI:OnThemeChanged(fallbackIcon, function(t) fallbackIcon.ImageColor3 = t.MutedText end)
+		end
+
+		if imageId then
+			thumb.Image = FormatImage(imageId)
+		elseif placeId then
+			ShowFallback() -- shown while the real icon loads
+			GetPlaceInfo(placeId, function(info)
+				if not thumb.Parent then return end -- gate closed before this resolved
+				if info.Icon then
+					thumb.Image = info.Icon
+					thumb.ImageTransparency = 0
+					if fallbackIcon then
+						fallbackIcon:Destroy()
+						fallbackIcon = nil
+					end
+				end
+			end)
+		else
+			ShowFallback()
 		end
 
 		local dot = Instance.new("Frame")
