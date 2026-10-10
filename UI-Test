@@ -7916,6 +7916,311 @@ local function BuildWindow(config)
 	return Win
 end
 
+-- A standalone pre-gate screen: a header labelled "Supported Game List" with a
+-- diagonal accent split, a scrollable list of the games the script actually
+-- supports (SupportedGames is config-driven -- nothing here is invented or
+-- hardcoded), and a footer with compact Discord/YouTube icon buttons on the
+-- left and Continue/Exit on the right. Independent of CreateWindow -- call it
+-- first and build the real window inside OnContinue, e.g.:
+--
+--   KazeUI:ShowGameSupportGate({
+--       SupportedGames = {
+--           {Name = "Blox Fruits", PlaceId = 2753915549},
+--           {Name = "My Other Game", PlaceId = 123456789},
+--       },
+--       DiscordLink = "https://discord.gg/...",
+--       YoutubeLink = "https://youtube.com/...",
+--       OnContinue = function() local Window = KazeUI:CreateWindow({...}) end,
+--       OnExit = function() end, -- optional; gate just closes if omitted
+--   })
+function KazeUI:ShowGameSupportGate(config)
+	config = config or {}
+	local supportedGames = type(config.SupportedGames) == "table" and config.SupportedGames or {}
+	local discordLink = (config.DiscordLink and tostring(config.DiscordLink)) or KazeUI.DiscordLink
+	local youtubeLink = (config.YoutubeLink and tostring(config.YoutubeLink)) or KazeUI.YoutubeLink
+	local onContinue = typeof(config.OnContinue) == "function" and config.OnContinue or nil
+	local onExit = typeof(config.OnExit) == "function" and config.OnExit or nil
+
+	local CARD_W, CARD_H = 440, 380
+	local HEADER_H = 130
+	local FOOTER_H = 60
+
+	local Backdrop = Instance.new("TextButton")
+	Backdrop.Name = "GameSupportGateBackdrop"
+	Backdrop.Size = UDim2.fromScale(1, 1)
+	Backdrop.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+	Backdrop.BackgroundTransparency = 1
+	Backdrop.Text = ""
+	Backdrop.AutoButtonColor = false
+	Backdrop.Active = true
+	Backdrop.ZIndex = 500
+	Backdrop.Parent = DialogGui
+
+	local Card = Instance.new("Frame")
+	Card.Name = "GameSupportGateCard"
+	Card.AnchorPoint = Vector2.new(0.5, 0.5)
+	Card.Position = UDim2.fromScale(0.5, 0.52)
+	Card.Size = UDim2.fromOffset(CARD_W, CARD_H)
+	Card.ClipsDescendants = true
+	Card.BorderSizePixel = 0
+	Card.ZIndex = 501
+	Card.Parent = Backdrop
+	KazeUI:AddPanel(Card, -0.03)
+	Instance.new("UICorner", Card).CornerRadius = UDim.new(0, 20)
+
+	local CardStroke = Instance.new("UIStroke")
+	CardStroke.Thickness = 1.5
+	CardStroke.Parent = Card
+	KazeUI:RegisterBorder(CardStroke)
+	StartNeonLoop(CardStroke)
+
+	-- Header: diagonal-split accent strip. The lighter base fills the whole
+	-- strip; an oversized rotated rectangle is clipped to the strip's own
+	-- bounds to carve out the accent-colored diagonal wedge. The exact angle
+	-- (currently -20°, cutting through roughly the right half) is eyeballed --
+	-- nudge DiagSlice's Position/Rotation below if you want the cut sharper,
+	-- shallower, or mirrored.
+	local HeaderClip = Instance.new("Frame")
+	HeaderClip.Name = "HeaderClip"
+	HeaderClip.Size = UDim2.new(1, 0, 0, HEADER_H)
+	HeaderClip.BackgroundTransparency = 1
+	HeaderClip.ClipsDescendants = true
+	HeaderClip.ZIndex = 502
+	HeaderClip.Parent = Card
+
+	local DiagBase = Instance.new("Frame")
+	DiagBase.Size = UDim2.fromScale(1, 1)
+	DiagBase.BorderSizePixel = 0
+	DiagBase.ZIndex = 502
+	DiagBase.Parent = HeaderClip
+	KazeUI:AddPanel(DiagBase, 0.10)
+
+	local DiagSlice = Instance.new("Frame")
+	DiagSlice.AnchorPoint = Vector2.new(0.5, 0.5)
+	DiagSlice.Position = UDim2.new(0.66, 0, 0.5, 0)
+	DiagSlice.Size = UDim2.fromOffset(420, 520)
+	DiagSlice.Rotation = -20
+	DiagSlice.BorderSizePixel = 0
+	DiagSlice.ZIndex = 503
+	DiagSlice.Parent = HeaderClip
+	KazeUI:OnThemeChanged(DiagSlice, function() DiagSlice.BackgroundColor3 = KazeUI.GlowColor end)
+
+	local HeaderTitle = Instance.new("TextLabel")
+	HeaderTitle.BackgroundTransparency = 1
+	HeaderTitle.Position = UDim2.new(0, 20, 0, 18)
+	HeaderTitle.Size = UDim2.new(1, -40, 0, 22)
+	HeaderTitle.Font = Enum.Font.GothamBold
+	HeaderTitle.TextSize = 18
+	HeaderTitle.TextXAlignment = Enum.TextXAlignment.Left
+	HeaderTitle.Text = tostring(config.Title or "Supported Game List")
+	HeaderTitle.ZIndex = 504
+	HeaderTitle.Parent = HeaderClip
+	KazeUI:RegisterText(HeaderTitle, false)
+
+	local HeaderSub = Instance.new("TextLabel")
+	HeaderSub.BackgroundTransparency = 1
+	HeaderSub.Position = UDim2.new(0, 20, 0, 42)
+	HeaderSub.Size = UDim2.new(1, -40, 0, 16)
+	HeaderSub.Font = Enum.Font.Gotham
+	HeaderSub.TextSize = 12
+	HeaderSub.TextXAlignment = Enum.TextXAlignment.Left
+	HeaderSub.Text = tostring(config.Subtitle or "Checking if this game is on the supported list")
+	HeaderSub.ZIndex = 504
+	HeaderSub.Parent = HeaderClip
+	KazeUI:RegisterText(HeaderSub, true)
+
+	-- Game list
+	local currentPlaceId = game.PlaceId
+	local isCurrentSupported = false
+
+	local ListScroller = Instance.new("ScrollingFrame")
+	ListScroller.Name = "GameList"
+	ListScroller.Position = UDim2.new(0, 0, 0, HEADER_H)
+	ListScroller.Size = UDim2.new(1, 0, 0, CARD_H - HEADER_H - FOOTER_H)
+	ListScroller.BackgroundTransparency = 1
+	ListScroller.BorderSizePixel = 0
+	ListScroller.ScrollBarThickness = 4
+	ListScroller.ZIndex = 502
+	ListScroller.CanvasSize = UDim2.new(0, 0, 0, 0)
+	ListScroller.AutomaticCanvasSize = Enum.AutomaticSize.Y
+	ListScroller.Parent = Card
+
+	local listLayout = Instance.new("UIListLayout", ListScroller)
+	listLayout.SortOrder = Enum.SortOrder.LayoutOrder
+	listLayout.Padding = UDim.new(0, 4)
+
+	local listPadding = Instance.new("UIPadding", ListScroller)
+	listPadding.PaddingTop = UDim.new(0, 8)
+	listPadding.PaddingLeft = UDim.new(0, 16)
+	listPadding.PaddingRight = UDim.new(0, 16)
+	listPadding.PaddingBottom = UDim.new(0, 8)
+
+	if #supportedGames == 0 then
+		local emptyLabel = Instance.new("TextLabel")
+		emptyLabel.BackgroundTransparency = 1
+		emptyLabel.Size = UDim2.new(1, 0, 0, 30)
+		emptyLabel.Font = Enum.Font.Gotham
+		emptyLabel.TextSize = 13
+		emptyLabel.Text = "No supported-game list was provided."
+		emptyLabel.ZIndex = 503
+		emptyLabel.Parent = ListScroller
+		KazeUI:RegisterText(emptyLabel, true)
+	end
+
+	for i, entry in ipairs(supportedGames) do
+		local name, placeId
+		if type(entry) == "table" then
+			name = tostring(entry.Name or entry.Title or ("Game " .. i))
+			placeId = entry.PlaceId
+		else
+			name = tostring(entry)
+			placeId = nil
+		end
+
+		local isThisGame = placeId ~= nil and placeId == currentPlaceId
+		if isThisGame then isCurrentSupported = true end
+
+		local row = Instance.new("Frame")
+		row.Size = UDim2.new(1, 0, 0, 30)
+		row.BackgroundTransparency = 1
+		row.LayoutOrder = i
+		row.ZIndex = 503
+		row.Parent = ListScroller
+
+		local dot = Instance.new("Frame")
+		dot.AnchorPoint = Vector2.new(0, 0.5)
+		dot.Position = UDim2.new(0, 2, 0.5, 0)
+		dot.Size = UDim2.fromOffset(8, 8)
+		dot.BorderSizePixel = 0
+		dot.BackgroundColor3 = isThisGame and Color3.fromRGB(80, 220, 120) or Color3.fromRGB(110, 110, 120)
+		dot.ZIndex = 504
+		dot.Parent = row
+		Instance.new("UICorner", dot).CornerRadius = UDim.new(1, 0)
+
+		local nameLabel = Instance.new("TextLabel")
+		nameLabel.AnchorPoint = Vector2.new(0, 0.5)
+		nameLabel.Position = UDim2.new(0, 20, 0.5, 0)
+		nameLabel.Size = UDim2.new(1, -30, 1, 0)
+		nameLabel.BackgroundTransparency = 1
+		nameLabel.Font = isThisGame and Enum.Font.GothamBold or Enum.Font.Gotham
+		nameLabel.TextSize = 13
+		nameLabel.TextXAlignment = Enum.TextXAlignment.Left
+		nameLabel.TextTruncate = Enum.TextTruncate.AtEnd
+		nameLabel.Text = name
+		nameLabel.ZIndex = 504
+		nameLabel.Parent = row
+		KazeUI:RegisterText(nameLabel, not isThisGame)
+	end
+
+	-- Footer: Discord/YouTube on the left, Continue/Exit on the right
+	local Footer = Instance.new("Frame")
+	Footer.Name = "Footer"
+	Footer.Position = UDim2.new(0, 0, 1, -FOOTER_H)
+	Footer.Size = UDim2.new(1, 0, 0, FOOTER_H)
+	Footer.BackgroundTransparency = 1
+	Footer.ZIndex = 502
+	Footer.Parent = Card
+
+	local footerDivider = Instance.new("Frame")
+	footerDivider.Size = UDim2.new(1, 0, 0, 1)
+	footerDivider.BorderSizePixel = 0
+	footerDivider.ZIndex = 502
+	footerDivider.Parent = Footer
+	KazeUI:OnThemeChanged(footerDivider, function(t) footerDivider.BackgroundColor3 = t.Border end)
+
+	local function MakeIconLink(iconId, accentColor, link, label)
+		local btn = Instance.new("TextButton")
+		btn.Size = UDim2.fromOffset(32, 32)
+		btn.BackgroundColor3 = accentColor
+		btn.BorderSizePixel = 0
+		btn.Text = ""
+		btn.AutoButtonColor = false
+		btn.ZIndex = 503
+		btn.Parent = Footer
+		Instance.new("UICorner", btn).CornerRadius = UDim.new(1, 0)
+
+		local icon = Instance.new("ImageLabel")
+		icon.AnchorPoint = Vector2.new(0.5, 0.5)
+		icon.Position = UDim2.fromScale(0.5, 0.5)
+		icon.Size = UDim2.fromOffset(16, 16)
+		icon.BackgroundTransparency = 1
+		icon.Image = FormatImage(iconId)
+		icon.ImageColor3 = Color3.fromRGB(255, 255, 255)
+		icon.ScaleType = Enum.ScaleType.Fit
+		icon.ZIndex = 504
+		icon.Parent = btn
+
+		btn.MouseButton1Click:Connect(function()
+			if not link or link == "" then return end
+			local copied = pcall(function() setclipboard(link) end)
+			KazeUI:Notify({Title = label, Content = copied and "Link copied to clipboard." or link, Duration = 3})
+		end)
+
+		return btn
+	end
+
+	local discordBtn = MakeIconLink(73132811772878, Color3.fromRGB(88, 101, 242), discordLink, "Discord")
+	discordBtn.Position = UDim2.new(0, 16, 0.5, 0)
+	discordBtn.AnchorPoint = Vector2.new(0, 0.5)
+
+	local youtubeBtn = MakeIconLink(123663668456341, Color3.fromRGB(255, 0, 0), youtubeLink, "YouTube")
+	youtubeBtn.Position = UDim2.new(0, 56, 0.5, 0)
+	youtubeBtn.AnchorPoint = Vector2.new(0, 0.5)
+
+	local closing = false
+	local function closeGate(callback)
+		if closing then return end
+		closing = true
+		local fade = TweenService:Create(Backdrop, TWEEN_SMOOTH, {BackgroundTransparency = 1})
+		fade:Play()
+		fade.Completed:Connect(function()
+			Backdrop:Destroy()
+			if callback then pcall(callback) end
+		end)
+	end
+
+	local ExitBtn = Instance.new("TextButton")
+	ExitBtn.AnchorPoint = Vector2.new(1, 0.5)
+	ExitBtn.Position = UDim2.new(1, -16, 0.5, 0)
+	ExitBtn.Size = UDim2.fromOffset(72, 34)
+	ExitBtn.Text = "Exit"
+	ExitBtn.Font = Enum.Font.GothamBold
+	ExitBtn.TextSize = 13
+	ExitBtn.BorderSizePixel = 0
+	ExitBtn.ZIndex = 503
+	ExitBtn.Parent = Footer
+	KazeUI:AddPanel(ExitBtn, 0.06)
+	KazeUI:RegisterText(ExitBtn, false)
+	Instance.new("UICorner", ExitBtn).CornerRadius = UDim.new(0, 10)
+	ExitBtn.MouseButton1Click:Connect(function() closeGate(onExit) end)
+
+	local ContinueBtn = Instance.new("TextButton")
+	ContinueBtn.AnchorPoint = Vector2.new(1, 0.5)
+	ContinueBtn.Position = UDim2.new(1, -96, 0.5, 0)
+	ContinueBtn.Size = UDim2.fromOffset(100, 34)
+	ContinueBtn.Text = "Continue"
+	ContinueBtn.Font = Enum.Font.GothamBold
+	ContinueBtn.TextSize = 13
+	ContinueBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+	ContinueBtn.BorderSizePixel = 0
+	ContinueBtn.ZIndex = 503
+	ContinueBtn.Parent = Footer
+	Instance.new("UICorner", ContinueBtn).CornerRadius = UDim.new(0, 10)
+	KazeUI:OnThemeChanged(ContinueBtn, function() ContinueBtn.BackgroundColor3 = KazeUI.GlowColor end)
+	ContinueBtn.MouseButton1Click:Connect(function() closeGate(onContinue) end)
+
+	-- Entrance
+	Card.Size = UDim2.fromOffset(CARD_W, 0)
+	TweenService:Create(Backdrop, TWEEN_SMOOTH, {BackgroundTransparency = 0.45}):Play()
+	TweenService:Create(Card, TWEEN_SPRING, {Size = UDim2.fromOffset(CARD_W, CARD_H)}):Play()
+
+	return {
+		Root = Backdrop,
+		IsCurrentGameSupported = isCurrentSupported,
+		Close = function() closeGate(nil) end,
+	}
+end
+
 function KazeUI:CreateWindow(config)
 	local ok, resultOrErr = pcall(BuildWindow, config)
 	if not ok then
