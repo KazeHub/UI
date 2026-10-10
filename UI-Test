@@ -368,13 +368,42 @@ CameraLocker.Modal = false
 CameraLocker.Visible = true
 CameraLocker.Parent = ScreenGui
 
+-- Reference-counted instead of a plain boolean: several independent drag
+-- sources (window header drag, resize handle, sliders, color picker) each
+-- call LockCamera()/UnlockCamera() around their own InputBegan/InputEnded
+-- pair. A plain boolean is fragile if two locks ever overlap; counting makes
+-- it safe regardless of ordering.
+local CameraLockCount = 0
+
 local function LockCamera()
+	CameraLockCount = CameraLockCount + 1
 	CameraLocker.Modal = true
 end
 
 local function UnlockCamera()
-	CameraLocker.Modal = false
+	CameraLockCount = math.max(0, CameraLockCount - 1)
+	if CameraLockCount == 0 then
+		CameraLocker.Modal = false
+	end
 end
+
+-- Root-cause fix for "I can't move or jump" / the UI acting like it's
+-- overlaying the whole screen: every drag site below only clears its lock
+-- via UserInputService.InputEnded (or a Changed -> End state) firing for the
+-- SAME input object that started the drag. If the Roblox window loses OS
+-- focus mid-drag (alt-tabbing away, clicking a system dialog, tabbing out on
+-- mobile) and the mouse/touch is released while unfocused, that InputEnded
+-- never fires for Roblox -- so CameraLocker.Modal (and KazeUI.IsResizing) can
+-- get stuck `true` forever. A Modal GUI claims exclusive input focus, which
+-- is exactly what was blocking WASD/jump: not a visual overlay, a stuck
+-- input lock left over from an interrupted drag. WindowFocusReleased fires
+-- reliably on focus loss no matter what the mouse button was doing, so it's
+-- used here as a hard safety net to force every lock back off.
+UIS.WindowFocusReleased:Connect(function()
+	CameraLockCount = 0
+	CameraLocker.Modal = false
+	KazeUI.IsResizing = false
+end)
 
 local NotifContainer = Instance.new("Frame")
 local notifLayout = Instance.new("UIListLayout", NotifContainer)
@@ -8238,18 +8267,22 @@ function KazeUI:ShowGameSupportGate(config)
 			ShowFallback()
 		end
 
-		local dot = Instance.new("Frame")
-		dot.AnchorPoint = Vector2.new(1, 0)
-		dot.Position = UDim2.new(1, -3, 0, 3)
-		dot.Size = UDim2.fromOffset(9, 9)
-		dot.BorderSizePixel = 0
-		dot.BackgroundColor3 = isThisGame and Color3.fromRGB(80, 220, 120) or Color3.fromRGB(110, 110, 120)
-		dot.ZIndex = 506
-		dot.Parent = thumb
-		Instance.new("UICorner", dot).CornerRadius = UDim.new(1, 0)
-		local dotRing = Instance.new("UIStroke", dot)
-		dotRing.Thickness = 2
-		dotRing.Color = Color3.fromRGB(20, 20, 24)
+		-- Status dot moved off the thumbnail corner and in front of the game's
+		-- name instead (e.g. "● The Mimic"), per request. Done as an inline
+		-- RichText bullet rather than a separate Frame: the name label is
+		-- center-aligned text of variable width, so a separately-positioned
+		-- Frame can't reliably sit "just left of the text" -- an inline glyph
+		-- moves with the text automatically. Always green (a plain supported-
+		-- game marker) instead of the old greyed-out "not currently this
+		-- game" state.
+		local function EscapeRichText(s)
+			s = tostring(s)
+			s = string.gsub(s, "&", "&amp;")
+			s = string.gsub(s, "<", "&lt;")
+			s = string.gsub(s, ">", "&gt;")
+			s = string.gsub(s, "\"", "&quot;")
+			return s
+		end
 
 		local nameLabel = Instance.new("TextLabel")
 		nameLabel.Position = UDim2.new(0, 0, 0, 82)
@@ -8260,7 +8293,8 @@ function KazeUI:ShowGameSupportGate(config)
 		nameLabel.TextWrapped = true
 		nameLabel.TextXAlignment = Enum.TextXAlignment.Center
 		nameLabel.TextYAlignment = Enum.TextYAlignment.Top
-		nameLabel.Text = name
+		nameLabel.RichText = true
+		nameLabel.Text = "<font color=\"rgb(80,220,120)\">●</font> " .. EscapeRichText(name)
 		nameLabel.ZIndex = 504
 		nameLabel.Parent = card
 		KazeUI:RegisterText(nameLabel, not isThisGame)
