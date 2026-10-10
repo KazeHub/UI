@@ -8087,8 +8087,8 @@ function KazeUI:ShowGameSupportGate(config)
 	local onExit = typeof(config.OnExit) == "function" and config.OnExit or nil
 
 	local CARD_W, CARD_H = 440, 380
-	local HEADER_H = 92
-	local FOOTER_H = 60
+	local HEADER_H = 76
+	local FOOTER_H = 56
 	local CARD_RADIUS = 20
 
 	local Backdrop = Instance.new("TextButton")
@@ -8119,33 +8119,28 @@ function KazeUI:ShowGameSupportGate(config)
 	CardStroke.Parent = Card
 	KazeUI:RegisterBorder(CardStroke)
 
-	-- Header: flat rounded-top panel instead of the old diagonal accent
-	-- slice. The diagonal version is what caused the card's rounded top
-	-- corners to visibly break -- UICorner only rounds an instance's OWN
-	-- corners; a parent's ClipsDescendants clips to a plain RECTANGLE, not
-	-- to the rounded shape, so the header's square corners simply sat on
-	-- top of (and hid) Card's rounded corners. Fixed here with the standard
-	-- two-layer trick: HeaderFill is rounded on all 4 corners, and
-	-- HeaderSquareMask -- same fill, no rounding -- covers just its bottom
-	-- edge to square that edge back off, leaving only the top corners
-	-- visibly rounded, flush with Card's own.
+	-- Header: flat rounded-top panel. HeaderFill is rounded on all 4 corners
+	-- but sits inside HeaderClip, a rectangle that clips off its bottom
+	-- corners, so only the top corners stay rounded, flush with Card's own.
+	-- One translucent layer instead of two overlapping ones, which used to
+	-- show as a darker band along the bottom of the header.
+	local HeaderClip = Instance.new("Frame")
+	HeaderClip.Name = "HeaderClip"
+	HeaderClip.Size = UDim2.new(1, 0, 0, HEADER_H)
+	HeaderClip.BackgroundTransparency = 1
+	HeaderClip.BorderSizePixel = 0
+	HeaderClip.ClipsDescendants = true
+	HeaderClip.ZIndex = 502
+	HeaderClip.Parent = Card
+
 	local HeaderFill = Instance.new("Frame")
 	HeaderFill.Name = "HeaderFill"
-	HeaderFill.Size = UDim2.new(1, 0, 0, HEADER_H)
+	HeaderFill.Size = UDim2.new(1, 0, 0, HEADER_H + CARD_RADIUS)
 	HeaderFill.BorderSizePixel = 0
 	HeaderFill.ZIndex = 502
-	HeaderFill.Parent = Card
+	HeaderFill.Parent = HeaderClip
 	KazeUI:AddPanel(HeaderFill, 0.12)
 	Instance.new("UICorner", HeaderFill).CornerRadius = UDim.new(0, CARD_RADIUS)
-
-	local HeaderSquareMask = Instance.new("Frame")
-	HeaderSquareMask.Name = "HeaderSquareMask"
-	HeaderSquareMask.Size = UDim2.new(1, 0, 0, CARD_RADIUS)
-	HeaderSquareMask.Position = UDim2.new(0, 0, 0, HEADER_H - CARD_RADIUS)
-	HeaderSquareMask.BorderSizePixel = 0
-	HeaderSquareMask.ZIndex = 502
-	HeaderSquareMask.Parent = Card
-	KazeUI:AddPanel(HeaderSquareMask, 0.12)
 
 	local HeaderDivider = Instance.new("Frame")
 	HeaderDivider.Name = "HeaderDivider"
@@ -8210,8 +8205,35 @@ function KazeUI:ShowGameSupportGate(config)
 	KazeUI:RegisterText(HeaderSub, true)
 
 	-- Game list
-	local currentPlaceId = game.PlaceId
 	local isCurrentSupported = false
+
+	local currentPlaceId = game.PlaceId
+	local GRID_COLS = 4
+	local GRID_GAP = 8
+	local GRID_PAD_X = 14
+	local CELL_PAD = 6
+	local DOT_W = 12
+	local NAME_SIZE = 12
+	local cellW = math.floor((CARD_W - GRID_PAD_X * 2 - GRID_GAP * (GRID_COLS - 1)) / GRID_COLS)
+	local thumbSize = cellW - CELL_PAD * 2
+	local nameLabelW = cellW - CELL_PAD * 2 - DOT_W
+	local nameTop = CELL_PAD + thumbSize + 6
+
+	local nameHeight = 14
+	for i, entry in ipairs(supportedGames) do
+		local measureName, measurePlace
+		if type(entry) == "table" then
+			measureName = tostring(entry.Name or entry.Title or ("Game " .. i))
+			measurePlace = entry.PlaceId
+		else
+			measureName = tostring(entry)
+		end
+		local measureFont = (measurePlace ~= nil and measurePlace == currentPlaceId) and Enum.Font.GothamBold or Enum.Font.Gotham
+		local okMeasure, measured = pcall(TextService.GetTextSize, TextService, measureName, NAME_SIZE, measureFont, Vector2.new(nameLabelW, 1000))
+		if okMeasure and measured.Y > nameHeight then nameHeight = math.ceil(measured.Y) end
+	end
+	nameHeight = nameHeight + 2
+	local cellH = nameTop + nameHeight + CELL_PAD
 
 	local ListScroller = Instance.new("ScrollingFrame")
 	ListScroller.Name = "GameList"
@@ -8230,14 +8252,14 @@ function KazeUI:ShowGameSupportGate(config)
 	listLayout.SortOrder = Enum.SortOrder.LayoutOrder
 	listLayout.FillDirection = Enum.FillDirection.Horizontal
 	listLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left
-	listLayout.CellSize = UDim2.fromOffset(96, 114)
-	listLayout.CellPadding = UDim2.fromOffset(10, 10)
+	listLayout.CellSize = UDim2.fromOffset(cellW, cellH)
+	listLayout.CellPadding = UDim2.fromOffset(GRID_GAP, GRID_GAP)
 
 	local listPadding = Instance.new("UIPadding", ListScroller)
-	listPadding.PaddingTop = UDim.new(0, 12)
-	listPadding.PaddingLeft = UDim.new(0, 14)
-	listPadding.PaddingRight = UDim.new(0, 14)
-	listPadding.PaddingBottom = UDim.new(0, 12)
+	listPadding.PaddingTop = UDim.new(0, 10)
+	listPadding.PaddingLeft = UDim.new(0, GRID_PAD_X)
+	listPadding.PaddingRight = UDim.new(0, GRID_PAD_X)
+	listPadding.PaddingBottom = UDim.new(0, 10)
 
 	if #supportedGames == 0 then
 		local emptyLabel = Instance.new("TextLabel")
@@ -8303,8 +8325,8 @@ function KazeUI:ShowGameSupportGate(config)
 		-- up on the same grid instead of leaving a blank gap.
 		local thumb = Instance.new("ImageLabel")
 		thumb.AnchorPoint = Vector2.new(0.5, 0)
-		thumb.Position = UDim2.new(0.5, 0, 0, 8)
-		thumb.Size = UDim2.fromOffset(76, 76)
+		thumb.Position = UDim2.new(0.5, 0, 0, CELL_PAD)
+		thumb.Size = UDim2.fromOffset(thumbSize, thumbSize)
 		thumb.BackgroundTransparency = 1
 		thumb.BorderSizePixel = 0
 		thumb.ScaleType = Enum.ScaleType.Fit
@@ -8354,9 +8376,9 @@ function KazeUI:ShowGameSupportGate(config)
 		-- for "temporarily down".
 		local nameRow = Instance.new("Frame")
 		nameRow.Name = "NameRow"
-		nameRow.AnchorPoint = Vector2.new(0.5, 0)
-		nameRow.Position = UDim2.new(0.5, 0, 0, 86)
-		nameRow.Size = UDim2.fromOffset(76, 18)
+		nameRow.AnchorPoint = Vector2.new(0, 0)
+		nameRow.Position = UDim2.fromOffset(CELL_PAD, nameTop)
+		nameRow.Size = UDim2.fromOffset(cellW - CELL_PAD * 2, nameHeight)
 		nameRow.BackgroundTransparency = 1
 		nameRow.ZIndex = 504
 		nameRow.Parent = card
@@ -8365,8 +8387,8 @@ function KazeUI:ShowGameSupportGate(config)
 		local statusColor = ResolveStatusColor(entryColor, Color3.fromRGB(80, 220, 120))
 
 		local dot = Instance.new("Frame")
-		dot.AnchorPoint = Vector2.new(0, 0.5)
-		dot.Position = UDim2.new(0, 0, 0.5, 0)
+		dot.AnchorPoint = Vector2.new(0, 0)
+		dot.Position = UDim2.fromOffset(0, 4)
 		dot.Size = UDim2.fromOffset(7, 7)
 		dot.BorderSizePixel = 0
 		dot.BackgroundColor3 = statusColor
@@ -8375,13 +8397,15 @@ function KazeUI:ShowGameSupportGate(config)
 		Instance.new("UICorner", dot).CornerRadius = UDim.new(1, 0)
 
 		local nameLabel = Instance.new("TextLabel")
-		nameLabel.Position = UDim2.new(0, 13, 0, 0)
-		nameLabel.Size = UDim2.new(1, -13, 1, 0)
+		nameLabel.Position = UDim2.fromOffset(DOT_W, 0)
+		nameLabel.Size = UDim2.new(1, -DOT_W, 1, 0)
 		nameLabel.BackgroundTransparency = 1
 		nameLabel.Font = isThisGame and Enum.Font.GothamBold or Enum.Font.Gotham
-		nameLabel.TextSize = 12
+		nameLabel.TextSize = NAME_SIZE
 		nameLabel.TextXAlignment = Enum.TextXAlignment.Left
-		nameLabel.TextTruncate = Enum.TextTruncate.AtEnd
+		nameLabel.TextYAlignment = Enum.TextYAlignment.Top
+		nameLabel.TextWrapped = true
+		nameLabel.TextTruncate = Enum.TextTruncate.None
 		nameLabel.Text = name
 		nameLabel.ZIndex = 504
 		nameLabel.Parent = nameRow
@@ -8488,6 +8512,7 @@ function KazeUI:ShowGameSupportGate(config)
 	KazeUI:RegisterText(ExitBtn, true)
 	Instance.new("UICorner", ExitBtn).CornerRadius = UDim.new(0, 12)
 	local exitStroke = Instance.new("UIStroke", ExitBtn)
+	exitStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 	exitStroke.Thickness = 1
 	KazeUI:RegisterBorder(exitStroke)
 	ExitBtn.MouseButton1Click:Connect(function() closeGate(onExit) end)
