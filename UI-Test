@@ -8087,8 +8087,9 @@ function KazeUI:ShowGameSupportGate(config)
 	local onExit = typeof(config.OnExit) == "function" and config.OnExit or nil
 
 	local CARD_W, CARD_H = 440, 380
-	local HEADER_H = 130
+	local HEADER_H = 92
 	local FOOTER_H = 60
+	local CARD_RADIUS = 20
 
 	local Backdrop = Instance.new("TextButton")
 	Backdrop.Name = "GameSupportGateBackdrop"
@@ -8117,61 +8118,95 @@ function KazeUI:ShowGameSupportGate(config)
 	CardStroke.Thickness = 1.5
 	CardStroke.Parent = Card
 	KazeUI:RegisterBorder(CardStroke)
-	StartNeonLoop(CardStroke)
 
-	-- Header: diagonal-split accent strip. The lighter base fills the whole
-	-- strip; an oversized rotated rectangle is clipped to the strip's own
-	-- bounds to carve out the accent-colored diagonal wedge. The exact angle
-	-- (currently -20°, cutting through roughly the right half) is eyeballed --
-	-- nudge DiagSlice's Position/Rotation below if you want the cut sharper,
-	-- shallower, or mirrored.
-	local HeaderClip = Instance.new("Frame")
-	HeaderClip.Name = "HeaderClip"
-	HeaderClip.Size = UDim2.new(1, 0, 0, HEADER_H)
-	HeaderClip.BackgroundTransparency = 1
-	HeaderClip.ClipsDescendants = true
-	HeaderClip.ZIndex = 502
-	HeaderClip.Parent = Card
+	-- Header: flat rounded-top panel instead of the old diagonal accent
+	-- slice. The diagonal version is what caused the card's rounded top
+	-- corners to visibly break -- UICorner only rounds an instance's OWN
+	-- corners; a parent's ClipsDescendants clips to a plain RECTANGLE, not
+	-- to the rounded shape, so the header's square corners simply sat on
+	-- top of (and hid) Card's rounded corners. Fixed here with the standard
+	-- two-layer trick: HeaderFill is rounded on all 4 corners, and
+	-- HeaderSquareMask -- same fill, no rounding -- covers just its bottom
+	-- edge to square that edge back off, leaving only the top corners
+	-- visibly rounded, flush with Card's own.
+	local HeaderFill = Instance.new("Frame")
+	HeaderFill.Name = "HeaderFill"
+	HeaderFill.Size = UDim2.new(1, 0, 0, HEADER_H)
+	HeaderFill.BorderSizePixel = 0
+	HeaderFill.ZIndex = 502
+	HeaderFill.Parent = Card
+	KazeUI:AddPanel(HeaderFill, 0.12)
+	Instance.new("UICorner", HeaderFill).CornerRadius = UDim.new(0, CARD_RADIUS)
 
-	local DiagBase = Instance.new("Frame")
-	DiagBase.Size = UDim2.fromScale(1, 1)
-	DiagBase.BorderSizePixel = 0
-	DiagBase.ZIndex = 502
-	DiagBase.Parent = HeaderClip
-	KazeUI:AddPanel(DiagBase, 0.10)
+	local HeaderSquareMask = Instance.new("Frame")
+	HeaderSquareMask.Name = "HeaderSquareMask"
+	HeaderSquareMask.Size = UDim2.new(1, 0, 0, CARD_RADIUS)
+	HeaderSquareMask.Position = UDim2.new(0, 0, 0, HEADER_H - CARD_RADIUS)
+	HeaderSquareMask.BorderSizePixel = 0
+	HeaderSquareMask.ZIndex = 502
+	HeaderSquareMask.Parent = Card
+	KazeUI:AddPanel(HeaderSquareMask, 0.12)
 
-	local DiagSlice = Instance.new("Frame")
-	DiagSlice.AnchorPoint = Vector2.new(0.5, 0.5)
-	DiagSlice.Position = UDim2.new(0.66, 0, 0.5, 0)
-	DiagSlice.Size = UDim2.fromOffset(420, 520)
-	DiagSlice.Rotation = -20
-	DiagSlice.BorderSizePixel = 0
-	DiagSlice.ZIndex = 503
-	DiagSlice.Parent = HeaderClip
-	KazeUI:OnThemeChanged(DiagSlice, function() DiagSlice.BackgroundColor3 = KazeUI.GlowColor end)
+	local HeaderDivider = Instance.new("Frame")
+	HeaderDivider.Name = "HeaderDivider"
+	HeaderDivider.Size = UDim2.new(1, 0, 0, 1)
+	HeaderDivider.Position = UDim2.new(0, 0, 0, HEADER_H - 1)
+	HeaderDivider.BorderSizePixel = 0
+	HeaderDivider.ZIndex = 503
+	HeaderDivider.Parent = Card
+	KazeUI:OnThemeChanged(HeaderDivider, function(t) HeaderDivider.BackgroundColor3 = t.Border end)
+
+	-- Small accent icon badge instead of flooding the whole header in the
+	-- glow color -- reads as a modern "icon + heading" header and keeps the
+	-- accent color contained in one rounded element that never touches a
+	-- card edge, so it can't reintroduce a corner-clipping bug.
+	local HeaderBadge = Instance.new("Frame")
+	HeaderBadge.Name = "HeaderBadge"
+	HeaderBadge.AnchorPoint = Vector2.new(0, 0.5)
+	HeaderBadge.Position = UDim2.new(0, 20, 0, HEADER_H / 2)
+	HeaderBadge.Size = UDim2.fromOffset(40, 40)
+	HeaderBadge.BorderSizePixel = 0
+	HeaderBadge.ZIndex = 504
+	HeaderBadge.Parent = Card
+	Instance.new("UICorner", HeaderBadge).CornerRadius = UDim.new(0, 12)
+	KazeUI:OnGlowChanged(HeaderBadge, function(c) HeaderBadge.BackgroundColor3 = c end)
+
+	local HeaderBadgeIcon = Instance.new("ImageLabel")
+	HeaderBadgeIcon.AnchorPoint = Vector2.new(0.5, 0.5)
+	HeaderBadgeIcon.Position = UDim2.fromScale(0.5, 0.5)
+	HeaderBadgeIcon.Size = UDim2.fromOffset(20, 20)
+	HeaderBadgeIcon.BackgroundTransparency = 1
+	HeaderBadgeIcon.Image = FormatImage("gamepad-2")
+	HeaderBadgeIcon.ImageColor3 = Color3.fromRGB(255, 255, 255)
+	HeaderBadgeIcon.ScaleType = Enum.ScaleType.Fit
+	HeaderBadgeIcon.ZIndex = 505
+	HeaderBadgeIcon.Parent = HeaderBadge
 
 	local HeaderTitle = Instance.new("TextLabel")
 	HeaderTitle.BackgroundTransparency = 1
-	HeaderTitle.Position = UDim2.new(0, 20, 0, 18)
-	HeaderTitle.Size = UDim2.new(1, -40, 0, 22)
+	HeaderTitle.Position = UDim2.new(0, 72, 0, HEADER_H / 2 - 20)
+	HeaderTitle.Size = UDim2.new(1, -92, 0, 22)
 	HeaderTitle.Font = Enum.Font.GothamBold
 	HeaderTitle.TextSize = 18
 	HeaderTitle.TextXAlignment = Enum.TextXAlignment.Left
+	HeaderTitle.TextYAlignment = Enum.TextYAlignment.Bottom
 	HeaderTitle.Text = tostring(config.Title or "Supported Game List")
 	HeaderTitle.ZIndex = 504
-	HeaderTitle.Parent = HeaderClip
+	HeaderTitle.Parent = Card
 	KazeUI:RegisterText(HeaderTitle, false)
 
 	local HeaderSub = Instance.new("TextLabel")
 	HeaderSub.BackgroundTransparency = 1
-	HeaderSub.Position = UDim2.new(0, 20, 0, 42)
-	HeaderSub.Size = UDim2.new(1, -40, 0, 16)
+	HeaderSub.Position = UDim2.new(0, 72, 0, HEADER_H / 2 + 2)
+	HeaderSub.Size = UDim2.new(1, -92, 0, 16)
 	HeaderSub.Font = Enum.Font.Gotham
 	HeaderSub.TextSize = 12
 	HeaderSub.TextXAlignment = Enum.TextXAlignment.Left
+	HeaderSub.TextYAlignment = Enum.TextYAlignment.Top
+	HeaderSub.TextTruncate = Enum.TextTruncate.AtEnd
 	HeaderSub.Text = tostring(config.Subtitle or "Checking if this game is on the supported list")
 	HeaderSub.ZIndex = 504
-	HeaderSub.Parent = HeaderClip
+	HeaderSub.Parent = Card
 	KazeUI:RegisterText(HeaderSub, true)
 
 	-- Game list
@@ -8195,13 +8230,13 @@ function KazeUI:ShowGameSupportGate(config)
 	listLayout.SortOrder = Enum.SortOrder.LayoutOrder
 	listLayout.FillDirection = Enum.FillDirection.Horizontal
 	listLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left
-	listLayout.CellSize = UDim2.fromOffset(92, 110)
-	listLayout.CellPadding = UDim2.fromOffset(12, 12)
+	listLayout.CellSize = UDim2.fromOffset(96, 114)
+	listLayout.CellPadding = UDim2.fromOffset(10, 10)
 
 	local listPadding = Instance.new("UIPadding", ListScroller)
 	listPadding.PaddingTop = UDim.new(0, 12)
-	listPadding.PaddingLeft = UDim.new(0, 16)
-	listPadding.PaddingRight = UDim.new(0, 16)
+	listPadding.PaddingLeft = UDim.new(0, 14)
+	listPadding.PaddingRight = UDim.new(0, 14)
 	listPadding.PaddingBottom = UDim.new(0, 12)
 
 	if #supportedGames == 0 then
@@ -8231,12 +8266,34 @@ function KazeUI:ShowGameSupportGate(config)
 		local isThisGame = placeId ~= nil and placeId == currentPlaceId
 		if isThisGame then isCurrentSupported = true end
 
-		-- UIGridLayout drives Size/Position itself; this card only needs content.
+		-- Each entry is now a real rounded, bordered tile (not a bare
+		-- floating image) -- one fewer instance than a separate
+		-- image-plus-wrapper approach, since the grid cell itself IS the
+		-- tile. The currently-running game gets an accent border and a
+		-- brighter fill instead of just bold text, so it actually stands
+		-- out in the grid at a glance.
 		local card = Instance.new("Frame")
-		card.BackgroundTransparency = 1
+		card.BorderSizePixel = 0
 		card.LayoutOrder = i
 		card.ZIndex = 503
 		card.Parent = ListScroller
+		KazeUI:AddPanel(card, isThisGame and 0.09 or 0.03)
+		Instance.new("UICorner", card).CornerRadius = UDim.new(0, 14)
+
+		local cardStroke = Instance.new("UIStroke", card)
+		cardStroke.Thickness = 1
+		if isThisGame then
+			KazeUI:OnGlowChanged(cardStroke, function(c) cardStroke.Color = c end)
+		else
+			KazeUI:RegisterBorder(cardStroke)
+		end
+
+		card.MouseEnter:Connect(function()
+			TweenService:Create(card, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor((isThisGame and 0.09 or 0.03) + 0.04)}):Play()
+		end)
+		card.MouseLeave:Connect(function()
+			TweenService:Create(card, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(isThisGame and 0.09 or 0.03)}):Play()
+		end)
 
 		-- Game thumbnail. Priority: an explicit Image/Icon/Thumbnail on the
 		-- entry always wins; otherwise, if the entry has a PlaceId, fetch that
@@ -8244,34 +8301,16 @@ function KazeUI:ShowGameSupportGate(config)
 		-- (same technique as a typical hub's own GetInfo helper). With
 		-- neither, fall back to a small muted glyph so every card still lines
 		-- up on the same grid instead of leaving a blank gap.
-		-- Literally square (equal offset width/height, not a scale-relative
-		-- width against a non-square cell), centered in the cell. Fit (not
-		-- Crop) so the whole icon is always visible instead of having its
-		-- edges sliced off to fill a mismatched aspect ratio.
 		local thumb = Instance.new("ImageLabel")
 		thumb.AnchorPoint = Vector2.new(0.5, 0)
-		thumb.Position = UDim2.new(0.5, 0, 0, 0)
+		thumb.Position = UDim2.new(0.5, 0, 0, 8)
 		thumb.Size = UDim2.fromOffset(76, 76)
+		thumb.BackgroundTransparency = 1
 		thumb.BorderSizePixel = 0
 		thumb.ScaleType = Enum.ScaleType.Fit
 		thumb.ZIndex = 504
 		thumb.Parent = card
-		KazeUI:AddPanel(thumb, 0.08)
 		Instance.new("UICorner", thumb).CornerRadius = UDim.new(0, 10)
-
-		-- Small hover polish: a soft accent outline fades in around the
-		-- thumbnail, giving each card a bit of life even though it isn't a
-		-- clickable button.
-		local thumbStroke = Instance.new("UIStroke", thumb)
-		thumbStroke.Thickness = 1.5
-		thumbStroke.Transparency = 1
-		KazeUI:OnThemeChanged(thumbStroke, function() thumbStroke.Color = KazeUI.GlowColor end)
-		thumb.MouseEnter:Connect(function()
-			TweenService:Create(thumbStroke, TWEEN_FAST, {Transparency = 0.2}):Play()
-		end)
-		thumb.MouseLeave:Connect(function()
-			TweenService:Create(thumbStroke, TWEEN_FAST, {Transparency = 1}):Play()
-		end)
 
 		local fallbackIcon
 		local function ShowFallback()
@@ -8316,7 +8355,7 @@ function KazeUI:ShowGameSupportGate(config)
 		local nameRow = Instance.new("Frame")
 		nameRow.Name = "NameRow"
 		nameRow.AnchorPoint = Vector2.new(0.5, 0)
-		nameRow.Position = UDim2.new(0.5, 0, 0, 84)
+		nameRow.Position = UDim2.new(0.5, 0, 0, 86)
 		nameRow.Size = UDim2.fromOffset(76, 18)
 		nameRow.BackgroundTransparency = 1
 		nameRow.ZIndex = 504
@@ -8431,6 +8470,10 @@ function KazeUI:ShowGameSupportGate(config)
 		if callback then task.spawn(callback) end
 	end
 
+	-- Ghost/outline style instead of a filled panel: next to a bold filled
+	-- Continue button, a second filled button of similar weight competed
+	-- with it for attention. A transparent, bordered Exit reads as the
+	-- clearly secondary action.
 	local ExitBtn = Instance.new("TextButton")
 	ExitBtn.AnchorPoint = Vector2.new(1, 0.5)
 	ExitBtn.Position = UDim2.new(1, -16, 0.5, 0)
@@ -8438,18 +8481,21 @@ function KazeUI:ShowGameSupportGate(config)
 	ExitBtn.Text = "Exit"
 	ExitBtn.Font = Enum.Font.GothamBold
 	ExitBtn.TextSize = 13
+	ExitBtn.BackgroundTransparency = 1
 	ExitBtn.BorderSizePixel = 0
 	ExitBtn.ZIndex = 503
 	ExitBtn.Parent = Footer
-	KazeUI:AddPanel(ExitBtn, 0.06)
-	KazeUI:RegisterText(ExitBtn, false)
-	Instance.new("UICorner", ExitBtn).CornerRadius = UDim.new(0, 10)
+	KazeUI:RegisterText(ExitBtn, true)
+	Instance.new("UICorner", ExitBtn).CornerRadius = UDim.new(0, 12)
+	local exitStroke = Instance.new("UIStroke", ExitBtn)
+	exitStroke.Thickness = 1
+	KazeUI:RegisterBorder(exitStroke)
 	ExitBtn.MouseButton1Click:Connect(function() closeGate(onExit) end)
 	ExitBtn.MouseEnter:Connect(function()
-		TweenService:Create(ExitBtn, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.14)}):Play()
+		TweenService:Create(ExitBtn, TWEEN_FAST, {BackgroundTransparency = 0.88, BackgroundColor3 = KazeUI.GetColor(0.1)}):Play()
 	end)
 	ExitBtn.MouseLeave:Connect(function()
-		TweenService:Create(ExitBtn, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.06)}):Play()
+		TweenService:Create(ExitBtn, TWEEN_FAST, {BackgroundTransparency = 1}):Play()
 	end)
 
 	local ContinueBtn = Instance.new("TextButton")
@@ -8463,8 +8509,11 @@ function KazeUI:ShowGameSupportGate(config)
 	ContinueBtn.BorderSizePixel = 0
 	ContinueBtn.ZIndex = 503
 	ContinueBtn.Parent = Footer
-	Instance.new("UICorner", ContinueBtn).CornerRadius = UDim.new(0, 10)
-	KazeUI:OnThemeChanged(ContinueBtn, function() ContinueBtn.BackgroundColor3 = KazeUI.GlowColor end)
+	Instance.new("UICorner", ContinueBtn).CornerRadius = UDim.new(0, 12)
+	-- OnGlowChanged, not OnThemeChanged: this button's color tracks the
+	-- accent/glow color, which can change independently of the theme (e.g.
+	-- SetGlow without a theme switch) -- the old binding would miss that.
+	KazeUI:OnGlowChanged(ContinueBtn, function(c) ContinueBtn.BackgroundColor3 = c end)
 	ContinueBtn.MouseButton1Click:Connect(function() closeGate(onContinue) end)
 	ContinueBtn.MouseEnter:Connect(function()
 		local h, s, v = Color3.toHSV(KazeUI.GlowColor)
