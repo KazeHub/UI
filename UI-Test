@@ -697,7 +697,7 @@ end
 
 function KazeUI:OnGlowChanged(inst, callback)
 	table.insert(KazeUI.GlowCallbacks, {Inst = inst, Callback = callback})
-	task.spawn(callback, KazeUI.GlowColor)
+	pcall(callback, KazeUI.GlowColor)
 	if inst and typeof(inst) == "Instance" then
 		TrackDestroy(inst)
 	end
@@ -1548,6 +1548,14 @@ local function StartNeonLoop(target)
 	local propName = isStroke and "Color" or "BackgroundColor3"
 	if KazeUI.PerformanceMode then
 		target[propName] = KazeUI.GlowColor
+		local known = false
+		for i = 1, #FrozenGlow do
+			if FrozenGlow[i].Target == target then known = true break end
+		end
+		if not known then
+			TrackDestroy(target)
+			table.insert(FrozenGlow, {Target = target, Prop = propName, IsStrokeLike = isStroke})
+		end
 		return
 	end
 	GlowTargetSet[target] = true
@@ -1585,8 +1593,9 @@ function KazeUI:AddGlowHalo(hostFrame, cornerRadius)
 	end
 
 	if KazeUI.PerformanceMode then
-
 		for _, r in ipairs(rings) do r.Instance.Color = KazeUI.GlowColor end
+		TrackDestroy(halo)
+		table.insert(FrozenGlow, {Target = halo, HaloRings = rings})
 	else
 		GlowTargetSet[halo] = true
 		TrackDestroy(halo)
@@ -1662,7 +1671,7 @@ function KazeUI:SetGlow(color)
 	for i = #KazeUI.GlowCallbacks, 1, -1 do
 		local data = KazeUI.GlowCallbacks[i]
 		if data.Inst and data.Inst.Parent then
-			task.spawn(data.Callback, color)
+			pcall(data.Callback, color)
 		else
 			table.remove(KazeUI.GlowCallbacks, i)
 		end
