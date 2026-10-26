@@ -874,6 +874,8 @@ local function MakeDraggable(dragPart, targetPart, dragState)
 	local function stopDrag()
 		if moveConn then moveConn:Disconnect() moveConn = nil end
 		if dragging then UnlockCamera() end
+		if dragActive and dragState.OnLift then dragState.OnLift(false) end
+		dragActive = false
 		dragging = false
 		dragInput = nil
 	end
@@ -884,6 +886,7 @@ local function MakeDraggable(dragPart, targetPart, dragState)
 		local scale = UIScale.Scale
 
 		if dragActive or delta.Magnitude > 8 then
+			if not dragActive and dragState.OnLift then dragState.OnLift(true) end
 			dragActive = true
 			local newPos = UDim2.new(
 				startPos.X.Scale, startPos.X.Offset + (delta.X / scale),
@@ -1367,6 +1370,7 @@ end
 
 local GLOW_UPDATE_INTERVAL = 1 / 30
 local GLOW_VISIBILITY_INTERVAL = 0.25
+local GLOW_MAX_ANIMATED = 40
 local GLOW_IDLE_POLL = 0.4
 
 local glowVisData = {}
@@ -1415,7 +1419,7 @@ local function RebuildGlowVisible()
 		if target and target.Parent and not Destroyed[target] then
 			w = w + 1
 			if w ~= r then list[w] = data end
-			if IsGlowTargetShown(target) then
+			if vc < GLOW_MAX_ANIMATED and IsGlowTargetShown(target) then
 				vc = vc + 1
 				glowVisData[vc] = data
 				glowVisIndex[vc] = w
@@ -5762,7 +5766,10 @@ local function BuildWindow(config)
 			isLowEnd = okQ and q >= 1 and q <= 5
 		end
 	end
-	if isMobile then GLOW_UPDATE_INTERVAL = 1 / 20 end
+	if isMobile then
+		GLOW_UPDATE_INTERVAL = 1 / 20
+		GLOW_MAX_ANIMATED = 16
+	end
 
 	if type(config.PerformanceMode) == "boolean" then
 		KazeUI.PerformanceMode = config.PerformanceMode
@@ -5805,8 +5812,8 @@ local function BuildWindow(config)
 	SetLoadingProgress(50, "Building interface")
 
 	local outerShadow = Instance.new("Frame", Window)
-	outerShadow.Size = UDim2.new(1, 14, 1, 14)
-	outerShadow.Position = UDim2.fromOffset(-7, -7)
+	outerShadow.Size = UDim2.new(1, 14, 1, 20)
+	outerShadow.Position = UDim2.fromOffset(-7, -3)
 	outerShadow.BackgroundTransparency = 1
 	outerShadow.ZIndex = -1
 	local shCorner = Instance.new("UICorner", outerShadow)
@@ -5886,6 +5893,21 @@ local function BuildWindow(config)
 	TopBar.Parent = ContentClipper
 
 	local dragState = { Position = Window.Position, Anchor = Window.AnchorPoint }
+	local LIFT_INFO = TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+	local liftTween
+	dragState.OnLift = function(on)
+		if KazeUI.PerformanceMode then return end
+		if liftTween then liftTween:Cancel() end
+		liftTween = TweenService:Create(shadowStroke, LIFT_INFO, {
+			Thickness = on and 12 or 6,
+			Transparency = on and 0.6 or 0.8
+		})
+		liftTween:Play()
+		local t2 = TweenService:Create(outerShadow, LIFT_INFO, {
+			Position = on and UDim2.fromOffset(-9, 2) or UDim2.fromOffset(-7, -3)
+		})
+		t2:Play()
+	end
 	MakeDraggable(TopBar, Window, dragState)
 
 	local R = 28
