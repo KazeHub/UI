@@ -1392,11 +1392,11 @@ local function ToggleScrollingAncestors(element, state)
 end
 
 local TWEEN_CASCADE = TweenInfo.new(0.45, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
-local CASCADE_STAGGER = 0.06
+local CASCADE_STAGGER = 0.04
 local CASCADE_RISE = 26
 
 local CascadeState = setmetatable({}, {__mode = "k"})
-local CASCADE_MAX_CHILDREN = 14
+local CASCADE_MAX_CHILDREN = 8
 
 local function CancelCascade(container)
 	local st = CascadeState[container]
@@ -5731,6 +5731,7 @@ local function BuildWindow(config)
 		closeTween.Completed:Connect(function()
 			if isMinimized then
 				Window.Visible = false
+				ScreenGui.Enabled = false
 			end
 		end)
 		closeTween:Play()
@@ -5745,6 +5746,7 @@ local function BuildWindow(config)
 	local function unminimizeWindow()
 		if not isMinimized then return end
 		isMinimized = false
+		ScreenGui.Enabled = true
 
 		if openButtonHidable then
 			MiniButton.Visible = false
@@ -7117,32 +7119,20 @@ local function BuildWindow(config)
 			end,
 		})
 
+		uiSec:Toggle({
+			Title = "Performance Mode",
+			Description = "Faster UI: less animation, no wallpaper, lower lag on weak devices.",
+			Default = KazeUI.PerformanceMode,
+			Flag = "KazeUI_PerformanceMode",
+			Callback = function(state)
+				KazeUI:SetPerformanceMode(state)
+			end,
+		})
+
 		local streamSec = settingsTab:SectionUI("World Streaming")
 		local saveEverything = false
 		local saveDescConn = nil
 		local saveLoopToken = 0
-		local persisted = setmetatable({}, {__mode = "k"})
-
-		local function tryPersist(inst)
-			if not inst or persisted[inst] then return end
-			if inst:IsA("Model") then
-				local ok = pcall(function()
-					if Enum.ModelStreamingMode then
-						inst.ModelStreamingMode = Enum.ModelStreamingMode.Persistent
-					end
-				end)
-				if ok then persisted[inst] = true end
-			elseif inst:IsA("BasePart") then
-				pcall(function()
-					if inst.Parent and inst.Parent:IsA("Model") then
-						if Enum.ModelStreamingMode then
-							inst.Parent.ModelStreamingMode = Enum.ModelStreamingMode.Persistent
-							persisted[inst.Parent] = true
-						end
-					end
-				end)
-			end
-		end
 
 		local function applySaveEverything(enabled)
 			saveEverything = enabled and true or false
@@ -7156,43 +7146,38 @@ local function BuildWindow(config)
 			if not saveEverything then
 				KazeUI:Notify({
 					Title = "Save Everything",
-					Content = "Streaming assist disabled. Parts may unload again when you walk away.",
+					Content = "Streaming assist disabled.",
 					Duration = 3,
 				})
 				return
 			end
 			task.spawn(function()
-				for _, inst in ipairs(workspace:GetDescendants()) do
-					if not saveEverything then break end
-					tryPersist(inst)
-				end
-			end)
-			saveDescConn = workspace.DescendantAdded:Connect(function(inst)
-				if saveEverything then tryPersist(inst) end
-			end)
-			task.spawn(function()
+				local lastPos = nil
 				while saveEverything and token == saveLoopToken do
 					local char = LP.Character
 					local root = char and (char:FindFirstChild("HumanoidRootPart") or char.PrimaryPart)
 					if root then
-						pcall(function()
-							if LP.RequestStreamAroundAsync then
-								LP:RequestStreamAroundAsync(root.Position, 8)
-							end
-						end)
-						pcall(function()
-							local offset = root.CFrame.LookVector * 80
-							if LP.RequestStreamAroundAsync then
-								LP:RequestStreamAroundAsync(root.Position + offset, 6)
-							end
-						end)
+						local pos = root.Position
+						if not lastPos or (pos - lastPos).Magnitude > 40 then
+							lastPos = pos
+							pcall(function()
+								if LP.RequestStreamAroundAsync then
+									LP:RequestStreamAroundAsync(pos, 5)
+								end
+							end)
+							pcall(function()
+								if LP.RequestStreamAroundAsync then
+									LP:RequestStreamAroundAsync(pos + root.CFrame.LookVector * 120, 4)
+								end
+							end)
+						end
 					end
-					task.wait(1.5)
+					task.wait(3)
 				end
 			end)
 			KazeUI:Notify({
 				Title = "Save Everything",
-				Content = "Keeps nearby world content loaded so parts do not vanish and hitch when you walk back.",
+				Content = "Prefetches nearby terrain/parts so walking back does not freeze as hard.",
 				Duration = 4,
 			})
 		end
@@ -7462,7 +7447,7 @@ textConstraint.MaxTextSize = 14
 			if activeDialogsCount > 0 then return end
 			if leftIndicator.Visible then return end
 
-			if not pageMounted then
+			if not pageMounted or page.Parent == nil then
 				page.Parent = self._Pages
 				pageMounted = true
 			end
@@ -7482,19 +7467,26 @@ t.Indicator.Visible = false
 t.Label.Font = Enum.Font.GothamMedium
 					end
 
-					if t.Page.Visible and not t.HideTween then
+					if t.Page and t.Page.Parent and t.Page.Visible and not t.HideTween then
 						CancelCascade(t.Content)
 						local otherPage = t.Page
-						local outTween = TweenService:Create(otherPage, TWEEN_SMOOTH, {Position = UDim2.new(-1, -40, 0, 0)})
-						t.HideTween = outTween
-						outTween.Completed:Connect(function()
-							if t.HideTween == outTween then
-								otherPage.Visible = false
-								otherPage.Position = UDim2.new(0, 0, 0, 0)
-								t.HideTween = nil
-							end
-						end)
-						outTween:Play()
+						if KazeUI.PerformanceMode then
+							otherPage.Visible = false
+							otherPage.Position = UDim2.new(0, 0, 0, 0)
+							otherPage.Parent = nil
+						else
+							local outTween = TweenService:Create(otherPage, TWEEN_SMOOTH, {Position = UDim2.new(-1, -40, 0, 0)})
+							t.HideTween = outTween
+							outTween.Completed:Connect(function()
+								if t.HideTween == outTween then
+									otherPage.Visible = false
+									otherPage.Position = UDim2.new(0, 0, 0, 0)
+									otherPage.Parent = nil
+									t.HideTween = nil
+								end
+							end)
+							outTween:Play()
+						end
 					end
 				end
 			end
@@ -7507,28 +7499,45 @@ txt.Font = Enum.Font.GothamBold
 
 TweenService:Create(iconLabel, TWEEN_FAST, {ImageColor3 = Color3.new(1, 1, 1)}):Play()
 
-			page.Position = UDim2.new(1, 40, 0, 0)
 			page.Visible = true
-			TweenService:Create(page, TWEEN_SPRING, {Position = UDim2.new(0, 0, 0, 0)}):Play()
-			AnimateComponentsIn(pageContent)
+			if KazeUI.PerformanceMode then
+				page.Position = UDim2.new(0, 0, 0, 0)
+			else
+				page.Position = UDim2.new(1, 40, 0, 0)
+				TweenService:Create(page, TWEEN_SPRING, {Position = UDim2.new(0, 0, 0, 0)}):Play()
+				AnimateComponentsIn(pageContent)
+			end
 		end
 
 		btn.MouseEnter:Connect(function()
 			if activeDialogsCount > 0 then return end
 			isHovering = true
 			if not leftIndicator.Visible then
-btn.BackgroundColor3 = KazeUI.GetColor(0.04)
-TweenService:Create(btn, TWEEN_FAST, {BackgroundTransparency = 0.5}):Play()
-				TweenService:Create(txt, TWEEN_FAST, {TextColor3 = KazeUI.CurrentTheme.Text}):Play()
-				TweenService:Create(iconLabel, TWEEN_FAST, {ImageColor3 = KazeUI.CurrentTheme.Text}):Play()
+				if KazeUI.PerformanceMode then
+					btn.BackgroundColor3 = KazeUI.GetColor(0.04)
+					btn.BackgroundTransparency = 0.5
+					txt.TextColor3 = KazeUI.CurrentTheme.Text
+					iconLabel.ImageColor3 = KazeUI.CurrentTheme.Text
+				else
+					btn.BackgroundColor3 = KazeUI.GetColor(0.04)
+					TweenService:Create(btn, TWEEN_FAST, {BackgroundTransparency = 0.5}):Play()
+					TweenService:Create(txt, TWEEN_FAST, {TextColor3 = KazeUI.CurrentTheme.Text}):Play()
+					TweenService:Create(iconLabel, TWEEN_FAST, {ImageColor3 = KazeUI.CurrentTheme.Text}):Play()
+				end
 			end
 		end)
 		btn.MouseLeave:Connect(function()
 			isHovering = false
 			if not leftIndicator.Visible then
-TweenService:Create(btn, TWEEN_FAST, {BackgroundTransparency = 1}):Play()
-TweenService:Create(txt, TWEEN_FAST, {TextColor3 = KazeUI.CurrentTheme.MutedText}):Play()
-				TweenService:Create(iconLabel, TWEEN_FAST, {ImageColor3 = KazeUI.CurrentTheme.MutedText}):Play()
+				if KazeUI.PerformanceMode then
+					btn.BackgroundTransparency = 1
+					txt.TextColor3 = KazeUI.CurrentTheme.MutedText
+					iconLabel.ImageColor3 = KazeUI.CurrentTheme.MutedText
+				else
+					TweenService:Create(btn, TWEEN_FAST, {BackgroundTransparency = 1}):Play()
+					TweenService:Create(txt, TWEEN_FAST, {TextColor3 = KazeUI.CurrentTheme.MutedText}):Play()
+					TweenService:Create(iconLabel, TWEEN_FAST, {ImageColor3 = KazeUI.CurrentTheme.MutedText}):Play()
+				end
 			end
 		end)
 		btn.MouseButton1Click:Connect(function()
