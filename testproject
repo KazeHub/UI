@@ -7037,6 +7037,180 @@ local function BuildWindow(config)
 	function Win:CreateThemeManager()
 	end
 
+	function Win:CreateSettingsTab(opts)
+		opts = opts or {}
+		local defaultKey = opts.ToggleKeybind or opts.Keybind or Enum.KeyCode.RightControl
+		if type(defaultKey) == "string" then
+			defaultKey = Enum.KeyCode[defaultKey] or Enum.KeyCode.RightControl
+		end
+
+		local settingsTab = self:CreateTab({
+			Title = opts.Title or "Settings",
+			Icon = opts.Icon or "settings",
+		})
+
+		local uiSec = settingsTab:SectionUI("User Interface")
+		uiSec:Keybind({
+			Title = "Toggle UI",
+			Default = defaultKey,
+			ToggleUI = true,
+			Flag = "KazeUI_ToggleKeybind",
+		})
+
+		local function applyShiftLock(enabled)
+			KazeUI._ShiftLockEnabled = enabled and true or false
+			local function setOnChar(char)
+				if not char then return end
+				local hum = char:FindFirstChildOfClass("Humanoid")
+				if hum then
+					hum.AutoRotate = not KazeUI._ShiftLockEnabled
+				end
+			end
+			setOnChar(LP.Character)
+			if KazeUI._ShiftLockEnabled then
+				UIS.MouseBehavior = Enum.MouseBehavior.LockCenter
+				if not KazeUI._ShiftLockConn then
+					KazeUI._ShiftLockConn = RunService.RenderStepped:Connect(function()
+						if not KazeUI._ShiftLockEnabled then return end
+						local char = LP.Character
+						if not char then return end
+						local root = char:FindFirstChild("HumanoidRootPart")
+						local cam = workspace.CurrentCamera
+						if root and cam then
+							local look = cam.CFrame.LookVector
+							local flat = Vector3.new(look.X, 0, look.Z)
+							if flat.Magnitude > 0.05 then
+								root.CFrame = CFrame.new(root.Position, root.Position + flat)
+							end
+						end
+						if UIS.MouseBehavior ~= Enum.MouseBehavior.LockCenter then
+							UIS.MouseBehavior = Enum.MouseBehavior.LockCenter
+						end
+					end)
+				end
+			else
+				if KazeUI._ShiftLockConn then
+					KazeUI._ShiftLockConn:Disconnect()
+					KazeUI._ShiftLockConn = nil
+				end
+				UIS.MouseBehavior = Enum.MouseBehavior.Default
+				setOnChar(LP.Character)
+			end
+		end
+
+		if not KazeUI._ShiftLockCharConn then
+			KazeUI._ShiftLockCharConn = LP.CharacterAdded:Connect(function(char)
+				if KazeUI._ShiftLockEnabled then
+					task.wait(0.1)
+					applyShiftLock(true)
+				end
+			end)
+		end
+
+		uiSec:Toggle({
+			Title = "Shiftlock",
+			Description = "Locks the mouse and rotates your character with the camera.",
+			Default = false,
+			Flag = "KazeUI_ShiftLock",
+			Callback = function(state)
+				applyShiftLock(state)
+			end,
+		})
+
+		local streamSec = settingsTab:SectionUI("World Streaming")
+		local saveEverything = false
+		local saveDescConn = nil
+		local saveLoopToken = 0
+		local persisted = setmetatable({}, {__mode = "k"})
+
+		local function tryPersist(inst)
+			if not inst or persisted[inst] then return end
+			if inst:IsA("Model") then
+				local ok = pcall(function()
+					if Enum.ModelStreamingMode then
+						inst.ModelStreamingMode = Enum.ModelStreamingMode.Persistent
+					end
+				end)
+				if ok then persisted[inst] = true end
+			elseif inst:IsA("BasePart") then
+				pcall(function()
+					if inst.Parent and inst.Parent:IsA("Model") then
+						if Enum.ModelStreamingMode then
+							inst.Parent.ModelStreamingMode = Enum.ModelStreamingMode.Persistent
+							persisted[inst.Parent] = true
+						end
+					end
+				end)
+			end
+		end
+
+		local function applySaveEverything(enabled)
+			saveEverything = enabled and true or false
+			KazeUI._SaveEverything = saveEverything
+			if saveDescConn then
+				saveDescConn:Disconnect()
+				saveDescConn = nil
+			end
+			saveLoopToken = saveLoopToken + 1
+			local token = saveLoopToken
+			if not saveEverything then
+				KazeUI:Notify({
+					Title = "Save Everything",
+					Content = "Streaming assist disabled. Parts may unload again when you walk away.",
+					Duration = 3,
+				})
+				return
+			end
+			task.spawn(function()
+				for _, inst in ipairs(workspace:GetDescendants()) do
+					if not saveEverything then break end
+					tryPersist(inst)
+				end
+			end)
+			saveDescConn = workspace.DescendantAdded:Connect(function(inst)
+				if saveEverything then tryPersist(inst) end
+			end)
+			task.spawn(function()
+				while saveEverything and token == saveLoopToken do
+					local char = LP.Character
+					local root = char and (char:FindFirstChild("HumanoidRootPart") or char.PrimaryPart)
+					if root then
+						pcall(function()
+							if LP.RequestStreamAroundAsync then
+								LP:RequestStreamAroundAsync(root.Position, 8)
+							end
+						end)
+						pcall(function()
+							local offset = root.CFrame.LookVector * 80
+							if LP.RequestStreamAroundAsync then
+								LP:RequestStreamAroundAsync(root.Position + offset, 6)
+							end
+						end)
+					end
+					task.wait(1.5)
+				end
+			end)
+			KazeUI:Notify({
+				Title = "Save Everything",
+				Content = "Keeps nearby world content loaded so parts do not vanish and hitch when you walk back.",
+				Duration = 4,
+			})
+		end
+
+		streamSec:Toggle({
+			Title = "Save Everything",
+			Description = "Stops world parts from unloading when you walk away, reducing freezes when you return.",
+			Default = false,
+			Flag = "KazeUI_SaveEverything",
+			Callback = function(state)
+				applySaveEverything(state)
+			end,
+		})
+
+		self:CreateConfigManager(settingsTab)
+		return settingsTab
+	end
+
 function Win:CreateTab(arg1, arg2)
 		local name = tostring(type(arg1) == "table" and (arg1.Title or arg1.Name) or arg1 or "Tab")
 		local iconId = type(arg1) == "table" and arg1.Icon or arg2
@@ -7384,6 +7558,17 @@ end
 	table.insert(KazeUI.ActiveWindows, Window)
 	if typeof(config.Callback) == "function" then pcall(config.Callback) end
 	KazeUI._ManualReady = RunAssetPreload
+
+	if config.SettingsTab ~= false then
+		pcall(function()
+			Win:CreateSettingsTab({
+				ToggleKeybind = config.ToggleKeybind or config.Keybind,
+				Title = (type(config.SettingsTab) == "table" and config.SettingsTab.Title) or "Settings",
+				Icon = (type(config.SettingsTab) == "table" and config.SettingsTab.Icon) or "settings",
+			})
+		end)
+	end
+
 	return Win
 end
 
