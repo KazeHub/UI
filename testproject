@@ -1114,10 +1114,33 @@ local function ShutdownRuntime()
 	if pixelLineConn then pixelLineConn:Disconnect() pixelLineConn = nil end
 end
 KazeUI._Shutdown = ShutdownRuntime
-ScreenGui.Destroying:Connect(ShutdownRuntime)
 
 local MAX_ACTIVE_NOTIFS = 12
 local ActiveNotifs = {}
+
+local tornDown = false
+local function TeardownRuntime()
+	if tornDown then return end
+	tornDown = true
+	pcall(ShutdownRuntime)
+	for _, gui in ipairs({ScreenGui, OpenButtonGui, DialogGui, NotifScreenGui}) do
+		pcall(function() gui:Destroy() end)
+	end
+	activeDialogsCount = 0
+	KazeUI.IsResizing = false
+	pcall(function() Mouse.Icon = "" end)
+	for _, name in ipairs({"TextElements", "MutedTextElements", "BorderElements", "ThemeCallbacks", "WallpaperElements", "PanelElements", "GlowCallbacks", "GlowElements", "Flags", "ActiveWindows", "_PreloadSet"}) do
+		local t = KazeUI[name]
+		if type(t) == "table" then table.clear(t) end
+	end
+	table.clear(FrozenGlow)
+	table.clear(ActiveNotifs)
+	table.clear(pixelLinesAll)
+	table.clear(FormatImageCache)
+	KazeUI._ToggleWindow = nil
+end
+KazeUI._Teardown = TeardownRuntime
+ScreenGui.Destroying:Connect(TeardownRuntime)
 
 function KazeUI:Notify(config)
 	config = config or {}
@@ -5598,19 +5621,37 @@ local function BuildWindow(config)
 	PingLabel.Text = "Ping: --"
 
 	local StatsService = game:GetService("Stats")
-	task.spawn(function()
+	local pingItem = nil
+	pcall(function() pingItem = StatsService.Network.ServerStatsItem["Data Ping"] end)
+	local lastFps, lastPing = nil, nil
+	local statsThread = task.spawn(function()
 		while TopBar.Parent do
 			if Window.Visible then
-				local okF, fps = pcall(function() return math.floor(workspace:GetRealPhysicsFPS() + 0.5) end)
-				if okF and fps then FpsLabel.Text = "FPS: " .. tostring(math.clamp(fps, 0, 999)) end
-				local okP, ping = pcall(function()
-					return math.floor(StatsService.Network.ServerStatsItem["Data Ping"]:GetValue() + 0.5)
-				end)
-				if okP and ping then PingLabel.Text = "Ping: " .. tostring(ping) .. "ms" end
+				local okF, fps = pcall(workspace.GetRealPhysicsFPS, workspace)
+				if okF and fps then
+					fps = math.clamp(math.floor(fps + 0.5), 0, 999)
+					if fps ~= lastFps then
+						lastFps = fps
+						FpsLabel.Text = "FPS: " .. fps
+					end
+				end
+				if pingItem then
+					local okP, ping = pcall(pingItem.GetValue, pingItem)
+					if okP and ping then
+						ping = math.floor(ping + 0.5)
+						if ping ~= lastPing then
+							lastPing = ping
+							PingLabel.Text = "Ping: " .. ping .. "ms"
+						end
+					end
+				end
+				task.wait(KazeUI.PerformanceMode and 2 or 1)
+			else
+				task.wait(2)
 			end
-			task.wait(1)
 		end
 	end)
+	TopBar.Destroying:Connect(function() pcall(task.cancel, statsThread) end)
 	end
 
 	local TopDivider = Instance.new("Frame")
@@ -5960,12 +6001,7 @@ local function BuildWindow(config)
 		KazeUI:AddPanel(CancelBtn, 0.04)
 		KazeUI:RegisterText(CancelBtn, true)
 
-		ConfirmBtn.MouseButton1Click:Connect(function()
-			ScreenGui:Destroy()
-			OpenButtonGui:Destroy()
-			DialogGui:Destroy()
-			NotifScreenGui:Destroy()
-		end)
+		ConfirmBtn.MouseButton1Click:Connect(TeardownRuntime)
 		local confirmClosing = false
 		CancelBtn.MouseButton1Click:Connect(function()
 			if confirmClosing then return end
@@ -6079,6 +6115,9 @@ local function BuildWindow(config)
 	local hidableTab = config.HidableTab == true
 	local sidebarCollapsed = false
 	local sidebarIdleThread = nil
+	Window.Destroying:Connect(function()
+		if sidebarIdleThread then pcall(task.cancel, sidebarIdleThread) sidebarIdleThread = nil end
+	end)
 	local hidableTabLabels = {}
 	local SidebarExpandCatcherRef = nil
 	local SIDEBAR_FULL_WIDTH = 190
@@ -6630,10 +6669,7 @@ local function BuildWindow(config)
 	end
 
 	function Win:Destroy()
-		ScreenGui:Destroy()
-		OpenButtonGui:Destroy()
-		DialogGui:Destroy()
-		NotifScreenGui:Destroy()
+		TeardownRuntime()
 	end
 
 	local cardDepth = 0
