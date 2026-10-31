@@ -69,6 +69,36 @@ KazeUI.WallpaperElements = {}
 KazeUI.PanelElements = {}
 KazeUI.GlowCallbacks = {}
 
+local ActiveTweens = setmetatable({}, {__mode = "k"})
+local function PlayTween(inst, info, props)
+	local list = ActiveTweens[inst]
+	if list then
+		for i = #list, 1, -1 do
+			local e = list[i]
+			local state = e.Tween.PlaybackState
+			if state ~= Enum.PlaybackState.Playing and state ~= Enum.PlaybackState.Delayed then
+				table.remove(list, i)
+			elseif not e.Info.Reverses and not info.Reverses and e.Info.RepeatCount == 0 and info.RepeatCount == 0 then
+				local covered = true
+				for k in pairs(e.Props) do
+					if props[k] == nil then covered = false break end
+				end
+				if covered then
+					e.Tween:Cancel()
+					table.remove(list, i)
+				end
+			end
+		end
+	else
+		list = {}
+		ActiveTweens[inst] = list
+	end
+	local tw = TweenService:Create(inst, info, props)
+	list[#list + 1] = {Tween = tw, Props = props, Info = info}
+	tw:Play()
+	return tw
+end
+
 local TWEEN_FAST_NORMAL = TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 local TWEEN_SPRING_NORMAL = TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
 local TWEEN_SMOOTH_NORMAL = TweenInfo.new(0.35, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
@@ -466,11 +496,11 @@ local function ApplyWallpaper(theme)
 				img.Image = formatted
 			end
 			if math.abs(img.ImageTransparency - imgTarget) > 0.001 then
-				TweenService:Create(img, TWEEN_SMOOTH, {ImageTransparency = imgTarget}):Play()
+				PlayTween(img, TWEEN_SMOOTH, {ImageTransparency = imgTarget})
 			end
 			local overlay = wp.OverlayFrame
 			if overlay and math.abs(overlay.BackgroundTransparency - overlayTarget) > 0.001 then
-				TweenService:Create(overlay, TWEEN_SMOOTH, {BackgroundTransparency = overlayTarget}):Play()
+				PlayTween(overlay, TWEEN_SMOOTH, {BackgroundTransparency = overlayTarget})
 			end
 		end
 	end
@@ -691,7 +721,7 @@ end
 function KazeUI:OnThemeChanged(inst, cb)
 	if not inst then return end
 	table.insert(KazeUI.ThemeCallbacks, {Inst = inst, Callback = cb})
-	task.spawn(cb, KazeUI.CurrentTheme)
+	pcall(cb, KazeUI.CurrentTheme)
 	TrackDestroy(inst)
 end
 
@@ -1137,6 +1167,7 @@ local function TeardownRuntime()
 	table.clear(ActiveNotifs)
 	table.clear(pixelLinesAll)
 	table.clear(FormatImageCache)
+	table.clear(ActiveTweens)
 	KazeUI._ToggleWindow = nil
 end
 KazeUI._Teardown = TeardownRuntime
@@ -1309,13 +1340,13 @@ function KazeUI:Notify(config)
 	registryEntry.Dismiss = dismiss
 
 	closeBtn.MouseEnter:Connect(function()
-		TweenService:Create(closeBtn, TWEEN_FAST, {ImageTransparency = 0.2, Size = UDim2.fromOffset(18, 18), Position = UDim2.new(1, -11, 0, 11)}):Play()
+		PlayTween(closeBtn, TWEEN_FAST, {ImageTransparency = 0.2, Size = UDim2.fromOffset(18, 18), Position = UDim2.new(1, -11, 0, 11)})
 	end)
 	closeBtn.MouseLeave:Connect(function()
-		TweenService:Create(closeBtn, TWEEN_FAST, {ImageTransparency = 0, Size = UDim2.fromOffset(16, 16), Position = UDim2.new(1, -12, 0, 12)}):Play()
+		PlayTween(closeBtn, TWEEN_FAST, {ImageTransparency = 0, Size = UDim2.fromOffset(16, 16), Position = UDim2.new(1, -12, 0, 12)})
 	end)
 	closeBtn.MouseButton1Down:Connect(function()
-		TweenService:Create(closeBtn, TWEEN_FAST, {Size = UDim2.fromOffset(14, 14), Position = UDim2.new(1, -13, 0, 13)}):Play()
+		PlayTween(closeBtn, TWEEN_FAST, {Size = UDim2.fromOffset(14, 14), Position = UDim2.new(1, -13, 0, 13)})
 	end)
 	closeBtn.MouseButton1Click:Connect(dismiss)
 
@@ -1769,7 +1800,7 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 		local count = 0
 		for _, item in ipairs(optionItems) do if item.Btn.Visible then count = count + 1 end end
 		local targetH = math.min(count, 5) * 34
-		TweenService:Create(listContainer, TWEEN_FAST, {Size = UDim2.new(1, -20, 0, targetH)}):Play()
+		PlayTween(listContainer, TWEEN_FAST, {Size = UDim2.new(1, -20, 0, targetH)})
 		listContainer.CanvasSize = UDim2.new(0, 0, 0, count * 34)
 	end
 
@@ -1778,9 +1809,9 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 		searchBox.Text = ""
 		searchWrapper.Visible = false
 		listContainer.Visible = false
-		TweenService:Create(arrowIcon, TWEEN_SPRING, {Rotation = 0}):Play()
+		PlayTween(arrowIcon, TWEEN_SPRING, {Rotation = 0})
 		StopNeonLoop(boxStroke)
-		TweenService:Create(boxStroke, TWEEN_FAST, {Color = KazeUI.CurrentTheme.Border}):Play()
+		PlayTween(boxStroke, TWEEN_FAST, {Color = KazeUI.CurrentTheme.Border})
 	end
 
 	local function OptionListUnchanged(nextOptions)
@@ -1866,7 +1897,7 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 					currentTxtTween:Play()
 
 					if isMulti and indicator then
-						TweenService:Create(indicator, TWEEN_FAST, {BackgroundColor3 = indTargetBg}):Play()
+						PlayTween(indicator, TWEEN_FAST, {BackgroundColor3 = indTargetBg})
 					end
 				end
 			end
@@ -1888,7 +1919,7 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 
 			btn.MouseButton1Click:Connect(function()
 				if isLockedState or activeDialogsCount > 0 then return end
-				TweenService:Create(btn, TWEEN_PRESS_SHORT, {Size = UDim2.new(1, -8, 0, 28)}):Play()
+				PlayTween(btn, TWEEN_PRESS_SHORT, {Size = UDim2.new(1, -8, 0, 28)})
 
 				if isMulti then
 					selectedMulti[optStr] = not selectedMulti[optStr]
@@ -1929,7 +1960,7 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 			searchWrapper.Visible = true
 			listContainer.Visible = true
 			if itemsStale then Refresh(options) else CalcHeight() end
-			TweenService:Create(arrowIcon, TWEEN_SPRING, {Rotation = 180}):Play()
+			PlayTween(arrowIcon, TWEEN_SPRING, {Rotation = 180})
 			StartNeonLoop(boxStroke)
 		else
 			CloseDropdown()
@@ -2359,15 +2390,15 @@ local function CreateBoxDropdown(parentFrame, title, options, defaultOption, cal
 					box.BackgroundColor3 = targetBg
 					label.TextColor3 = targetTxt
 				else
-					TweenService:Create(box, TWEEN_FAST, {BackgroundColor3 = targetBg}):Play()
-					TweenService:Create(label, TWEEN_FAST, {TextColor3 = targetTxt}):Play()
+					PlayTween(box, TWEEN_FAST, {BackgroundColor3 = targetBg})
+					PlayTween(label, TWEEN_FAST, {TextColor3 = targetTxt})
 				end
 
 				if active then
 					StartNeonLoop(boxStrokeItem)
 				else
 					StopNeonLoop(boxStrokeItem)
-					TweenService:Create(boxStrokeItem, TWEEN_FAST, {Color = KazeUI.CurrentTheme.Border}):Play()
+					PlayTween(boxStrokeItem, TWEEN_FAST, {Color = KazeUI.CurrentTheme.Border})
 				end
 			end
 			UpdateVisuals(true)
@@ -2428,12 +2459,12 @@ local function CreateBoxDropdown(parentFrame, title, options, defaultOption, cal
 		if isOpen then
 			if itemsStale then Refresh(options) else ApplyGrid() end
 		end
-		TweenService:Create(arrowIcon, TWEEN_SPRING, {Rotation = isOpen and 180 or 0}):Play()
+		PlayTween(arrowIcon, TWEEN_SPRING, {Rotation = isOpen and 180 or 0})
 		if isOpen then
 			StartNeonLoop(boxStroke)
 		else
 			StopNeonLoop(boxStroke)
-			TweenService:Create(boxStroke, TWEEN_FAST, {Color = KazeUI.CurrentTheme.Border}):Play()
+			PlayTween(boxStroke, TWEEN_FAST, {Color = KazeUI.CurrentTheme.Border})
 		end
 	end)
 
@@ -2755,16 +2786,16 @@ local function CreateClickableParagraph(parentFrame, title, body, callback, lock
 	clickDetector.MouseEnter:Connect(function()
 		if isLockedState or activeDialogsCount > 0 then return end
 		isHovering = true
-		TweenService:Create(paraFrame, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.04)}):Play()
+		PlayTween(paraFrame, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.04)})
 		StartNeonLoop(paraStroke)
-		TweenService:Create(rightIcon, TWEEN_FAST, {ImageColor3 = Color3.fromRGB(255, 255, 255), Position = UDim2.new(1, -8, 0.5, 0)}):Play()
+		PlayTween(rightIcon, TWEEN_FAST, {ImageColor3 = Color3.fromRGB(255, 255, 255), Position = UDim2.new(1, -8, 0.5, 0)})
 	end)
 	local function onParaLeave()
 		isHovering = false
-		TweenService:Create(paraFrame, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.02)}):Play()
+		PlayTween(paraFrame, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.02)})
 		StopNeonLoop(paraStroke)
-		TweenService:Create(paraStroke, TWEEN_FAST, {Color = KazeUI.CurrentTheme.Border}):Play()
-		TweenService:Create(rightIcon, TWEEN_FAST, {ImageColor3 = KazeUI.CurrentTheme.MutedText, Position = UDim2.new(1, -10, 0.5, 0)}):Play()
+		PlayTween(paraStroke, TWEEN_FAST, {Color = KazeUI.CurrentTheme.Border})
+		PlayTween(rightIcon, TWEEN_FAST, {ImageColor3 = KazeUI.CurrentTheme.MutedText, Position = UDim2.new(1, -10, 0.5, 0)})
 	end
 	clickDetector.MouseLeave:Connect(onParaLeave)
 	BindTouchLeaveFix(clickDetector, function() return isHovering end, onParaLeave)
@@ -2772,16 +2803,16 @@ local function CreateClickableParagraph(parentFrame, title, body, callback, lock
 	BindPressAnimation(clickDetector,
 		function() return not (isLockedState or activeDialogsCount > 0) end,
 		function()
-			TweenService:Create(paraFrame, TWEEN_QUICK, {
+			PlayTween(paraFrame, TWEEN_QUICK, {
 				Size = UDim2.new(0.93, 0, 0, totalHeight - 2),
 				Position = UDim2.new(0.5, 0, 0, 4)
-			}):Play()
+			})
 		end,
 		function()
-			TweenService:Create(paraFrame, TWEEN_SPRING, {
+			PlayTween(paraFrame, TWEEN_SPRING, {
 				Size = UDim2.new(0.95, 0, 0, totalHeight),
 				Position = UDim2.new(0.5, 0, 0, 3)
-			}):Play()
+			})
 		end,
 		function()
 			FireCallback(callback)
@@ -2928,11 +2959,11 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 				switchContainer.BackgroundColor3 = KazeUI.GetColor(0.08)
 			end
 		else
-			TweenService:Create(switchIndicator, TWEEN_SPRING, {Position = targetPos}):Play()
+			PlayTween(switchIndicator, TWEEN_SPRING, {Position = targetPos})
 			if state then
-				TweenService:Create(switchContainer, TWEEN_FAST, {BackgroundColor3 = Color3.fromRGB(59, 130, 246)}):Play()
+				PlayTween(switchContainer, TWEEN_FAST, {BackgroundColor3 = Color3.fromRGB(59, 130, 246)})
 			else
-				TweenService:Create(switchContainer, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.08)}):Play()
+				PlayTween(switchContainer, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.08)})
 			end
 		end
 	end
@@ -2947,24 +2978,24 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 	clickDetector.MouseEnter:Connect(function()
 		if isLockedState or activeDialogsCount > 0 then return end
 		isHovering = true
-		TweenService:Create(paraFrame, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.04)}):Play()
+		PlayTween(paraFrame, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.04)})
 		StartNeonLoop(paraStroke)
 	end)
 	local function onToggleLeave()
 		isHovering = false
-		TweenService:Create(paraFrame, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.02)}):Play()
+		PlayTween(paraFrame, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.02)})
 		StopNeonLoop(paraStroke)
-		TweenService:Create(paraStroke, TWEEN_FAST, {Color = KazeUI.CurrentTheme.Border}):Play()
+		PlayTween(paraStroke, TWEEN_FAST, {Color = KazeUI.CurrentTheme.Border})
 	end
 	clickDetector.MouseLeave:Connect(onToggleLeave)
 	BindTouchLeaveFix(clickDetector, function() return isHovering end, onToggleLeave)
 	BindPressAnimation(clickDetector,
 		function() return not (isLockedState or activeDialogsCount > 0) end,
 		function()
-			TweenService:Create(paraFrame, TWEEN_FAST, {Size = UDim2.new(0.93, 0, 0, totalHeight - 2), Position = UDim2.new(0.5, 0, 0, 4)}):Play()
+			PlayTween(paraFrame, TWEEN_FAST, {Size = UDim2.new(0.93, 0, 0, totalHeight - 2), Position = UDim2.new(0.5, 0, 0, 4)})
 		end,
 		function()
-			TweenService:Create(paraFrame, TWEEN_SPRING, {Size = UDim2.new(0.95, 0, 0, totalHeight), Position = UDim2.new(0.5, 0, 0, 3)}):Play()
+			PlayTween(paraFrame, TWEEN_SPRING, {Size = UDim2.new(0.95, 0, 0, totalHeight), Position = UDim2.new(0.5, 0, 0, 3)})
 		end,
 		function()
 			setToggleState(not state, false)
@@ -3120,7 +3151,7 @@ local function CreateIconToggle(parentFrame, title, body, defaultState, onIcon, 
 		if instant then
 			iconContainer.BackgroundColor3 = KazeUI.GetColor(0.08)
 		else
-			TweenService:Create(iconImage, TWEEN_PRESS, {Size = UDim2.fromOffset(14, 14)}):Play()
+			PlayTween(iconImage, TWEEN_PRESS, {Size = UDim2.fromOffset(14, 14)})
 		end
 	end
 	setToggleState(state, true)
@@ -3134,24 +3165,24 @@ local function CreateIconToggle(parentFrame, title, body, defaultState, onIcon, 
 	clickDetector.MouseEnter:Connect(function()
 		if isLockedState or activeDialogsCount > 0 then return end
 		isHovering = true
-		TweenService:Create(paraFrame, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.04)}):Play()
+		PlayTween(paraFrame, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.04)})
 		StartNeonLoop(paraStroke)
 	end)
 	local function onToggleLeave()
 		isHovering = false
-		TweenService:Create(paraFrame, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.02)}):Play()
+		PlayTween(paraFrame, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.02)})
 		StopNeonLoop(paraStroke)
-		TweenService:Create(paraStroke, TWEEN_FAST, {Color = KazeUI.CurrentTheme.Border}):Play()
+		PlayTween(paraStroke, TWEEN_FAST, {Color = KazeUI.CurrentTheme.Border})
 	end
 	clickDetector.MouseLeave:Connect(onToggleLeave)
 	BindTouchLeaveFix(clickDetector, function() return isHovering end, onToggleLeave)
 	BindPressAnimation(clickDetector,
 		function() return not (isLockedState or activeDialogsCount > 0) end,
 		function()
-			TweenService:Create(paraFrame, TWEEN_FAST, {Size = UDim2.new(0.93, 0, 0, totalHeight - 2), Position = UDim2.new(0.5, 0, 0, 4)}):Play()
+			PlayTween(paraFrame, TWEEN_FAST, {Size = UDim2.new(0.93, 0, 0, totalHeight - 2), Position = UDim2.new(0.5, 0, 0, 4)})
 		end,
 		function()
-			TweenService:Create(paraFrame, TWEEN_SPRING, {Size = UDim2.new(0.95, 0, 0, totalHeight), Position = UDim2.new(0.5, 0, 0, 3)}):Play()
+			PlayTween(paraFrame, TWEEN_SPRING, {Size = UDim2.new(0.95, 0, 0, totalHeight), Position = UDim2.new(0.5, 0, 0, 3)})
 		end,
 		function()
 			setToggleState(not state, false)
@@ -3284,17 +3315,17 @@ local function CreateTextBoxInput(parentFrame, title, placeholder, defaultVal, c
 		end
 		isFocused = true
 		StartNeonLoop(innerStroke)
-		TweenService:Create(paraFrame, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.04)}):Play()
+		PlayTween(paraFrame, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.04)})
 		StartNeonLoop(paraStroke)
 	end)
 
 	textBox.FocusLost:Connect(function(enterPressed)
 		isFocused = false
 		StopNeonLoop(innerStroke)
-		TweenService:Create(innerStroke, TWEEN_FAST, {Color = KazeUI.CurrentTheme.Border}):Play()
-		TweenService:Create(paraFrame, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.02)}):Play()
+		PlayTween(innerStroke, TWEEN_FAST, {Color = KazeUI.CurrentTheme.Border})
+		PlayTween(paraFrame, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.02)})
 		StopNeonLoop(paraStroke)
-		TweenService:Create(paraStroke, TWEEN_FAST, {Color = KazeUI.CurrentTheme.Border}):Play()
+		PlayTween(paraStroke, TWEEN_FAST, {Color = KazeUI.CurrentTheme.Border})
 		FireCallback(callback, textBox.Text, enterPressed)
 	end)
 
@@ -3458,8 +3489,8 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 		local visualPercentage = 0
 		if max > min then visualPercentage = (value - min) / (max - min) end
 
-		TweenService:Create(fill, TWEEN_FAST, {Size = UDim2.new(visualPercentage, 0, 1, 0)}):Play()
-		TweenService:Create(knob, TWEEN_FAST, {Position = UDim2.new(visualPercentage, 0, 0.5, 0)}):Play()
+		PlayTween(fill, TWEEN_FAST, {Size = UDim2.new(visualPercentage, 0, 1, 0)})
+		PlayTween(knob, TWEEN_FAST, {Position = UDim2.new(visualPercentage, 0, 0.5, 0)})
 		FireCallback(callback, value)
 	end
 
@@ -3478,7 +3509,7 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 			LockCamera()
 			UpdateValueFromInput(input)
 
-			TweenService:Create(knob, TWEEN_FAST, {Size = UDim2.fromOffset(16, 16)}):Play()
+			PlayTween(knob, TWEEN_FAST, {Size = UDim2.fromOffset(16, 16)})
 			StartNeonLoop(paraStroke)
 
 			local moveCon, endCon
@@ -3493,9 +3524,9 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 					ToggleScrollingAncestors(track, true)
 					UnlockCamera()
 
-					TweenService:Create(knob, TWEEN_FAST, {Size = UDim2.fromOffset(12, 12)}):Play()
+					PlayTween(knob, TWEEN_FAST, {Size = UDim2.fromOffset(12, 12)})
 					StopNeonLoop(paraStroke)
-					TweenService:Create(paraStroke, TWEEN_FAST, {Color = KazeUI.CurrentTheme.Border}):Play()
+					PlayTween(paraStroke, TWEEN_FAST, {Color = KazeUI.CurrentTheme.Border})
 					if moveCon then moveCon:Disconnect() end
 					if endCon then endCon:Disconnect() end
 				end
@@ -3771,12 +3802,12 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 		if isLockedState or activeDialogsCount > 0 then return end
 		isOpen = not isOpen
 		pickerArea.Visible = isOpen
-		TweenService:Create(arrowIcon, TWEEN_SPRING, {Rotation = isOpen and 180 or 0}):Play()
+		PlayTween(arrowIcon, TWEEN_SPRING, {Rotation = isOpen and 180 or 0})
 		if isOpen then
 			StartNeonLoop(boxStroke)
 		else
 			StopNeonLoop(boxStroke)
-			TweenService:Create(boxStroke, TWEEN_FAST, {Color = KazeUI.CurrentTheme.Border}):Play()
+			PlayTween(boxStroke, TWEEN_FAST, {Color = KazeUI.CurrentTheme.Border})
 		end
 	end)
 
@@ -3902,7 +3933,7 @@ local function CreateKeybindInput(parentFrame, title, defaultKey, callback, flag
 		isHovering = false
 		if not isBinding then
 			StopNeonLoop(bindStroke)
-			TweenService:Create(bindStroke, TWEEN_FAST, {Color = KazeUI.CurrentTheme.Border}):Play()
+			PlayTween(bindStroke, TWEEN_FAST, {Color = KazeUI.CurrentTheme.Border})
 		end
 	end
 	bindContainer.MouseLeave:Connect(onBindLeave)
@@ -3940,7 +3971,7 @@ local function CreateKeybindInput(parentFrame, title, defaultKey, callback, flag
 				end
 				if not isHovering then
 					StopNeonLoop(bindStroke)
-					TweenService:Create(bindStroke, TWEEN_FAST, {Color = KazeUI.CurrentTheme.Border}):Play()
+					PlayTween(bindStroke, TWEEN_FAST, {Color = KazeUI.CurrentTheme.Border})
 				end
 				conn:Disconnect()
 				captureConn = nil
@@ -4363,20 +4394,20 @@ CreateCollapsibleSection = function(parentFrame, titleArg, currentDepth)
 		setClipperOpen(isOpen)
 
 		if isOpen then
-			TweenService:Create(arrowIcon, TWEEN_COLLAPSE, {
+			PlayTween(arrowIcon, TWEEN_COLLAPSE, {
 				Rotation = 0,
 				ImageColor3 = KazeUI.CurrentTheme.Text
-			}):Play()
+			})
 			StartNeonLoop(boxStroke)
 			StartNeonLoop(accentLine)
 		else
-			TweenService:Create(arrowIcon, TWEEN_COLLAPSE, {
+			PlayTween(arrowIcon, TWEEN_COLLAPSE, {
 				Rotation = -90,
 				ImageColor3 = KazeUI.CurrentTheme.MutedText
-			}):Play()
-			TweenService:Create(accentLine, TWEEN_COLLAPSE, {
+			})
+			PlayTween(accentLine, TWEEN_COLLAPSE, {
 				BackgroundColor3 = KazeUI.CurrentTheme.MutedText
-			}):Play()
+			})
 			StopNeonLoop(boxStroke)
 			StopNeonLoop(accentLine)
 			boxStroke.Color = KazeUI.CurrentTheme.Border
@@ -4386,22 +4417,22 @@ CreateCollapsibleSection = function(parentFrame, titleArg, currentDepth)
 
 	toggleDetector.MouseEnter:Connect(function()
 		if activeDialogsCount > 0 then return end
-		TweenService:Create(headerFrame, TWEEN_HOVER_SLOW, {BackgroundColor3 = KazeUI.GetColor(0.04), BackgroundTransparency = 0.4}):Play()
+		PlayTween(headerFrame, TWEEN_HOVER_SLOW, {BackgroundColor3 = KazeUI.GetColor(0.04), BackgroundTransparency = 0.4})
 	end)
 	toggleDetector.MouseLeave:Connect(function()
-		TweenService:Create(headerFrame, TWEEN_HOVER_SLOW, {BackgroundTransparency = 1}):Play()
+		PlayTween(headerFrame, TWEEN_HOVER_SLOW, {BackgroundTransparency = 1})
 	end)
 
 	BindPressAnimation(toggleDetector,
 		function() return activeDialogsCount == 0 end,
 		function()
 			local curY = sectionBox.Size.Y
-			TweenService:Create(sectionBox, TWEEN_QUICK, {Size = UDim2.new(0.93, 0, curY.Scale, curY.Offset)}):Play()
+			PlayTween(sectionBox, TWEEN_QUICK, {Size = UDim2.new(0.93, 0, curY.Scale, curY.Offset)})
 		end,
 		function()
 			task.defer(function()
 				local curY = sectionBox.Size.Y
-				TweenService:Create(sectionBox, TWEEN_QUICK, {Size = UDim2.new(0.95, 0, curY.Scale, curY.Offset)}):Play()
+				PlayTween(sectionBox, TWEEN_QUICK, {Size = UDim2.new(0.95, 0, curY.Scale, curY.Offset)})
 			end)
 		end,
 		toggleSection
@@ -4562,20 +4593,20 @@ CreateGroupBox = function(parentFrame, titleArg, currentDepth, depthOverride)
 		setClipperOpen(isOpen)
 
 		if isOpen then
-			TweenService:Create(arrowIcon, TWEEN_COLLAPSE, {
+			PlayTween(arrowIcon, TWEEN_COLLAPSE, {
 				Rotation = 0,
 				ImageColor3 = KazeUI.CurrentTheme.Text
-			}):Play()
+			})
 			StartNeonLoop(stroke)
 			StartNeonLoop(accentLine)
 		else
-			TweenService:Create(arrowIcon, TWEEN_COLLAPSE, {
+			PlayTween(arrowIcon, TWEEN_COLLAPSE, {
 				Rotation = -90,
 				ImageColor3 = KazeUI.CurrentTheme.MutedText
-			}):Play()
-			TweenService:Create(accentLine, TWEEN_COLLAPSE, {
+			})
+			PlayTween(accentLine, TWEEN_COLLAPSE, {
 				BackgroundColor3 = KazeUI.CurrentTheme.MutedText
-			}):Play()
+			})
 			StopNeonLoop(stroke)
 			StopNeonLoop(accentLine)
 			stroke.Color = KazeUI.CurrentTheme.Border
@@ -4585,22 +4616,22 @@ CreateGroupBox = function(parentFrame, titleArg, currentDepth, depthOverride)
 
 	toggleDetector.MouseEnter:Connect(function()
 		if activeDialogsCount > 0 then return end
-		TweenService:Create(header, TWEEN_HOVER_SLOW, {BackgroundColor3 = KazeUI.GetColor(0.04), BackgroundTransparency = 0.4}):Play()
+		PlayTween(header, TWEEN_HOVER_SLOW, {BackgroundColor3 = KazeUI.GetColor(0.04), BackgroundTransparency = 0.4})
 	end)
 	toggleDetector.MouseLeave:Connect(function()
-		TweenService:Create(header, TWEEN_HOVER_SLOW, {BackgroundTransparency = 1}):Play()
+		PlayTween(header, TWEEN_HOVER_SLOW, {BackgroundTransparency = 1})
 	end)
 
 	toggleDetector.MouseButton1Down:Connect(function()
 		if activeDialogsCount > 0 then return end
 		local curY = groupFrame.Size.Y
-		TweenService:Create(groupFrame, TWEEN_QUICK, {Size = UDim2.new(scaledWidth - 0.02, 0, curY.Scale, curY.Offset)}):Play()
+		PlayTween(groupFrame, TWEEN_QUICK, {Size = UDim2.new(scaledWidth - 0.02, 0, curY.Scale, curY.Offset)})
 	end)
 	toggleDetector.MouseButton1Up:Connect(function()
 		if activeDialogsCount > 0 then return end
 		task.defer(function()
 			local curY = groupFrame.Size.Y
-			TweenService:Create(groupFrame, TWEEN_QUICK, {Size = UDim2.new(scaledWidth, 0, curY.Scale, curY.Offset)}):Play()
+			PlayTween(groupFrame, TWEEN_QUICK, {Size = UDim2.new(scaledWidth, 0, curY.Scale, curY.Offset)})
 		end)
 		toggleGroup()
 	end)
@@ -4803,18 +4834,18 @@ local function BuildWindow(config)
 		shimmerTween:Play()
 	end
 
-	TweenService:Create(LoadingScreen, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundTransparency = 0}):Play()
-	TweenService:Create(loadCard, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundTransparency = 0.04}):Play()
-	TweenService:Create(cardStroke, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Transparency = 0.35}):Play()
-	TweenService:Create(spinnerStroke, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Transparency = 0}):Play()
-	TweenService:Create(loadLogo, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {ImageTransparency = 0}):Play()
-	TweenService:Create(loadTitle, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {TextTransparency = 0}):Play()
-	TweenService:Create(loadSubtitle, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {TextTransparency = 0.15}):Play()
-	TweenService:Create(labelText, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {TextTransparency = 0}):Play()
-	TweenService:Create(percentText, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {TextTransparency = 0}):Play()
-	TweenService:Create(barTrack, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundTransparency = 0}):Play()
-	TweenService:Create(barFill, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundTransparency = 0}):Play()
-	TweenService:Create(cardScale, TweenInfo.new(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Scale = 1}):Play()
+	PlayTween(LoadingScreen, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundTransparency = 0})
+	PlayTween(loadCard, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundTransparency = 0.04})
+	PlayTween(cardStroke, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Transparency = 0.35})
+	PlayTween(spinnerStroke, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Transparency = 0})
+	PlayTween(loadLogo, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {ImageTransparency = 0})
+	PlayTween(loadTitle, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {TextTransparency = 0})
+	PlayTween(loadSubtitle, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {TextTransparency = 0.15})
+	PlayTween(labelText, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {TextTransparency = 0})
+	PlayTween(percentText, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {TextTransparency = 0})
+	PlayTween(barTrack, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundTransparency = 0})
+	PlayTween(barFill, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundTransparency = 0})
+	PlayTween(cardScale, TweenInfo.new(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Scale = 1})
 
 	local lastPct, lastLabel = nil, nil
 	local lastProgressClock = 0
@@ -4855,17 +4886,17 @@ local function BuildWindow(config)
 		loadingDone = true
 		task.wait(0.05)
 		local fade = TweenService:Create(LoadingScreen, FADE_OUT, {BackgroundTransparency = 1})
-		TweenService:Create(cardScale, FADE_OUT, {Scale = 0.92}):Play()
-		TweenService:Create(loadCard, FADE_OUT, {BackgroundTransparency = 1}):Play()
-		TweenService:Create(cardStroke, FADE_OUT, {Transparency = 1}):Play()
-		TweenService:Create(spinnerStroke, FADE_OUT, {Transparency = 1}):Play()
-		TweenService:Create(loadLogo, FADE_OUT, {ImageTransparency = 1}):Play()
-		TweenService:Create(loadTitle, FADE_OUT, {TextTransparency = 1}):Play()
-		TweenService:Create(loadSubtitle, FADE_OUT, {TextTransparency = 1}):Play()
-		TweenService:Create(labelText, FADE_OUT, {TextTransparency = 1}):Play()
-		TweenService:Create(percentText, FADE_OUT, {TextTransparency = 1}):Play()
-		TweenService:Create(barTrack, FADE_OUT, {BackgroundTransparency = 1}):Play()
-		TweenService:Create(barFill, FADE_OUT, {BackgroundTransparency = 1}):Play()
+		PlayTween(cardScale, FADE_OUT, {Scale = 0.92})
+		PlayTween(loadCard, FADE_OUT, {BackgroundTransparency = 1})
+		PlayTween(cardStroke, FADE_OUT, {Transparency = 1})
+		PlayTween(spinnerStroke, FADE_OUT, {Transparency = 1})
+		PlayTween(loadLogo, FADE_OUT, {ImageTransparency = 1})
+		PlayTween(loadTitle, FADE_OUT, {TextTransparency = 1})
+		PlayTween(loadSubtitle, FADE_OUT, {TextTransparency = 1})
+		PlayTween(labelText, FADE_OUT, {TextTransparency = 1})
+		PlayTween(percentText, FADE_OUT, {TextTransparency = 1})
+		PlayTween(barTrack, FADE_OUT, {BackgroundTransparency = 1})
+		PlayTween(barFill, FADE_OUT, {BackgroundTransparency = 1})
 		fade:Play()
 
 		task.wait(FADE_OUT.Time)
@@ -5171,7 +5202,7 @@ local function BuildWindow(config)
 	SetLoadingProgress(45, "Applying theme")
 
 	Window.Size = UDim2.fromOffset(math.max(100, initialSize.X.Offset - 50), math.max(100, initialSize.Y.Offset - 50))
-	TweenService:Create(Window, TWEEN_WINDOW_OPEN, {Size = initialSize}):Play()
+	PlayTween(Window, TWEEN_WINDOW_OPEN, {Size = initialSize})
 
 	local TopBar = Instance.new("Frame")
 	TopBar.Size = UDim2.new(1, 0, 0, 52)
@@ -5404,10 +5435,10 @@ local function BuildWindow(config)
 		KazeUI:OnThemeChanged(chevron, function(t) chevron.ImageColor3 = t.MutedText end)
 
 		row.MouseEnter:Connect(function()
-			TweenService:Create(row, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.08)}):Play()
+			PlayTween(row, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.08)})
 		end)
 		row.MouseLeave:Connect(function()
-			TweenService:Create(row, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.04)}):Play()
+			PlayTween(row, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.04)})
 		end)
 		row.MouseButton1Click:Connect(onClick)
 
@@ -5460,7 +5491,7 @@ local function BuildWindow(config)
 
 		if open then
 			LockOverlay.Visible = true
-			TweenService:Create(LockOverlay, tInfo, {BackgroundTransparency = 0.55}):Play()
+			PlayTween(LockOverlay, tInfo, {BackgroundTransparency = 0.55})
 		else
 			local tween = TweenService:Create(LockOverlay, tInfo, {BackgroundTransparency = 1})
 			tween.Completed:Connect(function()
@@ -5471,7 +5502,7 @@ local function BuildWindow(config)
 
 		local targetColor = open and topBarDarkColor or topBarNormalColor
 		for _, panel in ipairs(topBarPanels) do
-			TweenService:Create(panel, tInfo, {BackgroundColor3 = targetColor}):Play()
+			PlayTween(panel, tInfo, {BackgroundColor3 = targetColor})
 		end
 	end
 
@@ -5490,7 +5521,7 @@ local function BuildWindow(config)
 		local cardHeight = 64 + AvatarPopupContent.Size.Y.Offset + (socialCount > 0 and (socialHeight + 10) or 0)
 		AvatarPopupCard.Size = UDim2.new(1, -20, 0, cardHeight)
 		local targetHeight = open and (cardHeight + 10) or 0
-		TweenService:Create(AvatarPopup, TWEEN_PANEL, {Size = UDim2.new(1, 0, 0, targetHeight)}):Play()
+		PlayTween(AvatarPopup, TWEEN_PANEL, {Size = UDim2.new(1, 0, 0, targetHeight)})
 		setLockOverlay(open)
 	end
 
@@ -5780,7 +5811,7 @@ local function BuildWindow(config)
 		if openButtonHidable then
 			MiniButton.Visible = true
 			MiniButton.Size = UDim2.fromOffset(0, 0)
-			TweenService:Create(MiniButton, TWEEN_SPRING, {Size = MiniButtonSize}):Play()
+			PlayTween(MiniButton, TWEEN_SPRING, {Size = MiniButtonSize})
 		end
 	end
 
@@ -5923,10 +5954,10 @@ local function BuildWindow(config)
 			toggledMaximized = true
 			Window.AnchorPoint = Vector2.new(0.5, 0.5)
 			Window.Position = UDim2.fromScale(0.5, 0.5)
-			TweenService:Create(Window, TWEEN_SMOOTH, {Size = UDim2.fromScale(0.95, 0.9)}):Play()
+			PlayTween(Window, TWEEN_SMOOTH, {Size = UDim2.fromScale(0.95, 0.9)})
 		else
 			toggledMaximized = false
-			TweenService:Create(Window, TWEEN_SMOOTH, {Size = lastNormalSize, Position = dragState.Position}):Play()
+			PlayTween(Window, TWEEN_SMOOTH, {Size = lastNormalSize, Position = dragState.Position})
 			task.delay(0.25, function() Window.AnchorPoint = dragState.Anchor end)
 		end
 	end)
@@ -5939,7 +5970,7 @@ local function BuildWindow(config)
 		BtnYellow.Active = false; BtnGreen.Active = false; BtnRed.Active = false
 
 		InteractionBlocker.Visible = true
-		TweenService:Create(InteractionBlocker, TWEEN_FAST, {BackgroundTransparency = 0.65}):Play()
+		PlayTween(InteractionBlocker, TWEEN_FAST, {BackgroundTransparency = 0.65})
 
 		local ConfirmWindow = Instance.new("Frame", Window)
 		ConfirmWindow.Name = "ExitConfirmDialog"
@@ -5957,7 +5988,7 @@ local function BuildWindow(config)
 		confirmStroke.Thickness = 1.2
 		KazeUI:RegisterBorder(confirmStroke)
 
-		TweenService:Create(ConfirmWindow, TWEEN_SPRING, {Position = UDim2.fromScale(0.5, 0.5)}):Play()
+		PlayTween(ConfirmWindow, TWEEN_SPRING, {Position = UDim2.fromScale(0.5, 0.5)})
 
 		local ConfirmText = Instance.new("TextLabel", ConfirmWindow)
 		ConfirmText.Size = UDim2.new(1, -40, 0, 50)
@@ -6006,9 +6037,9 @@ local function BuildWindow(config)
 		CancelBtn.MouseButton1Click:Connect(function()
 			if confirmClosing then return end
 			confirmClosing = true
-			TweenService:Create(InteractionBlocker, TWEEN_FAST, {BackgroundTransparency = 1}):Play()
+			PlayTween(InteractionBlocker, TWEEN_FAST, {BackgroundTransparency = 1})
 			local closeInfo = TWEEN_FAST
-			TweenService:Create(ConfirmWindow, closeInfo, {Position = UDim2.fromScale(0.5, 0.45)}):Play()
+			PlayTween(ConfirmWindow, closeInfo, {Position = UDim2.fromScale(0.5, 0.45)})
 			task.wait(closeInfo.Time)
 			ConfirmWindow:Destroy()
 			InteractionBlocker.Visible = false
@@ -6131,19 +6162,19 @@ local function BuildWindow(config)
 		sidebarCollapsed = state
 		local targetWidth = state and SIDEBAR_ICON_WIDTH or SIDEBAR_FULL_WIDTH
 
-		TweenService:Create(SideBarMask, TWEEN_SMOOTH, {Size = UDim2.new(0, targetWidth, 1, 0)}):Play()
-		TweenService:Create(SideBar, TWEEN_SMOOTH, {Size = UDim2.new(0, targetWidth, 1, 0)}):Play()
-		TweenService:Create(VertDivider, TWEEN_SMOOTH, {Position = UDim2.new(0, targetWidth, 0, 0)}):Play()
-		TweenService:Create(Pages, TWEEN_SMOOTH, {Position = PG.Pos(targetWidth), Size = PG.Size(targetWidth)}):Play()
-		TweenService:Create(PG.Box, TWEEN_SMOOTH, {Position = PG.Pos(targetWidth), Size = PG.Size(targetWidth)}):Play()
+		PlayTween(SideBarMask, TWEEN_SMOOTH, {Size = UDim2.new(0, targetWidth, 1, 0)})
+		PlayTween(SideBar, TWEEN_SMOOTH, {Size = UDim2.new(0, targetWidth, 1, 0)})
+		PlayTween(VertDivider, TWEEN_SMOOTH, {Position = UDim2.new(0, targetWidth, 0, 0)})
+		PlayTween(Pages, TWEEN_SMOOTH, {Position = PG.Pos(targetWidth), Size = PG.Size(targetWidth)})
+		PlayTween(PG.Box, TWEEN_SMOOTH, {Position = PG.Pos(targetWidth), Size = PG.Size(targetWidth)})
 
 		if SidebarExpandCatcherRef then SidebarExpandCatcherRef.Visible = state end
 
 		for _, item in ipairs(hidableTabLabels) do
-			TweenService:Create(item.Label, TWEEN_FAST, {TextTransparency = state and 1 or 0}):Play()
+			PlayTween(item.Label, TWEEN_FAST, {TextTransparency = state and 1 or 0})
 			if item.Icon then
 				local iconX = state and ICON_COLLAPSED_X or ICON_EXPANDED_X
-				TweenService:Create(item.Icon, TWEEN_SMOOTH, {Position = UDim2.new(0, iconX, 0.5, -9)}):Play()
+				PlayTween(item.Icon, TWEEN_SMOOTH, {Position = UDim2.new(0, iconX, 0.5, -9)})
 			end
 		end
 	end
@@ -6262,14 +6293,14 @@ local function BuildWindow(config)
 		if activeDialogsCount > 0 then return end
 		if not KazeUI.IsResizing and not toggledMaximized then
 			Mouse.Icon = hoverCursor
-			TweenService:Create(ResizeHandle, TWEEN_HOVER, {ImageColor3 = KazeUI.GlowColor}):Play()
+			PlayTween(ResizeHandle, TWEEN_HOVER, {ImageColor3 = KazeUI.GlowColor})
 		end
 	end)
 
 	ResizeHandle.MouseLeave:Connect(function()
 		if not KazeUI.IsResizing then
 			Mouse.Icon = ""
-			TweenService:Create(ResizeHandle, TWEEN_HOVER, {ImageColor3 = KazeUI.CurrentTheme.MutedText}):Play()
+			PlayTween(ResizeHandle, TWEEN_HOVER, {ImageColor3 = KazeUI.CurrentTheme.MutedText})
 		end
 	end)
 
@@ -6312,7 +6343,7 @@ local function BuildWindow(config)
 			ResizeBlocker.Visible = true
 			LockCamera()
 			Mouse.Icon = hoverCursor
-			TweenService:Create(ResizeHandle, TWEEN_HOVER, {ImageColor3 = KazeUI.GlowColor}):Play()
+			PlayTween(ResizeHandle, TWEEN_HOVER, {ImageColor3 = KazeUI.GlowColor})
 
 			releaseResizeListeners()
 			resizeMoveConn = UIS.InputChanged:Connect(function(changed)
@@ -6329,7 +6360,7 @@ local function BuildWindow(config)
 					ResizeBlocker.Visible = false
 					UnlockCamera()
 					Mouse.Icon = ""
-					TweenService:Create(ResizeHandle, TWEEN_HOVER, {ImageColor3 = KazeUI.CurrentTheme.MutedText}):Play()
+					PlayTween(ResizeHandle, TWEEN_HOVER, {ImageColor3 = KazeUI.CurrentTheme.MutedText})
 				end
 			end)
 		end
@@ -6433,7 +6464,7 @@ local function BuildWindow(config)
 		activeDialogsCount = activeDialogsCount + 1
 
 		InteractionBlocker.Visible = true
-		TweenService:Create(InteractionBlocker, TWEEN_FAST, {BackgroundTransparency = 0.65}):Play()
+		PlayTween(InteractionBlocker, TWEEN_FAST, {BackgroundTransparency = 0.65})
 
 		local DialogFrame = Instance.new("Frame", Window)
 		DialogFrame.Name = "WindowDialog"
@@ -6451,7 +6482,7 @@ local function BuildWindow(config)
 		stroke.Thickness = 1.4
 		KazeUI:RegisterBorder(stroke)
 
-		TweenService:Create(DialogFrame, TWEEN_SPRING, {Position = UDim2.fromScale(0.5, 0.5)}):Play()
+		PlayTween(DialogFrame, TWEEN_SPRING, {Position = UDim2.fromScale(0.5, 0.5)})
 
 		local totalActions = #orderedActions
 		local shouldStack
@@ -6573,9 +6604,9 @@ local function BuildWindow(config)
 		local function closeDialog()
 			if dialogClosing then return end
 			dialogClosing = true
-			TweenService:Create(InteractionBlocker, TWEEN_FAST, {BackgroundTransparency = 1}):Play()
+			PlayTween(InteractionBlocker, TWEEN_FAST, {BackgroundTransparency = 1})
 			local closeInfo = TWEEN_FAST
-			TweenService:Create(DialogFrame, closeInfo, {Position = UDim2.fromScale(0.5, 0.4)}):Play()
+			PlayTween(DialogFrame, closeInfo, {Position = UDim2.fromScale(0.5, 0.4)})
 			task.wait(closeInfo.Time)
 			DialogFrame:Destroy()
 			InteractionBlocker.Visible = false
@@ -6631,17 +6662,17 @@ local function BuildWindow(config)
 				isHovered = true
 				if btnColor then
 					local h, s, v = Color3.toHSV(btnColor)
-					TweenService:Create(actionBtn, TWEEN_FAST, {BackgroundColor3 = Color3.fromHSV(h, s, math.clamp(v - 0.1, 0, 1))}):Play()
+					PlayTween(actionBtn, TWEEN_FAST, {BackgroundColor3 = Color3.fromHSV(h, s, math.clamp(v - 0.1, 0, 1))})
 				else
-					TweenService:Create(actionBtn, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.06)}):Play()
+					PlayTween(actionBtn, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.06)})
 				end
 			end)
 			actionBtn.MouseLeave:Connect(function()
 				isHovered = false
 				if btnColor then
-					TweenService:Create(actionBtn, TWEEN_FAST, {BackgroundColor3 = btnColor}):Play()
+					PlayTween(actionBtn, TWEEN_FAST, {BackgroundColor3 = btnColor})
 				else
-					TweenService:Create(actionBtn, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.04)}):Play()
+					PlayTween(actionBtn, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.04)})
 				end
 			end)
 
@@ -6698,7 +6729,7 @@ local function BuildWindow(config)
 		local shield
 		if depth == 1 then
 			InteractionBlocker.Visible = true
-			TweenService:Create(InteractionBlocker, TWEEN_FAST, {BackgroundTransparency = dim and 0.65 or 1}):Play()
+			PlayTween(InteractionBlocker, TWEEN_FAST, {BackgroundTransparency = dim and 0.65 or 1})
 		else
 			shield = Instance.new("TextButton")
 			shield.Name = "CardShield"
@@ -6712,7 +6743,7 @@ local function BuildWindow(config)
 			shield.ZIndex = z - 1
 			shield.Parent = Window
 			Instance.new("UICorner", shield).CornerRadius = blockerCorner.CornerRadius
-			TweenService:Create(shield, TWEEN_FAST, {BackgroundTransparency = dim and 0.55 or 1}):Play()
+			PlayTween(shield, TWEEN_FAST, {BackgroundTransparency = dim and 0.55 or 1})
 		end
 
 		local card = Instance.new("Frame")
@@ -6743,7 +6774,7 @@ local function BuildWindow(config)
 		cardList.HorizontalAlignment = Enum.HorizontalAlignment.Center
 		cardList.Padding = UDim.new(0, 8)
 
-		TweenService:Create(card, TWEEN_SPRING, {Position = UDim2.fromScale(0.5, 0.5)}):Play()
+		PlayTween(card, TWEEN_SPRING, {Position = UDim2.fromScale(0.5, 0.5)})
 
 		local function NewText(parent, text, font, size, muted, order)
 			local t = Instance.new("TextLabel")
@@ -6912,10 +6943,10 @@ local function BuildWindow(config)
 				if rowStatusColor then statusLabel.TextColor3 = rowStatusColor end
 
 				row.MouseEnter:Connect(function()
-					TweenService:Create(row, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.06)}):Play()
+					PlayTween(row, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.06)})
 				end)
 				row.MouseLeave:Connect(function()
-					TweenService:Create(row, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.03)}):Play()
+					PlayTween(row, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.03)})
 				end)
 				row.MouseButton1Click:Connect(function()
 					if typeof(it.OnClick) == "function" then task.spawn(it.OnClick) end
@@ -6942,11 +6973,11 @@ local function BuildWindow(config)
 			if closed then return end
 			closed = true
 			if depth == 1 then
-				TweenService:Create(InteractionBlocker, TWEEN_FAST, {BackgroundTransparency = 1}):Play()
+				PlayTween(InteractionBlocker, TWEEN_FAST, {BackgroundTransparency = 1})
 			elseif shield then
-				TweenService:Create(shield, TWEEN_FAST, {BackgroundTransparency = 1}):Play()
+				PlayTween(shield, TWEEN_FAST, {BackgroundTransparency = 1})
 			end
-			TweenService:Create(card, TWEEN_FAST, {Position = UDim2.fromScale(0.5, 0.45)}):Play()
+			PlayTween(card, TWEEN_FAST, {Position = UDim2.fromScale(0.5, 0.45)})
 			task.wait(TWEEN_FAST.Time)
 			card:Destroy()
 			if shield then shield:Destroy() end
@@ -6983,19 +7014,19 @@ local function BuildWindow(config)
 				btnText.TextColor3 = Color3.fromRGB(255, 255, 255)
 				btn.MouseEnter:Connect(function()
 					local h, sat, v = Color3.toHSV(btnColor)
-					TweenService:Create(btn, TWEEN_FAST, {BackgroundColor3 = Color3.fromHSV(h, sat, math.clamp(v - 0.1, 0, 1))}):Play()
+					PlayTween(btn, TWEEN_FAST, {BackgroundColor3 = Color3.fromHSV(h, sat, math.clamp(v - 0.1, 0, 1))})
 				end)
 				btn.MouseLeave:Connect(function()
-					TweenService:Create(btn, TWEEN_FAST, {BackgroundColor3 = btnColor}):Play()
+					PlayTween(btn, TWEEN_FAST, {BackgroundColor3 = btnColor})
 				end)
 			else
 				KazeUI:AddPanel(btn, 0.04)
 				KazeUI:RegisterText(btnText, false)
 				btn.MouseEnter:Connect(function()
-					TweenService:Create(btn, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.06)}):Play()
+					PlayTween(btn, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.06)})
 				end)
 				btn.MouseLeave:Connect(function()
-					TweenService:Create(btn, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.04)}):Play()
+					PlayTween(btn, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.04)})
 				end)
 			end
 
@@ -7339,7 +7370,7 @@ textConstraint.MaxTextSize = 14
 			for _, t in ipairs(self._Tabs) do
 				if t ~= tabEntry then
 					if t.Indicator.Visible then
-TweenService:Create(t.Button, TWEEN_FAST, {BackgroundTransparency = 1}):Play()
+PlayTween(t.Button, TWEEN_FAST, {BackgroundTransparency = 1})
 t.Indicator.Visible = false
 						t.Label.TextColor3 = KazeUI.CurrentTheme.MutedText
 						t.Icon.ImageColor3 = KazeUI.CurrentTheme.MutedText
@@ -7371,19 +7402,19 @@ t.Label.Font = Enum.Font.GothamMedium
 			end
 
 btn.BackgroundColor3 = KazeUI._PillBlue
-TweenService:Create(btn, TWEEN_FAST, {BackgroundTransparency = 0}):Play()
+PlayTween(btn, TWEEN_FAST, {BackgroundTransparency = 0})
 leftIndicator.Visible = true
 txt.TextColor3 = Color3.new(1, 1, 1)
 txt.Font = Enum.Font.GothamBold
 
-TweenService:Create(iconLabel, TWEEN_FAST, {ImageColor3 = Color3.new(1, 1, 1)}):Play()
+PlayTween(iconLabel, TWEEN_FAST, {ImageColor3 = Color3.new(1, 1, 1)})
 
 			page.Visible = true
 			if KazeUI.PerformanceMode then
 				page.Position = UDim2.new(0, 0, 0, 0)
 			else
 				page.Position = UDim2.new(1, 40, 0, 0)
-				TweenService:Create(page, TWEEN_SPRING, {Position = UDim2.new(0, 0, 0, 0)}):Play()
+				PlayTween(page, TWEEN_SPRING, {Position = UDim2.new(0, 0, 0, 0)})
 				AnimateComponentsIn(pageContent)
 			end
 		end
@@ -7399,9 +7430,9 @@ TweenService:Create(iconLabel, TWEEN_FAST, {ImageColor3 = Color3.new(1, 1, 1)}):
 					iconLabel.ImageColor3 = KazeUI.CurrentTheme.Text
 				else
 					btn.BackgroundColor3 = KazeUI.GetColor(0.04)
-					TweenService:Create(btn, TWEEN_FAST, {BackgroundTransparency = 0.5}):Play()
-					TweenService:Create(txt, TWEEN_FAST, {TextColor3 = KazeUI.CurrentTheme.Text}):Play()
-					TweenService:Create(iconLabel, TWEEN_FAST, {ImageColor3 = KazeUI.CurrentTheme.Text}):Play()
+					PlayTween(btn, TWEEN_FAST, {BackgroundTransparency = 0.5})
+					PlayTween(txt, TWEEN_FAST, {TextColor3 = KazeUI.CurrentTheme.Text})
+					PlayTween(iconLabel, TWEEN_FAST, {ImageColor3 = KazeUI.CurrentTheme.Text})
 				end
 			end
 		end)
@@ -7413,14 +7444,14 @@ TweenService:Create(iconLabel, TWEEN_FAST, {ImageColor3 = Color3.new(1, 1, 1)}):
 					txt.TextColor3 = KazeUI.CurrentTheme.MutedText
 					iconLabel.ImageColor3 = KazeUI.CurrentTheme.MutedText
 				else
-					TweenService:Create(btn, TWEEN_FAST, {BackgroundTransparency = 1}):Play()
-					TweenService:Create(txt, TWEEN_FAST, {TextColor3 = KazeUI.CurrentTheme.MutedText}):Play()
-					TweenService:Create(iconLabel, TWEEN_FAST, {ImageColor3 = KazeUI.CurrentTheme.MutedText}):Play()
+					PlayTween(btn, TWEEN_FAST, {BackgroundTransparency = 1})
+					PlayTween(txt, TWEEN_FAST, {TextColor3 = KazeUI.CurrentTheme.MutedText})
+					PlayTween(iconLabel, TWEEN_FAST, {ImageColor3 = KazeUI.CurrentTheme.MutedText})
 				end
 			end
 		end)
 		btn.MouseButton1Click:Connect(function()
-		TweenService:Create(btn, TWEEN_PRESS_SHORT, {Size = UDim2.new(1, -14, 0, 33)}):Play()
+		PlayTween(btn, TWEEN_PRESS_SHORT, {Size = UDim2.new(1, -14, 0, 33)})
 		if hidableTab then ResetSidebarIdleTimer() end
 		activate()
 	end)
@@ -7732,10 +7763,10 @@ function KazeUI:ShowGameSupportGate(config)
 		end
 
 		card.MouseEnter:Connect(function()
-			TweenService:Create(card, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor((isThisGame and 0.09 or 0.03) + 0.04)}):Play()
+			PlayTween(card, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor((isThisGame and 0.09 or 0.03) + 0.04)})
 		end)
 		card.MouseLeave:Connect(function()
-			TweenService:Create(card, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(isThisGame and 0.09 or 0.03)}):Play()
+			PlayTween(card, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(isThisGame and 0.09 or 0.03)})
 		end)
 
 		
@@ -7878,10 +7909,10 @@ function KazeUI:ShowGameSupportGate(config)
 		end)
 
 		btn.MouseEnter:Connect(function()
-			TweenService:Create(btn, TWEEN_FAST, {Size = UDim2.fromOffset(35, 35)}):Play()
+			PlayTween(btn, TWEEN_FAST, {Size = UDim2.fromOffset(35, 35)})
 		end)
 		btn.MouseLeave:Connect(function()
-			TweenService:Create(btn, TWEEN_FAST, {Size = UDim2.fromOffset(32, 32)}):Play()
+			PlayTween(btn, TWEEN_FAST, {Size = UDim2.fromOffset(32, 32)})
 		end)
 
 		return btn
@@ -7938,10 +7969,10 @@ function KazeUI:ShowGameSupportGate(config)
 	KazeUI:RegisterBorder(exitStroke)
 	ExitBtn.MouseButton1Click:Connect(function() closeGate(onExit) end)
 	ExitBtn.MouseEnter:Connect(function()
-		TweenService:Create(ExitBtn, TWEEN_FAST, {BackgroundTransparency = 0.88, BackgroundColor3 = KazeUI.GetColor(0.1)}):Play()
+		PlayTween(ExitBtn, TWEEN_FAST, {BackgroundTransparency = 0.88, BackgroundColor3 = KazeUI.GetColor(0.1)})
 	end)
 	ExitBtn.MouseLeave:Connect(function()
-		TweenService:Create(ExitBtn, TWEEN_FAST, {BackgroundTransparency = 1}):Play()
+		PlayTween(ExitBtn, TWEEN_FAST, {BackgroundTransparency = 1})
 	end)
 
 	local ContinueBtn = Instance.new("TextButton")
@@ -7963,16 +7994,16 @@ function KazeUI:ShowGameSupportGate(config)
 	ContinueBtn.MouseButton1Click:Connect(function() closeGate(onContinue) end)
 	ContinueBtn.MouseEnter:Connect(function()
 		local h, s, v = Color3.toHSV(KazeUI.GlowColor)
-		TweenService:Create(ContinueBtn, TWEEN_FAST, {BackgroundColor3 = Color3.fromHSV(h, s, math.clamp(v + 0.12, 0, 1))}):Play()
+		PlayTween(ContinueBtn, TWEEN_FAST, {BackgroundColor3 = Color3.fromHSV(h, s, math.clamp(v + 0.12, 0, 1))})
 	end)
 	ContinueBtn.MouseLeave:Connect(function()
-		TweenService:Create(ContinueBtn, TWEEN_FAST, {BackgroundColor3 = KazeUI.GlowColor}):Play()
+		PlayTween(ContinueBtn, TWEEN_FAST, {BackgroundColor3 = KazeUI.GlowColor})
 	end)
 
 	
 	Card.Size = UDim2.fromOffset(CARD_W, 0)
-	TweenService:Create(Backdrop, TWEEN_SMOOTH, {BackgroundTransparency = 0.45}):Play()
-	TweenService:Create(Card, TWEEN_SPRING, {Size = UDim2.fromOffset(CARD_W, CARD_H)}):Play()
+	PlayTween(Backdrop, TWEEN_SMOOTH, {BackgroundTransparency = 0.45})
+	PlayTween(Card, TWEEN_SPRING, {Size = UDim2.fromOffset(CARD_W, CARD_H)})
 
 	return {
 		Root = Backdrop,
