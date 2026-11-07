@@ -7123,6 +7123,244 @@ end
 
 		local public = {Button = btn, Page = page}
 		AttachElementsToAPI(public, pageContent, 1)
+
+		--------------------------------------------------
+		-- Sub-tabs: a slidable pill bar INSIDE this tab.
+		-- Tab:CreateSubTab({ Title = "Combat", Icon = "sword" }) returns an
+		-- object with all the usual component methods (Toggle, Button, Slider,
+		-- Section, ...). Only the selected sub-tab's content is shown. The bar
+		-- scrolls sideways -- drag it with the mouse or swipe it on touch -- so
+		-- you can add as many sub-tabs as you like.
+		--------------------------------------------------
+		local subBarHolder, subScroller
+		local subTabs = {}
+		local activeSub = nil
+		local subDragMoved = false
+		local activeDragStop = nil
+		local SUB_BAR_ORDER = -90
+		local SUB_CONTENT_ORDER = -50
+
+		local function styleSubPill(sub, on, instant)
+			local pill, label, icon = sub.Button, sub.Label, sub.Icon
+			local bg = on and KazeUI._PillBlue or KazeUI.GetColor(0.05)
+			local bgT = on and 0 or 0.25
+			local fg = on and Color3.new(1, 1, 1) or KazeUI.CurrentTheme.MutedText
+			if instant or KazeUI.PerformanceMode then
+				pill.BackgroundColor3 = bg
+				pill.BackgroundTransparency = bgT
+				label.TextColor3 = fg
+				if icon then icon.ImageColor3 = fg end
+			else
+				PlayTween(pill, TWEEN_FAST, {BackgroundColor3 = bg, BackgroundTransparency = bgT})
+				PlayTween(label, TWEEN_FAST, {TextColor3 = fg})
+				if icon then PlayTween(icon, TWEEN_FAST, {ImageColor3 = fg}) end
+			end
+			label.Font = on and Enum.Font.GothamBold or Enum.Font.GothamMedium
+		end
+
+		local function revealSubPill(pill)
+			if not subScroller then return end
+			local scale = UIScale.Scale > 0 and UIScale.Scale or 1
+			local viewW = subScroller.AbsoluteSize.X / scale
+			local maxX = math.max(0, subScroller.AbsoluteCanvasSize.X / scale - viewW)
+			local cur = subScroller.CanvasPosition.X
+			local left = (pill.AbsolutePosition.X - subScroller.AbsolutePosition.X) / scale + cur
+			local right = left + pill.AbsoluteSize.X / scale
+			local target = cur
+			if left < cur + 8 then
+				target = left - 8
+			elseif right > cur + viewW - 8 then
+				target = right - viewW + 8
+			end
+			target = math.clamp(target, 0, maxX)
+			if math.abs(target - cur) > 0.5 then
+				if KazeUI.PerformanceMode then
+					subScroller.CanvasPosition = Vector2.new(target, 0)
+				else
+					PlayTween(subScroller, TWEEN_SMOOTH, {CanvasPosition = Vector2.new(target, 0)})
+				end
+			end
+		end
+
+		local function setActiveSub(sub, animate)
+			if activeSub == sub then return end
+			activeSub = sub
+			for _, s in ipairs(subTabs) do
+				local on = (s == sub)
+				s.Content.Visible = on
+				styleSubPill(s, on, false)
+			end
+			if sub then
+				task.defer(revealSubPill, sub.Button)
+				if animate ~= false then AnimateComponentsIn(sub.Content) end
+			end
+		end
+
+		local function beginSubDrag(input)
+			if input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
+			if activeDragStop then activeDragStop() end
+			subDragMoved = false
+			local scale = UIScale.Scale > 0 and UIScale.Scale or 1
+			local startX = input.Position.X
+			local startCanvas = subScroller.CanvasPosition.X
+			local moveConn, endConn, focusConn
+			local function stop()
+				if activeDragStop == stop then activeDragStop = nil end
+				if moveConn then moveConn:Disconnect() moveConn = nil end
+				if endConn then endConn:Disconnect() endConn = nil end
+				if focusConn then focusConn:Disconnect() focusConn = nil end
+				-- the pill's Click fires right after release; keep the flag up for a beat so a drag never selects a pill
+				task.delay(0.08, function() subDragMoved = false end)
+			end
+			moveConn = UIS.InputChanged:Connect(function(i)
+				if i.UserInputType ~= Enum.UserInputType.MouseMovement then return end
+				local dx = (i.Position.X - startX) / scale
+				if math.abs(dx) > 5 then subDragMoved = true end
+				if subDragMoved then
+					local maxX = math.max(0, subScroller.AbsoluteCanvasSize.X / scale - subScroller.AbsoluteSize.X / scale)
+					subScroller.CanvasPosition = Vector2.new(math.clamp(startCanvas - dx, 0, maxX), 0)
+				end
+			end)
+			endConn = UIS.InputEnded:Connect(function(i)
+				if i.UserInputType == Enum.UserInputType.MouseButton1 then stop() end
+			end)
+			focusConn = UIS.WindowFocusReleased:Connect(stop)
+			activeDragStop = stop
+		end
+
+		local function ensureSubBar()
+			if subBarHolder then return end
+			subBarHolder = Instance.new("Frame")
+			subBarHolder.Name = "SubTabBar"
+			subBarHolder.Size = UDim2.new(0.95, 0, 0, 34)
+			subBarHolder.BackgroundTransparency = 1
+			subBarHolder.ClipsDescendants = true
+			subBarHolder.LayoutOrder = SUB_BAR_ORDER
+			subBarHolder.Parent = pageContent
+
+			subScroller = NewScroller()
+			subScroller.Name = "Slider"
+			subScroller.Size = UDim2.fromScale(1, 1)
+			subScroller.BackgroundTransparency = 1
+			subScroller.BorderSizePixel = 0
+			subScroller.ScrollBarThickness = 0
+			subScroller.ScrollingDirection = Enum.ScrollingDirection.X
+			subScroller.CanvasSize = UDim2.new(0, 0, 0, 0)
+			subScroller.AutomaticCanvasSize = Enum.AutomaticSize.X
+			subScroller.ElasticBehavior = Enum.ElasticBehavior.Always
+			subScroller.Parent = subBarHolder
+
+			local barLayout = Instance.new("UIListLayout", subScroller)
+			barLayout.FillDirection = Enum.FillDirection.Horizontal
+			barLayout.SortOrder = Enum.SortOrder.LayoutOrder
+			barLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+			barLayout.Padding = UDim.new(0, 6)
+
+			local barPad = Instance.new("UIPadding", subScroller)
+			barPad.PaddingLeft = UDim.new(0, 2)
+			barPad.PaddingRight = UDim.new(0, 2)
+
+			subScroller.InputBegan:Connect(beginSubDrag)
+			subBarHolder.Destroying:Connect(function()
+				if activeDragStop then activeDragStop() end
+			end)
+		end
+
+		function public:CreateSubTab(arg1, arg2)
+			local subName = tostring(type(arg1) == "table" and (arg1.Title or arg1.Name) or arg1 or "Sub Tab")
+			local subIconId = type(arg1) == "table" and arg1.Icon or arg2
+			local startSelected = type(arg1) == "table" and arg1.Default == true
+			ensureSubBar()
+
+			local pill = Instance.new("TextButton")
+			pill.Name = "SubTab_" .. subName
+			pill.AutoButtonColor = false
+			pill.BorderSizePixel = 0
+			pill.Text = ""
+			pill.Size = UDim2.new(0, 0, 0, 30)
+			pill.AutomaticSize = Enum.AutomaticSize.X
+			pill.LayoutOrder = #subTabs + 1
+			pill.Parent = subScroller
+			Instance.new("UICorner", pill).CornerRadius = UDim.new(1, 0)
+
+			local pillPad = Instance.new("UIPadding", pill)
+			pillPad.PaddingLeft = UDim.new(0, 14)
+			pillPad.PaddingRight = UDim.new(0, 14)
+
+			local pillLayout = Instance.new("UIListLayout", pill)
+			pillLayout.FillDirection = Enum.FillDirection.Horizontal
+			pillLayout.SortOrder = Enum.SortOrder.LayoutOrder
+			pillLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+			pillLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+			pillLayout.Padding = UDim.new(0, 6)
+
+			local pillIcon
+			if subIconId and subIconId ~= "" then
+				pillIcon = Instance.new("ImageLabel")
+				pillIcon.Size = UDim2.fromOffset(14, 14)
+				pillIcon.BackgroundTransparency = 1
+				pillIcon.Image = FormatImage(subIconId)
+				pillIcon.ScaleType = Enum.ScaleType.Fit
+				pillIcon.LayoutOrder = 1
+				pillIcon.Parent = pill
+			end
+
+			local pillLabel = Instance.new("TextLabel")
+			pillLabel.Size = UDim2.new(0, 0, 1, 0)
+			pillLabel.AutomaticSize = Enum.AutomaticSize.X
+			pillLabel.BackgroundTransparency = 1
+			pillLabel.Text = subName
+			pillLabel.Font = Enum.Font.GothamMedium
+			pillLabel.TextSize = 13
+			pillLabel.LayoutOrder = 2
+			pillLabel.Parent = pill
+
+			local content = Instance.new("Frame")
+			content.Name = "SubTabContent_" .. subName
+			content.BackgroundTransparency = 1
+			content.Size = UDim2.new(1, 0, 0, 0)
+			content.AutomaticSize = Enum.AutomaticSize.Y
+			content.LayoutOrder = SUB_CONTENT_ORDER
+			content.Visible = false
+			content.Parent = pageContent
+			local contentList = Instance.new("UIListLayout", content)
+			contentList.SortOrder = Enum.SortOrder.LayoutOrder
+			contentList.Padding = UDim.new(0, 5)
+			contentList.HorizontalAlignment = Enum.HorizontalAlignment.Center
+
+			local sub = {Button = pill, Label = pillLabel, Icon = pillIcon, Content = content}
+			table.insert(subTabs, sub)
+			styleSubPill(sub, false, true)
+
+			pill.MouseEnter:Connect(function()
+				if activeSub ~= sub then
+					PlayTween(pill, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.09), BackgroundTransparency = 0.1})
+				end
+			end)
+			pill.MouseLeave:Connect(function()
+				if activeSub ~= sub then styleSubPill(sub, false, false) end
+			end)
+			pill.InputBegan:Connect(beginSubDrag)
+			pill.MouseButton1Click:Connect(function()
+				if subDragMoved or activeDialogsCount > 0 then return end
+				setActiveSub(sub, true)
+			end)
+
+			KazeUI:OnThemeChanged(pill, function()
+				styleSubPill(sub, activeSub == sub, true)
+			end)
+
+			if startSelected or #subTabs == 1 then
+				setActiveSub(sub, false)
+			end
+
+			local subApi = {Button = pill, Page = content}
+			AttachElementsToAPI(subApi, content, 1)
+			function subApi:Select() setActiveSub(sub, true) end
+			return subApi
+		end
+		public.SubTab = public.CreateSubTab
+
 		return public
 	end
 
