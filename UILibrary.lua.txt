@@ -2014,6 +2014,34 @@ local function ToggleScrollingAncestors(element, state)
 	end
 end
 
+function KazeUI._RevealElement(frame)
+	if KazeUI._NoReveal then return end
+	local scroller = frame:FindFirstAncestorWhichIsA("ScrollingFrame")
+	if not scroller then return end
+	local conn
+	local function adjust()
+		if not frame.Parent or not scroller.Parent then
+			if conn then conn:Disconnect() conn = nil end
+			return
+		end
+		local topY = frame.AbsolutePosition.Y - scroller.AbsolutePosition.Y
+		local bottomY = topY + frame.AbsoluteSize.Y
+		local viewH = scroller.AbsoluteSize.Y
+		local delta = 0
+		if bottomY > viewH - 10 then delta = bottomY - viewH + 10 end
+		if topY - delta < 6 then delta = topY - 6 end
+		if delta ~= 0 then
+			local cur = scroller.CanvasPosition
+			scroller.CanvasPosition = Vector2.new(cur.X, math.max(0, cur.Y + delta))
+		end
+	end
+	conn = frame:GetPropertyChangedSignal("AbsoluteSize"):Connect(adjust)
+	task.delay(0.7, function()
+		if conn then conn:Disconnect() conn = nil end
+	end)
+	task.defer(adjust)
+end
+
 local TWEEN_CASCADE = TweenInfo.new(0.45, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
 local CASCADE_STAGGER = 0.06
 local CASCADE_RISE = 26
@@ -2531,6 +2559,7 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 			if itemsStale then Refresh(options) else CalcHeight() end
 			TweenService:Create(arrowIcon, TWEEN_SPRING, {Rotation = 180}):Play()
 			StartNeonLoop(boxStroke)
+			KazeUI._RevealElement(wrapper)
 		else
 			CloseDropdown()
 		end
@@ -3031,6 +3060,7 @@ local function CreateBoxDropdown(parentFrame, title, options, defaultOption, cal
 		TweenService:Create(arrowIcon, TWEEN_SPRING, {Rotation = isOpen and 180 or 0}):Play()
 		if isOpen then
 			StartNeonLoop(boxStroke)
+			KazeUI._RevealElement(wrapper)
 		else
 			StopNeonLoop(boxStroke)
 			TweenService:Create(boxStroke, TWEEN_FAST, {Color = KazeUI.CurrentTheme.Border}):Play()
@@ -4386,6 +4416,7 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 		TweenService:Create(arrowIcon, TWEEN_SPRING, {Rotation = isOpen and 180 or 0}):Play()
 		if isOpen then
 			StartNeonLoop(boxStroke)
+			KazeUI._RevealElement(wrapper)
 		else
 			StopNeonLoop(boxStroke)
 			TweenService:Create(boxStroke, TWEEN_FAST, {Color = KazeUI.CurrentTheme.Border}):Play()
@@ -4981,6 +5012,7 @@ CreateCollapsibleSection = function(parentFrame, titleArg, currentDepth)
 			}):Play()
 			StartNeonLoop(boxStroke)
 			StartNeonLoop(accentLine)
+			KazeUI._RevealElement(sectionWrapper)
 		else
 			TweenService:Create(arrowIcon, TWEEN_COLLAPSE, {
 				Rotation = -90,
@@ -5019,7 +5051,7 @@ CreateCollapsibleSection = function(parentFrame, titleArg, currentDepth)
 		toggleSection
 	)
 
-	if openDefault then toggleSection() end
+	if openDefault then KazeUI._NoReveal = true toggleSection() KazeUI._NoReveal = false end
 
 	local sectionPublic = { Frame = sectionBox, ContentFrame = sectionContent, Header = headerFrame }
 	AttachElementsToAPI(sectionPublic, sectionContent, currentDepth + 1)
@@ -5180,6 +5212,7 @@ CreateGroupBox = function(parentFrame, titleArg, currentDepth, depthOverride)
 			}):Play()
 			StartNeonLoop(stroke)
 			StartNeonLoop(accentLine)
+			KazeUI._RevealElement(wrapper)
 		else
 			TweenService:Create(arrowIcon, TWEEN_COLLAPSE, {
 				Rotation = -90,
@@ -5217,7 +5250,7 @@ CreateGroupBox = function(parentFrame, titleArg, currentDepth, depthOverride)
 		toggleGroup()
 	end)
 
-	if openDefault then toggleGroup() end
+	if openDefault then KazeUI._NoReveal = true toggleGroup() KazeUI._NoReveal = false end
 
 	local groupPublic = {
 		Frame = groupFrame,
@@ -7317,29 +7350,33 @@ local function BuildWindow(config)
 		card.Name = "KazeCard"
 		card.AnchorPoint = Vector2.new(0.5, 0.5)
 		card.Position = UDim2.fromScale(0.5, 0.45)
-		card.Size = UDim2.fromOffset(300, 0)
+		card.Size = UDim2.fromOffset(340, 0)
 		card.AutomaticSize = Enum.AutomaticSize.Y
 		card.ZIndex = z
 		card.Active = true
-		card.BackgroundTransparency = 0.08
+		card.BackgroundTransparency = 0.02
 		card.Parent = Window
-		Instance.new("UICorner", card).CornerRadius = UDim.new(0, 14)
+		Instance.new("UICorner", card).CornerRadius = UDim.new(0, 18)
 		KazeUI:AddPanel(card, 0.04, false, true)
+
+		local cardScale = Instance.new("UIScale", card)
+		cardScale.Scale = 0.94
+		TweenService:Create(cardScale, TWEEN_SPRING, {Scale = 1}):Play()
 
 		local cardStroke = Instance.new("UIStroke", card)
 		cardStroke.Thickness = 1.4
 		KazeUI:RegisterBorder(cardStroke)
 
 		local cardPad = Instance.new("UIPadding", card)
-		cardPad.PaddingTop = UDim.new(0, 16)
-		cardPad.PaddingBottom = UDim.new(0, 16)
-		cardPad.PaddingLeft = UDim.new(0, 16)
-		cardPad.PaddingRight = UDim.new(0, 16)
+		cardPad.PaddingTop = UDim.new(0, 18)
+		cardPad.PaddingBottom = UDim.new(0, 18)
+		cardPad.PaddingLeft = UDim.new(0, 18)
+		cardPad.PaddingRight = UDim.new(0, 18)
 
 		local cardList = Instance.new("UIListLayout", card)
 		cardList.SortOrder = Enum.SortOrder.LayoutOrder
 		cardList.HorizontalAlignment = Enum.HorizontalAlignment.Center
-		cardList.Padding = UDim.new(0, 8)
+		cardList.Padding = UDim.new(0, 10)
 
 		TweenService:Create(card, TWEEN_SPRING, {Position = UDim2.fromScale(0.5, 0.5)}):Play()
 
@@ -7370,7 +7407,8 @@ local function BuildWindow(config)
 			holder.ZIndex = z + 1
 			holder.Parent = card
 			Instance.new("UICorner", holder).CornerRadius = UDim.new(0, 14)
-			KazeUI:AddPanel(holder, 0.06)
+			KazeUI:AddPanel(holder, 0.06, false, true)
+			holder.BackgroundTransparency = 0.2
 			local holderStroke = Instance.new("UIStroke", holder)
 			holderStroke.Thickness = 1
 			KazeUI:RegisterBorder(holderStroke)
@@ -7467,8 +7505,9 @@ local function BuildWindow(config)
 				row.LayoutOrder = i
 				row.ZIndex = z + 2
 				row.Parent = scroll
-				Instance.new("UICorner", row).CornerRadius = UDim.new(0, 10)
-				KazeUI:AddPanel(row, 0.03)
+				Instance.new("UICorner", row).CornerRadius = UDim.new(0, 12)
+				KazeUI:AddPanel(row, 0.03, false, true)
+				row.BackgroundTransparency = 0.2
 
 				local thumb = Instance.new("ImageLabel")
 				thumb.Position = UDim2.fromOffset(8, 6)
@@ -7523,10 +7562,21 @@ local function BuildWindow(config)
 			end
 		end
 
+		local cardDivider = Instance.new("Frame")
+		cardDivider.Name = "Divider"
+		cardDivider.Size = UDim2.new(1, 0, 0, 1)
+		cardDivider.BorderSizePixel = 0
+		cardDivider.BackgroundColor3 = KazeUI.CurrentTheme.Border
+		cardDivider.BackgroundTransparency = 0.5
+		cardDivider.LayoutOrder = 6
+		cardDivider.ZIndex = z + 1
+		cardDivider.Parent = card
+		KazeUI:OnThemeChanged(cardDivider, function(t) cardDivider.BackgroundColor3 = t.Border end)
+
 		local actionsFrame = Instance.new("Frame")
-		actionsFrame.Size = UDim2.new(1, 0, 0, 34)
+		actionsFrame.Size = UDim2.new(1, 0, 0, 36)
 		actionsFrame.BackgroundTransparency = 1
-		actionsFrame.LayoutOrder = 6
+		actionsFrame.LayoutOrder = 7
 		actionsFrame.ZIndex = z + 1
 		actionsFrame.Parent = card
 		local actionsLayout = Instance.new("UIListLayout", actionsFrame)
@@ -7556,14 +7606,14 @@ local function BuildWindow(config)
 		local n = #actions
 		for i, act in ipairs(actions) do
 			local btn = Instance.new("TextButton")
-			btn.Size = UDim2.new(1 / n, -math.floor(8 * (n - 1) / n), 0, 34)
+			btn.Size = UDim2.new(1 / n, -math.floor(8 * (n - 1) / n), 0, 36)
 			btn.AutoButtonColor = false
 			btn.Text = ""
 			btn.BorderSizePixel = 0
 			btn.LayoutOrder = i
 			btn.ZIndex = z + 2
 			btn.Parent = actionsFrame
-			Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 10)
+			Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 12)
 
 			local btnText = Instance.new("TextLabel")
 			btnText.Size = UDim2.new(1, -12, 1, 0)
@@ -7587,7 +7637,8 @@ local function BuildWindow(config)
 					TweenService:Create(btn, TWEEN_FAST, {BackgroundColor3 = btnColor}):Play()
 				end)
 			else
-				KazeUI:AddPanel(btn, 0.04)
+				KazeUI:AddPanel(btn, 0.04, false, true)
+				btn.BackgroundTransparency = 0.1
 				KazeUI:RegisterText(btnText, false)
 				btn.MouseEnter:Connect(function()
 					TweenService:Create(btn, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.06)}):Play()
