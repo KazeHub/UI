@@ -20,29 +20,37 @@ KazeUI.Themes = {
 		MutedText = Color3.fromRGB(200, 200, 215),
 		Border = Color3.fromRGB(140, 140, 235),
 		LightnessFactor = 1.4,
+		BackgroundImage = "rbxassetid://13963496525",
+		BackgroundImageTransparency = 1,
+		OverlayTransparency = 1,
 		PanelTransparency = 0
 	},
-	Custom = {
+	CustomWallpaper = {
 		Name = "Custom",
 		Background = Color3.fromRGB(12, 12, 14),
 		Text = Color3.fromRGB(255, 255, 255),
 		MutedText = Color3.fromRGB(215, 210, 225),
 		Border = Color3.fromRGB(175, 175, 190),
 		LightnessFactor = 1,
-		PanelTransparency = 0
+		BackgroundImage = "https://pbs.twimg.com/media/Gu-hWtyX0AA5-5s.jpg",
+		BackgroundImageTransparency = 0,
+		OverlayTransparency = 0.7,
+		PanelTransparency = 1
 	}
 }
 
-local ACCENT = Color3.fromRGB(59, 130, 246)
-
-KazeUI.CurrentTheme = KazeUI.Themes.Custom
-KazeUI.CurrentThemeKey = "Custom"
+KazeUI.CurrentTheme = KazeUI.Themes.CustomWallpaper
+KazeUI.CurrentThemeKey = "CustomWallpaper"
+KazeUI.GlowColor = Color3.fromRGB(59, 130, 246)
+KazeUI.GlowMode = "Static"
+KazeUI.GlowRainbow = false
 function KazeUI._EscapeRich(str)
 	return (string.gsub(string.gsub(string.gsub(tostring(str), "&", "&amp;"), "<", "&lt;"), ">", "&gt;"))
 end
 KazeUI.PerformanceMode = false
 KazeUI._PillBlue = Color3.fromRGB(59, 130, 246)
 KazeUI._PreloadSet = {}
+KazeUI._userSetGlow = false
 KazeUI.BackgroundColor = KazeUI.CurrentTheme.Background
 KazeUI.BackgroundTransparency = 0.60
 KazeUI.Flags = {}
@@ -56,38 +64,12 @@ KazeUI.TextElements = {}
 KazeUI.MutedTextElements = {}
 KazeUI.BorderElements = {}
 KazeUI.ThemeCallbacks = {}
+KazeUI.WallpaperElements = {}
 
+KazeUI.GlowElements = {}
+KazeUI.NeonTweens = {}
 KazeUI.PanelElements = {}
-
-local ActiveTweens = setmetatable({}, {__mode = "k"})
-local function PlayTween(inst, info, props)
-	local list = ActiveTweens[inst]
-	if list then
-		for i = #list, 1, -1 do
-			local e = list[i]
-			local state = e.Tween.PlaybackState
-			if state ~= Enum.PlaybackState.Playing and state ~= Enum.PlaybackState.Delayed then
-				table.remove(list, i)
-			elseif not e.Info.Reverses and not info.Reverses and e.Info.RepeatCount == 0 and info.RepeatCount == 0 then
-				local covered = true
-				for k in pairs(e.Props) do
-					if props[k] == nil then covered = false break end
-				end
-				if covered then
-					e.Tween:Cancel()
-					table.remove(list, i)
-				end
-			end
-		end
-	else
-		list = {}
-		ActiveTweens[inst] = list
-	end
-	local tw = TweenService:Create(inst, info, props)
-	list[#list + 1] = {Tween = tw, Props = props, Info = info}
-	tw:Play()
-	return tw
-end
+KazeUI.GlowCallbacks = {}
 
 local TWEEN_FAST_NORMAL = TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 local TWEEN_SPRING_NORMAL = TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
@@ -117,11 +99,47 @@ local TWEEN_PRESS = TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirect
 local TWEEN_QUICK = TweenInfo.new(0.1)
 local TWEEN_HOVER = TweenInfo.new(0.12)
 local TWEEN_HOVER_SLOW = TweenInfo.new(0.15)
+local PlayTween
+do
+local ActiveTweens = setmetatable({}, {__mode = "k"})
+PlayTween = function(inst, info, props)
+	local list = ActiveTweens[inst]
+	if list then
+		for i = #list, 1, -1 do
+			local e = list[i]
+			local state = e.Tween.PlaybackState
+			if state ~= Enum.PlaybackState.Playing and state ~= Enum.PlaybackState.Delayed then
+				table.remove(list, i)
+			elseif not e.Info.Reverses and not info.Reverses and e.Info.RepeatCount == 0 and info.RepeatCount == 0 then
+				local covered = true
+				for k in pairs(e.Props) do
+					if props[k] == nil then covered = false break end
+				end
+				if covered then
+					e.Tween:Cancel()
+					table.remove(list, i)
+				end
+			end
+		end
+	else
+		list = {}
+		ActiveTweens[inst] = list
+	end
+	local tw = TweenService:Create(inst, info, props)
+	list[#list + 1] = {Tween = tw, Props = props, Info = info}
+	tw:Play()
+	return tw
+end
+end
+
 local TWEEN_PANEL = TweenInfo.new(0.3, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
 local TWEEN_WINDOW_OPEN = TweenInfo.new(0.5, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
 local TWEEN_EMPTY_IN = TweenInfo.new(0.25, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
 local TWEEN_EMPTY_OUT = TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+local TWEEN_LOAD = TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+local TWEEN_LOAD_SHORT = TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 local TWEEN_LOAD_BAR = TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+local TWEEN_LOAD_POP = TweenInfo.new(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
 local TWEEN_LOAD_FADE = TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
 local TWEEN_LOAD_SPIN = TweenInfo.new(1.1, Enum.EasingStyle.Linear, Enum.EasingDirection.InOut, -1, false)
 local TWEEN_LOAD_PULSE = TweenInfo.new(1.4, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true)
@@ -200,6 +218,16 @@ if not success or not parent then
 	parent = LP:WaitForChild("PlayerGui", 15)
 end
 
+-- Repeated initialization: if the loader (`loadstring(game:HttpGet(...))()`)
+-- gets executed again -- re-running the exploit menu, a hot-reload, whatever
+-- -- the whole module re-runs from scratch and used to just create a second
+-- full set of ScreenGuis on top of the first, leaving the old instance's
+-- RunService loops, UIS connections, and camera listener running forever
+-- alongside the new one. Destroy any prior instance owned by this library
+-- (identified by the same fixed names it always creates) before building a
+-- new one; each old ScreenGui already wires `Destroying:Connect(ShutdownRuntime)`
+-- (see below), so destroying it tears down that old instance's own runtime
+-- connections too.
 for _, guiName in ipairs({"KazeUI", "KazeUI_OpenButton", "KazeUI_Dialogs", "KazeUINotifications"}) do
 	local existing = parent:FindFirstChild(guiName)
 	if existing then
@@ -245,6 +273,21 @@ CameraLocker.Modal = false
 CameraLocker.Visible = true
 CameraLocker.Parent = ScreenGui
 
+-- GuiObject.Modal = true blocks ALL player input -- movement, jump, camera,
+-- everything -- until set back to false, regardless of the object's own size
+-- or visibility. Several features (window drag, slider drag, color-picker
+-- hue/map drag) lock/unlock this around a gesture, but each only released it
+-- through its own InputEnded handling for that one input object. If that
+-- specific event ever failed to fire -- losing OS focus mid-drag (alt-tab),
+-- a touch getting interrupted, anything cutting the gesture short before a
+-- clean release -- the lock stuck on forever and silently disabled the
+-- player's movement and jump with no way back short of reloading.
+--
+-- Fixed with two things: a depth counter so overlapping locks from different
+-- features don't release each other early, and a global safety net that
+-- force-clears the lock shortly after ANY mouse/touch input ends or the game
+-- window loses focus, regardless of whether the feature that locked it ever
+-- got to run its own cleanup.
 local cameraLockDepth = 0
 
 local function LockCamera()
@@ -269,9 +312,9 @@ end
 local cameraLockWatchdogConn = UIS.InputEnded:Connect(function(input)
 	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 		if cameraLockDepth > 0 then
-			
-			
-			
+			-- Give whatever feature locked it a moment to run its own normal
+			-- release first; if it already did (depth back to 0), this is a
+			-- no-op. If it didn't, this is the backstop that catches it.
 			task.delay(0.15, ForceUnlockCamera)
 		end
 	end
@@ -309,7 +352,7 @@ NotifScale.Parent = NotifScreenGui
 
 local function UpdateScale()
 	local camera = workspace.CurrentCamera
-	if not camera then return end 
+	if not camera then return end -- camera can be briefly nil around respawn/teleport; skip this tick, the next ViewportSize/CurrentCamera change will re-run it
 
 	local size = camera.ViewportSize
 	local width, height = size.X, size.Y
@@ -341,6 +384,14 @@ local function UpdateScale()
 	NotifScreenGui.IgnoreGuiInset = true
 end
 
+-- Camera lifecycle: `workspace.CurrentCamera` can be nil momentarily and can
+-- be REPLACED outright (character respawn, teleport, certain camera scripts
+-- swapping it) -- the old code connected to the ViewportSize of whatever
+-- camera existed at load time and never noticed if that camera object was
+-- later swapped out, silently going stale. We now track the camera-specific
+-- connection separately from the "camera changed" connection so both can be
+-- torn down cleanly, and we reconnect automatically whenever the camera itself
+-- changes.
 local viewportConn = nil
 local function RewireCameraListener()
 	if viewportConn then
@@ -362,13 +413,13 @@ pcall(function()
 	if game and game.HttpGet then
 		local rawIcons = game:HttpGet("https://raw.githubusercontent.com/KazeHub/UI/refs/heads/main/Icons.lua.txt")
 		if rawIcons then
-			
-			
-			
-			
-			
-			
-			
+			-- Remote loading safety: try structured JSON first and only fall
+			-- back to executing the fetched text as Lua if it genuinely isn't
+			-- JSON. This used to be the other way around -- `loadstring` ran
+			-- unconditionally on every load before JSON was ever attempted,
+			-- executing whatever came back from the URL with no validation.
+			-- The loadstring fallback is kept (not removed) so an icon file
+			-- published as plain Lua still keeps working.
 			local s, res = pcall(function() return HttpService:JSONDecode(rawIcons) end)
 			if not s or type(res) ~= "table" then
 				s, res = pcall(function()
@@ -463,10 +514,43 @@ local function FormatImage(id)
 	return result
 end
 
+local function ApplyWallpaper(theme)
+	theme = theme or KazeUI.CurrentTheme
+	if not theme then return end
+
+	local bgImgId = theme.BackgroundImage or ""
+	local bgImgTrans = theme.BackgroundImageTransparency or 1
+	local bgOverlayTrans = theme.OverlayTransparency or 0.25
+	local hasImage = (bgImgId ~= "") and (bgImgTrans < 1) and not KazeUI.PerformanceMode
+
+	local formatted = hasImage and FormatImage(bgImgId) or nil
+	local imgTarget = hasImage and bgImgTrans or 1
+	local overlayTarget = hasImage and bgOverlayTrans or 1
+
+	for _, wp in ipairs(KazeUI.WallpaperElements) do
+		local img = wp.ImageLabel
+		if img and img.Parent then
+			if hasImage and img.Image ~= formatted then
+				img.Image = formatted
+			end
+			if math.abs(img.ImageTransparency - imgTarget) > 0.001 then
+				TweenService:Create(img, TWEEN_SMOOTH, {ImageTransparency = imgTarget}):Play()
+			end
+			local overlay = wp.OverlayFrame
+			if overlay and math.abs(overlay.BackgroundTransparency - overlayTarget) > 0.001 then
+				TweenService:Create(overlay, TWEEN_SMOOTH, {BackgroundTransparency = overlayTarget}):Play()
+			end
+		end
+	end
+end
+
 local TrackState = setmetatable({}, {__mode = "k"})
 local Registered = setmetatable({}, {__mode = "k"})
 local Destroyed = setmetatable({}, {__mode = "k", __index = function(_, k) return TrackState[k] == true end})
+local GlowTargetSet = setmetatable({}, {__mode = "k"})
 local ScrollerRegistry = setmetatable({}, {__mode = "k"})
+local FrozenGlow = {}
+local glowDirty = true
 local prunePending = false
 
 local function NewScroller()
@@ -496,7 +580,12 @@ local function PruneRegistries()
 	CompactList(KazeUI.MutedTextElements)
 	CompactList(KazeUI.BorderElements)
 	CompactList(KazeUI.ThemeCallbacks, "Inst")
+	CompactList(KazeUI.GlowCallbacks, "Inst")
 	CompactList(KazeUI.PanelElements, "Inst")
+	CompactList(KazeUI.WallpaperElements, "ImageLabel")
+	CompactList(KazeUI.GlowElements, "Target")
+	CompactList(FrozenGlow, "Target")
+	glowDirty = true
 end
 
 local function TrackDestroy(inst)
@@ -509,6 +598,14 @@ local function TrackDestroy(inst)
 			task.defer(PruneRegistries)
 		end
 	end)
+end
+
+function KazeUI:OnGlowChanged(inst, callback)
+	table.insert(KazeUI.GlowCallbacks, {Inst = inst, Callback = callback})
+	pcall(callback, KazeUI.GlowColor)
+	if inst and typeof(inst) == "Instance" then
+		TrackDestroy(inst)
+	end
 end
 
 function KazeUI:RegisterText(inst, isMuted)
@@ -666,7 +763,7 @@ end
 function KazeUI:OnThemeChanged(inst, cb)
 	if not inst then return end
 	table.insert(KazeUI.ThemeCallbacks, {Inst = inst, Callback = cb})
-	pcall(cb, KazeUI.CurrentTheme)
+	task.spawn(cb, KazeUI.CurrentTheme)
 	TrackDestroy(inst)
 end
 
@@ -834,14 +931,14 @@ end
 function KazeUI:SetBackgroundColor(color)
 	if typeof(color) ~= "Color3" then return end
 
-	
-	
-	
-	
-	
-	
-	
-	
+	-- The `color` argument used to be dropped entirely: every panel was
+	-- re-shaded from KazeUI.CurrentTheme.Background (unchanged), so calling
+	-- this with a custom color had no visible effect. KazeUI.GetColor derives
+	-- every panel's elevation shade from KazeUI.CurrentTheme.Background, so to
+	-- make a custom color actually take effect (and stay in effect for any
+	-- panel added afterwards via AddPanel), update that source value too --
+	-- the same thing SetTheme already does when it hands SetBackgroundColor a
+	-- theme's background color.
 	KazeUI.BackgroundColor = color
 	if KazeUI.CurrentTheme then
 		KazeUI.CurrentTheme.Background = color
@@ -872,9 +969,86 @@ function KazeUI:SetTransparency(alpha)
 end
 
 function KazeUI:SetTheme(themeName)
-	local targetTheme = KazeUI.Themes[themeName] or KazeUI.Themes.Custom
+	local targetTheme = KazeUI.Themes[themeName]
+
+	if not targetTheme and type(themeName) == "string" and (string.find(themeName, "^http://") or string.find(themeName, "^https://")) then
+
+		KazeUI.Themes.CustomWallpaper.BackgroundImage = themeName
+		KazeUI.Themes.CustomWallpaper.BackgroundImageTransparency = 0
+		KazeUI.Themes.CustomWallpaper.OverlayTransparency = 0.7
+		KazeUI.Themes.CustomWallpaper.PanelTransparency = 1
+		targetTheme = KazeUI.Themes.CustomWallpaper
+
+		local themeUrl = themeName
+		local lowerUrl = string.lower(themeName)
+		local isImageLink = string.find(lowerUrl, "%.png") or string.find(lowerUrl, "%.jpg") or string.find(lowerUrl, "%.jpeg")
+			or string.find(lowerUrl, "%.webp") or string.find(lowerUrl, "%.gif") or string.find(lowerUrl, "/media/") or string.find(lowerUrl, "/images")
+		if not isImageLink then task.spawn(function()
+			local success, rawTheme = pcall(function()
+				return game:HttpGet(themeUrl)
+			end)
+			if not (success and rawTheme) then return end
+
+			local themeTable = nil
+			local s, parsed = pcall(function()
+				return HttpService:JSONDecode(rawTheme)
+			end)
+			if s and type(parsed) == "table" then
+				themeTable = parsed
+			else
+				local s2, func = pcall(loadstring, rawTheme)
+				if s2 and func then
+					local s3, res = pcall(func)
+					if s3 and type(res) == "table" then
+						themeTable = res
+					end
+				end
+			end
+
+			if not themeTable then return end
+
+			local function parseColor(val)
+				if typeof(val) == "Color3" then
+					return val
+				elseif type(val) == "string" then
+					local cleanHex = string.gsub(val, "#", "")
+					local s4, res = pcall(function() return Color3.fromHex(cleanHex) end)
+					if s4 and res then return res end
+				elseif type(val) == "table" then
+					local r = val.r or val.R or val[1] or 0
+					local g = val.g or val.G or val[2] or 0
+					local b = val.b or val.B or val[3] or 0
+					if r > 1 or g > 1 or b > 1 then
+						return Color3.fromRGB(r, g, b)
+					else
+						return Color3.new(r, g, b)
+					end
+				end
+				return nil
+			end
+
+			KazeUI.Themes.CustomWallpaper.Background = parseColor(themeTable.Background) or Color3.fromRGB(12, 12, 14)
+			KazeUI.Themes.CustomWallpaper.Text = parseColor(themeTable.Text) or Color3.fromRGB(255, 255, 255)
+			KazeUI.Themes.CustomWallpaper.MutedText = parseColor(themeTable.MutedText) or Color3.fromRGB(215, 210, 225)
+			KazeUI.Themes.CustomWallpaper.Border = parseColor(themeTable.Border) or Color3.fromRGB(55, 55, 60)
+			KazeUI.Themes.CustomWallpaper.LightnessFactor = tonumber(themeTable.LightnessFactor) or 1
+			KazeUI.Themes.CustomWallpaper.BackgroundImage = tostring(themeTable.BackgroundImage or themeUrl)
+			KazeUI.Themes.CustomWallpaper.BackgroundImageTransparency = tonumber(themeTable.BackgroundImageTransparency) or 0.1
+			KazeUI.Themes.CustomWallpaper.OverlayTransparency = tonumber(themeTable.OverlayTransparency) or 0.65
+
+			if KazeUI.CurrentTheme == KazeUI.Themes.CustomWallpaper then
+				KazeUI:SetTheme("CustomWallpaper")
+			end
+		end) end
+	end
+
+	targetTheme = targetTheme or KazeUI.Themes[themeName] or KazeUI.Themes.CustomWallpaper
 	KazeUI.CurrentTheme = targetTheme
-	KazeUI.CurrentThemeKey = KazeUI.Themes[themeName] and themeName or "Custom"
+	-- Track the actual Themes[] key (not just the table), so code like Performance
+	-- Mode can save "what theme was selected" and later restore it by name --
+	-- the table alone isn't enough since a raw wallpaper URL and the
+	-- "CustomWallpaper" key both resolve to the same table.
+	KazeUI.CurrentThemeKey = KazeUI.Themes[themeName] and themeName or "CustomWallpaper"
 	KazeUI.BackgroundColor = targetTheme.Background
 
 	KazeUI:SetBackgroundColor(targetTheme.Background)
@@ -893,9 +1067,546 @@ function KazeUI:SetTheme(themeName)
 		if inst and inst.Parent then inst.Color = targetTheme.Border end
 	end
 
+	ApplyWallpaper(targetTheme)
+
 	for _, data in ipairs(KazeUI.ThemeCallbacks) do
 		if data.Inst and data.Inst.Parent then pcall(data.Callback, targetTheme) end
 	end
+end
+
+local GLOW_BREATHE_PERIOD = 4.0
+
+local GLOW_SEQUENCE_PERIOD = 6.0
+local GLOW_SEQUENCE_STOPS = {0, 45, -40, 85}
+local GLOW_SEQUENCE_RAINBOW_STOPS = {0, 90, 180, 270}
+local GLOW_SEQUENCE_ROTATE_SECONDS = 3.5
+
+local GLOW_PULSE_ATTACK = 0.16
+local GLOW_PULSE_DECAY = 0.85
+
+local GLOW_CHASE_PERIOD = 2.2
+local GLOW_CHASE_STAGGER = 0.09
+local GLOW_CHASE_WIDTH = 2.6
+
+local GLOW_RAINBOW_BREATHE_SPEED = 40
+
+local glowClock = 0
+
+local function BuildGlowGradientSequence()
+	local baseH = Color3.toHSV(KazeUI.GlowColor)
+	local baseS, baseV = 1, 1
+
+	local keypoints = {}
+	if KazeUI.GlowRainbow then
+
+		local stopCount = 7
+		for i = 0, stopCount - 1 do
+			local alpha = i / (stopCount - 1)
+			local hue = (baseH + alpha) % 1
+			table.insert(keypoints, ColorSequenceKeypoint.new(alpha, Color3.fromHSV(hue, baseS, baseV)))
+		end
+	else
+
+		local spreadDeg = 70
+		local offsets = {-1, -0.5, 0, 0.5, 1}
+		for i, mult in ipairs(offsets) do
+			local alpha = (i - 1) / (#offsets - 1)
+			local hue = (baseH + (mult * spreadDeg) / 360) % 1
+			table.insert(keypoints, ColorSequenceKeypoint.new(alpha, Color3.fromHSV(hue, baseS, baseV)))
+		end
+	end
+	return ColorSequence.new(keypoints)
+end
+
+local GLOW_RING_COLORSEQUENCE = BuildGlowGradientSequence()
+
+local function RefreshGlowGradientSequence()
+	GLOW_RING_COLORSEQUENCE = BuildGlowGradientSequence()
+	for _, data in ipairs(KazeUI.GlowElements) do
+		local target = data.Target
+		if target and target.Parent then
+			local grad = target:FindFirstChild("KazeGlowGradient")
+			if grad then grad.Color = GLOW_RING_COLORSEQUENCE end
+		end
+	end
+end
+
+local function LerpHueShortest(hueA, hueB, alpha)
+	local diff = (hueB - hueA + 1.5) % 1 - 0.5
+	return (hueA + diff * alpha) % 1
+end
+
+local function EnsureGlowGradient(inst)
+	local existing = inst:FindFirstChild("KazeGlowGradient")
+	if existing then return existing end
+	local ok, grad = pcall(function()
+		local g = Instance.new("UIGradient")
+		g.Name = "KazeGlowGradient"
+		g.Color = GLOW_RING_COLORSEQUENCE
+		g.Enabled = false
+		g.Parent = inst
+		return g
+	end)
+	if ok then return grad end
+	return nil
+end
+
+local function ComputeGlowColor()
+	local baseH = Color3.toHSV(KazeUI.GlowColor)
+	local baseS, baseV = 1, 1
+
+	if KazeUI.GlowMode == "Sequence" then
+		local stops = KazeUI.GlowRainbow and GLOW_SEQUENCE_RAINBOW_STOPS or GLOW_SEQUENCE_STOPS
+		local n = #stops
+		local segDur = GLOW_SEQUENCE_PERIOD / n
+		local raw = (glowClock % GLOW_SEQUENCE_PERIOD) / segDur
+		local idx = math.floor(raw) + 1
+		local nextIdx = (idx % n) + 1
+		local frac = raw - math.floor(raw)
+		local eased = frac * frac * (3 - 2 * frac)
+		local hueA = (baseH * 360 + stops[idx]) / 360 % 1
+		local hueB = (baseH * 360 + stops[nextIdx]) / 360 % 1
+		local hue = LerpHueShortest(hueA, hueB, eased)
+		local intensity = 0.7 + math.sin(eased * math.pi) * 0.3
+		return Color3.fromHSV(hue, baseS, baseV), intensity
+
+	elseif KazeUI.GlowMode == "Pulse" then
+		local total = GLOW_PULSE_ATTACK + GLOW_PULSE_DECAY
+		local phase = glowClock % total
+		local envelope
+		if phase < GLOW_PULSE_ATTACK then
+			local t = phase / GLOW_PULSE_ATTACK
+			envelope = t * t
+		else
+			local t = (phase - GLOW_PULSE_ATTACK) / GLOW_PULSE_DECAY
+			envelope = 1 - (t * t)
+		end
+		local hue = baseH
+		if KazeUI.GlowRainbow then
+			hue = (glowClock * (GLOW_RAINBOW_BREATHE_SPEED / 360)) % 1
+		end
+		local troughV = baseV * 0.8
+		local peakV = 1
+		return Color3.fromHSV(hue, baseS, troughV + envelope * (peakV - troughV)), envelope
+
+	else
+		local hue = baseH
+		if KazeUI.GlowRainbow then
+			hue = (glowClock * (GLOW_RAINBOW_BREATHE_SPEED / 360)) % 1
+		end
+		local envelope = (math.sin((glowClock / GLOW_BREATHE_PERIOD) * math.pi * 2) + 1) / 2
+		local troughV = baseV * 0.85
+		local peakV = 1
+		return Color3.fromHSV(hue, baseS, troughV + envelope * (peakV - troughV)), envelope
+	end
+end
+
+local schedList = {}
+local schedByKey = {}
+local schedConn = nil
+local schedStepping = false
+
+local function SchedCompact()
+	if schedList.Dirty then
+		schedList.Dirty = nil
+		for i = #schedList, 1, -1 do
+			if schedList[i].Dead then table.remove(schedList, i) end
+		end
+	end
+	if #schedList == 0 and schedConn then
+		schedConn:Disconnect()
+		schedConn = nil
+	end
+end
+
+local function SchedStep(dt)
+	schedStepping = true
+	for i = #schedList, 1, -1 do
+		local t = schedList[i]
+		if t and not t.Dead then
+			t.Acc = t.Acc + dt
+			if t.Acc >= t.Interval then
+				local elapsed = t.Acc
+				t.Acc = 0
+				local ok, result = pcall(t.Fn, elapsed)
+				if not ok then
+					t.Dead = true
+					schedList.Dirty = true
+					if schedByKey[t.Key] == t then schedByKey[t.Key] = nil end
+				elseif result == false then
+					t.Dead = true
+					schedList.Dirty = true
+					if schedByKey[t.Key] == t then schedByKey[t.Key] = nil end
+				end
+			end
+		end
+	end
+	schedStepping = false
+	SchedCompact()
+end
+
+local function SchedAdd(key, fn, interval)
+	local t = schedByKey[key]
+	if t and not t.Dead then
+		t.Fn = fn
+		t.Interval = interval
+		return t
+	end
+	t = {Key = key, Fn = fn, Interval = interval, Acc = 0, Dead = false}
+	schedByKey[key] = t
+	table.insert(schedList, t)
+	if not schedConn then
+		schedConn = RunService.Heartbeat:Connect(SchedStep)
+	end
+	return t
+end
+
+local function SchedRemove(key)
+	local t = schedByKey[key]
+	if not t then return end
+	t.Dead = true
+	schedList.Dirty = true
+	schedByKey[key] = nil
+	if not schedStepping then SchedCompact() end
+end
+
+local GLOW_UPDATE_INTERVAL = 1 / 30
+local GLOW_VISIBILITY_INTERVAL = 0.25
+local GLOW_IDLE_POLL = 0.4
+
+local glowVisData = {}
+local glowVisIndex = {}
+local glowVisCount = 0
+local glowVisAccum = 0
+local glowPoll = nil
+local GlowPollTick
+
+local function IsGlowTargetShown(target)
+	local cur = target
+	while cur do
+		if cur:IsA("GuiObject") then
+			if not cur.Visible then return false end
+		elseif cur:IsA("LayerCollector") then
+			return cur.Enabled
+		end
+		cur = cur.Parent
+	end
+	return false
+end
+
+local function RebuildGlowVisible()
+	local list = KazeUI.GlowElements
+	local n = #list
+	local w = 0
+	local vc = 0
+	local prevLen = #glowVisData
+	for r = 1, n do
+		local data = list[r]
+		local target = data.Target
+		if target and target.Parent and not Destroyed[target] then
+			w = w + 1
+			if w ~= r then list[w] = data end
+			if IsGlowTargetShown(target) then
+				vc = vc + 1
+				glowVisData[vc] = data
+				glowVisIndex[vc] = w
+			end
+		elseif target then
+			GlowTargetSet[target] = nil
+		end
+	end
+	for i = n, w + 1, -1 do list[i] = nil end
+	for i = prevLen, vc + 1, -1 do
+		glowVisData[i] = nil
+		glowVisIndex[i] = nil
+	end
+	glowVisCount = vc
+end
+
+local function ApplyGlowToElement(data, color, intensity, useRingGradient)
+	local rings = data.HaloRings
+	if rings then
+		for i = 1, #rings do
+			local ring = rings[i]
+			local inst = ring.Instance
+			if inst.Color ~= color then inst.Color = color end
+			local t = ring.BaseTransparency - intensity * ring.IntensityBoost
+			if t < 0.05 then t = 0.05 elseif t > 0.95 then t = 0.95 end
+			if inst.Transparency ~= t then inst.Transparency = t end
+		end
+		return
+	end
+
+	local target = data.Target
+	local grad = data.Grad
+	if grad and not grad.Parent then
+		grad = nil
+		data.Grad = nil
+	end
+
+	if useRingGradient then
+		if not grad then
+			grad = EnsureGlowGradient(target)
+			data.Grad = grad
+		end
+		if grad then
+			if not grad.Enabled then grad.Enabled = true end
+			grad.Rotation = (glowClock / GLOW_SEQUENCE_ROTATE_SECONDS * 360) % 360
+			return
+		end
+	elseif not grad and not data.GradChecked then
+		data.GradChecked = true
+		grad = target:FindFirstChild("KazeGlowGradient")
+		data.Grad = grad
+	end
+
+	if grad and grad.Enabled then grad.Enabled = false end
+	local prop = data.Prop
+	if target[prop] ~= color then target[prop] = color end
+end
+
+local function StartGlowPoll()
+	if glowPoll then return end
+	glowPoll = task.delay(GLOW_IDLE_POLL, GlowPollTick)
+end
+
+local function StepGlow(dt)
+	if #KazeUI.GlowElements == 0 then
+		return false
+	end
+
+	if KazeUI.GlowMode == "Static" then
+		local list = KazeUI.GlowElements
+		local accent = KazeUI.GlowColor
+		for i = #list, 1, -1 do
+			local data = list[i]
+			local target = data.Target
+			if target and target.Parent and not Destroyed[target] then
+				ApplyGlowToElement(data, accent, 0, false)
+			else
+				table.remove(list, i)
+				if target then GlowTargetSet[target] = nil end
+			end
+		end
+		return false
+	end
+
+	glowClock = glowClock + dt
+	glowVisAccum = glowVisAccum + dt
+	if glowDirty or glowVisAccum >= GLOW_VISIBILITY_INTERVAL then
+		glowDirty = false
+		glowVisAccum = 0
+		RebuildGlowVisible()
+		if #KazeUI.GlowElements == 0 then return false end
+	end
+
+	local vc = glowVisCount
+	if vc == 0 then
+
+		StartGlowPoll()
+		return false
+	end
+
+	if KazeUI.GlowMode == "Chase" then
+		local baseH = Color3.toHSV(KazeUI.GlowColor)
+		local rainbow = KazeUI.GlowRainbow
+		for k = 1, vc do
+			local data = glowVisData[k]
+			local idx = glowVisIndex[k]
+			local phase = (glowClock - (idx - 1) * GLOW_CHASE_STAGGER) % GLOW_CHASE_PERIOD
+			local t = phase / GLOW_CHASE_PERIOD
+			local envelope = math.clamp(1 - math.abs(t - 0.5) * 2 * GLOW_CHASE_WIDTH, 0, 1)
+			local hue = baseH
+			if rainbow then
+				hue = (glowClock * (GLOW_RAINBOW_BREATHE_SPEED / 360) - (idx - 1) * 0.015) % 1
+			end
+			ApplyGlowToElement(data, Color3.fromHSV(hue, 1, 0.8 + envelope * 0.2), envelope, false)
+		end
+		return
+	end
+
+	local color, intensity = ComputeGlowColor()
+	local sequenceModeActive = (KazeUI.GlowMode == "Sequence")
+	for k = 1, vc do
+		local data = glowVisData[k]
+		ApplyGlowToElement(data, color, intensity, sequenceModeActive and data.IsStrokeLike)
+	end
+end
+
+GlowPollTick = function()
+	glowPoll = nil
+	glowDirty = false
+	if #KazeUI.GlowElements == 0 then return end
+	RebuildGlowVisible()
+	if #KazeUI.GlowElements == 0 then return end
+	if glowVisCount > 0 then
+		SchedAdd("glow", StepGlow, GLOW_UPDATE_INTERVAL)
+	else
+		glowPoll = task.delay(GLOW_IDLE_POLL, GlowPollTick)
+	end
+end
+
+local function GlowWake()
+	glowDirty = true
+	if glowPoll then
+		task.cancel(glowPoll)
+		glowPoll = nil
+	end
+	local t = schedByKey["glow"]
+	if t and not t.Dead then
+		t.Acc = t.Interval
+	else
+		SchedAdd("glow", StepGlow, GLOW_UPDATE_INTERVAL)
+	end
+end
+
+local function GetColorProp(t) return t.Color end
+
+local function StartNeonLoop(target)
+	if not target then return end
+	if GlowTargetSet[target] then return end
+	local isStroke = pcall(GetColorProp, target)
+	local propName = isStroke and "Color" or "BackgroundColor3"
+	if true then -- glow animation removed: static accent only
+		target[propName] = KazeUI.GlowColor
+		local known = false
+		for i = 1, #FrozenGlow do
+			if FrozenGlow[i].Target == target then known = true break end
+		end
+		if not known then
+			TrackDestroy(target)
+			table.insert(FrozenGlow, {Target = target, Prop = propName, IsStrokeLike = isStroke})
+		end
+		return
+	end
+	GlowTargetSet[target] = true
+	TrackDestroy(target)
+	table.insert(KazeUI.GlowElements, {Target = target, Prop = propName, IsStrokeLike = isStroke})
+	GlowWake()
+end
+
+function KazeUI:AddGlowHalo(hostFrame, cornerRadius)
+	do return nil end -- halo glow removed
+	local halo = Instance.new("Frame")
+	halo.Name = "GlowHalo"
+	halo.BackgroundTransparency = 1
+	halo.Size = UDim2.new(1, 0, 1, 0)
+	halo.Position = UDim2.fromScale(0.5, 0.5)
+	halo.AnchorPoint = Vector2.new(0.5, 0.5)
+	halo.ZIndex = math.max((hostFrame.ZIndex or 1) - 1, -50)
+	halo.Parent = hostFrame
+
+	local corner = Instance.new("UICorner", halo)
+	corner.CornerRadius = cornerRadius or UDim.new(0, 28)
+
+	local ringDefs = {
+		{Thickness = 3, BaseTransparency = 0.35, IntensityBoost = 0.15},
+		{Thickness = 10, BaseTransparency = 0.72, IntensityBoost = 0.26},
+	}
+	local rings = {}
+	for _, def in ipairs(ringDefs) do
+		local ring = Instance.new("UIStroke")
+		ring.Thickness = def.Thickness
+		ring.Transparency = def.BaseTransparency
+		ring.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+		ring.Parent = halo
+		table.insert(rings, {Instance = ring, BaseTransparency = def.BaseTransparency, IntensityBoost = def.IntensityBoost})
+	end
+
+	if KazeUI.PerformanceMode then
+		for _, r in ipairs(rings) do r.Instance.Color = KazeUI.GlowColor end
+		TrackDestroy(halo)
+		table.insert(FrozenGlow, {Target = halo, HaloRings = rings})
+	else
+		GlowTargetSet[halo] = true
+		TrackDestroy(halo)
+		table.insert(KazeUI.GlowElements, {Target = halo, HaloRings = rings})
+		GlowWake()
+	end
+	return halo
+end
+
+local function StopNeonLoop(target)
+	if not target then return end
+	if GlowTargetSet[target] then
+		GlowTargetSet[target] = nil
+		local list = KazeUI.GlowElements
+		for i = #list, 1, -1 do
+			if list[i].Target == target then table.remove(list, i) end
+		end
+		glowDirty = true
+	elseif #FrozenGlow > 0 then
+		for i = #FrozenGlow, 1, -1 do
+			if FrozenGlow[i].Target == target then table.remove(FrozenGlow, i) end
+		end
+	end
+	local ok, grad = pcall(target.FindFirstChild, target, "KazeGlowGradient")
+	if ok and grad and grad.Enabled then grad.Enabled = false end
+end
+
+local KickStroke
+do
+	local pending = setmetatable({}, {__mode = "k"})
+	local function Check(strokeInst, state)
+		if not strokeInst.Parent then
+			state.Conn:Disconnect()
+			pending[strokeInst] = nil
+			return
+		end
+		local now = os.clock()
+		if now - state.Last < 0.05 and now - state.Start < 0.6 then
+			task.delay(0.05, Check, strokeInst, state)
+			return
+		end
+		state.Conn:Disconnect()
+		pending[strokeInst] = nil
+		strokeInst.Enabled = false
+		task.delay(0, function()
+			if strokeInst.Parent then strokeInst.Enabled = true end
+		end)
+	end
+	KickStroke = function(strokeInst)
+		if not strokeInst then return end
+		local state = pending[strokeInst]
+		if state then
+			state.Last = os.clock()
+			return
+		end
+		local ref = strokeInst.Parent
+		if not ref then return end
+		local now = os.clock()
+		state = {Last = now, Start = now}
+		state.Conn = ref:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+			state.Last = os.clock()
+		end)
+		pending[strokeInst] = state
+		task.delay(0.05, Check, strokeInst, state)
+	end
+end
+
+function KazeUI:SetGlow(color)
+	KazeUI.GlowColor = color
+	KazeUI._userSetGlow = true
+	RefreshGlowGradientSequence()
+
+	for i = #KazeUI.GlowCallbacks, 1, -1 do
+		local data = KazeUI.GlowCallbacks[i]
+		if data.Inst and data.Inst.Parent then
+			pcall(data.Callback, color)
+		else
+			table.remove(KazeUI.GlowCallbacks, i)
+		end
+	end
+	GlowWake()
+end
+
+function KazeUI:SetGlowMode()
+	KazeUI.GlowMode = "Static"
+	GlowWake()
+end
+
+function KazeUI:SetGlowRainbow()
+	KazeUI.GlowRainbow = false
 end
 
 function KazeUI:SetPerformanceMode(enabled)
@@ -905,16 +1616,73 @@ function KazeUI:SetPerformanceMode(enabled)
 	ApplyTweenProfile(enabled)
 
 	if enabled then
+		-- Remember which theme was active BEFORE we force Obsidian, so turning
+		-- Performance Mode back off can restore it. Only overwrite the saved
+		-- key the first time we actually enter Performance Mode (not on a
+		-- redundant SetPerformanceMode(true) call while already enabled), and
+		-- never save "Obsidian" itself as the thing to restore to.
 		if not wasEnabled and KazeUI.CurrentThemeKey ~= "Obsidian" then
 			KazeUI._PrePerformanceThemeKey = KazeUI.CurrentThemeKey
 		end
+
+		local list = KazeUI.GlowElements
+		for i = 1, #list do
+			local data = list[i]
+			local target = data.Target
+			if target and target.Parent then
+				if data.HaloRings then
+					for _, ring in ipairs(data.HaloRings) do
+						ring.Instance.Color = KazeUI.GlowColor
+					end
+				else
+					target[data.Prop] = KazeUI.GlowColor
+					local grad = data.Grad or target:FindFirstChild("KazeGlowGradient")
+					if grad then grad.Enabled = false end
+				end
+				GlowTargetSet[target] = nil
+				table.insert(FrozenGlow, data)
+			end
+		end
+		table.clear(list)
+		SchedRemove("glow")
+		if glowPoll then
+			task.cancel(glowPoll)
+			glowPoll = nil
+		end
+
+		for _, wp in ipairs(KazeUI.WallpaperElements) do
+			if wp.ImageLabel and wp.ImageLabel.Parent then
+				wp.ImageLabel.ImageTransparency = 1
+				wp.ImageLabel.Image = ""
+			end
+			if wp.OverlayFrame and wp.OverlayFrame.Parent then
+				wp.OverlayFrame.BackgroundTransparency = 1
+			end
+		end
+
 		KazeUI:SetTheme("Obsidian")
 	elseif wasEnabled then
+		-- Restore whatever theme was active before Performance Mode forced
+		-- Obsidian. SetTheme re-applies the theme's colors, panel transparency,
+		-- and (via ApplyWallpaper below) its wallpaper -- previously this branch
+		-- never left Obsidian at all, since KazeUI.CurrentTheme had been
+		-- overwritten and never restored.
 		local restoreKey = KazeUI._PrePerformanceThemeKey
 		KazeUI._PrePerformanceThemeKey = nil
 		if restoreKey and restoreKey ~= "Obsidian" then
 			KazeUI:SetTheme(restoreKey)
 		end
+
+		for _, data in ipairs(FrozenGlow) do
+			local target = data.Target
+			if target and target.Parent and not Destroyed[target] and not GlowTargetSet[target] then
+				GlowTargetSet[target] = true
+				table.insert(KazeUI.GlowElements, data)
+			end
+		end
+		table.clear(FrozenGlow)
+		ApplyWallpaper(KazeUI.CurrentTheme)
+		if #KazeUI.GlowElements > 0 then GlowWake() end
 	end
 end
 
@@ -923,39 +1691,44 @@ local function ShutdownRuntime()
 	if cameraChangedConn then cameraChangedConn:Disconnect() cameraChangedConn = nil end
 	if cameraLockWatchdogConn then cameraLockWatchdogConn:Disconnect() cameraLockWatchdogConn = nil end
 	if cameraLockFocusConn then cameraLockFocusConn:Disconnect() cameraLockFocusConn = nil end
-	ForceUnlockCamera()
+	ForceUnlockCamera() -- never leave the player's movement/camera locked out after shutdown
+	if glowPoll then
+		task.cancel(glowPoll)
+		glowPoll = nil
+	end
+	for _, t in ipairs(schedList) do t.Dead = true end
+	table.clear(schedByKey)
+	SchedCompact()
 	for _, rec in ipairs(pixelLinesActive) do rec.Active = false end
 	table.clear(pixelLinesActive)
 	if pixelLineConn then pixelLineConn:Disconnect() pixelLineConn = nil end
 end
 KazeUI._Shutdown = ShutdownRuntime
+ScreenGui.Destroying:Connect(ShutdownRuntime)
+
+local RGB_TITLE_INTERVAL = 1 / 24
+local RGBTitles = {}
+
+local function RGBTitleStep()
+	local n = #RGBTitles
+	if n == 0 then return false end
+	local color = Color3.fromHSV((tick() % 4) / 4, 0.8, 1)
+	for i = n, 1, -1 do
+		local e = RGBTitles[i]
+		local label = e.Label
+		if label and label.Parent then
+			label.TextColor3 = color
+			local icon = e.Icon
+			if icon and icon.Parent then icon.ImageColor3 = color end
+		else
+			table.remove(RGBTitles, i)
+		end
+	end
+	if #RGBTitles == 0 then return false end
+end
 
 local MAX_ACTIVE_NOTIFS = 12
 local ActiveNotifs = {}
-
-local tornDown = false
-local function TeardownRuntime()
-	if tornDown then return end
-	tornDown = true
-	pcall(ShutdownRuntime)
-	for _, gui in ipairs({ScreenGui, OpenButtonGui, DialogGui, NotifScreenGui}) do
-		pcall(function() gui:Destroy() end)
-	end
-	activeDialogsCount = 0
-	KazeUI.IsResizing = false
-	pcall(function() Mouse.Icon = "" end)
-	for _, name in ipairs({"TextElements", "MutedTextElements", "BorderElements", "ThemeCallbacks", "PanelElements", "Flags", "ActiveWindows", "_PreloadSet"}) do
-		local t = KazeUI[name]
-		if type(t) == "table" then table.clear(t) end
-	end
-	table.clear(ActiveNotifs)
-	table.clear(pixelLinesAll)
-	table.clear(FormatImageCache)
-	table.clear(ActiveTweens)
-	KazeUI._ToggleWindow = nil
-end
-KazeUI._Teardown = TeardownRuntime
-ScreenGui.Destroying:Connect(TeardownRuntime)
 
 function KazeUI:Notify(config)
 	config = config or {}
@@ -967,7 +1740,7 @@ function KazeUI:Notify(config)
 
 	local iconId = config.Icon and FormatImage(config.Icon) or ""
 	local hasIcon = (iconId ~= "")
-	local iconColor = config.IconColor or ACCENT
+	local iconColor = config.IconColor or KazeUI.GlowColor
 
 	local textPadding = hasIcon and 54 or 16
 	local rightSafetyPadding = 36
@@ -1053,9 +1826,15 @@ function KazeUI:Notify(config)
 	titleLab.TextXAlignment = Enum.TextXAlignment.Left
 	titleLab.TextWrapped = true
 
+	local rgbEntry = nil
 	if isRGBTitle then
-		titleLab.TextColor3 = ACCENT
-		if iconLabel then iconLabel.ImageColor3 = ACCENT end
+		if KazeUI.PerformanceMode then
+			titleLab.TextColor3 = KazeUI.GlowColor
+		else
+			rgbEntry = {Label = titleLab, Icon = iconLabel}
+			table.insert(RGBTitles, rgbEntry)
+			SchedAdd("rgbtitles", RGBTitleStep, RGB_TITLE_INTERVAL)
+		end
 	elseif typeof(titleColor) == "Color3" then
 		titleLab.TextColor3 = titleColor
 	else
@@ -1083,12 +1862,12 @@ function KazeUI:Notify(config)
 
 	local progressBar = Instance.new("Frame", progressTrack)
 	progressBar.Size = UDim2.new(1, 0, 1, 0)
-	progressBar.BackgroundColor3 = ACCENT
+	progressBar.BackgroundColor3 = KazeUI.GlowColor
 	progressBar.BorderSizePixel = 0
 	Instance.new("UICorner", progressBar).CornerRadius = UDim.new(1, 0)
-	if pcall(function() return progressBar.Color end) then progressBar.Color = ACCENT else progressBar.BackgroundColor3 = ACCENT end
+	StartNeonLoop(progressBar)
 
-	pcall(function(c) progressBar.BackgroundColor3 = c end, ACCENT)
+	KazeUI:OnGlowChanged(progressBar, function(c) progressBar.BackgroundColor3 = c end)
 
 	local enterHolderTween = TweenService:Create(notifHolder, TWEEN_NOTIF_HOLDER_IN, {Size = UDim2.new(1, 0, 0, finalHolderHeight)})
 	local enterFrameTween = TweenService:Create(notifFrame, TWEEN_NOTIF_IN, {Position = UDim2.new(0, 12, 0, 10)})
@@ -1114,6 +1893,7 @@ function KazeUI:Notify(config)
 			shrinkTween = TweenService:Create(notifHolder, TWEEN_NOTIF_SHRINK, {Size = UDim2.new(1, 0, 0, 0)})
 			shrinkConn = shrinkTween.Completed:Connect(function()
 				if shrinkConn then shrinkConn:Disconnect() shrinkConn = nil end
+				StopNeonLoop(progressBar)
 				notifHolder:Destroy()
 			end)
 			shrinkTween:Play()
@@ -1123,13 +1903,13 @@ function KazeUI:Notify(config)
 	registryEntry.Dismiss = dismiss
 
 	closeBtn.MouseEnter:Connect(function()
-		PlayTween(closeBtn, TWEEN_FAST, {ImageTransparency = 0.2, Size = UDim2.fromOffset(18, 18), Position = UDim2.new(1, -11, 0, 11)})
+		TweenService:Create(closeBtn, TWEEN_FAST, {ImageTransparency = 0.2, Size = UDim2.fromOffset(18, 18), Position = UDim2.new(1, -11, 0, 11)}):Play()
 	end)
 	closeBtn.MouseLeave:Connect(function()
-		PlayTween(closeBtn, TWEEN_FAST, {ImageTransparency = 0, Size = UDim2.fromOffset(16, 16), Position = UDim2.new(1, -12, 0, 12)})
+		TweenService:Create(closeBtn, TWEEN_FAST, {ImageTransparency = 0, Size = UDim2.fromOffset(16, 16), Position = UDim2.new(1, -12, 0, 12)}):Play()
 	end)
 	closeBtn.MouseButton1Down:Connect(function()
-		PlayTween(closeBtn, TWEEN_FAST, {Size = UDim2.fromOffset(14, 14), Position = UDim2.new(1, -13, 0, 13)})
+		TweenService:Create(closeBtn, TWEEN_FAST, {Size = UDim2.fromOffset(14, 14), Position = UDim2.new(1, -13, 0, 13)}):Play()
 	end)
 	closeBtn.MouseButton1Click:Connect(dismiss)
 
@@ -1154,6 +1934,13 @@ function KazeUI:Notify(config)
 		if progressTween then progressTween:Cancel() progressTween = nil end
 		if outTween then outTween:Cancel() outTween = nil end
 		if shrinkTween then shrinkTween:Cancel() shrinkTween = nil end
+		StopNeonLoop(progressBar)
+		if rgbEntry then
+			for i = #RGBTitles, 1, -1 do
+				if RGBTitles[i] == rgbEntry then table.remove(RGBTitles, i) break end
+			end
+			rgbEntry = nil
+		end
 		for i = #ActiveNotifs, 1, -1 do
 			if ActiveNotifs[i] == registryEntry then table.remove(ActiveNotifs, i) break end
 		end
@@ -1227,12 +2014,40 @@ local function ToggleScrollingAncestors(element, state)
 	end
 end
 
+function KazeUI._RevealElement(frame)
+	if KazeUI._NoReveal then return end
+	local scroller = frame:FindFirstAncestorWhichIsA("ScrollingFrame")
+	if not scroller then return end
+	local conn
+	local function adjust()
+		if not frame.Parent or not scroller.Parent then
+			if conn then conn:Disconnect() conn = nil end
+			return
+		end
+		local topY = frame.AbsolutePosition.Y - scroller.AbsolutePosition.Y
+		local bottomY = topY + frame.AbsoluteSize.Y
+		local viewH = scroller.AbsoluteSize.Y
+		local delta = 0
+		if bottomY > viewH - 10 then delta = bottomY - viewH + 10 end
+		if topY - delta < 6 then delta = topY - 6 end
+		if delta ~= 0 then
+			local cur = scroller.CanvasPosition
+			scroller.CanvasPosition = Vector2.new(cur.X, math.max(0, cur.Y + delta))
+		end
+	end
+	conn = frame:GetPropertyChangedSignal("AbsoluteSize"):Connect(adjust)
+	task.delay(0.7, function()
+		if conn then conn:Disconnect() conn = nil end
+	end)
+	task.defer(adjust)
+end
+
 local TWEEN_CASCADE = TweenInfo.new(0.45, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
-local CASCADE_STAGGER = 0.04
+local CASCADE_STAGGER = 0.06
 local CASCADE_RISE = 26
 
 local CascadeState = setmetatable({}, {__mode = "k"})
-local CASCADE_MAX_CHILDREN = 8
+local CASCADE_MAX_CHILDREN = 14
 
 local function CancelCascade(container)
 	local st = CascadeState[container]
@@ -1582,7 +2397,7 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 		local count = 0
 		for _, item in ipairs(optionItems) do if item.Btn.Visible then count = count + 1 end end
 		local targetH = math.min(count, 5) * 34
-		PlayTween(listContainer, TWEEN_FAST, {Size = UDim2.new(1, -20, 0, targetH)})
+		TweenService:Create(listContainer, TWEEN_FAST, {Size = UDim2.new(1, -20, 0, targetH)}):Play()
 		listContainer.CanvasSize = UDim2.new(0, 0, 0, count * 34)
 	end
 
@@ -1591,8 +2406,9 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 		searchBox.Text = ""
 		searchWrapper.Visible = false
 		listContainer.Visible = false
-		PlayTween(arrowIcon, TWEEN_SPRING, {Rotation = 0})
-		PlayTween(boxStroke, TWEEN_FAST, {Color = KazeUI.CurrentTheme.Border})
+		TweenService:Create(arrowIcon, TWEEN_SPRING, {Rotation = 0}):Play()
+		StopNeonLoop(boxStroke)
+		TweenService:Create(boxStroke, TWEEN_FAST, {Color = KazeUI.CurrentTheme.Border}):Play()
 	end
 
 	local function OptionListUnchanged(nextOptions)
@@ -1605,10 +2421,10 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 
 	local function Refresh(newOptions)
 		local nextOptions = type(newOptions) == "table" and newOptions or {}
-		
-		
-		
-		
+		-- Skip destroying/recreating every option button when the content hasn't
+		-- actually changed (e.g. a player-list refresh firing with no real
+		-- change, or "Refresh" clicked twice) -- this used to unconditionally
+		-- rebuild the whole list every single call.
 		if not itemsStale and OptionListUnchanged(nextOptions) then
 			options = nextOptions
 			return
@@ -1654,7 +2470,7 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 
 				local targetBg = active and KazeUI.GetColor(0.06) or KazeUI.GetColor(0.03)
 				local targetTxt = active and KazeUI.CurrentTheme.Text or KazeUI.CurrentTheme.MutedText
-				local indTargetBg = active and ACCENT or KazeUI.GetColor(0.03)
+				local indTargetBg = active and KazeUI.GlowColor or KazeUI.GetColor(0.03)
 
 				if isHovering then
 					targetBg = KazeUI.GetColor(0.08)
@@ -1678,7 +2494,7 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 					currentTxtTween:Play()
 
 					if isMulti and indicator then
-						PlayTween(indicator, TWEEN_FAST, {BackgroundColor3 = indTargetBg})
+						TweenService:Create(indicator, TWEEN_FAST, {BackgroundColor3 = indTargetBg}):Play()
 					end
 				end
 			end
@@ -1700,7 +2516,7 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 
 			btn.MouseButton1Click:Connect(function()
 				if isLockedState or activeDialogsCount > 0 then return end
-				PlayTween(btn, TWEEN_PRESS_SHORT, {Size = UDim2.new(1, -8, 0, 28)})
+				TweenService:Create(btn, TWEEN_PRESS_SHORT, {Size = UDim2.new(1, -8, 0, 28)}):Play()
 
 				if isMulti then
 					selectedMulti[optStr] = not selectedMulti[optStr]
@@ -1719,7 +2535,7 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 			table.insert(optionItems, { Btn = btn, Text = optStr, Update = function(instant) UpdateVisuals(instant) end })
 
 			if isMulti then
-				pcall(function() UpdateVisuals(true) end, ACCENT)
+				KazeUI:OnGlowChanged(btn, function() UpdateVisuals(true) end)
 			end
 		end
 		CalcHeight()
@@ -1741,8 +2557,9 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 			searchWrapper.Visible = true
 			listContainer.Visible = true
 			if itemsStale then Refresh(options) else CalcHeight() end
-			PlayTween(arrowIcon, TWEEN_SPRING, {Rotation = 180})
-			if pcall(function() return boxStroke.Color end) then boxStroke.Color = ACCENT else boxStroke.BackgroundColor3 = ACCENT end
+			TweenService:Create(arrowIcon, TWEEN_SPRING, {Rotation = 180}):Play()
+			StartNeonLoop(boxStroke)
+			KazeUI._RevealElement(wrapper)
 		else
 			CloseDropdown()
 		end
@@ -2079,11 +2896,11 @@ local function CreateBoxDropdown(parentFrame, title, options, defaultOption, cal
 
 	local function Refresh(newOptions)
 		local nextOptions = type(newOptions) == "table" and newOptions or options
-		
-		
+		-- Same idea as the plain Dropdown's Refresh: skip the destroy/rebuild
+		-- of every box when the option list (text + icon) hasn't actually changed.
 		if not itemsStale and nextOptions == options then
-			
-			
+			-- caller passed no real new list (fell back to the existing `options`
+			-- reference above) -- definitely nothing changed, nothing to do
 			return
 		elseif not itemsStale and BoxOptionListUnchanged(nextOptions) then
 			options = nextOptions
@@ -2171,14 +2988,15 @@ local function CreateBoxDropdown(parentFrame, title, options, defaultOption, cal
 					box.BackgroundColor3 = targetBg
 					label.TextColor3 = targetTxt
 				else
-					PlayTween(box, TWEEN_FAST, {BackgroundColor3 = targetBg})
-					PlayTween(label, TWEEN_FAST, {TextColor3 = targetTxt})
+					TweenService:Create(box, TWEEN_FAST, {BackgroundColor3 = targetBg}):Play()
+					TweenService:Create(label, TWEEN_FAST, {TextColor3 = targetTxt}):Play()
 				end
 
 				if active then
-					if pcall(function() return boxStrokeItem.Color end) then boxStrokeItem.Color = ACCENT else boxStrokeItem.BackgroundColor3 = ACCENT end
+					StartNeonLoop(boxStrokeItem)
 				else
-					PlayTween(boxStrokeItem, TWEEN_FAST, {Color = KazeUI.CurrentTheme.Border})
+					StopNeonLoop(boxStrokeItem)
+					TweenService:Create(boxStrokeItem, TWEEN_FAST, {Color = KazeUI.CurrentTheme.Border}):Play()
 				end
 			end
 			UpdateVisuals(true)
@@ -2239,11 +3057,13 @@ local function CreateBoxDropdown(parentFrame, title, options, defaultOption, cal
 		if isOpen then
 			if itemsStale then Refresh(options) else ApplyGrid() end
 		end
-		PlayTween(arrowIcon, TWEEN_SPRING, {Rotation = isOpen and 180 or 0})
+		TweenService:Create(arrowIcon, TWEEN_SPRING, {Rotation = isOpen and 180 or 0}):Play()
 		if isOpen then
-			if pcall(function() return boxStroke.Color end) then boxStroke.Color = ACCENT else boxStroke.BackgroundColor3 = ACCENT end
+			StartNeonLoop(boxStroke)
+			KazeUI._RevealElement(wrapper)
 		else
-			PlayTween(boxStroke, TWEEN_FAST, {Color = KazeUI.CurrentTheme.Border})
+			StopNeonLoop(boxStroke)
+			TweenService:Create(boxStroke, TWEEN_FAST, {Color = KazeUI.CurrentTheme.Border}):Play()
 		end
 	end)
 
@@ -2484,7 +3304,7 @@ local function CreateClickableParagraph(parentFrame, title, body, callback, lock
 		bodyHeight = math.ceil(bodySize.Y)
 	end
 
-	local totalHeight = 8 + titleHeight + (body ~= "" and 3 or 0) + bodyHeight + 8
+	local totalHeight = (body == "" and 10 or 8) + titleHeight + (body ~= "" and 3 or 0) + bodyHeight + (body == "" and 10 or 8)
 
 	local wrapper = Instance.new("Frame")
 	wrapper.Size = UDim2.new(1, 0, 0, 0)
@@ -2536,7 +3356,11 @@ local function CreateClickableParagraph(parentFrame, title, body, callback, lock
 		ptitleLabel.TextSize = 13
 		ptitleLabel.TextWrapped = true
 		ptitleLabel.TextXAlignment = Enum.TextXAlignment.Left
-		if body == "" then ptitleLabel.AnchorPoint = Vector2.new(0, 0.5); ptitleLabel.Position = UDim2.new(0, 0, 0.5, 0) end
+		if body == "" then
+			ptitleLabel.Size = UDim2.new(ptitleLabel.Size.X.Scale, ptitleLabel.Size.X.Offset, 1, 0)
+			ptitleLabel.Position = UDim2.fromOffset(0, -1)
+			ptitleLabel.TextYAlignment = Enum.TextYAlignment.Center
+		end
 		KazeUI:RegisterText(ptitleLabel, false)
 	end
 
@@ -2565,15 +3389,16 @@ local function CreateClickableParagraph(parentFrame, title, body, callback, lock
 	clickDetector.MouseEnter:Connect(function()
 		if isLockedState or activeDialogsCount > 0 then return end
 		isHovering = true
-		PlayTween(paraFrame, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.04)})
-		if pcall(function() return paraStroke.Color end) then paraStroke.Color = ACCENT else paraStroke.BackgroundColor3 = ACCENT end
-		PlayTween(rightIcon, TWEEN_FAST, {ImageColor3 = Color3.fromRGB(255, 255, 255), Position = UDim2.new(1, -8, 0.5, 0)})
+		TweenService:Create(paraFrame, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.04)}):Play()
+		StartNeonLoop(paraStroke)
+		TweenService:Create(rightIcon, TWEEN_FAST, {ImageColor3 = Color3.fromRGB(255, 255, 255), Position = UDim2.new(1, -8, 0.5, 0)}):Play()
 	end)
 	local function onParaLeave()
 		isHovering = false
-		PlayTween(paraFrame, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.02)})
-		PlayTween(paraStroke, TWEEN_FAST, {Color = KazeUI.CurrentTheme.Border})
-		PlayTween(rightIcon, TWEEN_FAST, {ImageColor3 = KazeUI.CurrentTheme.MutedText, Position = UDim2.new(1, -10, 0.5, 0)})
+		TweenService:Create(paraFrame, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.02)}):Play()
+		StopNeonLoop(paraStroke)
+		TweenService:Create(paraStroke, TWEEN_FAST, {Color = KazeUI.CurrentTheme.Border}):Play()
+		TweenService:Create(rightIcon, TWEEN_FAST, {ImageColor3 = KazeUI.CurrentTheme.MutedText, Position = UDim2.new(1, -10, 0.5, 0)}):Play()
 	end
 	clickDetector.MouseLeave:Connect(onParaLeave)
 	BindTouchLeaveFix(clickDetector, function() return isHovering end, onParaLeave)
@@ -2581,25 +3406,25 @@ local function CreateClickableParagraph(parentFrame, title, body, callback, lock
 	BindPressAnimation(clickDetector,
 		function() return not (isLockedState or activeDialogsCount > 0) end,
 		function()
-			PlayTween(paraFrame, TWEEN_QUICK, {
+			TweenService:Create(paraFrame, TWEEN_QUICK, {
 				Size = UDim2.new(0.93, 0, 0, totalHeight - 2),
 				Position = UDim2.new(0.5, 0, 0, 4)
-			})
+			}):Play()
 		end,
 		function()
-			PlayTween(paraFrame, TWEEN_SPRING, {
+			TweenService:Create(paraFrame, TWEEN_SPRING, {
 				Size = UDim2.new(0.95, 0, 0, totalHeight),
 				Position = UDim2.new(0.5, 0, 0, 3)
-			})
+			}):Play()
 		end,
 		function()
 			FireCallback(callback)
 		end
 	)
 
-	pcall(function(c)
+	KazeUI:OnGlowChanged(paraStroke, function(c)
 		if isHovering then paraStroke.Color = c end
-	end, ACCENT)
+	end)
 
 	local lockCtrl = ApplyLock(paraFrame, locked, wrapper, UDim2.new(0.95, 0, 1, -3), UDim2.new(0.5, 0, 0, 3), Vector2.new(0.5, 0))
 
@@ -2644,7 +3469,7 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 		bodyHeight = math.ceil(bodySize.Y)
 	end
 
-	local totalHeight = 8 + titleHeight + (body ~= "" and 3 or 0) + bodyHeight + 8
+	local totalHeight = (body == "" and 10 or 8) + titleHeight + (body ~= "" and 3 or 0) + bodyHeight + (body == "" and 10 or 8)
 
 	local wrapper = Instance.new("Frame")
 	wrapper.Size = UDim2.new(1, 0, 0, 0)
@@ -2699,7 +3524,11 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 		ptitleLabel.TextSize = 13
 		ptitleLabel.TextWrapped = true
 		ptitleLabel.TextXAlignment = Enum.TextXAlignment.Left
-		if body == "" then ptitleLabel.AnchorPoint = Vector2.new(0, 0.5); ptitleLabel.Position = UDim2.new(0, 0, 0.5, 0) end
+		if body == "" then
+			ptitleLabel.Size = UDim2.new(ptitleLabel.Size.X.Scale, ptitleLabel.Size.X.Offset, 1, 0)
+			ptitleLabel.Position = UDim2.fromOffset(0, -1)
+			ptitleLabel.TextYAlignment = Enum.TextYAlignment.Center
+		end
 		KazeUI:RegisterText(ptitleLabel, false)
 	end
 
@@ -2737,11 +3566,11 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 				switchContainer.BackgroundColor3 = KazeUI.GetColor(0.08)
 			end
 		else
-			PlayTween(switchIndicator, TWEEN_SPRING, {Position = targetPos})
+			TweenService:Create(switchIndicator, TWEEN_SPRING, {Position = targetPos}):Play()
 			if state then
-				PlayTween(switchContainer, TWEEN_FAST, {BackgroundColor3 = Color3.fromRGB(59, 130, 246)})
+				TweenService:Create(switchContainer, TWEEN_FAST, {BackgroundColor3 = Color3.fromRGB(59, 130, 246)}):Play()
 			else
-				PlayTween(switchContainer, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.08)})
+				TweenService:Create(switchContainer, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.08)}):Play()
 			end
 		end
 	end
@@ -2756,23 +3585,24 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 	clickDetector.MouseEnter:Connect(function()
 		if isLockedState or activeDialogsCount > 0 then return end
 		isHovering = true
-		PlayTween(paraFrame, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.04)})
-		if pcall(function() return paraStroke.Color end) then paraStroke.Color = ACCENT else paraStroke.BackgroundColor3 = ACCENT end
+		TweenService:Create(paraFrame, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.04)}):Play()
+		StartNeonLoop(paraStroke)
 	end)
 	local function onToggleLeave()
 		isHovering = false
-		PlayTween(paraFrame, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.02)})
-		PlayTween(paraStroke, TWEEN_FAST, {Color = KazeUI.CurrentTheme.Border})
+		TweenService:Create(paraFrame, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.02)}):Play()
+		StopNeonLoop(paraStroke)
+		TweenService:Create(paraStroke, TWEEN_FAST, {Color = KazeUI.CurrentTheme.Border}):Play()
 	end
 	clickDetector.MouseLeave:Connect(onToggleLeave)
 	BindTouchLeaveFix(clickDetector, function() return isHovering end, onToggleLeave)
 	BindPressAnimation(clickDetector,
 		function() return not (isLockedState or activeDialogsCount > 0) end,
 		function()
-			PlayTween(paraFrame, TWEEN_FAST, {Size = UDim2.new(0.93, 0, 0, totalHeight - 2), Position = UDim2.new(0.5, 0, 0, 4)})
+			TweenService:Create(paraFrame, TWEEN_FAST, {Size = UDim2.new(0.93, 0, 0, totalHeight - 2), Position = UDim2.new(0.5, 0, 0, 4)}):Play()
 		end,
 		function()
-			PlayTween(paraFrame, TWEEN_SPRING, {Size = UDim2.new(0.95, 0, 0, totalHeight), Position = UDim2.new(0.5, 0, 0, 3)})
+			TweenService:Create(paraFrame, TWEEN_SPRING, {Size = UDim2.new(0.95, 0, 0, totalHeight), Position = UDim2.new(0.5, 0, 0, 3)}):Play()
 		end,
 		function()
 			setToggleState(not state, false)
@@ -2780,9 +3610,9 @@ local function CreateToggleSwitch(parentFrame, title, body, defaultState, callba
 		end
 	)
 
-	pcall(function(c)
+	KazeUI:OnGlowChanged(paraStroke, function(c)
 		if isHovering then paraStroke.Color = c end
-	end, ACCENT)
+	end)
 
 	RegisterFlag(flag, function() return state end, function(val)
 		setToggleState(val, false)
@@ -2835,7 +3665,7 @@ local function CreateIconToggle(parentFrame, title, body, defaultState, onIcon, 
 		bodyHeight = math.ceil(bodySize.Y)
 	end
 
-	local totalHeight = 8 + titleHeight + (body ~= "" and 3 or 0) + bodyHeight + 8
+	local totalHeight = (body == "" and 10 or 8) + titleHeight + (body ~= "" and 3 or 0) + bodyHeight + (body == "" and 10 or 8)
 
 	local wrapper = Instance.new("Frame")
 	wrapper.Size = UDim2.new(1, 0, 0, 0)
@@ -2895,7 +3725,11 @@ local function CreateIconToggle(parentFrame, title, body, defaultState, onIcon, 
 		ptitleLabel.TextSize = 13
 		ptitleLabel.TextWrapped = true
 		ptitleLabel.TextXAlignment = Enum.TextXAlignment.Left
-		if body == "" then ptitleLabel.AnchorPoint = Vector2.new(0, 0.5); ptitleLabel.Position = UDim2.new(0, 0, 0.5, 0) end
+		if body == "" then
+			ptitleLabel.Size = UDim2.new(ptitleLabel.Size.X.Scale, ptitleLabel.Size.X.Offset, 1, 0)
+			ptitleLabel.Position = UDim2.fromOffset(0, -1)
+			ptitleLabel.TextYAlignment = Enum.TextYAlignment.Center
+		end
 		KazeUI:RegisterText(ptitleLabel, false)
 	end
 
@@ -2928,7 +3762,7 @@ local function CreateIconToggle(parentFrame, title, body, defaultState, onIcon, 
 		if instant then
 			iconContainer.BackgroundColor3 = KazeUI.GetColor(0.08)
 		else
-			PlayTween(iconImage, TWEEN_PRESS, {Size = UDim2.fromOffset(14, 14)})
+			TweenService:Create(iconImage, TWEEN_PRESS, {Size = UDim2.fromOffset(14, 14)}):Play()
 		end
 	end
 	setToggleState(state, true)
@@ -2942,23 +3776,24 @@ local function CreateIconToggle(parentFrame, title, body, defaultState, onIcon, 
 	clickDetector.MouseEnter:Connect(function()
 		if isLockedState or activeDialogsCount > 0 then return end
 		isHovering = true
-		PlayTween(paraFrame, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.04)})
-		if pcall(function() return paraStroke.Color end) then paraStroke.Color = ACCENT else paraStroke.BackgroundColor3 = ACCENT end
+		TweenService:Create(paraFrame, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.04)}):Play()
+		StartNeonLoop(paraStroke)
 	end)
 	local function onToggleLeave()
 		isHovering = false
-		PlayTween(paraFrame, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.02)})
-		PlayTween(paraStroke, TWEEN_FAST, {Color = KazeUI.CurrentTheme.Border})
+		TweenService:Create(paraFrame, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.02)}):Play()
+		StopNeonLoop(paraStroke)
+		TweenService:Create(paraStroke, TWEEN_FAST, {Color = KazeUI.CurrentTheme.Border}):Play()
 	end
 	clickDetector.MouseLeave:Connect(onToggleLeave)
 	BindTouchLeaveFix(clickDetector, function() return isHovering end, onToggleLeave)
 	BindPressAnimation(clickDetector,
 		function() return not (isLockedState or activeDialogsCount > 0) end,
 		function()
-			PlayTween(paraFrame, TWEEN_FAST, {Size = UDim2.new(0.93, 0, 0, totalHeight - 2), Position = UDim2.new(0.5, 0, 0, 4)})
+			TweenService:Create(paraFrame, TWEEN_FAST, {Size = UDim2.new(0.93, 0, 0, totalHeight - 2), Position = UDim2.new(0.5, 0, 0, 4)}):Play()
 		end,
 		function()
-			PlayTween(paraFrame, TWEEN_SPRING, {Size = UDim2.new(0.95, 0, 0, totalHeight), Position = UDim2.new(0.5, 0, 0, 3)})
+			TweenService:Create(paraFrame, TWEEN_SPRING, {Size = UDim2.new(0.95, 0, 0, totalHeight), Position = UDim2.new(0.5, 0, 0, 3)}):Play()
 		end,
 		function()
 			setToggleState(not state, false)
@@ -2966,9 +3801,9 @@ local function CreateIconToggle(parentFrame, title, body, defaultState, onIcon, 
 		end
 	)
 
-	pcall(function(c)
+	KazeUI:OnGlowChanged(paraStroke, function(c)
 		if isHovering then paraStroke.Color = c end
-	end, ACCENT)
+	end)
 
 	RegisterFlag(flag, function() return state end, function(val)
 		setToggleState(val, false)
@@ -3090,25 +3925,27 @@ local function CreateTextBoxInput(parentFrame, title, placeholder, defaultVal, c
 			return
 		end
 		isFocused = true
-		if pcall(function() return innerStroke.Color end) then innerStroke.Color = ACCENT else innerStroke.BackgroundColor3 = ACCENT end
-		PlayTween(paraFrame, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.04)})
-		if pcall(function() return paraStroke.Color end) then paraStroke.Color = ACCENT else paraStroke.BackgroundColor3 = ACCENT end
+		StartNeonLoop(innerStroke)
+		TweenService:Create(paraFrame, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.04)}):Play()
+		StartNeonLoop(paraStroke)
 	end)
 
 	textBox.FocusLost:Connect(function(enterPressed)
 		isFocused = false
-		PlayTween(innerStroke, TWEEN_FAST, {Color = KazeUI.CurrentTheme.Border})
-		PlayTween(paraFrame, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.02)})
-		PlayTween(paraStroke, TWEEN_FAST, {Color = KazeUI.CurrentTheme.Border})
+		StopNeonLoop(innerStroke)
+		TweenService:Create(innerStroke, TWEEN_FAST, {Color = KazeUI.CurrentTheme.Border}):Play()
+		TweenService:Create(paraFrame, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.02)}):Play()
+		StopNeonLoop(paraStroke)
+		TweenService:Create(paraStroke, TWEEN_FAST, {Color = KazeUI.CurrentTheme.Border}):Play()
 		FireCallback(callback, textBox.Text, enterPressed)
 	end)
 
-	pcall(function(c)
+	KazeUI:OnGlowChanged(innerStroke, function(c)
 		if isFocused then
 			innerStroke.Color = c
 			paraStroke.Color = c
 		end
-	end, ACCENT)
+	end)
 
 	RegisterFlag(flag, function() return textBox.Text end, function(val)
 		textBox.Text = val
@@ -3216,7 +4053,7 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 
 	local fill = Instance.new("Frame")
 	fill.Size = UDim2.new(0, 0, 1, 0)
-	fill.BackgroundColor3 = ACCENT
+	fill.BackgroundColor3 = KazeUI.GlowColor
 	fill.BorderSizePixel = 0
 	fill.Parent = track
 	Instance.new("UICorner", fill).CornerRadius = UDim.new(1, 0)
@@ -3232,9 +4069,9 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 
 	local knobStroke = Instance.new("UIStroke", knob)
 	knobStroke.Thickness = 1.2
-	knobStroke.Color = ACCENT
-	if pcall(function() return fill.Color end) then fill.Color = ACCENT else fill.BackgroundColor3 = ACCENT end
-	if pcall(function() return knobStroke.Color end) then knobStroke.Color = ACCENT else knobStroke.BackgroundColor3 = ACCENT end
+	knobStroke.Color = KazeUI.GlowColor
+	StartNeonLoop(fill)
+	StartNeonLoop(knobStroke)
 
 	local clickDetector = Instance.new("TextButton")
 	clickDetector.Size = UDim2.new(1, 0, 1, 14)
@@ -3263,8 +4100,8 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 		local visualPercentage = 0
 		if max > min then visualPercentage = (value - min) / (max - min) end
 
-		PlayTween(fill, TWEEN_FAST, {Size = UDim2.new(visualPercentage, 0, 1, 0)})
-		PlayTween(knob, TWEEN_FAST, {Position = UDim2.new(visualPercentage, 0, 0.5, 0)})
+		TweenService:Create(fill, TWEEN_FAST, {Size = UDim2.new(visualPercentage, 0, 1, 0)}):Play()
+		TweenService:Create(knob, TWEEN_FAST, {Position = UDim2.new(visualPercentage, 0, 0.5, 0)}):Play()
 		FireCallback(callback, value)
 	end
 
@@ -3283,8 +4120,8 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 			LockCamera()
 			UpdateValueFromInput(input)
 
-			PlayTween(knob, TWEEN_FAST, {Size = UDim2.fromOffset(16, 16)})
-			if pcall(function() return paraStroke.Color end) then paraStroke.Color = ACCENT else paraStroke.BackgroundColor3 = ACCENT end
+			TweenService:Create(knob, TWEEN_FAST, {Size = UDim2.fromOffset(16, 16)}):Play()
+			StartNeonLoop(paraStroke)
 
 			local moveCon, endCon
 			moveCon = UIS.InputChanged:Connect(function(moveInput)
@@ -3298,8 +4135,9 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 					ToggleScrollingAncestors(track, true)
 					UnlockCamera()
 
-					PlayTween(knob, TWEEN_FAST, {Size = UDim2.fromOffset(12, 12)})
-					PlayTween(paraStroke, TWEEN_FAST, {Color = KazeUI.CurrentTheme.Border})
+					TweenService:Create(knob, TWEEN_FAST, {Size = UDim2.fromOffset(12, 12)}):Play()
+					StopNeonLoop(paraStroke)
+					TweenService:Create(paraStroke, TWEEN_FAST, {Color = KazeUI.CurrentTheme.Border}):Play()
 					if moveCon then moveCon:Disconnect() end
 					if endCon then endCon:Disconnect() end
 				end
@@ -3307,9 +4145,9 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 		end
 	end)
 
-	pcall(function(c)
+	KazeUI:OnGlowChanged(paraStroke, function(c)
 		if isDragging then paraStroke.Color = c end
-	end, ACCENT)
+	end)
 
 	local lockCtrl = ApplyLock(paraFrame, locked, wrapper, UDim2.new(0.95, 0, 1, -3), UDim2.new(0.5, 0, 0, 3), Vector2.new(0.5, 0))
 
@@ -3575,11 +4413,13 @@ local function CreateColorPicker(parentFrame, title, defaultColor, callback, fla
 		if isLockedState or activeDialogsCount > 0 then return end
 		isOpen = not isOpen
 		pickerArea.Visible = isOpen
-		PlayTween(arrowIcon, TWEEN_SPRING, {Rotation = isOpen and 180 or 0})
+		TweenService:Create(arrowIcon, TWEEN_SPRING, {Rotation = isOpen and 180 or 0}):Play()
 		if isOpen then
-			if pcall(function() return boxStroke.Color end) then boxStroke.Color = ACCENT else boxStroke.BackgroundColor3 = ACCENT end
+			StartNeonLoop(boxStroke)
+			KazeUI._RevealElement(wrapper)
 		else
-			PlayTween(boxStroke, TWEEN_FAST, {Color = KazeUI.CurrentTheme.Border})
+			StopNeonLoop(boxStroke)
+			TweenService:Create(boxStroke, TWEEN_FAST, {Color = KazeUI.CurrentTheme.Border}):Play()
 		end
 	end)
 
@@ -3699,12 +4539,13 @@ local function CreateKeybindInput(parentFrame, title, defaultKey, callback, flag
 	bindContainer.MouseEnter:Connect(function()
 		if isLockedState or activeDialogsCount > 0 then return end
 		isHovering = true
-		if not isBinding then if pcall(function() return bindStroke.Color end) then bindStroke.Color = ACCENT else bindStroke.BackgroundColor3 = ACCENT end end
+		if not isBinding then StartNeonLoop(bindStroke) end
 	end)
 	local function onBindLeave()
 		isHovering = false
 		if not isBinding then
-			PlayTween(bindStroke, TWEEN_FAST, {Color = KazeUI.CurrentTheme.Border})
+			StopNeonLoop(bindStroke)
+			TweenService:Create(bindStroke, TWEEN_FAST, {Color = KazeUI.CurrentTheme.Border}):Play()
 		end
 	end
 	bindContainer.MouseLeave:Connect(onBindLeave)
@@ -3716,7 +4557,7 @@ local function CreateKeybindInput(parentFrame, title, defaultKey, callback, flag
 		if isBinding then return end
 		isBinding = true
 		bindLabel.Text = "..."
-		if pcall(function() return bindStroke.Color end) then bindStroke.Color = ACCENT else bindStroke.BackgroundColor3 = ACCENT end
+		StartNeonLoop(bindStroke)
 
 		if captureConn then captureConn:Disconnect() end
 		local conn
@@ -3741,7 +4582,8 @@ local function CreateKeybindInput(parentFrame, title, defaultKey, callback, flag
 					FireCallback(changedCb, currentKey)
 				end
 				if not isHovering then
-					PlayTween(bindStroke, TWEEN_FAST, {Color = KazeUI.CurrentTheme.Border})
+					StopNeonLoop(bindStroke)
+					TweenService:Create(bindStroke, TWEEN_FAST, {Color = KazeUI.CurrentTheme.Border}):Play()
 				end
 				conn:Disconnect()
 				captureConn = nil
@@ -3763,9 +4605,9 @@ local function CreateKeybindInput(parentFrame, title, defaultKey, callback, flag
 		if captureConn then captureConn:Disconnect() end
 	end)
 
-	pcall(function(c)
+	KazeUI:OnGlowChanged(bindStroke, function(c)
 		if isBinding or isHovering then bindStroke.Color = c end
-	end, ACCENT)
+	end)
 
 	RegisterFlag(flag, function() return currentKey.Name end, function(val)
 		pcall(function()
@@ -3828,13 +4670,13 @@ local function CreateVisualSectionDivider(parentFrame, titleArg)
 	local leftLine = Instance.new("Frame")
 	leftLine.Size = UDim2.new(0, 4, 0, 16)
 	leftLine.Position = UDim2.new(0, 2, 0.5, -8)
-	leftLine.BackgroundColor3 = ACCENT
+	leftLine.BackgroundColor3 = KazeUI.GlowColor
 	leftLine.BorderSizePixel = 0
 	leftLine.Parent = wrapper
 	Instance.new("UICorner", leftLine).CornerRadius = UDim.new(1, 0)
 
-	pcall(function(c) leftLine.BackgroundColor3 = c end, ACCENT)
-	if pcall(function() return leftLine.Color end) then leftLine.Color = ACCENT else leftLine.BackgroundColor3 = ACCENT end
+	KazeUI:OnGlowChanged(leftLine, function(c) leftLine.BackgroundColor3 = c end)
+	StartNeonLoop(leftLine)
 
 	local changedCb
 	return FinishElement({
@@ -4164,20 +5006,23 @@ CreateCollapsibleSection = function(parentFrame, titleArg, currentDepth)
 		setClipperOpen(isOpen)
 
 		if isOpen then
-			PlayTween(arrowIcon, TWEEN_COLLAPSE, {
+			TweenService:Create(arrowIcon, TWEEN_COLLAPSE, {
 				Rotation = 0,
 				ImageColor3 = KazeUI.CurrentTheme.Text
-			})
-			if pcall(function() return boxStroke.Color end) then boxStroke.Color = ACCENT else boxStroke.BackgroundColor3 = ACCENT end
-			if pcall(function() return accentLine.Color end) then accentLine.Color = ACCENT else accentLine.BackgroundColor3 = ACCENT end
+			}):Play()
+			StartNeonLoop(boxStroke)
+			StartNeonLoop(accentLine)
+			KazeUI._RevealElement(sectionWrapper)
 		else
-			PlayTween(arrowIcon, TWEEN_COLLAPSE, {
+			TweenService:Create(arrowIcon, TWEEN_COLLAPSE, {
 				Rotation = -90,
 				ImageColor3 = KazeUI.CurrentTheme.MutedText
-			})
-			PlayTween(accentLine, TWEEN_COLLAPSE, {
+			}):Play()
+			TweenService:Create(accentLine, TWEEN_COLLAPSE, {
 				BackgroundColor3 = KazeUI.CurrentTheme.MutedText
-			})
+			}):Play()
+			StopNeonLoop(boxStroke)
+			StopNeonLoop(accentLine)
 			boxStroke.Color = KazeUI.CurrentTheme.Border
 			accentLine.BackgroundColor3 = KazeUI.CurrentTheme.MutedText
 		end
@@ -4185,28 +5030,28 @@ CreateCollapsibleSection = function(parentFrame, titleArg, currentDepth)
 
 	toggleDetector.MouseEnter:Connect(function()
 		if activeDialogsCount > 0 then return end
-		PlayTween(headerFrame, TWEEN_HOVER_SLOW, {BackgroundColor3 = KazeUI.GetColor(0.04), BackgroundTransparency = 0.4})
+		TweenService:Create(headerFrame, TWEEN_HOVER_SLOW, {BackgroundColor3 = KazeUI.GetColor(0.04), BackgroundTransparency = 0.4}):Play()
 	end)
 	toggleDetector.MouseLeave:Connect(function()
-		PlayTween(headerFrame, TWEEN_HOVER_SLOW, {BackgroundTransparency = 1})
+		TweenService:Create(headerFrame, TWEEN_HOVER_SLOW, {BackgroundTransparency = 1}):Play()
 	end)
 
 	BindPressAnimation(toggleDetector,
 		function() return activeDialogsCount == 0 end,
 		function()
 			local curY = sectionBox.Size.Y
-			PlayTween(sectionBox, TWEEN_QUICK, {Size = UDim2.new(0.93, 0, curY.Scale, curY.Offset)})
+			TweenService:Create(sectionBox, TWEEN_QUICK, {Size = UDim2.new(0.93, 0, curY.Scale, curY.Offset)}):Play()
 		end,
 		function()
 			task.defer(function()
 				local curY = sectionBox.Size.Y
-				PlayTween(sectionBox, TWEEN_QUICK, {Size = UDim2.new(0.95, 0, curY.Scale, curY.Offset)})
+				TweenService:Create(sectionBox, TWEEN_QUICK, {Size = UDim2.new(0.95, 0, curY.Scale, curY.Offset)}):Play()
 			end)
 		end,
 		toggleSection
 	)
 
-	if openDefault then toggleSection() end
+	if openDefault then KazeUI._NoReveal = true toggleSection() KazeUI._NoReveal = false end
 
 	local sectionPublic = { Frame = sectionBox, ContentFrame = sectionContent, Header = headerFrame }
 	AttachElementsToAPI(sectionPublic, sectionContent, currentDepth + 1)
@@ -4361,20 +5206,23 @@ CreateGroupBox = function(parentFrame, titleArg, currentDepth, depthOverride)
 		setClipperOpen(isOpen)
 
 		if isOpen then
-			PlayTween(arrowIcon, TWEEN_COLLAPSE, {
+			TweenService:Create(arrowIcon, TWEEN_COLLAPSE, {
 				Rotation = 0,
 				ImageColor3 = KazeUI.CurrentTheme.Text
-			})
-			if pcall(function() return stroke.Color end) then stroke.Color = ACCENT else stroke.BackgroundColor3 = ACCENT end
-			if pcall(function() return accentLine.Color end) then accentLine.Color = ACCENT else accentLine.BackgroundColor3 = ACCENT end
+			}):Play()
+			StartNeonLoop(stroke)
+			StartNeonLoop(accentLine)
+			KazeUI._RevealElement(wrapper)
 		else
-			PlayTween(arrowIcon, TWEEN_COLLAPSE, {
+			TweenService:Create(arrowIcon, TWEEN_COLLAPSE, {
 				Rotation = -90,
 				ImageColor3 = KazeUI.CurrentTheme.MutedText
-			})
-			PlayTween(accentLine, TWEEN_COLLAPSE, {
+			}):Play()
+			TweenService:Create(accentLine, TWEEN_COLLAPSE, {
 				BackgroundColor3 = KazeUI.CurrentTheme.MutedText
-			})
+			}):Play()
+			StopNeonLoop(stroke)
+			StopNeonLoop(accentLine)
 			stroke.Color = KazeUI.CurrentTheme.Border
 			accentLine.BackgroundColor3 = KazeUI.CurrentTheme.MutedText
 		end
@@ -4382,27 +5230,27 @@ CreateGroupBox = function(parentFrame, titleArg, currentDepth, depthOverride)
 
 	toggleDetector.MouseEnter:Connect(function()
 		if activeDialogsCount > 0 then return end
-		PlayTween(header, TWEEN_HOVER_SLOW, {BackgroundColor3 = KazeUI.GetColor(0.04), BackgroundTransparency = 0.4})
+		TweenService:Create(header, TWEEN_HOVER_SLOW, {BackgroundColor3 = KazeUI.GetColor(0.04), BackgroundTransparency = 0.4}):Play()
 	end)
 	toggleDetector.MouseLeave:Connect(function()
-		PlayTween(header, TWEEN_HOVER_SLOW, {BackgroundTransparency = 1})
+		TweenService:Create(header, TWEEN_HOVER_SLOW, {BackgroundTransparency = 1}):Play()
 	end)
 
 	toggleDetector.MouseButton1Down:Connect(function()
 		if activeDialogsCount > 0 then return end
 		local curY = groupFrame.Size.Y
-		PlayTween(groupFrame, TWEEN_QUICK, {Size = UDim2.new(scaledWidth - 0.02, 0, curY.Scale, curY.Offset)})
+		TweenService:Create(groupFrame, TWEEN_QUICK, {Size = UDim2.new(scaledWidth - 0.02, 0, curY.Scale, curY.Offset)}):Play()
 	end)
 	toggleDetector.MouseButton1Up:Connect(function()
 		if activeDialogsCount > 0 then return end
 		task.defer(function()
 			local curY = groupFrame.Size.Y
-			PlayTween(groupFrame, TWEEN_QUICK, {Size = UDim2.new(scaledWidth, 0, curY.Scale, curY.Offset)})
+			TweenService:Create(groupFrame, TWEEN_QUICK, {Size = UDim2.new(scaledWidth, 0, curY.Scale, curY.Offset)}):Play()
 		end)
 		toggleGroup()
 	end)
 
-	if openDefault then toggleGroup() end
+	if openDefault then KazeUI._NoReveal = true toggleGroup() KazeUI._NoReveal = false end
 
 	local groupPublic = {
 		Frame = groupFrame,
@@ -4462,8 +5310,10 @@ local function BuildWindow(config)
 	cardStroke.Thickness = 1.4
 	cardStroke.Transparency = 1
 	cardStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-	cardStroke.Color = ACCENT
-	if pcall(function() return cardStroke.Color end) then cardStroke.Color = ACCENT else cardStroke.BackgroundColor3 = ACCENT end
+	cardStroke.Color = KazeUI.GlowColor
+	StartNeonLoop(cardStroke)
+
+	local loadHalo = KazeUI:AddGlowHalo(loadCard, UDim.new(0, 20))
 
 	local spinnerRing = Instance.new("Frame", loadCard)
 	spinnerRing.AnchorPoint = Vector2.new(0.5, 0.5)
@@ -4476,9 +5326,9 @@ local function BuildWindow(config)
 	local spinnerStroke = Instance.new("UIStroke", spinnerRing)
 	spinnerStroke.Thickness = 2
 	spinnerStroke.Transparency = 1
-	spinnerStroke.Color = ACCENT
+	spinnerStroke.Color = KazeUI.GlowColor
 	spinnerStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-	if pcall(function() return spinnerStroke.Color end) then spinnerStroke.Color = ACCENT else spinnerStroke.BackgroundColor3 = ACCENT end
+	StartNeonLoop(spinnerStroke)
 
 	local spinnerGradient = Instance.new("UIGradient", spinnerStroke)
 	spinnerGradient.Transparency = NumberSequence.new({
@@ -4553,7 +5403,7 @@ local function BuildWindow(config)
 	percentText.Text = "0%"
 	percentText.Font = Enum.Font.GothamBold
 	percentText.TextSize = 12
-	percentText.TextColor3 = ACCENT
+	percentText.TextColor3 = KazeUI.GlowColor
 	percentText.TextXAlignment = Enum.TextXAlignment.Right
 	percentText.ZIndex = 501
 
@@ -4569,13 +5419,13 @@ local function BuildWindow(config)
 
 	local barFill = Instance.new("Frame", barTrack)
 	barFill.Size = UDim2.new(0, 0, 1, 0)
-	barFill.BackgroundColor3 = ACCENT
+	barFill.BackgroundColor3 = KazeUI.GlowColor
 	barFill.BackgroundTransparency = 1
 	barFill.BorderSizePixel = 0
 	barFill.ClipsDescendants = true
 	barFill.ZIndex = 502
 	Instance.new("UICorner", barFill).CornerRadius = UDim.new(1, 0)
-	if pcall(function() return barFill.Color end) then barFill.Color = ACCENT else barFill.BackgroundColor3 = ACCENT end
+	StartNeonLoop(barFill)
 
 	local shimmer = Instance.new("Frame", barFill)
 	shimmer.Size = UDim2.new(0, 50, 1, 0)
@@ -4598,18 +5448,18 @@ local function BuildWindow(config)
 		shimmerTween:Play()
 	end
 
-	PlayTween(LoadingScreen, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundTransparency = 0})
-	PlayTween(loadCard, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundTransparency = 0.04})
-	PlayTween(cardStroke, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Transparency = 0.35})
-	PlayTween(spinnerStroke, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Transparency = 0})
-	PlayTween(loadLogo, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {ImageTransparency = 0})
-	PlayTween(loadTitle, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {TextTransparency = 0})
-	PlayTween(loadSubtitle, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {TextTransparency = 0.15})
-	PlayTween(labelText, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {TextTransparency = 0})
-	PlayTween(percentText, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {TextTransparency = 0})
-	PlayTween(barTrack, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundTransparency = 0})
-	PlayTween(barFill, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundTransparency = 0})
-	PlayTween(cardScale, TweenInfo.new(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Scale = 1})
+	TweenService:Create(LoadingScreen, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundTransparency = 0}):Play()
+	TweenService:Create(loadCard, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundTransparency = 0.04}):Play()
+	TweenService:Create(cardStroke, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Transparency = 0.35}):Play()
+	TweenService:Create(spinnerStroke, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Transparency = 0}):Play()
+	TweenService:Create(loadLogo, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {ImageTransparency = 0}):Play()
+	TweenService:Create(loadTitle, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {TextTransparency = 0}):Play()
+	TweenService:Create(loadSubtitle, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {TextTransparency = 0.15}):Play()
+	TweenService:Create(labelText, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {TextTransparency = 0}):Play()
+	TweenService:Create(percentText, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {TextTransparency = 0}):Play()
+	TweenService:Create(barTrack, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundTransparency = 0}):Play()
+	TweenService:Create(barFill, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundTransparency = 0}):Play()
+	TweenService:Create(cardScale, TweenInfo.new(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Scale = 1}):Play()
 
 	local lastPct, lastLabel = nil, nil
 	local lastProgressClock = 0
@@ -4650,21 +5500,25 @@ local function BuildWindow(config)
 		loadingDone = true
 		task.wait(0.05)
 		local fade = TweenService:Create(LoadingScreen, FADE_OUT, {BackgroundTransparency = 1})
-		PlayTween(cardScale, FADE_OUT, {Scale = 0.92})
-		PlayTween(loadCard, FADE_OUT, {BackgroundTransparency = 1})
-		PlayTween(cardStroke, FADE_OUT, {Transparency = 1})
-		PlayTween(spinnerStroke, FADE_OUT, {Transparency = 1})
-		PlayTween(loadLogo, FADE_OUT, {ImageTransparency = 1})
-		PlayTween(loadTitle, FADE_OUT, {TextTransparency = 1})
-		PlayTween(loadSubtitle, FADE_OUT, {TextTransparency = 1})
-		PlayTween(labelText, FADE_OUT, {TextTransparency = 1})
-		PlayTween(percentText, FADE_OUT, {TextTransparency = 1})
-		PlayTween(barTrack, FADE_OUT, {BackgroundTransparency = 1})
-		PlayTween(barFill, FADE_OUT, {BackgroundTransparency = 1})
+		TweenService:Create(cardScale, FADE_OUT, {Scale = 0.92}):Play()
+		TweenService:Create(loadCard, FADE_OUT, {BackgroundTransparency = 1}):Play()
+		TweenService:Create(cardStroke, FADE_OUT, {Transparency = 1}):Play()
+		TweenService:Create(spinnerStroke, FADE_OUT, {Transparency = 1}):Play()
+		TweenService:Create(loadLogo, FADE_OUT, {ImageTransparency = 1}):Play()
+		TweenService:Create(loadTitle, FADE_OUT, {TextTransparency = 1}):Play()
+		TweenService:Create(loadSubtitle, FADE_OUT, {TextTransparency = 1}):Play()
+		TweenService:Create(labelText, FADE_OUT, {TextTransparency = 1}):Play()
+		TweenService:Create(percentText, FADE_OUT, {TextTransparency = 1}):Play()
+		TweenService:Create(barTrack, FADE_OUT, {BackgroundTransparency = 1}):Play()
+		TweenService:Create(barFill, FADE_OUT, {BackgroundTransparency = 1}):Play()
 		fade:Play()
 
 		task.wait(FADE_OUT.Time)
 
+		StopNeonLoop(cardStroke)
+		StopNeonLoop(spinnerStroke)
+		StopNeonLoop(barFill)
+		if loadHalo then StopNeonLoop(loadHalo) end
 		spinnerTween:Cancel()
 		logoPulseTween:Cancel()
 		if shimmerTween then shimmerTween:Cancel() end
@@ -4748,17 +5602,100 @@ local function BuildWindow(config)
 	local maxWidth = config.MaxWidth or 900
 	local maxHeight = config.MaxHeight or 700
 
-	local selectedTheme = "Custom"
+	local selectedTheme = "CustomWallpaper"
 	if config.Theme then
 		local themeStr = tostring(config.Theme)
 		local lowerTheme = string.lower(themeStr)
 
-		for k in pairs(KazeUI.Themes) do
+		local themeMatched = false
+		for k, v in pairs(KazeUI.Themes) do
 			if string.lower(k) == lowerTheme then
 				selectedTheme = k
+				themeMatched = true
 				break
 			end
 		end
+
+		if not themeMatched then
+			local isUrl = string.find(themeStr, "^http://") or string.find(themeStr, "^https://")
+			local isAssetId = tonumber(themeStr) ~= nil
+				or string.find(themeStr, "rbxassetid://")
+				or IconsMap[lowerTheme] ~= nil
+
+			if isUrl then
+				selectedTheme = themeStr
+			elseif isAssetId then
+				KazeUI.Themes.CustomWallpaper.BackgroundImage = themeStr
+				KazeUI.Themes.CustomWallpaper.BackgroundImageTransparency = 0
+				KazeUI.Themes.CustomWallpaper.OverlayTransparency = 0.7
+				KazeUI.Themes.CustomWallpaper.PanelTransparency = 1
+				selectedTheme = "CustomWallpaper"
+			else
+				selectedTheme = "CustomWallpaper"
+			end
+		end
+	end
+
+	if config.Glow then
+		local glowVal = config.Glow
+		if typeof(glowVal) == "Color3" then
+			KazeUI:SetGlow(glowVal)
+		elseif type(glowVal) == "string" then
+			local lowerGlow = string.lower(glowVal)
+			local glowMap = {
+				red = Color3.fromRGB(239, 68, 68),
+				blue = Color3.fromRGB(0, 160, 255),
+				green = Color3.fromRGB(34, 197, 94),
+				["neon green"] = Color3.fromRGB(34, 197, 94),
+				yellow = Color3.fromRGB(234, 179, 8),
+				purple = Color3.fromRGB(150, 80, 255),
+				pink = Color3.fromRGB(244, 114, 182),
+				orange = Color3.fromRGB(249, 115, 22),
+				white = Color3.fromRGB(255, 255, 255),
+				black = Color3.fromRGB(15, 15, 17)
+			}
+
+			if glowMap[lowerGlow] then
+				KazeUI:SetGlow(glowMap[lowerGlow])
+			else
+				local cleanHex = string.gsub(glowVal, "#", "")
+				local s, res = pcall(function() return Color3.fromHex(cleanHex) end)
+				if s and res then
+					KazeUI:SetGlow(res)
+				else
+					KazeUI:SetGlow(Color3.fromRGB(59, 130, 246))
+				end
+			end
+		end
+	elseif config.GlowColor then
+		local glowColorVal = config.GlowColor
+		if typeof(glowColorVal) == "Color3" then
+			KazeUI:SetGlow(glowColorVal)
+		elseif type(glowColorVal) == "string" then
+			local cleanHex = string.gsub(glowColorVal, "#", "")
+			local s, res = pcall(function() return Color3.fromHex(cleanHex) end)
+			if s and res then
+				KazeUI:SetGlow(res)
+			else
+				KazeUI:SetGlow(Color3.fromRGB(59, 130, 246))
+			end
+		elseif glowColorVal == true then
+
+			KazeUI:SetGlow(Color3.fromRGB(59, 130, 246))
+		else
+			KazeUI:SetGlow(Color3.fromRGB(59, 130, 246))
+		end
+	else
+		KazeUI:SetGlow(Color3.fromRGB(59, 130, 246))
+	end
+
+	local glowStyleVal = config.GlowStyle or config.GlowMode
+	if type(glowStyleVal) == "string" then
+		KazeUI:SetGlowMode(glowStyleVal)
+	end
+
+	if type(config.GlowRainbow) == "boolean" then
+		KazeUI:SetGlowRainbow(config.GlowRainbow)
 	end
 
 	if type(config.PerformanceMode) == "boolean" then
@@ -4769,10 +5706,10 @@ local function BuildWindow(config)
 
 	ApplyTweenProfile(KazeUI.PerformanceMode)
 	if KazeUI.PerformanceMode then
-		
-		
-		
-		
+		-- Same restore-key bookkeeping as runtime SetPerformanceMode(true): the
+		-- developer may have also passed config.Theme, so remember what they
+		-- actually asked for before forcing Obsidian, otherwise a later
+		-- SetPerformanceMode(false) call has nothing to restore to.
 		if selectedTheme ~= "Obsidian" then
 			KazeUI._PrePerformanceThemeKey = selectedTheme
 		end
@@ -4811,8 +5748,8 @@ local function BuildWindow(config)
 	shadowStroke.Color = Color3.fromRGB(0, 0, 0)
 	shadowStroke.Transparency = 0.8
 
-	
-	
+	-- Static cyan -> blue -> purple gradient border (matches the reference
+	-- design). No animation loop, so it costs nothing while idle.
 	local WindowStroke = Instance.new("UIStroke")
 	WindowStroke.Thickness = 2
 	WindowStroke.Color = Color3.fromRGB(255, 255, 255)
@@ -4850,11 +5787,36 @@ local function BuildWindow(config)
 	local blockerCorner = Instance.new("UICorner", InteractionBlocker)
 	blockerCorner.CornerRadius = UDim.new(0, 28)
 
+	local WallpaperImage = Instance.new("ImageLabel")
+	WallpaperImage.Name = "WallpaperImage"
+	WallpaperImage.Size = UDim2.fromScale(1, 1)
+	WallpaperImage.BackgroundTransparency = 1
+	WallpaperImage.ScaleType = Enum.ScaleType.Crop
+	WallpaperImage.ZIndex = -2
+	WallpaperImage.Parent = ContentClipper
+	Instance.new("UICorner", WallpaperImage).CornerRadius = UDim.new(0, 28)
+
+	local DarkOverlay = Instance.new("Frame")
+	DarkOverlay.Name = "DarkOverlay"
+	DarkOverlay.Size = UDim2.fromScale(1, 1)
+	DarkOverlay.BorderSizePixel = 0
+	DarkOverlay.ZIndex = -1
+	DarkOverlay.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+	DarkOverlay.Parent = ContentClipper
+	Instance.new("UICorner", DarkOverlay).CornerRadius = UDim.new(0, 28)
+
+	table.insert(KazeUI.WallpaperElements, {
+		ImageLabel = WallpaperImage,
+		OverlayFrame = DarkOverlay
+	})
+
+	TrackDestroy(WallpaperImage)
+
 	KazeUI:SetTheme(selectedTheme)
 	SetLoadingProgress(45, "Applying theme")
 
 	Window.Size = UDim2.fromOffset(math.max(100, initialSize.X.Offset - 50), math.max(100, initialSize.Y.Offset - 50))
-	PlayTween(Window, TWEEN_WINDOW_OPEN, {Size = initialSize})
+	TweenService:Create(Window, TWEEN_WINDOW_OPEN, {Size = initialSize}):Play()
 
 	local TopBar = Instance.new("Frame")
 	TopBar.Size = UDim2.new(1, 0, 0, 52)
@@ -4959,16 +5921,15 @@ local function BuildWindow(config)
 	AvatarPopupCard.Size = UDim2.new(1, -20, 0, 76)
 	AvatarPopupCard.ZIndex = 51
 	AvatarPopupCard.Parent = AvatarPopup
-	KazeUI:AddPanel(AvatarPopupCard, -0.02, true, true)
-	AvatarPopupCard.BackgroundColor3 = Color3.fromRGB(14, 14, 17)
-	AvatarPopupCard.BackgroundTransparency = 0.05
+	AvatarPopupCard.BackgroundColor3 = Color3.fromRGB(20, 20, 26)
+	AvatarPopupCard.BackgroundTransparency = 0
 	Instance.new("UICorner", AvatarPopupCard).CornerRadius = UDim.new(0, 16)
 
 	local AvatarPopupStroke = Instance.new("UIStroke")
 	AvatarPopupStroke.Thickness = 1.5
 	AvatarPopupStroke.Parent = AvatarPopupCard
 	KazeUI:RegisterBorder(AvatarPopupStroke)
-	if pcall(function() return AvatarPopupStroke.Color end) then AvatarPopupStroke.Color = ACCENT else AvatarPopupStroke.BackgroundColor3 = ACCENT end
+	StartNeonLoop(AvatarPopupStroke)
 
 	local AvatarPopupPadding = Instance.new("UIPadding", AvatarPopupCard)
 	AvatarPopupPadding.PaddingLeft = UDim.new(0, 16)
@@ -5024,7 +5985,8 @@ local function BuildWindow(config)
 		row.ZIndex = 53
 		row.Visible = false
 		row.Parent = SocialRow
-		KazeUI:AddPanel(row, 0.04)
+		row.BackgroundColor3 = Color3.fromRGB(32, 32, 40)
+		row.BackgroundTransparency = 0
 		Instance.new("UICorner", row).CornerRadius = UDim.new(0, 12)
 
 		local iconCircle = Instance.new("Frame")
@@ -5087,10 +6049,10 @@ local function BuildWindow(config)
 		KazeUI:OnThemeChanged(chevron, function(t) chevron.ImageColor3 = t.MutedText end)
 
 		row.MouseEnter:Connect(function()
-			PlayTween(row, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.08)})
+			TweenService:Create(row, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.08)}):Play()
 		end)
 		row.MouseLeave:Connect(function()
-			PlayTween(row, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.04)})
+			TweenService:Create(row, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.04)}):Play()
 		end)
 		row.MouseButton1Click:Connect(onClick)
 
@@ -5125,11 +6087,12 @@ local function BuildWindow(config)
 	LockOverlay.Text = ""
 	LockOverlay.AutoButtonColor = false
 	LockOverlay.Active = true
-	LockOverlay.Position = UDim2.new(0, 0, 0, 52)
-	LockOverlay.Size = UDim2.new(1, 0, 1, -52)
+	LockOverlay.Position = UDim2.new(0, 0, 0, 0)
+	LockOverlay.Size = UDim2.new(1, 0, 1, 0)
 	LockOverlay.ZIndex = 40
 	LockOverlay.Visible = false
 	LockOverlay.Parent = Window
+	Instance.new("UICorner", LockOverlay).CornerRadius = UDim.new(0, R)
 
 	local topBarNormalColor = TopBarMainBody.BackgroundColor3
 	local topBarDarkColor = Color3.fromRGB(10, 10, 12)
@@ -5143,7 +6106,7 @@ local function BuildWindow(config)
 
 		if open then
 			LockOverlay.Visible = true
-			PlayTween(LockOverlay, tInfo, {BackgroundTransparency = 0.55})
+			TweenService:Create(LockOverlay, tInfo, {BackgroundTransparency = 0.4}):Play()
 		else
 			local tween = TweenService:Create(LockOverlay, tInfo, {BackgroundTransparency = 1})
 			tween.Completed:Connect(function()
@@ -5154,7 +6117,7 @@ local function BuildWindow(config)
 
 		local targetColor = open and topBarDarkColor or topBarNormalColor
 		for _, panel in ipairs(topBarPanels) do
-			PlayTween(panel, tInfo, {BackgroundColor3 = targetColor})
+			TweenService:Create(panel, tInfo, {BackgroundColor3 = targetColor}):Play()
 		end
 	end
 
@@ -5173,7 +6136,7 @@ local function BuildWindow(config)
 		local cardHeight = 64 + AvatarPopupContent.Size.Y.Offset + (socialCount > 0 and (socialHeight + 10) or 0)
 		AvatarPopupCard.Size = UDim2.new(1, -20, 0, cardHeight)
 		local targetHeight = open and (cardHeight + 10) or 0
-		PlayTween(AvatarPopup, TWEEN_PANEL, {Size = UDim2.new(1, 0, 0, targetHeight)})
+		TweenService:Create(AvatarPopup, TWEEN_PANEL, {Size = UDim2.new(1, 0, 0, targetHeight)}):Play()
 		setLockOverlay(open)
 	end
 
@@ -5206,7 +6169,7 @@ local function BuildWindow(config)
 		if avatarPopupOpen then setAvatarPopupOpen(true) end
 	end
 
-	
+	-- Left side: logo | GAME NAME (muted, caps) -- matches the reference.
 	do
 	local Wordmark
 	if config.Logo and tostring(config.Logo) ~= "" then
@@ -5225,9 +6188,9 @@ local function BuildWindow(config)
 		wordmarkStroke.Thickness = 2
 		wordmarkStroke.LineJoinMode = Enum.LineJoinMode.Round
 		wordmarkStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Contextual
-		wordmarkStroke.Color = ACCENT
+		wordmarkStroke.Color = KazeUI.GlowColor
 		wordmarkStroke.Parent = Wordmark
-		pcall(function(c) wordmarkStroke.Color = c end, ACCENT)
+		KazeUI:OnGlowChanged(wordmarkStroke, function(c) wordmarkStroke.Color = c end)
 	end
 	Wordmark.Size = UDim2.fromOffset(96, 36)
 	Wordmark.Position = UDim2.fromOffset(18, 8)
@@ -5272,8 +6235,8 @@ local function BuildWindow(config)
 	TitleLabel.Parent = TopBar
 	KazeUI:RegisterText(TitleLabel, false)
 
-	
-	
+	-- Author/version moved to the sidebar footer (see below); keep the
+	-- instance so existing code that touches SubLabel keeps working.
 	local SubLabel = Instance.new("TextLabel")
 	SubLabel.Size = UDim2.new(0, 0, 0, 0)
 	SubLabel.BackgroundTransparency = 1
@@ -5282,8 +6245,8 @@ local function BuildWindow(config)
 	SubLabel.Parent = TopBar
 	KazeUI:RegisterText(SubLabel, false)
 
-	
-	
+	-- FPS / Ping readout. Polled once a second and only while the window is
+	-- actually visible; no per-frame connection.
 	do
 	local function NewStatLabel(xOffset)
 		local l = Instance.new("TextLabel")
@@ -5304,37 +6267,19 @@ local function BuildWindow(config)
 	PingLabel.Text = "Ping: --"
 
 	local StatsService = game:GetService("Stats")
-	local pingItem = nil
-	pcall(function() pingItem = StatsService.Network.ServerStatsItem["Data Ping"] end)
-	local lastFps, lastPing = nil, nil
-	local statsThread = task.spawn(function()
+	task.spawn(function()
 		while TopBar.Parent do
 			if Window.Visible then
-				local okF, fps = pcall(workspace.GetRealPhysicsFPS, workspace)
-				if okF and fps then
-					fps = math.clamp(math.floor(fps + 0.5), 0, 999)
-					if fps ~= lastFps then
-						lastFps = fps
-						FpsLabel.Text = "FPS: " .. fps
-					end
-				end
-				if pingItem then
-					local okP, ping = pcall(pingItem.GetValue, pingItem)
-					if okP and ping then
-						ping = math.floor(ping + 0.5)
-						if ping ~= lastPing then
-							lastPing = ping
-							PingLabel.Text = "Ping: " .. ping .. "ms"
-						end
-					end
-				end
-				task.wait(KazeUI.PerformanceMode and 2 or 1)
-			else
-				task.wait(2)
+				local okF, fps = pcall(function() return math.floor(workspace:GetRealPhysicsFPS() + 0.5) end)
+				if okF and fps then FpsLabel.Text = "FPS: " .. tostring(math.clamp(fps, 0, 999)) end
+				local okP, ping = pcall(function()
+					return math.floor(StatsService.Network.ServerStatsItem["Data Ping"]:GetValue() + 0.5)
+				end)
+				if okP and ping then PingLabel.Text = "Ping: " .. tostring(ping) .. "ms" end
 			end
+			task.wait(1)
 		end
 	end)
-	TopBar.Destroying:Connect(function() pcall(task.cancel, statsThread) end)
 	end
 
 	local TopDivider = Instance.new("Frame")
@@ -5429,7 +6374,7 @@ local function BuildWindow(config)
 	MiniStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 	MiniStroke.Parent = MiniIcon
 	KazeUI:RegisterBorder(MiniStroke)
-	if pcall(function() return MiniStroke.Color end) then MiniStroke.Color = ACCENT else MiniStroke.BackgroundColor3 = ACCENT end
+	StartNeonLoop(MiniStroke)
 
 	local isMinimized = false
 
@@ -5455,7 +6400,6 @@ local function BuildWindow(config)
 		closeTween.Completed:Connect(function()
 			if isMinimized then
 				Window.Visible = false
-				ScreenGui.Enabled = false
 			end
 		end)
 		closeTween:Play()
@@ -5463,14 +6407,13 @@ local function BuildWindow(config)
 		if openButtonHidable then
 			MiniButton.Visible = true
 			MiniButton.Size = UDim2.fromOffset(0, 0)
-			PlayTween(MiniButton, TWEEN_SPRING, {Size = MiniButtonSize})
+			TweenService:Create(MiniButton, TWEEN_SPRING, {Size = MiniButtonSize}):Play()
 		end
 	end
 
 	local function unminimizeWindow()
 		if not isMinimized then return end
 		isMinimized = false
-		ScreenGui.Enabled = true
 
 		if openButtonHidable then
 			MiniButton.Visible = false
@@ -5606,10 +6549,10 @@ local function BuildWindow(config)
 			toggledMaximized = true
 			Window.AnchorPoint = Vector2.new(0.5, 0.5)
 			Window.Position = UDim2.fromScale(0.5, 0.5)
-			PlayTween(Window, TWEEN_SMOOTH, {Size = UDim2.fromScale(0.95, 0.9)})
+			TweenService:Create(Window, TWEEN_SMOOTH, {Size = UDim2.fromScale(0.95, 0.9)}):Play()
 		else
 			toggledMaximized = false
-			PlayTween(Window, TWEEN_SMOOTH, {Size = lastNormalSize, Position = dragState.Position})
+			TweenService:Create(Window, TWEEN_SMOOTH, {Size = lastNormalSize, Position = dragState.Position}):Play()
 			task.delay(0.25, function() Window.AnchorPoint = dragState.Anchor end)
 		end
 	end)
@@ -5622,7 +6565,7 @@ local function BuildWindow(config)
 		BtnYellow.Active = false; BtnGreen.Active = false; BtnRed.Active = false
 
 		InteractionBlocker.Visible = true
-		PlayTween(InteractionBlocker, TWEEN_FAST, {BackgroundTransparency = 0.65})
+		TweenService:Create(InteractionBlocker, TWEEN_FAST, {BackgroundTransparency = 0.65}):Play()
 
 		local ConfirmWindow = Instance.new("Frame", Window)
 		ConfirmWindow.Name = "ExitConfirmDialog"
@@ -5640,7 +6583,7 @@ local function BuildWindow(config)
 		confirmStroke.Thickness = 1.2
 		KazeUI:RegisterBorder(confirmStroke)
 
-		PlayTween(ConfirmWindow, TWEEN_SPRING, {Position = UDim2.fromScale(0.5, 0.5)})
+		TweenService:Create(ConfirmWindow, TWEEN_SPRING, {Position = UDim2.fromScale(0.5, 0.5)}):Play()
 
 		local ConfirmText = Instance.new("TextLabel", ConfirmWindow)
 		ConfirmText.Size = UDim2.new(1, -40, 0, 50)
@@ -5684,14 +6627,19 @@ local function BuildWindow(config)
 		KazeUI:AddPanel(CancelBtn, 0.04)
 		KazeUI:RegisterText(CancelBtn, true)
 
-		ConfirmBtn.MouseButton1Click:Connect(TeardownRuntime)
+		ConfirmBtn.MouseButton1Click:Connect(function()
+			ScreenGui:Destroy()
+			OpenButtonGui:Destroy()
+			DialogGui:Destroy()
+			NotifScreenGui:Destroy()
+		end)
 		local confirmClosing = false
 		CancelBtn.MouseButton1Click:Connect(function()
 			if confirmClosing then return end
 			confirmClosing = true
-			PlayTween(InteractionBlocker, TWEEN_FAST, {BackgroundTransparency = 1})
+			TweenService:Create(InteractionBlocker, TWEEN_FAST, {BackgroundTransparency = 1}):Play()
 			local closeInfo = TWEEN_FAST
-			PlayTween(ConfirmWindow, closeInfo, {Position = UDim2.fromScale(0.5, 0.45)})
+			TweenService:Create(ConfirmWindow, closeInfo, {Position = UDim2.fromScale(0.5, 0.45)}):Play()
 			task.wait(closeInfo.Time)
 			ConfirmWindow:Destroy()
 			InteractionBlocker.Visible = false
@@ -5798,9 +6746,6 @@ local function BuildWindow(config)
 	local hidableTab = config.HidableTab == true
 	local sidebarCollapsed = false
 	local sidebarIdleThread = nil
-	Window.Destroying:Connect(function()
-		if sidebarIdleThread then pcall(task.cancel, sidebarIdleThread) sidebarIdleThread = nil end
-	end)
 	local hidableTabLabels = {}
 	local SidebarExpandCatcherRef = nil
 	local SIDEBAR_FULL_WIDTH = 190
@@ -5814,19 +6759,19 @@ local function BuildWindow(config)
 		sidebarCollapsed = state
 		local targetWidth = state and SIDEBAR_ICON_WIDTH or SIDEBAR_FULL_WIDTH
 
-		PlayTween(SideBarMask, TWEEN_SMOOTH, {Size = UDim2.new(0, targetWidth, 1, 0)})
-		PlayTween(SideBar, TWEEN_SMOOTH, {Size = UDim2.new(0, targetWidth, 1, 0)})
-		PlayTween(VertDivider, TWEEN_SMOOTH, {Position = UDim2.new(0, targetWidth, 0, 0)})
-		PlayTween(Pages, TWEEN_SMOOTH, {Position = PG.Pos(targetWidth), Size = PG.Size(targetWidth)})
-		PlayTween(PG.Box, TWEEN_SMOOTH, {Position = PG.Pos(targetWidth), Size = PG.Size(targetWidth)})
+		TweenService:Create(SideBarMask, TWEEN_SMOOTH, {Size = UDim2.new(0, targetWidth, 1, 0)}):Play()
+		TweenService:Create(SideBar, TWEEN_SMOOTH, {Size = UDim2.new(0, targetWidth, 1, 0)}):Play()
+		TweenService:Create(VertDivider, TWEEN_SMOOTH, {Position = UDim2.new(0, targetWidth, 0, 0)}):Play()
+		TweenService:Create(Pages, TWEEN_SMOOTH, {Position = PG.Pos(targetWidth), Size = PG.Size(targetWidth)}):Play()
+		TweenService:Create(PG.Box, TWEEN_SMOOTH, {Position = PG.Pos(targetWidth), Size = PG.Size(targetWidth)}):Play()
 
 		if SidebarExpandCatcherRef then SidebarExpandCatcherRef.Visible = state end
 
 		for _, item in ipairs(hidableTabLabels) do
-			PlayTween(item.Label, TWEEN_FAST, {TextTransparency = state and 1 or 0})
+			TweenService:Create(item.Label, TWEEN_FAST, {TextTransparency = state and 1 or 0}):Play()
 			if item.Icon then
 				local iconX = state and ICON_COLLAPSED_X or ICON_EXPANDED_X
-				PlayTween(item.Icon, TWEEN_SMOOTH, {Position = UDim2.new(0, iconX, 0.5, -9)})
+				TweenService:Create(item.Icon, TWEEN_SMOOTH, {Position = UDim2.new(0, iconX, 0.5, -9)}):Play()
 			end
 		end
 	end
@@ -5945,14 +6890,14 @@ local function BuildWindow(config)
 		if activeDialogsCount > 0 then return end
 		if not KazeUI.IsResizing and not toggledMaximized then
 			Mouse.Icon = hoverCursor
-			PlayTween(ResizeHandle, TWEEN_HOVER, {ImageColor3 = ACCENT})
+			TweenService:Create(ResizeHandle, TWEEN_HOVER, {ImageColor3 = KazeUI.GlowColor}):Play()
 		end
 	end)
 
 	ResizeHandle.MouseLeave:Connect(function()
 		if not KazeUI.IsResizing then
 			Mouse.Icon = ""
-			PlayTween(ResizeHandle, TWEEN_HOVER, {ImageColor3 = KazeUI.CurrentTheme.MutedText})
+			TweenService:Create(ResizeHandle, TWEEN_HOVER, {ImageColor3 = KazeUI.CurrentTheme.MutedText}):Play()
 		end
 	end)
 
@@ -5995,7 +6940,7 @@ local function BuildWindow(config)
 			ResizeBlocker.Visible = true
 			LockCamera()
 			Mouse.Icon = hoverCursor
-			PlayTween(ResizeHandle, TWEEN_HOVER, {ImageColor3 = ACCENT})
+			TweenService:Create(ResizeHandle, TWEEN_HOVER, {ImageColor3 = KazeUI.GlowColor}):Play()
 
 			releaseResizeListeners()
 			resizeMoveConn = UIS.InputChanged:Connect(function(changed)
@@ -6012,7 +6957,7 @@ local function BuildWindow(config)
 					ResizeBlocker.Visible = false
 					UnlockCamera()
 					Mouse.Icon = ""
-					PlayTween(ResizeHandle, TWEEN_HOVER, {ImageColor3 = KazeUI.CurrentTheme.MutedText})
+					TweenService:Create(ResizeHandle, TWEEN_HOVER, {ImageColor3 = KazeUI.CurrentTheme.MutedText}):Play()
 				end
 			end)
 		end
@@ -6116,7 +7061,7 @@ local function BuildWindow(config)
 		activeDialogsCount = activeDialogsCount + 1
 
 		InteractionBlocker.Visible = true
-		PlayTween(InteractionBlocker, TWEEN_FAST, {BackgroundTransparency = 0.65})
+		TweenService:Create(InteractionBlocker, TWEEN_FAST, {BackgroundTransparency = 0.65}):Play()
 
 		local DialogFrame = Instance.new("Frame", Window)
 		DialogFrame.Name = "WindowDialog"
@@ -6134,7 +7079,7 @@ local function BuildWindow(config)
 		stroke.Thickness = 1.4
 		KazeUI:RegisterBorder(stroke)
 
-		PlayTween(DialogFrame, TWEEN_SPRING, {Position = UDim2.fromScale(0.5, 0.5)})
+		TweenService:Create(DialogFrame, TWEEN_SPRING, {Position = UDim2.fromScale(0.5, 0.5)}):Play()
 
 		local totalActions = #orderedActions
 		local shouldStack
@@ -6167,7 +7112,7 @@ local function BuildWindow(config)
 			dIcon.BackgroundTransparency = 1
 			dIcon.Image = iconId
 			dIcon.ZIndex = 102
-			KazeUI:OnThemeChanged(dIcon, function(t) dIcon.ImageColor3 = ACCENT end)
+			KazeUI:OnThemeChanged(dIcon, function(t) dIcon.ImageColor3 = KazeUI.GlowColor end)
 			topOffset = 62
 		end
 
@@ -6256,9 +7201,9 @@ local function BuildWindow(config)
 		local function closeDialog()
 			if dialogClosing then return end
 			dialogClosing = true
-			PlayTween(InteractionBlocker, TWEEN_FAST, {BackgroundTransparency = 1})
+			TweenService:Create(InteractionBlocker, TWEEN_FAST, {BackgroundTransparency = 1}):Play()
 			local closeInfo = TWEEN_FAST
-			PlayTween(DialogFrame, closeInfo, {Position = UDim2.fromScale(0.5, 0.4)})
+			TweenService:Create(DialogFrame, closeInfo, {Position = UDim2.fromScale(0.5, 0.4)}):Play()
 			task.wait(closeInfo.Time)
 			DialogFrame:Destroy()
 			InteractionBlocker.Visible = false
@@ -6296,7 +7241,7 @@ local function BuildWindow(config)
 			if type(btnColor) == "string" then
 				local cleanHex = string.gsub(btnColor, "#", "")
 				local s, res = pcall(function() return Color3.fromHex(cleanHex) end)
-				if s and res then btnColor = res else btnColor = ACCENT end
+				if s and res then btnColor = res else btnColor = KazeUI.GlowColor end
 			elseif typeof(btnColor) ~= "Color3" then
 				btnColor = nil
 			end
@@ -6314,17 +7259,17 @@ local function BuildWindow(config)
 				isHovered = true
 				if btnColor then
 					local h, s, v = Color3.toHSV(btnColor)
-					PlayTween(actionBtn, TWEEN_FAST, {BackgroundColor3 = Color3.fromHSV(h, s, math.clamp(v - 0.1, 0, 1))})
+					TweenService:Create(actionBtn, TWEEN_FAST, {BackgroundColor3 = Color3.fromHSV(h, s, math.clamp(v - 0.1, 0, 1))}):Play()
 				else
-					PlayTween(actionBtn, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.06)})
+					TweenService:Create(actionBtn, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.06)}):Play()
 				end
 			end)
 			actionBtn.MouseLeave:Connect(function()
 				isHovered = false
 				if btnColor then
-					PlayTween(actionBtn, TWEEN_FAST, {BackgroundColor3 = btnColor})
+					TweenService:Create(actionBtn, TWEEN_FAST, {BackgroundColor3 = btnColor}):Play()
 				else
-					PlayTween(actionBtn, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.04)})
+					TweenService:Create(actionBtn, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.04)}):Play()
 				end
 			end)
 
@@ -6352,7 +7297,10 @@ local function BuildWindow(config)
 	end
 
 	function Win:Destroy()
-		TeardownRuntime()
+		ScreenGui:Destroy()
+		OpenButtonGui:Destroy()
+		DialogGui:Destroy()
+		NotifScreenGui:Destroy()
 	end
 
 	local cardDepth = 0
@@ -6381,7 +7329,7 @@ local function BuildWindow(config)
 		local shield
 		if depth == 1 then
 			InteractionBlocker.Visible = true
-			PlayTween(InteractionBlocker, TWEEN_FAST, {BackgroundTransparency = dim and 0.65 or 1})
+			TweenService:Create(InteractionBlocker, TWEEN_FAST, {BackgroundTransparency = dim and 0.65 or 1}):Play()
 		else
 			shield = Instance.new("TextButton")
 			shield.Name = "CardShield"
@@ -6395,38 +7343,42 @@ local function BuildWindow(config)
 			shield.ZIndex = z - 1
 			shield.Parent = Window
 			Instance.new("UICorner", shield).CornerRadius = blockerCorner.CornerRadius
-			PlayTween(shield, TWEEN_FAST, {BackgroundTransparency = dim and 0.55 or 1})
+			TweenService:Create(shield, TWEEN_FAST, {BackgroundTransparency = dim and 0.55 or 1}):Play()
 		end
 
 		local card = Instance.new("Frame")
 		card.Name = "KazeCard"
 		card.AnchorPoint = Vector2.new(0.5, 0.5)
 		card.Position = UDim2.fromScale(0.5, 0.45)
-		card.Size = UDim2.fromOffset(300, 0)
+		card.Size = UDim2.fromOffset(340, 0)
 		card.AutomaticSize = Enum.AutomaticSize.Y
 		card.ZIndex = z
 		card.Active = true
-		card.BackgroundTransparency = 0.08
+		card.BackgroundTransparency = 0.02
 		card.Parent = Window
-		Instance.new("UICorner", card).CornerRadius = UDim.new(0, 14)
+		Instance.new("UICorner", card).CornerRadius = UDim.new(0, 18)
 		KazeUI:AddPanel(card, 0.04, false, true)
+
+		local cardScale = Instance.new("UIScale", card)
+		cardScale.Scale = 0.94
+		TweenService:Create(cardScale, TWEEN_SPRING, {Scale = 1}):Play()
 
 		local cardStroke = Instance.new("UIStroke", card)
 		cardStroke.Thickness = 1.4
 		KazeUI:RegisterBorder(cardStroke)
 
 		local cardPad = Instance.new("UIPadding", card)
-		cardPad.PaddingTop = UDim.new(0, 16)
-		cardPad.PaddingBottom = UDim.new(0, 16)
-		cardPad.PaddingLeft = UDim.new(0, 16)
-		cardPad.PaddingRight = UDim.new(0, 16)
+		cardPad.PaddingTop = UDim.new(0, 18)
+		cardPad.PaddingBottom = UDim.new(0, 18)
+		cardPad.PaddingLeft = UDim.new(0, 18)
+		cardPad.PaddingRight = UDim.new(0, 18)
 
 		local cardList = Instance.new("UIListLayout", card)
 		cardList.SortOrder = Enum.SortOrder.LayoutOrder
 		cardList.HorizontalAlignment = Enum.HorizontalAlignment.Center
-		cardList.Padding = UDim.new(0, 8)
+		cardList.Padding = UDim.new(0, 10)
 
-		PlayTween(card, TWEEN_SPRING, {Position = UDim2.fromScale(0.5, 0.5)})
+		TweenService:Create(card, TWEEN_SPRING, {Position = UDim2.fromScale(0.5, 0.5)}):Play()
 
 		local function NewText(parent, text, font, size, muted, order)
 			local t = Instance.new("TextLabel")
@@ -6444,10 +7396,10 @@ local function BuildWindow(config)
 
 		local imageLabel
 		if cfg.Image ~= nil then
-			
-			
-			
-			
+			-- Big banner, not a small icon: full card width, tall enough to
+			-- actually read as "the game's image" the way a card like this is
+			-- expected to look. Crop fills it from a square game icon instead
+			-- of leaving letterboxed bars.
 			local holder = Instance.new("Frame")
 			holder.Name = "Thumb"
 			holder.Size = UDim2.new(1, 0, 0, 150)
@@ -6455,7 +7407,8 @@ local function BuildWindow(config)
 			holder.ZIndex = z + 1
 			holder.Parent = card
 			Instance.new("UICorner", holder).CornerRadius = UDim.new(0, 14)
-			KazeUI:AddPanel(holder, 0.06)
+			KazeUI:AddPanel(holder, 0.06, false, true)
+			holder.BackgroundTransparency = 0.2
 			local holderStroke = Instance.new("UIStroke", holder)
 			holderStroke.Thickness = 1
 			KazeUI:RegisterBorder(holderStroke)
@@ -6470,10 +7423,10 @@ local function BuildWindow(config)
 			Instance.new("UICorner", imageLabel).CornerRadius = UDim.new(0, 14)
 		end
 
-		
-		
-		
-		
+		-- Title line: a small status-colored dot (from SubtitleColor) sits
+		-- right before the title, e.g. a green dot for a supported game --
+		-- matches the bullet-point look in the reference layout. No dot if
+		-- the card doesn't carry a SubtitleColor at all.
 		local titleRow = Instance.new("Frame")
 		titleRow.Name = "TitleRow"
 		titleRow.BackgroundTransparency = 1
@@ -6552,8 +7505,9 @@ local function BuildWindow(config)
 				row.LayoutOrder = i
 				row.ZIndex = z + 2
 				row.Parent = scroll
-				Instance.new("UICorner", row).CornerRadius = UDim.new(0, 10)
-				KazeUI:AddPanel(row, 0.03)
+				Instance.new("UICorner", row).CornerRadius = UDim.new(0, 12)
+				KazeUI:AddPanel(row, 0.03, false, true)
+				row.BackgroundTransparency = 0.2
 
 				local thumb = Instance.new("ImageLabel")
 				thumb.Position = UDim2.fromOffset(8, 6)
@@ -6595,10 +7549,10 @@ local function BuildWindow(config)
 				if rowStatusColor then statusLabel.TextColor3 = rowStatusColor end
 
 				row.MouseEnter:Connect(function()
-					PlayTween(row, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.06)})
+					TweenService:Create(row, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.06)}):Play()
 				end)
 				row.MouseLeave:Connect(function()
-					PlayTween(row, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.03)})
+					TweenService:Create(row, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.03)}):Play()
 				end)
 				row.MouseButton1Click:Connect(function()
 					if typeof(it.OnClick) == "function" then task.spawn(it.OnClick) end
@@ -6608,10 +7562,21 @@ local function BuildWindow(config)
 			end
 		end
 
+		local cardDivider = Instance.new("Frame")
+		cardDivider.Name = "Divider"
+		cardDivider.Size = UDim2.new(1, 0, 0, 1)
+		cardDivider.BorderSizePixel = 0
+		cardDivider.BackgroundColor3 = KazeUI.CurrentTheme.Border
+		cardDivider.BackgroundTransparency = 0.5
+		cardDivider.LayoutOrder = 6
+		cardDivider.ZIndex = z + 1
+		cardDivider.Parent = card
+		KazeUI:OnThemeChanged(cardDivider, function(t) cardDivider.BackgroundColor3 = t.Border end)
+
 		local actionsFrame = Instance.new("Frame")
-		actionsFrame.Size = UDim2.new(1, 0, 0, 34)
+		actionsFrame.Size = UDim2.new(1, 0, 0, 36)
 		actionsFrame.BackgroundTransparency = 1
-		actionsFrame.LayoutOrder = 6
+		actionsFrame.LayoutOrder = 7
 		actionsFrame.ZIndex = z + 1
 		actionsFrame.Parent = card
 		local actionsLayout = Instance.new("UIListLayout", actionsFrame)
@@ -6625,11 +7590,11 @@ local function BuildWindow(config)
 			if closed then return end
 			closed = true
 			if depth == 1 then
-				PlayTween(InteractionBlocker, TWEEN_FAST, {BackgroundTransparency = 1})
+				TweenService:Create(InteractionBlocker, TWEEN_FAST, {BackgroundTransparency = 1}):Play()
 			elseif shield then
-				PlayTween(shield, TWEEN_FAST, {BackgroundTransparency = 1})
+				TweenService:Create(shield, TWEEN_FAST, {BackgroundTransparency = 1}):Play()
 			end
-			PlayTween(card, TWEEN_FAST, {Position = UDim2.fromScale(0.5, 0.45)})
+			TweenService:Create(card, TWEEN_FAST, {Position = UDim2.fromScale(0.5, 0.45)}):Play()
 			task.wait(TWEEN_FAST.Time)
 			card:Destroy()
 			if shield then shield:Destroy() end
@@ -6641,14 +7606,14 @@ local function BuildWindow(config)
 		local n = #actions
 		for i, act in ipairs(actions) do
 			local btn = Instance.new("TextButton")
-			btn.Size = UDim2.new(1 / n, -math.floor(8 * (n - 1) / n), 0, 34)
+			btn.Size = UDim2.new(1 / n, -math.floor(8 * (n - 1) / n), 0, 36)
 			btn.AutoButtonColor = false
 			btn.Text = ""
 			btn.BorderSizePixel = 0
 			btn.LayoutOrder = i
 			btn.ZIndex = z + 2
 			btn.Parent = actionsFrame
-			Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 10)
+			Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 12)
 
 			local btnText = Instance.new("TextLabel")
 			btnText.Size = UDim2.new(1, -12, 1, 0)
@@ -6666,19 +7631,20 @@ local function BuildWindow(config)
 				btnText.TextColor3 = Color3.fromRGB(255, 255, 255)
 				btn.MouseEnter:Connect(function()
 					local h, sat, v = Color3.toHSV(btnColor)
-					PlayTween(btn, TWEEN_FAST, {BackgroundColor3 = Color3.fromHSV(h, sat, math.clamp(v - 0.1, 0, 1))})
+					TweenService:Create(btn, TWEEN_FAST, {BackgroundColor3 = Color3.fromHSV(h, sat, math.clamp(v - 0.1, 0, 1))}):Play()
 				end)
 				btn.MouseLeave:Connect(function()
-					PlayTween(btn, TWEEN_FAST, {BackgroundColor3 = btnColor})
+					TweenService:Create(btn, TWEEN_FAST, {BackgroundColor3 = btnColor}):Play()
 				end)
 			else
-				KazeUI:AddPanel(btn, 0.04)
+				KazeUI:AddPanel(btn, 0.04, false, true)
+				btn.BackgroundTransparency = 0.1
 				KazeUI:RegisterText(btnText, false)
 				btn.MouseEnter:Connect(function()
-					PlayTween(btn, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.06)})
+					TweenService:Create(btn, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.06)}):Play()
 				end)
 				btn.MouseLeave:Connect(function()
-					PlayTween(btn, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.04)})
+					TweenService:Create(btn, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.04)}):Play()
 				end)
 			end
 
@@ -6778,7 +7744,7 @@ btn.BackgroundTransparency = 1
 
 local leftIndicator = Instance.new("Frame", btn)
 		leftIndicator.Size = UDim2.new(0, 3, 1, 0)
-		leftIndicator.BackgroundColor3 = ACCENT
+		leftIndicator.BackgroundColor3 = KazeUI.GlowColor
 		leftIndicator.BorderSizePixel = 0
 leftIndicator.Visible = false
 leftIndicator.BackgroundTransparency = 1
@@ -6786,7 +7752,7 @@ leftIndicator.BackgroundTransparency = 1
 local indicatorCorner = Instance.new("UICorner", leftIndicator)
 		indicatorCorner.CornerRadius = UDim.new(0, 6)
 
-		pcall(function(c) leftIndicator.BackgroundColor3 = c end, ACCENT)
+		KazeUI:OnGlowChanged(leftIndicator, function(c) leftIndicator.BackgroundColor3 = c end)
 
 		local iconLabel = Instance.new("ImageLabel", btn)
 		iconLabel.Size = UDim2.fromOffset(18, 18)
@@ -6816,7 +7782,7 @@ textConstraint.MaxTextSize = 14
 		page.Size = UDim2.new(1, 0, 1, 0)
 		page.BackgroundTransparency = 1
 		page.Visible = false
-		local pageMounted = false
+		page.Parent = self._Pages
 
 		local pageContent = NewScroller()
 		pageContent.Parent = page
@@ -6860,102 +7826,96 @@ textConstraint.MaxTextSize = 14
 		contentLayout.Padding = UDim.new(0, 5)
 		contentLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 
-		local EmptyState, stateScale, stateIcon, stateTitle, stateDesc
+		local EmptyState = Instance.new("CanvasGroup")
+		EmptyState.Name = "EmptyState"
+		EmptyState.Size = UDim2.fromScale(1, 1)
+		EmptyState.BackgroundTransparency = 1
+		EmptyState.BorderSizePixel = 0
+		EmptyState.GroupTransparency = 1
+		EmptyState.Visible = true
+		EmptyState.ZIndex = 5
+		EmptyState.Parent = page
+
+		local CenterContent = Instance.new("Frame")
+		CenterContent.Name = "CenterContent"
+		CenterContent.Size = UDim2.fromScale(1, 1)
+		CenterContent.AnchorPoint = Vector2.new(0.5, 0.5)
+		CenterContent.Position = UDim2.fromScale(0.5, 0.5)
+		CenterContent.BackgroundTransparency = 1
+		CenterContent.Parent = EmptyState
+
+		local stateScale = Instance.new("UIScale", CenterContent)
+		stateScale.Scale = 0.95
+
+		local stateLayout = Instance.new("UIListLayout", CenterContent)
+		stateLayout.FillDirection = Enum.FillDirection.Vertical
+		stateLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+		stateLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+		stateLayout.Padding = UDim.new(0, 12)
+
+		local stateIcon = Instance.new("ImageLabel", CenterContent)
+		stateIcon.Size = UDim2.fromOffset(64, 64)
+		stateIcon.Image = "rbxassetid://101768155599700"
+		stateIcon.BackgroundTransparency = 1
+		stateIcon.ImageTransparency = 0.3
+		KazeUI:OnThemeChanged(stateIcon, function(t) stateIcon.ImageColor3 = t.MutedText end)
+
+		local stateTitle = Instance.new("TextLabel", CenterContent)
+		stateTitle.Size = UDim2.new(0.9, 0, 0, 20)
+		stateTitle.BackgroundTransparency = 1
+		stateTitle.Text = "Nothing here yet"
+		stateTitle.Font = Enum.Font.GothamBold
+		stateTitle.TextSize = 14
+		stateTitle.TextXAlignment = Enum.TextXAlignment.Center
+		KazeUI:RegisterText(stateTitle, false)
+
+		local stateDesc = Instance.new("TextLabel", CenterContent)
+		stateDesc.Size = UDim2.new(0.9, 0, 0, 36)
+		stateDesc.BackgroundTransparency = 1
+		stateDesc.Text = "This section doesn't contain any elements yet.\nAdd one to get started."
+		stateDesc.Font = Enum.Font.Gotham
+		stateDesc.TextSize = 12
+		stateDesc.TextWrapped = true
+		stateDesc.TextXAlignment = Enum.TextXAlignment.Center
+		KazeUI:RegisterText(stateDesc, true)
+
+		local transTween, scaleTween
 		local isStateVisible = false
 		local hideEmptyConn = nil
-		local emptyTweens = {}
-
-		local function ensureEmptyState()
-			if EmptyState then return end
-			EmptyState = Instance.new("Frame")
-			EmptyState.Name = "EmptyState"
-			EmptyState.Size = UDim2.fromScale(1, 1)
-			EmptyState.BackgroundTransparency = 1
-			EmptyState.BorderSizePixel = 0
-			EmptyState.Visible = false
-			EmptyState.ZIndex = 5
-			EmptyState.Parent = page
-
-			local CenterContent = Instance.new("Frame")
-			CenterContent.Name = "CenterContent"
-			CenterContent.Size = UDim2.fromScale(1, 1)
-			CenterContent.AnchorPoint = Vector2.new(0.5, 0.5)
-			CenterContent.Position = UDim2.fromScale(0.5, 0.5)
-			CenterContent.BackgroundTransparency = 1
-			CenterContent.Parent = EmptyState
-
-			stateScale = Instance.new("UIScale", CenterContent)
-			stateScale.Scale = 0.95
-
-			local stateLayout = Instance.new("UIListLayout", CenterContent)
-			stateLayout.FillDirection = Enum.FillDirection.Vertical
-			stateLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-			stateLayout.VerticalAlignment = Enum.VerticalAlignment.Center
-			stateLayout.Padding = UDim.new(0, 12)
-
-			stateIcon = Instance.new("ImageLabel", CenterContent)
-			stateIcon.Size = UDim2.fromOffset(64, 64)
-			stateIcon.Image = "rbxassetid://101768155599700"
-			stateIcon.BackgroundTransparency = 1
-			stateIcon.ImageTransparency = 1
-			KazeUI:OnThemeChanged(stateIcon, function(t) stateIcon.ImageColor3 = t.MutedText end)
-
-			stateTitle = Instance.new("TextLabel", CenterContent)
-			stateTitle.Size = UDim2.new(0.9, 0, 0, 20)
-			stateTitle.BackgroundTransparency = 1
-			stateTitle.Text = "Nothing here yet"
-			stateTitle.Font = Enum.Font.GothamBold
-			stateTitle.TextSize = 14
-			stateTitle.TextXAlignment = Enum.TextXAlignment.Center
-			stateTitle.TextTransparency = 1
-			KazeUI:RegisterText(stateTitle, false)
-
-			stateDesc = Instance.new("TextLabel", CenterContent)
-			stateDesc.Size = UDim2.new(0.9, 0, 0, 36)
-			stateDesc.BackgroundTransparency = 1
-			stateDesc.Text = "This section doesn't contain any elements yet.\nAdd one to get started."
-			stateDesc.Font = Enum.Font.Gotham
-			stateDesc.TextSize = 12
-			stateDesc.TextWrapped = true
-			stateDesc.TextXAlignment = Enum.TextXAlignment.Center
-			stateDesc.TextTransparency = 1
-			KazeUI:RegisterText(stateDesc, true)
-		end
-
-		local function cancelEmptyTweens()
-			for _, tw in ipairs(emptyTweens) do tw:Cancel() end
-			table.clear(emptyTweens)
-			if hideEmptyConn then hideEmptyConn:Disconnect() hideEmptyConn = nil end
-		end
 
 		local function showEmpty()
 			if isStateVisible then return end
 			isStateVisible = true
-			ensureEmptyState()
-			cancelEmptyTweens()
+
+			if hideEmptyConn then hideEmptyConn:Disconnect() hideEmptyConn = nil end
+			if transTween then transTween:Cancel() end
+			if scaleTween then scaleTween:Cancel() end
+
 			EmptyState.Visible = true
-			local t1 = TweenService:Create(stateIcon, TWEEN_EMPTY_IN, {ImageTransparency = 0.3})
-			local t2 = TweenService:Create(stateTitle, TWEEN_EMPTY_IN, {TextTransparency = 0})
-			local t3 = TweenService:Create(stateDesc, TWEEN_EMPTY_IN, {TextTransparency = 0})
-			local t4 = TweenService:Create(stateScale, TWEEN_EMPTY_IN, {Scale = 1.0})
-			emptyTweens = {t1, t2, t3, t4}
-			for _, tw in ipairs(emptyTweens) do tw:Play() end
+			transTween = TweenService:Create(EmptyState, TWEEN_EMPTY_IN, {GroupTransparency = 0})
+			scaleTween = TweenService:Create(stateScale, TWEEN_EMPTY_IN, {Scale = 1.0})
+
+			transTween:Play()
+			scaleTween:Play()
 		end
 
 		local function hideEmpty()
 			if not isStateVisible then return end
 			isStateVisible = false
-			if not EmptyState then return end
-			cancelEmptyTweens()
-			local t1 = TweenService:Create(stateIcon, TWEEN_EMPTY_OUT, {ImageTransparency = 1})
-			local t2 = TweenService:Create(stateTitle, TWEEN_EMPTY_OUT, {TextTransparency = 1})
-			local t3 = TweenService:Create(stateDesc, TWEEN_EMPTY_OUT, {TextTransparency = 1})
-			local t4 = TweenService:Create(stateScale, TWEEN_EMPTY_OUT, {Scale = 0.95})
-			emptyTweens = {t1, t2, t3, t4}
-			for _, tw in ipairs(emptyTweens) do tw:Play() end
-			hideEmptyConn = t1.Completed:Connect(function()
+
+			if hideEmptyConn then hideEmptyConn:Disconnect() hideEmptyConn = nil end
+			if transTween then transTween:Cancel() end
+			if scaleTween then scaleTween:Cancel() end
+
+			transTween = TweenService:Create(EmptyState, TWEEN_EMPTY_OUT, {GroupTransparency = 1})
+			scaleTween = TweenService:Create(stateScale, TWEEN_EMPTY_OUT, {Scale = 0.95})
+
+			transTween:Play()
+			scaleTween:Play()
+
+			hideEmptyConn = transTween.Completed:Connect(function()
 				if hideEmptyConn then hideEmptyConn:Disconnect() hideEmptyConn = nil end
-				if not isStateVisible and EmptyState then EmptyState.Visible = false end
+				if not isStateVisible then EmptyState.Visible = false end
 			end)
 		end
 
@@ -7009,11 +7969,6 @@ textConstraint.MaxTextSize = 14
 			if activeDialogsCount > 0 then return end
 			if leftIndicator.Visible then return end
 
-			if not pageMounted or page.Parent == nil then
-				page.Parent = self._Pages
-				pageMounted = true
-			end
-
 			if tabEntry.HideTween then
 				tabEntry.HideTween:Cancel()
 				tabEntry.HideTween = nil
@@ -7022,88 +7977,64 @@ textConstraint.MaxTextSize = 14
 			for _, t in ipairs(self._Tabs) do
 				if t ~= tabEntry then
 					if t.Indicator.Visible then
-PlayTween(t.Button, TWEEN_FAST, {BackgroundTransparency = 1})
+TweenService:Create(t.Button, TWEEN_FAST, {BackgroundTransparency = 1}):Play()
 t.Indicator.Visible = false
 						t.Label.TextColor3 = KazeUI.CurrentTheme.MutedText
 						t.Icon.ImageColor3 = KazeUI.CurrentTheme.MutedText
 t.Label.Font = Enum.Font.GothamMedium
 					end
 
-					if t.Page and t.Page.Parent and t.Page.Visible and not t.HideTween then
+					if t.Page.Visible and not t.HideTween then
 						CancelCascade(t.Content)
 						local otherPage = t.Page
-						if KazeUI.PerformanceMode then
-							otherPage.Visible = false
-							otherPage.Position = UDim2.new(0, 0, 0, 0)
-							otherPage.Parent = nil
-						else
-							local outTween = TweenService:Create(otherPage, TWEEN_SMOOTH, {Position = UDim2.new(-1, -40, 0, 0)})
-							t.HideTween = outTween
-							outTween.Completed:Connect(function()
-								if t.HideTween == outTween then
-									otherPage.Visible = false
-									otherPage.Position = UDim2.new(0, 0, 0, 0)
-									otherPage.Parent = nil
-									t.HideTween = nil
-								end
-							end)
-							outTween:Play()
-						end
+						local outTween = TweenService:Create(otherPage, TWEEN_SMOOTH, {Position = UDim2.new(-1, -40, 0, 0)})
+						t.HideTween = outTween
+						outTween.Completed:Connect(function()
+							if t.HideTween == outTween then
+								otherPage.Visible = false
+								otherPage.Position = UDim2.new(0, 0, 0, 0)
+								t.HideTween = nil
+							end
+						end)
+						outTween:Play()
 					end
 				end
 			end
 
 btn.BackgroundColor3 = KazeUI._PillBlue
-PlayTween(btn, TWEEN_FAST, {BackgroundTransparency = 0})
+TweenService:Create(btn, TWEEN_FAST, {BackgroundTransparency = 0}):Play()
 leftIndicator.Visible = true
 txt.TextColor3 = Color3.new(1, 1, 1)
 txt.Font = Enum.Font.GothamBold
 
-PlayTween(iconLabel, TWEEN_FAST, {ImageColor3 = Color3.new(1, 1, 1)})
+TweenService:Create(iconLabel, TWEEN_FAST, {ImageColor3 = Color3.new(1, 1, 1)}):Play()
 
+			page.Position = UDim2.new(1, 40, 0, 0)
 			page.Visible = true
-			if KazeUI.PerformanceMode then
-				page.Position = UDim2.new(0, 0, 0, 0)
-			else
-				page.Position = UDim2.new(1, 40, 0, 0)
-				PlayTween(page, TWEEN_SPRING, {Position = UDim2.new(0, 0, 0, 0)})
-				AnimateComponentsIn(pageContent)
-			end
+			TweenService:Create(page, TWEEN_SPRING, {Position = UDim2.new(0, 0, 0, 0)}):Play()
+			AnimateComponentsIn(pageContent)
 		end
 
 		btn.MouseEnter:Connect(function()
 			if activeDialogsCount > 0 then return end
 			isHovering = true
 			if not leftIndicator.Visible then
-				if KazeUI.PerformanceMode then
-					btn.BackgroundColor3 = KazeUI.GetColor(0.04)
-					btn.BackgroundTransparency = 0.5
-					txt.TextColor3 = KazeUI.CurrentTheme.Text
-					iconLabel.ImageColor3 = KazeUI.CurrentTheme.Text
-				else
-					btn.BackgroundColor3 = KazeUI.GetColor(0.04)
-					PlayTween(btn, TWEEN_FAST, {BackgroundTransparency = 0.5})
-					PlayTween(txt, TWEEN_FAST, {TextColor3 = KazeUI.CurrentTheme.Text})
-					PlayTween(iconLabel, TWEEN_FAST, {ImageColor3 = KazeUI.CurrentTheme.Text})
-				end
+btn.BackgroundColor3 = KazeUI.GetColor(0.04)
+TweenService:Create(btn, TWEEN_FAST, {BackgroundTransparency = 0.5}):Play()
+				TweenService:Create(txt, TWEEN_FAST, {TextColor3 = KazeUI.CurrentTheme.Text}):Play()
+				TweenService:Create(iconLabel, TWEEN_FAST, {ImageColor3 = KazeUI.CurrentTheme.Text}):Play()
 			end
 		end)
 		btn.MouseLeave:Connect(function()
 			isHovering = false
 			if not leftIndicator.Visible then
-				if KazeUI.PerformanceMode then
-					btn.BackgroundTransparency = 1
-					txt.TextColor3 = KazeUI.CurrentTheme.MutedText
-					iconLabel.ImageColor3 = KazeUI.CurrentTheme.MutedText
-				else
-					PlayTween(btn, TWEEN_FAST, {BackgroundTransparency = 1})
-					PlayTween(txt, TWEEN_FAST, {TextColor3 = KazeUI.CurrentTheme.MutedText})
-					PlayTween(iconLabel, TWEEN_FAST, {ImageColor3 = KazeUI.CurrentTheme.MutedText})
-				end
+TweenService:Create(btn, TWEEN_FAST, {BackgroundTransparency = 1}):Play()
+TweenService:Create(txt, TWEEN_FAST, {TextColor3 = KazeUI.CurrentTheme.MutedText}):Play()
+				TweenService:Create(iconLabel, TWEEN_FAST, {ImageColor3 = KazeUI.CurrentTheme.MutedText}):Play()
 			end
 		end)
 		btn.MouseButton1Click:Connect(function()
-		PlayTween(btn, TWEEN_PRESS_SHORT, {Size = UDim2.new(1, -14, 0, 33)})
+		TweenService:Create(btn, TWEEN_PRESS_SHORT, {Size = UDim2.new(1, -14, 0, 33)}):Play()
 		if hidableTab then ResetSidebarIdleTimer() end
 		activate()
 	end)
@@ -7232,7 +8163,7 @@ end
 			if subBarHolder then return end
 			subBarHolder = Instance.new("Frame")
 			subBarHolder.Name = "SubTabBar"
-			subBarHolder.Size = UDim2.new(0.95, 0, 0, 34)
+			subBarHolder.Size = UDim2.new(0.95, 0, 0, 38)
 			subBarHolder.BackgroundTransparency = 1
 			subBarHolder.ClipsDescendants = true
 			subBarHolder.LayoutOrder = SUB_BAR_ORDER
@@ -7254,7 +8185,7 @@ end
 			barLayout.FillDirection = Enum.FillDirection.Horizontal
 			barLayout.SortOrder = Enum.SortOrder.LayoutOrder
 			barLayout.VerticalAlignment = Enum.VerticalAlignment.Center
-			barLayout.Padding = UDim.new(0, 6)
+			barLayout.Padding = UDim.new(0, 4)
 
 			local barPad = Instance.new("UIPadding", subScroller)
 			barPad.PaddingLeft = UDim.new(0, 2)
@@ -7277,15 +8208,15 @@ end
 			pill.AutoButtonColor = false
 			pill.BorderSizePixel = 0
 			pill.Text = ""
-			pill.Size = UDim2.new(0, 0, 0, 30)
+			pill.Size = UDim2.new(0, 0, 0, 34)
 			pill.AutomaticSize = Enum.AutomaticSize.X
 			pill.LayoutOrder = #subTabs + 1
 			pill.Parent = subScroller
 			Instance.new("UICorner", pill).CornerRadius = UDim.new(1, 0)
 
 			local pillPad = Instance.new("UIPadding", pill)
-			pillPad.PaddingLeft = UDim.new(0, 14)
-			pillPad.PaddingRight = UDim.new(0, 14)
+			pillPad.PaddingLeft = UDim.new(0, 16)
+			pillPad.PaddingRight = UDim.new(0, 16)
 
 			local pillLayout = Instance.new("UIListLayout", pill)
 			pillLayout.FillDirection = Enum.FillDirection.Horizontal
@@ -7325,7 +8256,7 @@ end
 			content.Parent = pageContent
 			local contentList = Instance.new("UIListLayout", content)
 			contentList.SortOrder = Enum.SortOrder.LayoutOrder
-			contentList.Padding = UDim.new(0, 5)
+			contentList.Padding = UDim.new(0, 2)
 			contentList.HorizontalAlignment = Enum.HorizontalAlignment.Center
 
 			local sub = {Button = pill, Label = pillLabel, Icon = pillIcon, Content = content}
@@ -7360,7 +8291,6 @@ end
 			return subApi
 		end
 		public.SubTab = public.CreateSubTab
-
 		return public
 	end
 
@@ -7370,6 +8300,26 @@ end
 	return Win
 end
 
+-- A standalone pre-gate screen: a header labelled "Supported Game List" with a
+-- diagonal accent split, a scrollable list of the games the script actually
+-- supports (SupportedGames is config-driven -- nothing here is invented or
+-- hardcoded), and a footer with compact Discord/YouTube icon buttons on the
+-- left and Continue/Exit on the right. Independent of CreateWindow -- call it
+-- first and build the real window inside OnContinue, e.g.:
+--
+--   KazeUI:ShowGameSupportGate({
+--       SupportedGames = {
+--           {Name = "Blox Fruits", PlaceId = 2753915549},
+--           {Name = "My Other Game", PlaceId = 123456789},
+--       },
+--       DiscordLink = "https://discord.gg/...",
+--       YoutubeLink = "https://youtube.com/...",
+--       OnContinue = function() local Window = KazeUI:CreateWindow({...}) end,
+--       OnExit = function() end, -- optional; gate just closes if omitted
+--   })
+-- Parses a status-dot color override (hex string like "#22c55e"/"EF4444", or
+-- a Color3 directly); falls back to the given default (used for the
+-- supported-game-list dots, which default to green).
 local function ResolveStatusColor(c, fallback)
 	if typeof(c) == "Color3" then return c end
 	if type(c) == "string" then
@@ -7379,6 +8329,11 @@ local function ResolveStatusColor(c, fallback)
 	return fallback
 end
 
+-- Shared, de-duplicated lookup of a place's real Roblox name/icon via
+-- MarketplaceService -- same technique as a typical hub's own GetInfo helper.
+-- Lets ShowGameSupportGate show each entry's ACTUAL game thumbnail just from
+-- a PlaceId, instead of requiring the developer to supply an Image manually.
+-- Cached per PlaceId; concurrent requests for the same PlaceId share one call.
 local PlaceInfoCache = {}
 local PlaceInfoWaiting = {}
 local function GetPlaceInfo(placeId, callback)
@@ -7449,11 +8404,11 @@ function KazeUI:ShowGameSupportGate(config)
 	CardStroke.Parent = Card
 	KazeUI:RegisterBorder(CardStroke)
 
-	
-	
-	
-	
-	
+	-- Header: flat rounded-top panel. HeaderFill is rounded on all 4 corners
+	-- but sits inside HeaderClip, a rectangle that clips off its bottom
+	-- corners, so only the top corners stay rounded, flush with Card's own.
+	-- One translucent layer instead of two overlapping ones, which used to
+	-- show as a darker band along the bottom of the header.
 	local HeaderClip = Instance.new("Frame")
 	HeaderClip.Name = "HeaderClip"
 	HeaderClip.Size = UDim2.new(1, 0, 0, HEADER_H)
@@ -7481,10 +8436,10 @@ function KazeUI:ShowGameSupportGate(config)
 	HeaderDivider.Parent = Card
 	KazeUI:OnThemeChanged(HeaderDivider, function(t) HeaderDivider.BackgroundColor3 = t.Border end)
 
-	
-	
-	
-	
+	-- Small accent icon badge instead of flooding the whole header in the
+	-- glow color -- reads as a modern "icon + heading" header and keeps the
+	-- accent color contained in one rounded element that never touches a
+	-- card edge, so it can't reintroduce a corner-clipping bug.
 	local HeaderBadge = Instance.new("Frame")
 	HeaderBadge.Name = "HeaderBadge"
 	HeaderBadge.AnchorPoint = Vector2.new(0, 0.5)
@@ -7494,7 +8449,7 @@ function KazeUI:ShowGameSupportGate(config)
 	HeaderBadge.ZIndex = 504
 	HeaderBadge.Parent = Card
 	Instance.new("UICorner", HeaderBadge).CornerRadius = UDim.new(0, 12)
-	pcall(function(c) HeaderBadge.BackgroundColor3 = c end, ACCENT)
+	KazeUI:OnGlowChanged(HeaderBadge, function(c) HeaderBadge.BackgroundColor3 = c end)
 
 	local HeaderBadgeIcon = Instance.new("ImageLabel")
 	HeaderBadgeIcon.AnchorPoint = Vector2.new(0.5, 0.5)
@@ -7534,7 +8489,7 @@ function KazeUI:ShowGameSupportGate(config)
 	HeaderSub.Parent = Card
 	KazeUI:RegisterText(HeaderSub, true)
 
-	
+	-- Game list
 	local isCurrentSupported = false
 
 	local currentPlaceId = game.PlaceId
@@ -7584,7 +8539,7 @@ function KazeUI:ShowGameSupportGate(config)
 	ListScroller.AutomaticCanvasSize = Enum.AutomaticSize.Y
 	ListScroller.Parent = Card
 
-	
+	-- Grid of cards: image on top, name underneath, wrapping left-to-right.
 	local listLayout = Instance.new("UIGridLayout", ListScroller)
 	listLayout.SortOrder = Enum.SortOrder.LayoutOrder
 	listLayout.FillDirection = Enum.FillDirection.Horizontal
@@ -7630,12 +8585,12 @@ function KazeUI:ShowGameSupportGate(config)
 		end
 		if isThisGame then isCurrentSupported = true end
 
-		
-		
-		
-		
-		
-		
+		-- Each entry is now a real rounded, bordered tile (not a bare
+		-- floating image) -- one fewer instance than a separate
+		-- image-plus-wrapper approach, since the grid cell itself IS the
+		-- tile. The currently-running game gets an accent border and a
+		-- brighter fill instead of just bold text, so it actually stands
+		-- out in the grid at a glance.
 		local card = Instance.new("Frame")
 		card.BorderSizePixel = 0
 		card.LayoutOrder = i
@@ -7647,24 +8602,24 @@ function KazeUI:ShowGameSupportGate(config)
 		local cardStroke = Instance.new("UIStroke", card)
 		cardStroke.Thickness = 1
 		if isThisGame then
-			pcall(function(c) cardStroke.Color = c end, ACCENT)
+			KazeUI:OnGlowChanged(cardStroke, function(c) cardStroke.Color = c end)
 		else
 			KazeUI:RegisterBorder(cardStroke)
 		end
 
 		card.MouseEnter:Connect(function()
-			PlayTween(card, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor((isThisGame and 0.09 or 0.03) + 0.04)})
+			TweenService:Create(card, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor((isThisGame and 0.09 or 0.03) + 0.04)}):Play()
 		end)
 		card.MouseLeave:Connect(function()
-			PlayTween(card, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(isThisGame and 0.09 or 0.03)})
+			TweenService:Create(card, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(isThisGame and 0.09 or 0.03)}):Play()
 		end)
 
-		
-		
-		
-		
-		
-		
+		-- Game thumbnail. Priority: an explicit Image/Icon/Thumbnail on the
+		-- entry always wins; otherwise, if the entry has a PlaceId, fetch that
+		-- place's REAL Roblox game icon via MarketplaceService automatically
+		-- (same technique as a typical hub's own GetInfo helper). With
+		-- neither, fall back to a small muted glyph so every card still lines
+		-- up on the same grid instead of leaving a blank gap.
 		local thumb = Instance.new("ImageLabel")
 		thumb.AnchorPoint = Vector2.new(0.5, 0)
 		thumb.Position = UDim2.new(0.5, 0, 0, CELL_PAD)
@@ -7695,9 +8650,9 @@ function KazeUI:ShowGameSupportGate(config)
 		if imageId then
 			thumb.Image = FormatImage(imageId)
 		elseif placeId then
-			ShowFallback() 
+			ShowFallback() -- shown while the real icon loads
 			GetPlaceInfo(placeId, function(info)
-				if not thumb.Parent then return end 
+				if not thumb.Parent then return end -- gate closed before this resolved
 				if info.Icon then
 					thumb.Image = info.Icon
 					thumb.ImageTransparency = 0
@@ -7711,11 +8666,11 @@ function KazeUI:ShowGameSupportGate(config)
 			ShowFallback()
 		end
 
-		
-		
-		
-		
-		
+		-- Status dot + name, left-aligned under the image (same left edge as
+		-- the thumbnail above it): "• The Mimic". Every entry in this list is,
+		-- by definition, supported -- so the dot defaults to green. Pass
+		-- Color on an entry (hex string or Color3) to override it, e.g. orange
+		-- for "temporarily down".
 		local nameRow = Instance.new("Frame")
 		nameRow.Name = "NameRow"
 		nameRow.AnchorPoint = Vector2.new(0, 0)
@@ -7754,7 +8709,7 @@ function KazeUI:ShowGameSupportGate(config)
 		KazeUI:RegisterText(nameLabel, not isThisGame)
 	end
 
-	
+	-- Footer: Discord/YouTube on the left, Continue/Exit on the right
 	local Footer = Instance.new("Frame")
 	Footer.Name = "Footer"
 	Footer.Position = UDim2.new(0, 0, 1, -FOOTER_H)
@@ -7799,10 +8754,10 @@ function KazeUI:ShowGameSupportGate(config)
 		end)
 
 		btn.MouseEnter:Connect(function()
-			PlayTween(btn, TWEEN_FAST, {Size = UDim2.fromOffset(35, 35)})
+			TweenService:Create(btn, TWEEN_FAST, {Size = UDim2.fromOffset(35, 35)}):Play()
 		end)
 		btn.MouseLeave:Connect(function()
-			PlayTween(btn, TWEEN_FAST, {Size = UDim2.fromOffset(32, 32)})
+			TweenService:Create(btn, TWEEN_FAST, {Size = UDim2.fromOffset(32, 32)}):Play()
 		end)
 
 		return btn
@@ -7820,26 +8775,26 @@ function KazeUI:ShowGameSupportGate(config)
 	local function closeGate(callback)
 		if closing then return end
 		closing = true
-		
-		
-		
-		
-		
+		-- Release input the instant a choice is made, not after the fade
+		-- finishes. Backdrop covers the whole screen (including, on mobile,
+		-- the touch joystick/jump button underneath it) -- while Active stays
+		-- true that's blocked, so this needs to drop immediately rather than
+		-- waiting on the tween.
 		Backdrop.Active = false
 		local fade = TweenService:Create(Backdrop, TWEEN_SMOOTH, {BackgroundTransparency = 1})
 		fade:Play()
-		
-		
+		-- Guaranteed cleanup even if Completed never fires for some reason
+		-- (interrupted tween, etc.) -- don't leave the backdrop sitting there.
 		task.delay(TWEEN_SMOOTH.Time, function()
 			if Backdrop and Backdrop.Parent then Backdrop:Destroy() end
 		end)
 		if callback then task.spawn(callback) end
 	end
 
-	
-	
-	
-	
+	-- Ghost/outline style instead of a filled panel: next to a bold filled
+	-- Continue button, a second filled button of similar weight competed
+	-- with it for attention. A transparent, bordered Exit reads as the
+	-- clearly secondary action.
 	local ExitBtn = Instance.new("TextButton")
 	ExitBtn.AnchorPoint = Vector2.new(1, 0.5)
 	ExitBtn.Position = UDim2.new(1, -16, 0.5, 0)
@@ -7859,10 +8814,10 @@ function KazeUI:ShowGameSupportGate(config)
 	KazeUI:RegisterBorder(exitStroke)
 	ExitBtn.MouseButton1Click:Connect(function() closeGate(onExit) end)
 	ExitBtn.MouseEnter:Connect(function()
-		PlayTween(ExitBtn, TWEEN_FAST, {BackgroundTransparency = 0.88, BackgroundColor3 = KazeUI.GetColor(0.1)})
+		TweenService:Create(ExitBtn, TWEEN_FAST, {BackgroundTransparency = 0.88, BackgroundColor3 = KazeUI.GetColor(0.1)}):Play()
 	end)
 	ExitBtn.MouseLeave:Connect(function()
-		PlayTween(ExitBtn, TWEEN_FAST, {BackgroundTransparency = 1})
+		TweenService:Create(ExitBtn, TWEEN_FAST, {BackgroundTransparency = 1}):Play()
 	end)
 
 	local ContinueBtn = Instance.new("TextButton")
@@ -7877,23 +8832,23 @@ function KazeUI:ShowGameSupportGate(config)
 	ContinueBtn.ZIndex = 503
 	ContinueBtn.Parent = Footer
 	Instance.new("UICorner", ContinueBtn).CornerRadius = UDim.new(0, 12)
-	
-	
-	
-	pcall(function(c) ContinueBtn.BackgroundColor3 = c end, ACCENT)
+	-- OnGlowChanged, not OnThemeChanged: this button's color tracks the
+	-- accent/glow color, which can change independently of the theme (e.g.
+	-- SetGlow without a theme switch) -- the old binding would miss that.
+	KazeUI:OnGlowChanged(ContinueBtn, function(c) ContinueBtn.BackgroundColor3 = c end)
 	ContinueBtn.MouseButton1Click:Connect(function() closeGate(onContinue) end)
 	ContinueBtn.MouseEnter:Connect(function()
-		local h, s, v = Color3.toHSV(ACCENT)
-		PlayTween(ContinueBtn, TWEEN_FAST, {BackgroundColor3 = Color3.fromHSV(h, s, math.clamp(v + 0.12, 0, 1))})
+		local h, s, v = Color3.toHSV(KazeUI.GlowColor)
+		TweenService:Create(ContinueBtn, TWEEN_FAST, {BackgroundColor3 = Color3.fromHSV(h, s, math.clamp(v + 0.12, 0, 1))}):Play()
 	end)
 	ContinueBtn.MouseLeave:Connect(function()
-		PlayTween(ContinueBtn, TWEEN_FAST, {BackgroundColor3 = ACCENT})
+		TweenService:Create(ContinueBtn, TWEEN_FAST, {BackgroundColor3 = KazeUI.GlowColor}):Play()
 	end)
 
-	
+	-- Entrance
 	Card.Size = UDim2.fromOffset(CARD_W, 0)
-	PlayTween(Backdrop, TWEEN_SMOOTH, {BackgroundTransparency = 0.45})
-	PlayTween(Card, TWEEN_SPRING, {Size = UDim2.fromOffset(CARD_W, CARD_H)})
+	TweenService:Create(Backdrop, TWEEN_SMOOTH, {BackgroundTransparency = 0.45}):Play()
+	TweenService:Create(Card, TWEEN_SPRING, {Size = UDim2.fromOffset(CARD_W, CARD_H)}):Play()
 
 	return {
 		Root = Backdrop,
@@ -7905,13 +8860,13 @@ end
 function KazeUI:CreateWindow(config)
 	local ok, resultOrErr = pcall(BuildWindow, config)
 	if not ok then
-		
-		
-		
-		
-		
-		
-		
+		-- The actual error used to be thrown away entirely -- not returned,
+		-- not even printed -- so a failed CreateWindow gave the developer
+		-- nothing to debug with besides "check the console" (which had
+		-- nothing in it). First return value is kept as `nil` for backward
+		-- compatibility with existing `local Window = KazeUI:CreateWindow(...)`
+		-- call sites; the real error/traceback is now both logged and
+		-- returned as a second value for callers that want it.
 		local errMessage = tostring(resultOrErr)
 		warn("[KazeUI] CreateWindow failed: " .. errMessage)
 		pcall(function()
