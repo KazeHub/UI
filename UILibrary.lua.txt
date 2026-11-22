@@ -2638,12 +2638,36 @@ local function CreateBoxDropdown(parentFrame, title, options, defaultOption, cal
 	if searchBarEnabled == nil then searchBarEnabled = true end
 	local searchQuery = ""
 
+	-- An option can be: a string, a Tool instance (name + the tool's own icon),
+	-- or a table { Text = "...", Icon = <anything FormatImage accepts> } /
+	-- { Text = "...", Tool = <Tool instance or tool name> } /
+	-- { Text = "...", Icon = { Avatar = <player/userId/name> } }.
+	local toolSpecCache = setmetatable({}, {__mode = "k"})
 	local function OptionText(opt)
-		if type(opt) == "table" then return tostring(opt.Text or opt.Name or "") end
+		if typeof(opt) == "Instance" then return tostring(opt.Name) end
+		if type(opt) == "table" then
+			if opt.Text ~= nil or opt.Name ~= nil then return tostring(opt.Text or opt.Name) end
+			if typeof(opt.Tool) == "Instance" then return tostring(opt.Tool.Name) end
+			if type(opt.Tool) == "string" then return opt.Tool end
+			return ""
+		end
 		return tostring(opt)
 	end
 	local function OptionIcon(opt)
-		if type(opt) == "table" then return opt.Icon end
+		if typeof(opt) == "Instance" then return opt end -- a Tool used directly as an option
+		if type(opt) == "table" then
+			if opt.Icon ~= nil then return opt.Icon end
+			if opt.Tool ~= nil then
+				-- cached wrapper so the same option keeps the same icon spec between
+				-- refreshes (the unchanged-list check compares icon specs by reference)
+				local wrap = toolSpecCache[opt]
+				if not wrap then
+					wrap = {Tool = opt.Tool, Container = opt.Container}
+					toolSpecCache[opt] = wrap
+				end
+				return wrap
+			end
+		end
 		return nil
 	end
 
@@ -2817,7 +2841,94 @@ local function CreateBoxDropdown(parentFrame, title, options, defaultOption, cal
 	gridLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left
 	gridLayout.SortOrder = Enum.SortOrder.LayoutOrder
 
+	-- Finds the Tool an icon spec points at: a Tool instance, or { Tool = Tool | "Name" }.
+	-- Names are looked up in the backpack, the character, StarterGear, then (recursively)
+	-- in spec.Container (if given) and ReplicatedStorage.
+	local function FindToolForIcon(iconSpec)
+		-- plain strings/numbers are normal icon names or asset ids, never tool names
+		if type(iconSpec) ~= "table" and typeof(iconSpec) ~= "Instance" then return nil end
+		local t = iconSpec
+		if type(iconSpec) == "table" then t = iconSpec.Tool end
+		if typeof(t) == "Instance" then
+			if t:IsA("Tool") then return t end
+			return t:FindFirstChildWhichIsA("Tool", true)
+		end
+		if type(t) ~= "string" or t == "" then return nil end
+		local lp = Players.LocalPlayer
+		local roots = {}
+		if lp then
+			roots[#roots + 1] = lp:FindFirstChildOfClass("Backpack")
+			roots[#roots + 1] = lp.Character
+			roots[#roots + 1] = lp:FindFirstChild("StarterGear")
+		end
+		if type(iconSpec) == "table" and typeof(iconSpec.Container) == "Instance" then roots[#roots + 1] = iconSpec.Container end
+		roots[#roots + 1] = game:GetService("ReplicatedStorage")
+		for _, root in ipairs(roots) do
+			local found = root:FindFirstChild(t, true)
+			if found and found:IsA("Tool") then return found end
+		end
+		return nil
+	end
+
+	-- Fallback when a tool has no TextureId (most game weapons): render its handle in a tiny viewport.
+	local function BuildToolViewport(iconImg, tool)
+		local source = tool:FindFirstChild("Handle") or tool:FindFirstChildWhichIsA("BasePart", true)
+		if not source then return false end
+		local model = Instance.new("Model")
+		local ok = pcall(function()
+			local clone = tool:FindFirstChild("Handle") and tool or source
+			local cloned = clone:Clone()
+			for _, d in ipairs(cloned:GetDescendants()) do
+				if d:IsA("BaseScript") or d:IsA("Sound") or d:IsA("ForceField") then d:Destroy() end
+			end
+			if cloned:IsA("Tool") then
+				for _, c in ipairs(cloned:GetChildren()) do c.Parent = model end
+				cloned:Destroy()
+			else
+				cloned.Parent = model
+			end
+			for _, d in ipairs(model:GetDescendants()) do
+				if d:IsA("BasePart") then d.Anchored = true end
+			end
+		end)
+		if not ok then model:Destroy() return false end
+		local okBox, cf, size = pcall(function() return model:GetBoundingBox() end)
+		if not okBox then model:Destroy() return false end
+		local vp = Instance.new("ViewportFrame")
+		vp.BackgroundTransparency = 1
+		vp.Size = UDim2.fromScale(1, 1)
+		vp.Ambient = Color3.fromRGB(190, 190, 190)
+		vp.LightColor = Color3.fromRGB(255, 255, 255)
+		model.Parent = vp
+		local cam = Instance.new("Camera")
+		local dist = math.max(size.X, size.Y, size.Z) * 1.7 + 0.5
+		cam.CFrame = CFrame.lookAt(cf.Position + cf.RightVector * dist + cf.UpVector * (size.Y * 0.15), cf.Position)
+		vp.CurrentCamera = cam
+		cam.Parent = vp
+		vp.Parent = iconImg
+		iconImg.Image = ""
+		return true
+	end
+
 	local function ResolveIconImage(iconImg, iconSpec)
+		local tool = FindToolForIcon(iconSpec)
+		if tool or (type(iconSpec) == "table" and iconSpec.Tool ~= nil) or (typeof(iconSpec) == "Instance") then
+			iconImg:SetAttribute("KazeFullColor", true)
+			iconImg.ImageColor3 = Color3.new(1, 1, 1)
+			if tool then
+				local tex = tool.TextureId
+				if tex and tex ~= "" then
+					iconImg.Image = tex
+				elseif not BuildToolViewport(iconImg, tool) then
+					iconImg.Image = FormatImage((type(iconSpec) == "table" and iconSpec.Fallback) or "crosshair")
+					iconImg:SetAttribute("KazeFullColor", nil)
+				end
+			else
+				iconImg.Image = FormatImage((type(iconSpec) == "table" and iconSpec.Fallback) or "crosshair")
+				iconImg:SetAttribute("KazeFullColor", nil)
+			end
+			return
+		end
 		if type(iconSpec) == "table" and (iconSpec.Avatar ~= nil or iconSpec.Player ~= nil or iconSpec.UserId ~= nil) then
 			local avatarSpec = iconSpec.Avatar or iconSpec.Player or iconSpec.UserId
 			local userId
@@ -2835,6 +2946,7 @@ local function CreateBoxDropdown(parentFrame, title, options, defaultOption, cal
 						return Players:GetUserThumbnailAsync(userId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size150x150)
 					end)
 					if ok and iconImg.Parent then
+						iconImg:SetAttribute("KazeFullColor", true)
 						iconImg.Image = content
 						iconImg.ImageColor3 = Color3.fromRGB(255, 255, 255)
 					end
@@ -2943,7 +3055,14 @@ local function CreateBoxDropdown(parentFrame, title, options, defaultOption, cal
 				iconImg.BackgroundTransparency = 1
 				iconImg.ScaleType = Enum.ScaleType.Fit
 				iconImg.Parent = box
-				KazeUI:OnThemeChanged(iconImg, function(t) iconImg.ImageColor3 = t.Text end)
+				KazeUI:OnThemeChanged(iconImg, function(t)
+					-- avatar / tool pictures keep their real colors instead of being tinted to the text color
+					if iconImg:GetAttribute("KazeFullColor") then
+						iconImg.ImageColor3 = Color3.new(1, 1, 1)
+					else
+						iconImg.ImageColor3 = t.Text
+					end
+				end)
 				ResolveIconImage(iconImg, optIcon)
 			end
 
@@ -8071,22 +8190,50 @@ end
 		local SUB_BAR_ORDER = -90
 		local SUB_CONTENT_ORDER = -50
 
-		local function styleSubPill(sub, on, instant)
+		-- Pill colors are computed from ONE state (selected / hovered) and painted by a single
+		-- function. Before, hover tweens, select tweens and theme refreshes each wrote the
+		-- colors on their own, so a quick tap (touch hover + click) or a theme refresh landing
+		-- mid-tween could leave a selected pill stuck grey. Now the previous tween is cancelled
+		-- explicitly and the final colors are forced once it should have finished.
+		local function paintSubPill(sub, instant)
 			local pill, label, icon = sub.Button, sub.Label, sub.Icon
-			local bg = on and KazeUI._PillBlue or KazeUI.GetColor(0.05)
-			local bgT = on and 0 or 0.25
-			local fg = on and Color3.new(1, 1, 1) or KazeUI.CurrentTheme.MutedText
-			if instant or KazeUI.PerformanceMode then
+			local on = (activeSub == sub)
+			local bg, bgT, fg
+			if on then
+				bg, bgT, fg = KazeUI._PillBlue, 0, Color3.new(1, 1, 1)
+			elseif sub.Hover then
+				bg, bgT, fg = KazeUI.GetColor(0.09), 0.1, KazeUI.CurrentTheme.Text
+			else
+				bg, bgT, fg = KazeUI.GetColor(0.05), 0.25, KazeUI.CurrentTheme.MutedText
+			end
+			local function setFinal()
 				pill.BackgroundColor3 = bg
 				pill.BackgroundTransparency = bgT
 				label.TextColor3 = fg
 				if icon then icon.ImageColor3 = fg end
-			else
-				PlayTween(pill, TWEEN_FAST, {BackgroundColor3 = bg, BackgroundTransparency = bgT})
-				PlayTween(label, TWEEN_FAST, {TextColor3 = fg})
-				if icon then PlayTween(icon, TWEEN_FAST, {ImageColor3 = fg}) end
 			end
+			sub.PaintId = (sub.PaintId or 0) + 1
+			local paintId = sub.PaintId
+			if sub.Tweens then
+				for _, tw in ipairs(sub.Tweens) do tw:Cancel() end
+			end
+			sub.Tweens = {}
 			label.Font = on and Enum.Font.GothamBold or Enum.Font.GothamMedium
+			if instant or KazeUI.PerformanceMode then
+				setFinal()
+				return
+			end
+			local function tween(inst, props)
+				local tw = TweenService:Create(inst, TWEEN_FAST, props)
+				sub.Tweens[#sub.Tweens + 1] = tw
+				tw:Play()
+			end
+			tween(pill, {BackgroundColor3 = bg, BackgroundTransparency = bgT})
+			tween(label, {TextColor3 = fg})
+			if icon then tween(icon, {ImageColor3 = fg}) end
+			task.delay(TWEEN_FAST.Time + 0.05, function()
+				if sub.PaintId == paintId and pill.Parent then setFinal() end
+			end)
 		end
 
 		local function revealSubPill(pill)
@@ -8119,7 +8266,8 @@ end
 			for _, s in ipairs(subTabs) do
 				local on = (s == sub)
 				s.Content.Visible = on
-				styleSubPill(s, on, false)
+				s.Hover = false
+				paintSubPill(s, false)
 			end
 			if sub then
 				task.defer(revealSubPill, sub.Button)
@@ -8261,15 +8409,18 @@ end
 
 			local sub = {Button = pill, Label = pillLabel, Icon = pillIcon, Content = content}
 			table.insert(subTabs, sub)
-			styleSubPill(sub, false, true)
+			paintSubPill(sub, true)
 
-			pill.MouseEnter:Connect(function()
-				if activeSub ~= sub then
-					PlayTween(pill, TWEEN_FAST, {BackgroundColor3 = KazeUI.GetColor(0.09), BackgroundTransparency = 0.1})
-				end
-			end)
+			-- hover only exists with a mouse; on touch it just left pills stuck grey
+			if not UIS.TouchEnabled or UIS.MouseEnabled then
+				pill.MouseEnter:Connect(function()
+					sub.Hover = true
+					if activeSub ~= sub then paintSubPill(sub, false) end
+				end)
+			end
 			pill.MouseLeave:Connect(function()
-				if activeSub ~= sub then styleSubPill(sub, false, false) end
+				sub.Hover = false
+				paintSubPill(sub, false)
 			end)
 			pill.InputBegan:Connect(beginSubDrag)
 			pill.MouseButton1Click:Connect(function()
@@ -8278,7 +8429,7 @@ end
 			end)
 
 			KazeUI:OnThemeChanged(pill, function()
-				styleSubPill(sub, activeSub == sub, true)
+				paintSubPill(sub, true)
 			end)
 
 			if startSelected or #subTabs == 1 then
