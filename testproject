@@ -2920,11 +2920,11 @@ local function CreateBoxDropdown(parentFrame, title, options, defaultOption, cal
 				if tex and tex ~= "" then
 					iconImg.Image = tex
 				elseif not BuildToolViewport(iconImg, tool) then
-					iconImg.Image = FormatImage((type(iconSpec) == "table" and iconSpec.Fallback) or "crosshair")
+					iconImg.Image = FormatImage((type(iconSpec) == "table" and iconSpec.Fallback) or "")
 					iconImg:SetAttribute("KazeFullColor", nil)
 				end
 			else
-				iconImg.Image = FormatImage((type(iconSpec) == "table" and iconSpec.Fallback) or "crosshair")
+				iconImg.Image = FormatImage((type(iconSpec) == "table" and iconSpec.Fallback) or "")
 				iconImg:SetAttribute("KazeFullColor", nil)
 			end
 			return
@@ -8182,7 +8182,8 @@ end
 		-- scrolls sideways -- drag it with the mouse or swipe it on touch -- so
 		-- you can add as many sub-tabs as you like.
 		--------------------------------------------------
-		local subBarHolder, subScroller
+		local subBarHolder, subTrack, subScroller, subCanvas, subRow, subIndicator, subFadeL, subFadeR
+		local subIndicatorTween = nil
 		local subTabs = {}
 		local activeSub = nil
 		local subDragMoved = false
@@ -8191,20 +8192,20 @@ end
 		local SUB_CONTENT_ORDER = -50
 
 		-- Pill colors are computed from ONE state (selected / hovered) and painted by a single
-		-- function. Before, hover tweens, select tweens and theme refreshes each wrote the
-		-- colors on their own, so a quick tap (touch hover + click) or a theme refresh landing
-		-- mid-tween could leave a selected pill stuck grey. Now the previous tween is cancelled
-		-- explicitly and the final colors are forced once it should have finished.
+		-- function, with the previous tween cancelled explicitly -- so a quick tap or a theme
+		-- refresh mid-tween can never leave a pill in the wrong color. The selected look itself
+		-- (the blue pill) is a separate indicator that SLIDES between tabs; the pills just
+		-- recolor their text/icon and show a soft hover tint.
 		local function paintSubPill(sub, instant)
 			local pill, label, icon = sub.Button, sub.Label, sub.Icon
 			local on = (activeSub == sub)
 			local bg, bgT, fg
 			if on then
-				bg, bgT, fg = KazeUI._PillBlue, 0, Color3.new(1, 1, 1)
+				bg, bgT, fg = KazeUI.GetColor(0.1), 1, Color3.new(1, 1, 1)
 			elseif sub.Hover then
-				bg, bgT, fg = KazeUI.GetColor(0.09), 0.1, KazeUI.CurrentTheme.Text
+				bg, bgT, fg = KazeUI.GetColor(0.12), 0.35, KazeUI.CurrentTheme.Text
 			else
-				bg, bgT, fg = KazeUI.GetColor(0.05), 0.25, KazeUI.CurrentTheme.MutedText
+				bg, bgT, fg = KazeUI.GetColor(0.1), 1, KazeUI.CurrentTheme.MutedText
 			end
 			local function setFinal()
 				pill.BackgroundColor3 = bg
@@ -8218,7 +8219,6 @@ end
 				for _, tw in ipairs(sub.Tweens) do tw:Cancel() end
 			end
 			sub.Tweens = {}
-			label.Font = on and Enum.Font.GothamBold or Enum.Font.GothamMedium
 			if instant or KazeUI.PerformanceMode then
 				setFinal()
 				return
@@ -8234,6 +8234,38 @@ end
 			task.delay(TWEEN_FAST.Time + 0.05, function()
 				if sub.PaintId == paintId and pill.Parent then setFinal() end
 			end)
+		end
+
+		-- Slides (and resizes) the blue selection pill under the active tab.
+		local function moveSubIndicator(sub, instant)
+			if not subIndicator or not subCanvas or not sub or activeSub ~= sub then return end
+			local pill = sub.Button
+			if not pill.Parent or pill.AbsoluteSize.X <= 0 then return end -- layout not ready yet; the size-changed hook retries
+			local scale = UIScale.Scale > 0 and UIScale.Scale or 1
+			local x = (pill.AbsolutePosition.X - subCanvas.AbsolutePosition.X) / scale
+			local y = (pill.AbsolutePosition.Y - subCanvas.AbsolutePosition.Y) / scale
+			local w = pill.AbsoluteSize.X / scale
+			local h = pill.AbsoluteSize.Y / scale
+			local pos, size = UDim2.fromOffset(x, y), UDim2.fromOffset(w, h)
+			if subIndicatorTween then subIndicatorTween:Cancel() subIndicatorTween = nil end
+			if instant or not subIndicator.Visible or KazeUI.PerformanceMode then
+				subIndicator.Position = pos
+				subIndicator.Size = size
+				subIndicator.Visible = true
+			else
+				subIndicatorTween = TweenService:Create(subIndicator, TweenInfo.new(0.34, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {Position = pos, Size = size})
+				subIndicatorTween:Play()
+			end
+		end
+
+		-- Edge fades appear only when there is more to slide to on that side.
+		local function updateSubFades()
+			if not subScroller or not subFadeL then return end
+			local scale = UIScale.Scale > 0 and UIScale.Scale or 1
+			local maxX = math.max(0, subScroller.AbsoluteCanvasSize.X / scale - subScroller.AbsoluteSize.X / scale)
+			local x = subScroller.CanvasPosition.X
+			subFadeL.Visible = x > 2
+			subFadeR.Visible = x < maxX - 2
 		end
 
 		local function revealSubPill(pill)
@@ -8270,7 +8302,11 @@ end
 				paintSubPill(s, false)
 			end
 			if sub then
-				task.defer(revealSubPill, sub.Button)
+				moveSubIndicator(sub, false)
+				task.defer(function()
+					moveSubIndicator(sub, false)
+					revealSubPill(sub.Button)
+				end)
 				if animate ~= false then AnimateComponentsIn(sub.Content) end
 			end
 		end
@@ -8311,11 +8347,25 @@ end
 			if subBarHolder then return end
 			subBarHolder = Instance.new("Frame")
 			subBarHolder.Name = "SubTabBar"
-			subBarHolder.Size = UDim2.new(0.95, 0, 0, 38)
+			subBarHolder.Size = UDim2.new(0.95, 0, 0, 42)
 			subBarHolder.BackgroundTransparency = 1
-			subBarHolder.ClipsDescendants = true
 			subBarHolder.LayoutOrder = SUB_BAR_ORDER
 			subBarHolder.Parent = pageContent
+
+			-- rounded track the pills sit in
+			subTrack = Instance.new("Frame")
+			subTrack.Name = "Track"
+			subTrack.AnchorPoint = Vector2.new(0, 0.5)
+			subTrack.Position = UDim2.new(0, 0, 0.5, 0)
+			subTrack.Size = UDim2.new(1, 0, 0, 38)
+			subTrack.BorderSizePixel = 0
+			subTrack.ClipsDescendants = true
+			subTrack.Parent = subBarHolder
+			Instance.new("UICorner", subTrack).CornerRadius = UDim.new(1, 0)
+			local trackStroke = Instance.new("UIStroke", subTrack)
+			trackStroke.Thickness = 1
+			trackStroke.Transparency = 0.7
+			KazeUI:RegisterBorder(trackStroke)
 
 			subScroller = NewScroller()
 			subScroller.Name = "Slider"
@@ -8327,17 +8377,85 @@ end
 			subScroller.CanvasSize = UDim2.new(0, 0, 0, 0)
 			subScroller.AutomaticCanvasSize = Enum.AutomaticSize.X
 			subScroller.ElasticBehavior = Enum.ElasticBehavior.Always
-			subScroller.Parent = subBarHolder
+			subScroller.Parent = subTrack
 
-			local barLayout = Instance.new("UIListLayout", subScroller)
+			-- canvas holds the sliding indicator (no layout) and the row of pills (with layout)
+			subCanvas = Instance.new("Frame")
+			subCanvas.Name = "Canvas"
+			subCanvas.BackgroundTransparency = 1
+			subCanvas.Size = UDim2.new(0, 0, 1, 0)
+			subCanvas.AutomaticSize = Enum.AutomaticSize.X
+			subCanvas.Parent = subScroller
+
+			subIndicator = Instance.new("Frame")
+			subIndicator.Name = "Indicator"
+			subIndicator.BorderSizePixel = 0
+			subIndicator.BackgroundColor3 = KazeUI._PillBlue
+			subIndicator.Visible = false
+			subIndicator.ZIndex = 1
+			subIndicator.Parent = subCanvas
+			Instance.new("UICorner", subIndicator).CornerRadius = UDim.new(1, 0)
+			local indGrad = Instance.new("UIGradient", subIndicator)
+			indGrad.Color = ColorSequence.new(KazeUI._PillBlue, Color3.fromRGB(99, 102, 241))
+			indGrad.Rotation = 20
+			local indStroke = Instance.new("UIStroke", subIndicator)
+			indStroke.Thickness = 1
+			indStroke.Color = Color3.fromRGB(147, 197, 253)
+			indStroke.Transparency = 0.55
+
+			subRow = Instance.new("Frame")
+			subRow.Name = "Row"
+			subRow.BackgroundTransparency = 1
+			subRow.Size = UDim2.new(0, 0, 1, 0)
+			subRow.AutomaticSize = Enum.AutomaticSize.X
+			subRow.ZIndex = 2
+			subRow.Parent = subCanvas
+
+			local barLayout = Instance.new("UIListLayout", subRow)
 			barLayout.FillDirection = Enum.FillDirection.Horizontal
 			barLayout.SortOrder = Enum.SortOrder.LayoutOrder
 			barLayout.VerticalAlignment = Enum.VerticalAlignment.Center
-			barLayout.Padding = UDim.new(0, 4)
+			barLayout.Padding = UDim.new(0, 2)
 
-			local barPad = Instance.new("UIPadding", subScroller)
-			barPad.PaddingLeft = UDim.new(0, 2)
-			barPad.PaddingRight = UDim.new(0, 2)
+			local barPad = Instance.new("UIPadding", subRow)
+			barPad.PaddingLeft = UDim.new(0, 4)
+			barPad.PaddingRight = UDim.new(0, 4)
+
+			-- fades that hint there is more to slide to
+			local function makeFade(isLeft)
+				local f = Instance.new("Frame")
+				f.Name = isLeft and "FadeLeft" or "FadeRight"
+				f.BorderSizePixel = 0
+				f.Size = UDim2.new(0, 30, 1, 0)
+				f.AnchorPoint = Vector2.new(isLeft and 0 or 1, 0)
+				f.Position = UDim2.new(isLeft and 0 or 1, 0, 0, 0)
+				f.ZIndex = 10
+				f.Visible = false
+				f.Active = false
+				f.Parent = subTrack
+				Instance.new("UICorner", f).CornerRadius = UDim.new(1, 0)
+				local g = Instance.new("UIGradient", f)
+				g.Transparency = NumberSequence.new(isLeft and 0 or 1, isLeft and 1 or 0)
+				return f
+			end
+			subFadeL = makeFade(true)
+			subFadeR = makeFade(false)
+
+			KazeUI:OnThemeChanged(subTrack, function()
+				local c = KazeUI.GetColor(0.04)
+				subTrack.BackgroundColor3 = c
+				subFadeL.BackgroundColor3 = c
+				subFadeR.BackgroundColor3 = c
+				subIndicator.BackgroundColor3 = KazeUI._PillBlue
+			end)
+
+			subScroller:GetPropertyChangedSignal("CanvasPosition"):Connect(updateSubFades)
+			subScroller:GetPropertyChangedSignal("AbsoluteCanvasSize"):Connect(updateSubFades)
+			subScroller:GetPropertyChangedSignal("AbsoluteSize"):Connect(updateSubFades)
+			subRow:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+				if activeSub then moveSubIndicator(activeSub, true) end
+				updateSubFades()
+			end)
 
 			subScroller.InputBegan:Connect(beginSubDrag)
 			subBarHolder.Destroying:Connect(function()
@@ -8356,15 +8474,16 @@ end
 			pill.AutoButtonColor = false
 			pill.BorderSizePixel = 0
 			pill.Text = ""
-			pill.Size = UDim2.new(0, 0, 0, 34)
+			pill.Size = UDim2.new(0, 0, 0, 30)
 			pill.AutomaticSize = Enum.AutomaticSize.X
 			pill.LayoutOrder = #subTabs + 1
-			pill.Parent = subScroller
+			pill.ZIndex = 3
+			pill.Parent = subRow
 			Instance.new("UICorner", pill).CornerRadius = UDim.new(1, 0)
 
 			local pillPad = Instance.new("UIPadding", pill)
-			pillPad.PaddingLeft = UDim.new(0, 16)
-			pillPad.PaddingRight = UDim.new(0, 16)
+			pillPad.PaddingLeft = UDim.new(0, 14)
+			pillPad.PaddingRight = UDim.new(0, 14)
 
 			local pillLayout = Instance.new("UIListLayout", pill)
 			pillLayout.FillDirection = Enum.FillDirection.Horizontal
@@ -8381,6 +8500,7 @@ end
 				pillIcon.Image = FormatImage(subIconId)
 				pillIcon.ScaleType = Enum.ScaleType.Fit
 				pillIcon.LayoutOrder = 1
+				pillIcon.ZIndex = 4
 				pillIcon.Parent = pill
 			end
 
@@ -8392,6 +8512,7 @@ end
 			pillLabel.Font = Enum.Font.GothamMedium
 			pillLabel.TextSize = 13
 			pillLabel.LayoutOrder = 2
+			pillLabel.ZIndex = 4
 			pillLabel.Parent = pill
 
 			local content = Instance.new("Frame")
@@ -8423,6 +8544,9 @@ end
 				paintSubPill(sub, false)
 			end)
 			pill.InputBegan:Connect(beginSubDrag)
+			pill:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+				if activeSub == sub then moveSubIndicator(sub, true) end
+			end)
 			pill.MouseButton1Click:Connect(function()
 				if subDragMoved or activeDialogsCount > 0 then return end
 				setActiveSub(sub, true)
