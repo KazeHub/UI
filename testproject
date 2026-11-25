@@ -4093,12 +4093,38 @@ local function CreateTextBoxInput(parentFrame, title, placeholder, defaultVal, c
 	}, flag)
 end
 
-local function CreateSliderInput(parentFrame, title, min, max, default, callback, flag, locked)
+local function CreateSliderInput(parentFrame, title, min, max, default, callback, flag, locked, increment, decimals)
 	title = tostring(title or "Slider")
 	min = tonumber(min) or 0
 	max = tonumber(max) or 100
 	default = tonumber(default) or min
-	local value = math.clamp(default, min, max)
+
+	-- Decimal support (e.g. Min = 0.1, Max = 0.9): the step and the number of shown decimals are
+	-- worked out from the numbers you pass (0.1 -> step 0.1, 1 decimal), or set them yourself
+	-- with Increment = 0.05 / Decimals = 2. Whole-number sliders behave exactly as before.
+	local function countDecimals(n)
+		local str = string.format("%.6f", n)
+		str = string.gsub(str, "0+$", "")
+		local frac = string.match(str, "%.(%d*)$")
+		return frac and #frac or 0
+	end
+	local autoDecimals = math.max(countDecimals(min), countDecimals(max), countDecimals(default))
+	local step = tonumber(increment)
+	if not step or step <= 0 then step = (autoDecimals > 0) and (10 ^ -autoDecimals) or 1 end
+	local decimalPlaces = tonumber(decimals) or math.max(autoDecimals, countDecimals(step))
+	decimalPlaces = math.clamp(math.floor(decimalPlaces), 0, 6)
+	local function snap(v)
+		v = math.clamp(v, min, max)
+		v = min + math.floor((v - min) / step + 0.5) * step
+		v = math.clamp(v, min, max)
+		-- strip floating-point noise (0.30000000000000004 -> 0.3)
+		return tonumber(string.format("%." .. decimalPlaces .. "f", v))
+	end
+	local function fmt(v)
+		if decimalPlaces > 0 then return string.format("%." .. decimalPlaces .. "f", v) end
+		return tostring(v)
+	end
+	local value = snap(default)
 	local isLockedState = locked or false
 
 	local measuredWidth = 598 * 0.92
@@ -4156,7 +4182,7 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 	valueLabel.Size = UDim2.new(0, 70, 0, titleHeight > 0 and titleHeight or 18)
 	valueLabel.Position = UDim2.new(1, -70, 0, 0)
 	valueLabel.BackgroundTransparency = 1
-	valueLabel.Text = tostring(value)
+	valueLabel.Text = fmt(value)
 	valueLabel.Font = Enum.Font.GothamBold
 	valueLabel.TextSize = 11
 	valueLabel.TextXAlignment = Enum.TextXAlignment.Right
@@ -4209,12 +4235,12 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 		local relativeX = input.Position.X - track.AbsolutePosition.X
 		local percentage = math.clamp(relativeX / trackWidth, 0, 1)
 		local newVal = min + (max - min) * percentage
-		newVal = math.clamp(math.floor(newVal + 0.5), min, max)
+		newVal = snap(newVal)
 
 		if newVal == lastAppliedValue then return end
 		lastAppliedValue = newVal
 		value = newVal
-		valueLabel.Text = tostring(value)
+		valueLabel.Text = fmt(value)
 
 		local visualPercentage = 0
 		if max > min then visualPercentage = (value - min) / (max - min) end
@@ -4274,8 +4300,8 @@ local function CreateSliderInput(parentFrame, title, min, max, default, callback
 		Wrapper = wrapper,
 		SetValue = function(self, newVal)
 			lastAppliedValue = nil
-			value = math.clamp(tonumber(newVal) or min, min, max)
-			valueLabel.Text = tostring(value)
+			value = snap(tonumber(newVal) or min)
+			valueLabel.Text = fmt(value)
 			local valPercentage = 0
 			if max > min then valPercentage = (value - min) / (max - min) end
 			fill.Size = UDim2.new(valPercentage, 0, 1, 0)
@@ -4903,12 +4929,15 @@ AttachElementsToAPI = function(apiTable, parentFrame, depth)
 
 	function apiTable:Slider(arg1, arg2, arg3, arg4, arg5, arg6)
 		local title, min, max, def, callback, flag, locked = "", 0, 100, 50, nil, nil, false
+		local increment, decimals = nil, nil
 		if type(arg1) == "table" then
 			title, min, max, def, callback, flag, locked = arg1.Title, arg1.Min, arg1.Max, arg1.Default, arg1.Callback, arg1.Flag, arg1.Locked
+			increment = arg1.Increment or arg1.Step or arg1.Rounding
+			decimals = arg1.Decimals
 		else
 			title, min, max, def, callback, flag = arg1, arg2, arg3, arg4, arg5, arg6
 		end
-		return CreateSliderInput(parentFrame, title, min, max, def, callback, flag, locked)
+		return CreateSliderInput(parentFrame, title, min, max, def, callback, flag, locked, increment, decimals)
 	end
 
 	function apiTable:Dropdown(arg1, arg2, arg3, arg4, arg5, arg6)
@@ -8184,6 +8213,7 @@ end
 		--------------------------------------------------
 		local subBarHolder, subTrack, subScroller, subCanvas, subRow, subIndicator, subFadeL, subFadeR
 		local subIndicatorTween = nil
+		local subIndStroke = nil
 		local subTabs = {}
 		local activeSub = nil
 		local subDragMoved = false
@@ -8199,19 +8229,19 @@ end
 		local function paintSubPill(sub, instant)
 			local pill, label, icon = sub.Button, sub.Label, sub.Icon
 			local on = (activeSub == sub)
-			local bg, bgT, fg
+			local bg, bgT, fg, ifg
 			if on then
-				bg, bgT, fg = KazeUI.GetColor(0.1), 1, Color3.new(1, 1, 1)
+				bg, bgT, fg, ifg = KazeUI.GetColor(0.1), 1, Color3.new(1, 1, 1), Color3.fromRGB(96, 165, 250)
 			elseif sub.Hover then
-				bg, bgT, fg = KazeUI.GetColor(0.12), 0.35, KazeUI.CurrentTheme.Text
+				bg, bgT, fg, ifg = KazeUI.GetColor(0.12), 0.45, KazeUI.CurrentTheme.Text, KazeUI.CurrentTheme.Text
 			else
-				bg, bgT, fg = KazeUI.GetColor(0.1), 1, KazeUI.CurrentTheme.MutedText
+				bg, bgT, fg, ifg = KazeUI.GetColor(0.1), 1, KazeUI.CurrentTheme.MutedText, KazeUI.CurrentTheme.MutedText
 			end
 			local function setFinal()
 				pill.BackgroundColor3 = bg
 				pill.BackgroundTransparency = bgT
 				label.TextColor3 = fg
-				if icon then icon.ImageColor3 = fg end
+				if icon then icon.ImageColor3 = ifg end
 			end
 			sub.PaintId = (sub.PaintId or 0) + 1
 			local paintId = sub.PaintId
@@ -8230,7 +8260,7 @@ end
 			end
 			tween(pill, {BackgroundColor3 = bg, BackgroundTransparency = bgT})
 			tween(label, {TextColor3 = fg})
-			if icon then tween(icon, {ImageColor3 = fg}) end
+			if icon then tween(icon, {ImageColor3 = ifg}) end
 			task.delay(TWEEN_FAST.Time + 0.05, function()
 				if sub.PaintId == paintId and pill.Parent then setFinal() end
 			end)
@@ -8347,7 +8377,7 @@ end
 			if subBarHolder then return end
 			subBarHolder = Instance.new("Frame")
 			subBarHolder.Name = "SubTabBar"
-			subBarHolder.Size = UDim2.new(0.95, 0, 0, 42)
+			subBarHolder.Size = UDim2.new(0.95, 0, 0, 46)
 			subBarHolder.BackgroundTransparency = 1
 			subBarHolder.LayoutOrder = SUB_BAR_ORDER
 			subBarHolder.Parent = pageContent
@@ -8357,11 +8387,11 @@ end
 			subTrack.Name = "Track"
 			subTrack.AnchorPoint = Vector2.new(0, 0.5)
 			subTrack.Position = UDim2.new(0, 0, 0.5, 0)
-			subTrack.Size = UDim2.new(1, 0, 0, 38)
+			subTrack.Size = UDim2.new(1, 0, 0, 42)
 			subTrack.BorderSizePixel = 0
 			subTrack.ClipsDescendants = true
 			subTrack.Parent = subBarHolder
-			Instance.new("UICorner", subTrack).CornerRadius = UDim.new(1, 0)
+			Instance.new("UICorner", subTrack).CornerRadius = UDim.new(0, 13)
 			local trackStroke = Instance.new("UIStroke", subTrack)
 			trackStroke.Thickness = 1
 			trackStroke.Transparency = 0.7
@@ -8390,18 +8420,15 @@ end
 			subIndicator = Instance.new("Frame")
 			subIndicator.Name = "Indicator"
 			subIndicator.BorderSizePixel = 0
-			subIndicator.BackgroundColor3 = KazeUI._PillBlue
+			subIndicator.BackgroundColor3 = KazeUI.GetColor(0.16)
 			subIndicator.Visible = false
 			subIndicator.ZIndex = 1
 			subIndicator.Parent = subCanvas
-			Instance.new("UICorner", subIndicator).CornerRadius = UDim.new(1, 0)
-			local indGrad = Instance.new("UIGradient", subIndicator)
-			indGrad.Color = ColorSequence.new(KazeUI._PillBlue, Color3.fromRGB(99, 102, 241))
-			indGrad.Rotation = 20
-			local indStroke = Instance.new("UIStroke", subIndicator)
-			indStroke.Thickness = 1
-			indStroke.Color = Color3.fromRGB(147, 197, 253)
-			indStroke.Transparency = 0.55
+			Instance.new("UICorner", subIndicator).CornerRadius = UDim.new(0, 9)
+			subIndStroke = Instance.new("UIStroke", subIndicator)
+			subIndStroke.Thickness = 1
+			subIndStroke.Color = KazeUI.GetColor(0.3)
+			subIndStroke.Transparency = 0.2
 
 			subRow = Instance.new("Frame")
 			subRow.Name = "Row"
@@ -8433,7 +8460,7 @@ end
 				f.Visible = false
 				f.Active = false
 				f.Parent = subTrack
-				Instance.new("UICorner", f).CornerRadius = UDim.new(1, 0)
+				Instance.new("UICorner", f).CornerRadius = UDim.new(0, 13)
 				local g = Instance.new("UIGradient", f)
 				g.Transparency = NumberSequence.new(isLeft and 0 or 1, isLeft and 1 or 0)
 				return f
@@ -8446,7 +8473,8 @@ end
 				subTrack.BackgroundColor3 = c
 				subFadeL.BackgroundColor3 = c
 				subFadeR.BackgroundColor3 = c
-				subIndicator.BackgroundColor3 = KazeUI._PillBlue
+				subIndicator.BackgroundColor3 = KazeUI.GetColor(0.16)
+				if subIndStroke then subIndStroke.Color = KazeUI.GetColor(0.3) end
 			end)
 
 			subScroller:GetPropertyChangedSignal("CanvasPosition"):Connect(updateSubFades)
@@ -8474,12 +8502,12 @@ end
 			pill.AutoButtonColor = false
 			pill.BorderSizePixel = 0
 			pill.Text = ""
-			pill.Size = UDim2.new(0, 0, 0, 30)
+			pill.Size = UDim2.new(0, 0, 0, 32)
 			pill.AutomaticSize = Enum.AutomaticSize.X
 			pill.LayoutOrder = #subTabs + 1
 			pill.ZIndex = 3
 			pill.Parent = subRow
-			Instance.new("UICorner", pill).CornerRadius = UDim.new(1, 0)
+			Instance.new("UICorner", pill).CornerRadius = UDim.new(0, 9)
 
 			local pillPad = Instance.new("UIPadding", pill)
 			pillPad.PaddingLeft = UDim.new(0, 14)
