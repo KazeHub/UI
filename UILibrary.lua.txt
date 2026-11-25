@@ -47,7 +47,7 @@ KazeUI.GlowRainbow = false
 function KazeUI._EscapeRich(str)
 	return (string.gsub(string.gsub(string.gsub(tostring(str), "&", "&amp;"), "<", "&lt;"), ">", "&gt;"))
 end
-KazeUI.PerformanceMode = false
+KazeUI.PerformanceMode = true -- pure performance is the only mode now
 KazeUI._PillBlue = Color3.fromRGB(59, 130, 246)
 KazeUI._PreloadSet = {}
 KazeUI._userSetGlow = false
@@ -71,28 +71,12 @@ KazeUI.NeonTweens = {}
 KazeUI.PanelElements = {}
 KazeUI.GlowCallbacks = {}
 
-local TWEEN_FAST_NORMAL = TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-local TWEEN_SPRING_NORMAL = TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
-local TWEEN_SMOOTH_NORMAL = TweenInfo.new(0.35, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
-local TWEEN_COLLAPSE_NORMAL = TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-
-local TWEEN_FAST_PERF = TweenInfo.new(0.1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-local TWEEN_SPRING_PERF = TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-local TWEEN_SMOOTH_PERF = TweenInfo.new(0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-local TWEEN_COLLAPSE_PERF = TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-
-local TWEEN_FAST = TWEEN_FAST_NORMAL
-local TWEEN_SPRING = TWEEN_SPRING_NORMAL
-local TWEEN_SMOOTH = TWEEN_SMOOTH_NORMAL
-local TWEEN_COLLAPSE = TWEEN_COLLAPSE_NORMAL
-
-local function ApplyTweenProfile(perf)
-	if perf then
-		TWEEN_FAST, TWEEN_SPRING, TWEEN_SMOOTH, TWEEN_COLLAPSE = TWEEN_FAST_PERF, TWEEN_SPRING_PERF, TWEEN_SMOOTH_PERF, TWEEN_COLLAPSE_PERF
-	else
-		TWEEN_FAST, TWEEN_SPRING, TWEEN_SMOOTH, TWEEN_COLLAPSE = TWEEN_FAST_NORMAL, TWEEN_SPRING_NORMAL, TWEEN_SMOOTH_NORMAL, TWEEN_COLLAPSE_NORMAL
-	end
-end
+-- One tween profile: the short, cheap one (this used to be "Performance Mode"; the heavier
+-- "normal" profile was removed).
+local TWEEN_FAST = TweenInfo.new(0.1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+local TWEEN_SPRING = TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+local TWEEN_SMOOTH = TweenInfo.new(0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+local TWEEN_COLLAPSE = TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 
 local TWEEN_PRESS_SHORT = TweenInfo.new(0.1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, 0, true)
 local TWEEN_PRESS = TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, 0, true)
@@ -1609,81 +1593,11 @@ function KazeUI:SetGlowRainbow()
 	KazeUI.GlowRainbow = false
 end
 
-function KazeUI:SetPerformanceMode(enabled)
-	enabled = enabled and true or false
-	local wasEnabled = KazeUI.PerformanceMode
-	KazeUI.PerformanceMode = enabled
-	ApplyTweenProfile(enabled)
-
-	if enabled then
-		-- Remember which theme was active BEFORE we force Obsidian, so turning
-		-- Performance Mode back off can restore it. Only overwrite the saved
-		-- key the first time we actually enter Performance Mode (not on a
-		-- redundant SetPerformanceMode(true) call while already enabled), and
-		-- never save "Obsidian" itself as the thing to restore to.
-		if not wasEnabled and KazeUI.CurrentThemeKey ~= "Obsidian" then
-			KazeUI._PrePerformanceThemeKey = KazeUI.CurrentThemeKey
-		end
-
-		local list = KazeUI.GlowElements
-		for i = 1, #list do
-			local data = list[i]
-			local target = data.Target
-			if target and target.Parent then
-				if data.HaloRings then
-					for _, ring in ipairs(data.HaloRings) do
-						ring.Instance.Color = KazeUI.GlowColor
-					end
-				else
-					target[data.Prop] = KazeUI.GlowColor
-					local grad = data.Grad or target:FindFirstChild("KazeGlowGradient")
-					if grad then grad.Enabled = false end
-				end
-				GlowTargetSet[target] = nil
-				table.insert(FrozenGlow, data)
-			end
-		end
-		table.clear(list)
-		SchedRemove("glow")
-		if glowPoll then
-			task.cancel(glowPoll)
-			glowPoll = nil
-		end
-
-		for _, wp in ipairs(KazeUI.WallpaperElements) do
-			if wp.ImageLabel and wp.ImageLabel.Parent then
-				wp.ImageLabel.ImageTransparency = 1
-				wp.ImageLabel.Image = ""
-			end
-			if wp.OverlayFrame and wp.OverlayFrame.Parent then
-				wp.OverlayFrame.BackgroundTransparency = 1
-			end
-		end
-
-		KazeUI:SetTheme("Obsidian")
-	elseif wasEnabled then
-		-- Restore whatever theme was active before Performance Mode forced
-		-- Obsidian. SetTheme re-applies the theme's colors, panel transparency,
-		-- and (via ApplyWallpaper below) its wallpaper -- previously this branch
-		-- never left Obsidian at all, since KazeUI.CurrentTheme had been
-		-- overwritten and never restored.
-		local restoreKey = KazeUI._PrePerformanceThemeKey
-		KazeUI._PrePerformanceThemeKey = nil
-		if restoreKey and restoreKey ~= "Obsidian" then
-			KazeUI:SetTheme(restoreKey)
-		end
-
-		for _, data in ipairs(FrozenGlow) do
-			local target = data.Target
-			if target and target.Parent and not Destroyed[target] and not GlowTargetSet[target] then
-				GlowTargetSet[target] = true
-				table.insert(KazeUI.GlowElements, data)
-			end
-		end
-		table.clear(FrozenGlow)
-		ApplyWallpaper(KazeUI.CurrentTheme)
-		if #KazeUI.GlowElements > 0 then GlowWake() end
-	end
+-- Performance Mode is now the ONLY mode and is always on. This stays as a harmless no-op so older
+-- scripts that still call SetPerformanceMode(true/false) don't error.
+function KazeUI:SetPerformanceMode(_)
+	KazeUI.PerformanceMode = true
+	return true
 end
 
 local function ShutdownRuntime()
@@ -5846,23 +5760,10 @@ local function BuildWindow(config)
 		KazeUI:SetGlowRainbow(config.GlowRainbow)
 	end
 
-	if type(config.PerformanceMode) == "boolean" then
-		KazeUI.PerformanceMode = config.PerformanceMode
-	elseif type(config.Lite) == "boolean" then
-		KazeUI.PerformanceMode = config.Lite
-	end
-
-	ApplyTweenProfile(KazeUI.PerformanceMode)
-	if KazeUI.PerformanceMode then
-		-- Same restore-key bookkeeping as runtime SetPerformanceMode(true): the
-		-- developer may have also passed config.Theme, so remember what they
-		-- actually asked for before forcing Obsidian, otherwise a later
-		-- SetPerformanceMode(false) call has nothing to restore to.
-		if selectedTheme ~= "Obsidian" then
-			KazeUI._PrePerformanceThemeKey = selectedTheme
-		end
-		selectedTheme = "Obsidian"
-	end
+	-- Performance Mode is permanent: config.PerformanceMode / config.Lite are ignored, and the
+	-- lightweight Obsidian look is always used (wallpapers and heavy glow stay off).
+	KazeUI.PerformanceMode = true
+	selectedTheme = "Obsidian"
 
 	local initialSize = config.Size or UDim2.fromOffset(600, 400)
 	local MiniButtonSize = (config.OpenButton and config.OpenButton.Size) or UDim2.fromOffset(48, 48)
@@ -8213,7 +8114,8 @@ end
 		--------------------------------------------------
 		local subBarHolder, subTrack, subScroller, subCanvas, subRow, subIndicator, subFadeL, subFadeR
 		local subIndicatorTween = nil
-		local subIndStroke = nil
+		local subIndStroke, subIndGradient, subShine, subSpinTween = nil, nil, nil, nil
+		local updateSubSpin, playSubShine
 		local subTabs = {}
 		local activeSub = nil
 		local subDragMoved = false
@@ -8231,7 +8133,7 @@ end
 			local on = (activeSub == sub)
 			local bg, bgT, fg, ifg
 			if on then
-				bg, bgT, fg, ifg = KazeUI.GetColor(0.1), 1, Color3.new(1, 1, 1), Color3.fromRGB(96, 165, 250)
+				bg, bgT, fg, ifg = KazeUI.GetColor(0.1), 1, Color3.new(1, 1, 1), Color3.fromRGB(165, 180, 252)
 			elseif sub.Hover then
 				bg, bgT, fg, ifg = KazeUI.GetColor(0.12), 0.45, KazeUI.CurrentTheme.Text, KazeUI.CurrentTheme.Text
 			else
@@ -8249,7 +8151,7 @@ end
 				for _, tw in ipairs(sub.Tweens) do tw:Cancel() end
 			end
 			sub.Tweens = {}
-			if instant or KazeUI.PerformanceMode then
+			if instant then
 				setFinal()
 				return
 			end
@@ -8266,7 +8168,33 @@ end
 			end)
 		end
 
-		-- Slides (and resizes) the blue selection pill under the active tab.
+		-- Spin runs only while this tab's page AND the window are visible, and a tab is selected.
+		updateSubSpin = function()
+			if not subIndGradient then return end
+			local should = subIndicator and subIndicator.Visible and activeSub ~= nil
+				and page.Visible and Window.Visible and KazeUI.SubTabSpin ~= false
+			if should then
+				if not subSpinTween then
+					subIndGradient.Rotation = 0
+					subSpinTween = TweenService:Create(subIndGradient, TweenInfo.new(3.6, Enum.EasingStyle.Linear, Enum.EasingDirection.In, -1), {Rotation = 360})
+				end
+				if subSpinTween.PlaybackState ~= Enum.PlaybackState.Playing then subSpinTween:Play() end
+			elseif subSpinTween and subSpinTween.PlaybackState == Enum.PlaybackState.Playing then
+				subSpinTween:Pause()
+			end
+		end
+
+		-- One short light streak across the indicator (not a loop).
+		playSubShine = function()
+			if not subShine then return end
+			subShine.Position = UDim2.new(-0.6, 0, 0, 0)
+			subShine.Visible = true
+			local tw = TweenService:Create(subShine, TweenInfo.new(0.55, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Position = UDim2.new(1.2, 0, 0, 0)})
+			tw.Completed:Connect(function() subShine.Visible = false end)
+			tw:Play()
+		end
+
+		-- Slides (and resizes) the selection card under the active tab.
 		local function moveSubIndicator(sub, instant)
 			if not subIndicator or not subCanvas or not sub or activeSub ~= sub then return end
 			local pill = sub.Button
@@ -8278,14 +8206,16 @@ end
 			local h = pill.AbsoluteSize.Y / scale
 			local pos, size = UDim2.fromOffset(x, y), UDim2.fromOffset(w, h)
 			if subIndicatorTween then subIndicatorTween:Cancel() subIndicatorTween = nil end
-			if instant or not subIndicator.Visible or KazeUI.PerformanceMode then
+			if instant or not subIndicator.Visible then
 				subIndicator.Position = pos
 				subIndicator.Size = size
 				subIndicator.Visible = true
 			else
 				subIndicatorTween = TweenService:Create(subIndicator, TweenInfo.new(0.34, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {Position = pos, Size = size})
 				subIndicatorTween:Play()
+				playSubShine()
 			end
+			if updateSubSpin then updateSubSpin() end
 		end
 
 		-- Edge fades appear only when there is more to slide to on that side.
@@ -8314,11 +8244,7 @@ end
 			end
 			target = math.clamp(target, 0, maxX)
 			if math.abs(target - cur) > 0.5 then
-				if KazeUI.PerformanceMode then
-					subScroller.CanvasPosition = Vector2.new(target, 0)
-				else
-					PlayTween(subScroller, TWEEN_SMOOTH, {CanvasPosition = Vector2.new(target, 0)})
-				end
+				PlayTween(subScroller, TWEEN_SMOOTH, {CanvasPosition = Vector2.new(target, 0)})
 			end
 		end
 
@@ -8332,6 +8258,11 @@ end
 				paintSubPill(s, false)
 			end
 			if sub then
+				if sub.Icon and not KazeUI.SubTabNoPop then
+					-- rotation pop: no size change, so it never shifts the layout
+					sub.Icon.Rotation = -16
+					TweenService:Create(sub.Icon, TweenInfo.new(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Rotation = 0}):Play()
+				end
 				moveSubIndicator(sub, false)
 				task.defer(function()
 					moveSubIndicator(sub, false)
@@ -8377,7 +8308,7 @@ end
 			if subBarHolder then return end
 			subBarHolder = Instance.new("Frame")
 			subBarHolder.Name = "SubTabBar"
-			subBarHolder.Size = UDim2.new(0.95, 0, 0, 46)
+			subBarHolder.Size = UDim2.new(0.95, 0, 0, 52)
 			subBarHolder.BackgroundTransparency = 1
 			subBarHolder.LayoutOrder = SUB_BAR_ORDER
 			subBarHolder.Parent = pageContent
@@ -8387,11 +8318,11 @@ end
 			subTrack.Name = "Track"
 			subTrack.AnchorPoint = Vector2.new(0, 0.5)
 			subTrack.Position = UDim2.new(0, 0, 0.5, 0)
-			subTrack.Size = UDim2.new(1, 0, 0, 42)
+			subTrack.Size = UDim2.new(1, 0, 0, 48)
 			subTrack.BorderSizePixel = 0
 			subTrack.ClipsDescendants = true
 			subTrack.Parent = subBarHolder
-			Instance.new("UICorner", subTrack).CornerRadius = UDim.new(0, 13)
+			Instance.new("UICorner", subTrack).CornerRadius = UDim.new(0, 15)
 			local trackStroke = Instance.new("UIStroke", subTrack)
 			trackStroke.Thickness = 1
 			trackStroke.Transparency = 0.7
@@ -8420,15 +8351,41 @@ end
 			subIndicator = Instance.new("Frame")
 			subIndicator.Name = "Indicator"
 			subIndicator.BorderSizePixel = 0
-			subIndicator.BackgroundColor3 = KazeUI.GetColor(0.16)
+			subIndicator.BackgroundColor3 = Color3.fromRGB(21, 21, 42)
 			subIndicator.Visible = false
+			subIndicator.ClipsDescendants = true
 			subIndicator.ZIndex = 1
 			subIndicator.Parent = subCanvas
-			Instance.new("UICorner", subIndicator).CornerRadius = UDim.new(0, 9)
+			Instance.new("UICorner", subIndicator).CornerRadius = UDim.new(0, 11)
+			-- Neon border: ONE stroke + ONE gradient. The spin is a single engine-side tween on the
+			-- gradient's Rotation (no per-frame Lua), and it is paused whenever this tab is not on screen.
 			subIndStroke = Instance.new("UIStroke", subIndicator)
-			subIndStroke.Thickness = 1
-			subIndStroke.Color = KazeUI.GetColor(0.3)
-			subIndStroke.Transparency = 0.2
+			subIndStroke.Thickness = 1.5
+			subIndStroke.Color = Color3.new(1, 1, 1)
+			subIndStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+			subIndGradient = Instance.new("UIGradient", subIndStroke)
+			subIndGradient.Color = ColorSequence.new({
+				ColorSequenceKeypoint.new(0, Color3.fromRGB(59, 130, 246)),
+				ColorSequenceKeypoint.new(0.35, Color3.fromRGB(139, 92, 246)),
+				ColorSequenceKeypoint.new(0.7, Color3.fromRGB(236, 72, 153)),
+				ColorSequenceKeypoint.new(1, Color3.fromRGB(59, 130, 246)),
+			})
+			subShine = Instance.new("Frame")
+			subShine.Name = "Shine"
+			subShine.BorderSizePixel = 0
+			subShine.BackgroundColor3 = Color3.new(1, 1, 1)
+			subShine.Size = UDim2.new(0.45, 0, 1, 0)
+			subShine.Position = UDim2.new(-0.6, 0, 0, 0)
+			subShine.ZIndex = 2
+			subShine.Visible = false
+			subShine.Parent = subIndicator
+			local shineGrad = Instance.new("UIGradient", subShine)
+			shineGrad.Transparency = NumberSequence.new({
+				NumberSequenceKeypoint.new(0, 1),
+				NumberSequenceKeypoint.new(0.5, 0.78),
+				NumberSequenceKeypoint.new(1, 1),
+			})
+			shineGrad.Rotation = 20
 
 			subRow = Instance.new("Frame")
 			subRow.Name = "Row"
@@ -8460,7 +8417,7 @@ end
 				f.Visible = false
 				f.Active = false
 				f.Parent = subTrack
-				Instance.new("UICorner", f).CornerRadius = UDim.new(0, 13)
+				Instance.new("UICorner", f).CornerRadius = UDim.new(0, 15)
 				local g = Instance.new("UIGradient", f)
 				g.Transparency = NumberSequence.new(isLeft and 0 or 1, isLeft and 1 or 0)
 				return f
@@ -8473,8 +8430,6 @@ end
 				subTrack.BackgroundColor3 = c
 				subFadeL.BackgroundColor3 = c
 				subFadeR.BackgroundColor3 = c
-				subIndicator.BackgroundColor3 = KazeUI.GetColor(0.16)
-				if subIndStroke then subIndStroke.Color = KazeUI.GetColor(0.3) end
 			end)
 
 			subScroller:GetPropertyChangedSignal("CanvasPosition"):Connect(updateSubFades)
@@ -8486,7 +8441,10 @@ end
 			end)
 
 			subScroller.InputBegan:Connect(beginSubDrag)
+			page:GetPropertyChangedSignal("Visible"):Connect(function() if updateSubSpin then updateSubSpin() end end)
+			Window:GetPropertyChangedSignal("Visible"):Connect(function() if updateSubSpin then updateSubSpin() end end)
 			subBarHolder.Destroying:Connect(function()
+				if subSpinTween then subSpinTween:Cancel() subSpinTween = nil end
 				if activeDragStop then activeDragStop() end
 			end)
 		end
@@ -8502,12 +8460,12 @@ end
 			pill.AutoButtonColor = false
 			pill.BorderSizePixel = 0
 			pill.Text = ""
-			pill.Size = UDim2.new(0, 0, 0, 32)
+			pill.Size = UDim2.new(0, 0, 0, 36)
 			pill.AutomaticSize = Enum.AutomaticSize.X
 			pill.LayoutOrder = #subTabs + 1
 			pill.ZIndex = 3
 			pill.Parent = subRow
-			Instance.new("UICorner", pill).CornerRadius = UDim.new(0, 9)
+			Instance.new("UICorner", pill).CornerRadius = UDim.new(0, 11)
 
 			local pillPad = Instance.new("UIPadding", pill)
 			pillPad.PaddingLeft = UDim.new(0, 14)
@@ -8588,7 +8546,44 @@ end
 				setActiveSub(sub, false)
 			end
 
+			-- Optional corner badge: SetBadge(true) = dot, SetBadge(3) = count, SetBadge(nil/false) = hide.
+			-- Static on purpose (no pulsing loop) so it costs nothing while idle.
+			local badge = Instance.new("Frame")
+			badge.Name = "Badge"
+			badge.AnchorPoint = Vector2.new(0, 0.5)
+			badge.Position = UDim2.new(1, 3, 0, -5)
+			badge.BackgroundColor3 = Color3.fromRGB(244, 63, 94)
+			badge.BorderSizePixel = 0
+			badge.Visible = false
+			badge.ZIndex = 6
+			badge.Parent = pillLabel
+			Instance.new("UICorner", badge).CornerRadius = UDim.new(1, 0)
+			local badgeText = Instance.new("TextLabel")
+			badgeText.BackgroundTransparency = 1
+			badgeText.Size = UDim2.fromScale(1, 1)
+			badgeText.Font = Enum.Font.GothamBold
+			badgeText.TextSize = 10
+			badgeText.TextColor3 = Color3.new(1, 1, 1)
+			badgeText.ZIndex = 7
+			badgeText.Parent = badge
+			local function setBadge(v)
+				if v == nil or v == false then
+					badge.Visible = false
+				elseif v == true then
+					badge.Size = UDim2.fromOffset(8, 8)
+					badgeText.Text = ""
+					badge.Visible = true
+				else
+					local txt = tostring(v)
+					badge.Size = UDim2.fromOffset(math.max(15, 7 * #txt + 6), 15)
+					badgeText.Text = txt
+					badge.Visible = true
+				end
+			end
+			if type(arg1) == "table" and arg1.Badge ~= nil then setBadge(arg1.Badge) end
+
 			local subApi = {Button = pill, Page = content}
+			function subApi:SetBadge(v) setBadge(v) end
 			AttachElementsToAPI(subApi, content, 1)
 			function subApi:Select() setActiveSub(sub, true) end
 			return subApi
