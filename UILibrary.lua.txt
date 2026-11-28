@@ -2119,7 +2119,107 @@ local function WirePlayerListRefresh(ownerInst, refreshFn, withIcons, interval)
 	PlayerHub.Subscribe(ownerInst, refreshFn, withIcons and true or false)
 end
 
-local function CreateDropdown(parentFrame, title, options, defaultOption, callback, isMulti, flag, locked, playerList, playerListInterval)
+-- Filtered, LIVE player list for dropdowns / box dropdowns.
+--   PlayerList = true
+--   PlayerFilter = function(player) return <true to list this player> end   (e.g. only injured players)
+--   PlayerWatch  = { "RLGL_HitTracker" }  -- attributes whose changes re-run the filter
+--   IncludeSelf  = false (default), EmptyText = "None"
+-- Players are added when the filter starts passing and removed when it stops (or they leave); each
+-- row shows the avatar headshot (box dropdown) + player name. Event driven: no polling loop, and the
+-- dropdown only rebuilds when the resulting list actually changed.
+local function WireFilteredPlayerList(ownerInst, refreshFn, withIcons, popts)
+	local filter = popts.Filter
+	local watch = type(popts.Watch) == "table" and popts.Watch or {}
+	local includeSelf = popts.IncludeSelf == true
+	local emptyText = tostring(popts.EmptyText or "None")
+	local conns = {}      -- connection groups per player
+	local pending = false
+	local lastKey = nil
+	local dead = false
+
+	local function build()
+		local list, names = {}, {}
+		for _, plr in ipairs(Players:GetPlayers()) do
+			if (includeSelf or plr ~= LP) and plr.Parent == Players then
+				local ok, pass = pcall(filter, plr)
+				if ok and pass then names[#names + 1] = plr end
+			end
+		end
+		table.sort(names, function(a, b) return a.Name:lower() < b.Name:lower() end)
+		local keyParts = {}
+		for _, plr in ipairs(names) do
+			keyParts[#keyParts + 1] = plr.Name
+			if withIcons then
+				list[#list + 1] = {Text = plr.Name, Icon = "rbxthumb://type=AvatarHeadShot&id=" .. plr.UserId .. "&w=48&h=48"}
+			else
+				list[#list + 1] = plr.Name
+			end
+		end
+		if #list == 0 then
+			list[1] = withIcons and {Text = emptyText, Icon = ""} or emptyText
+			keyParts[1] = "\0empty"
+		end
+		return list, table.concat(keyParts, "\1")
+	end
+
+	local function push(force)
+		pending = false
+		if dead or not ownerInst.Parent then return end
+		local list, key = build()
+		if not force and key == lastKey then return end -- nothing changed: no rebuild
+		lastKey = key
+		pcall(refreshFn, list)
+	end
+
+	local function schedule()
+		if pending or dead then return end
+		pending = true
+		task.defer(push, false)
+	end
+
+	local function watchPlayer(plr)
+		if conns[plr] then return end
+		local group = {}
+		for _, attr in ipairs(watch) do
+			group[#group + 1] = plr:GetAttributeChangedSignal(attr):Connect(schedule)
+		end
+		conns[plr] = group
+	end
+
+	local function unwatchPlayer(plr)
+		local group = conns[plr]
+		if group then
+			for _, c in ipairs(group) do c:Disconnect() end
+			conns[plr] = nil
+		end
+	end
+
+	for _, plr in ipairs(Players:GetPlayers()) do watchPlayer(plr) end
+	local addConn = Players.PlayerAdded:Connect(function(plr) watchPlayer(plr) schedule() end)
+	local remConn = Players.PlayerRemoving:Connect(function(plr)
+		unwatchPlayer(plr)
+		-- the leaving player is still in GetPlayers() during this event: rebuild after they are gone
+		task.delay(0, schedule)
+	end)
+
+	ownerInst.Destroying:Connect(function()
+		dead = true
+		addConn:Disconnect()
+		remConn:Disconnect()
+		for plr in pairs(conns) do unwatchPlayer(plr) end
+	end)
+
+	push(true)
+end
+
+-- builds the popts table from a dropdown config table (nil when no filter/watch was given)
+local function PlayerOptsFromConfig(cfg)
+	if type(cfg) ~= "table" then return nil end
+	if typeof(cfg.PlayerFilter) ~= "function" then return nil end
+	return {Filter = cfg.PlayerFilter, Watch = cfg.PlayerWatch, IncludeSelf = cfg.IncludeSelf, EmptyText = cfg.EmptyText}
+end
+
+local function CreateDropdown(parentFrame, title, options, defaultOption, callback, isMulti, flag, locked, playerList, playerListInterval, playerOpts)
 	title = tostring(title or "Dropdown")
 	options = type(options) == "table" and options or {}
 	local isOpen = false
@@ -2505,7 +2605,7 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 	local lockCtrl = ApplyLock(dropFrame, locked, wrapper, UDim2.new(0.95, 0, 1, -3), UDim2.new(0.5, 0, 0, 3), Vector2.new(0.5, 0))
 
 	if playerList then
-		WirePlayerListRefresh(wrapper, function(opts)
+		local onPlayerList = function(opts)
 			local prev, cur = {}, {}
 			for _, o in ipairs(options) do prev[tostring(o)] = true end
 			for _, o in ipairs(opts) do cur[tostring(o)] = true end
@@ -2523,7 +2623,12 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 				options = opts
 				itemsStale = true
 			end
-		end, false, playerListInterval)
+		end
+		if playerOpts then
+			WireFilteredPlayerList(wrapper, onPlayerList, false, playerOpts)
+		else
+			WirePlayerListRefresh(wrapper, onPlayerList, false, playerListInterval)
+		end
 	end
 
 	return FinishElement({
@@ -2544,7 +2649,7 @@ local function CreateDropdown(parentFrame, title, options, defaultOption, callba
 	}, flag)
 end
 
-local function CreateBoxDropdown(parentFrame, title, options, defaultOption, callback, isMulti, flag, locked, searchBarEnabled, playerList, playerListInterval)
+local function CreateBoxDropdown(parentFrame, title, options, defaultOption, callback, isMulti, flag, locked, searchBarEnabled, playerList, playerListInterval, playerOpts)
 	title = tostring(title or "Dropdown")
 	options = type(options) == "table" and options or {}
 	local isOpen = false
@@ -3126,7 +3231,7 @@ local function CreateBoxDropdown(parentFrame, title, options, defaultOption, cal
 	local lockCtrl = ApplyLock(dropFrame, locked, wrapper, UDim2.new(0.95, 0, 1, -3), UDim2.new(0.5, 0, 0, 3), Vector2.new(0.5, 0))
 
 	if playerList then
-		WirePlayerListRefresh(wrapper, function(opts)
+		local onPlayerList = function(opts)
 			local prev, cur = {}, {}
 			for _, o in ipairs(options) do prev[OptionText(o)] = true end
 			for _, o in ipairs(opts) do cur[OptionText(o)] = true end
@@ -3144,7 +3249,12 @@ local function CreateBoxDropdown(parentFrame, title, options, defaultOption, cal
 				options = opts
 				itemsStale = true
 			end
-		end, true, playerListInterval)
+		end
+		if playerOpts then
+			WireFilteredPlayerList(wrapper, onPlayerList, true, playerOpts)
+		else
+			WirePlayerListRefresh(wrapper, onPlayerList, true, playerListInterval)
+		end
 	end
 
 	return FinishElement({
@@ -4856,31 +4966,35 @@ AttachElementsToAPI = function(apiTable, parentFrame, depth)
 
 	function apiTable:Dropdown(arg1, arg2, arg3, arg4, arg5, arg6)
 		local title, vals, def, multi, callback, flag, locked = "", {}, nil, false, nil, nil, false
-		local playerList, playerListInterval = false, nil
+		local playerList, playerListInterval, playerOpts = false, nil, nil
 		if type(arg1) == "table" then
 			title, vals, def, multi, callback, flag, locked = arg1.Title, (arg1.Values or arg1.Options), arg1.Default, (arg1.Multi or false), arg1.Callback, arg1.Flag, arg1.Locked
 			playerList = arg1.PlayerList or false
 			playerListInterval = arg1.PlayerListInterval
+			playerOpts = PlayerOptsFromConfig(arg1)
+			if playerOpts then playerList = true end
 		else
 			title, vals, def, callback, multi, flag = arg1, arg2, arg3, arg4, (arg5 or false), arg6
 		end
 		if playerList then vals = {} end
-		return CreateDropdown(parentFrame, title, vals, def, callback, multi, flag, locked, playerList, playerListInterval)
+		return CreateDropdown(parentFrame, title, vals, def, callback, multi, flag, locked, playerList, playerListInterval, playerOpts)
 	end
 
 	function apiTable:BoxDropdown(arg1, arg2, arg3, arg4, arg5, arg6)
 		local title, vals, def, multi, callback, flag, locked, searchBar = "", {}, nil, false, nil, nil, false, true
-		local playerList, playerListInterval = false, nil
+		local playerList, playerListInterval, playerOpts = false, nil, nil
 		if type(arg1) == "table" then
 			title, vals, def, multi, callback, flag, locked = arg1.Title, (arg1.Values or arg1.Options), arg1.Default, (arg1.Multi or false), arg1.Callback, arg1.Flag, arg1.Locked
 			if type(arg1.SearchBar) == "boolean" then searchBar = arg1.SearchBar end
 			playerList = arg1.PlayerList or false
 			playerListInterval = arg1.PlayerListInterval
+			playerOpts = PlayerOptsFromConfig(arg1)
+			if playerOpts then playerList = true end
 		else
 			title, vals, def, callback, multi, flag = arg1, arg2, arg3, arg4, (arg5 or false), arg6
 		end
 		if playerList then vals = {} end
-		return CreateBoxDropdown(parentFrame, title, vals, def, callback, multi, flag, locked, searchBar, playerList, playerListInterval)
+		return CreateBoxDropdown(parentFrame, title, vals, def, callback, multi, flag, locked, searchBar, playerList, playerListInterval, playerOpts)
 	end
 
 	function apiTable:ColorPicker(arg1, arg2, arg3, arg4)
